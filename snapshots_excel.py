@@ -628,7 +628,13 @@ def _row_to_cells(r, *, existing=None):
     cells["Folder"]       = folder or existing.get("Folder", "")
     cells["Scheduled Ins."] = existing.get("Scheduled Ins.", "") or ""
     cells["Lead"]         = existing.get("Lead", "") or ""
-    cells["Inspection"]   = existing.get("Inspection", "") or ""
+    # Inspection = the date we first visited / did the initial inspection.
+    # Existing cell wins (manual edits stick); else the caller-provided
+    # `_first_visit` (snapshot_logic.detect_first_visit — earliest
+    # "Initial Inspection" date from the run-doc / Trello comments).
+    cells["Inspection"]   = (existing.get("Inspection")
+                              or r.get("_first_visit")
+                              or "")
     # Audit-derived yes/no columns. Decided from real evidence — photos
     # from the files on disk, forms from what the audit actually verified
     # — never a blanket "yes". A row that ran no audit (e.g. snapshot
@@ -1347,6 +1353,22 @@ def _build_trello_enrichment(client):
         closed = _tc.card_closing_date(card_id)
         if closed is not None:
             enrich["_closing_date"] = closed
+    except Exception:
+        pass
+
+    # Inspection = the first-visit / initial-inspection date, parsed from
+    # the card's comments (the admin posts a dispatch note "Initial
+    # Inspection <date>"). detect_first_visit returns the EARLIEST.
+    # Pulls ALL comments (paginated) so an old card's early inspection
+    # note isn't missed — this is what makes the reconcile sweep slower.
+    try:
+        import snapshot_logic as _sg
+        _comments = _tc.get_all_comments(card_id)
+        _ctext = "\n".join((a.get("data") or {}).get("text", "")
+                           for a in (_comments or []))
+        _fv = _sg.detect_first_visit(_ctext)
+        if _fv:
+            enrich["_first_visit"] = _fv
     except Exception:
         pass
 
