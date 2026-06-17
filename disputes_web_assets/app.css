@@ -1,0 +1,59 @@
+.filter-bar {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 8px 18px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.filter {
+  background: var(--chip-bg); color: var(--text);
+  border: 1px solid transparent;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 11px; cursor: pointer;
+  font: inherit; font-weight: 500;
+}
+.filter:hover { background: var(--surface-3); }
+.filter.active { background: var(--chip-active); border-color: var(--green); }
+
+.table-wrap { flex: 1; overflow: auto; position: relative; }
+.dispute-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dispute-table thead th {
+  position: sticky; top: 0; background: var(--surface); z-index: 1;
+  padding: 10px 14px; text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); font-weight: 600;
+  cursor: pointer; user-select: none;
+}
+.dispute-table thead th.num { text-align: right; }
+.dispute-table thead th:hover { color: var(--text); }
+.dispute-table thead th.sort-asc::after { content: " ↑"; }
+.dispute-table thead th.sort-desc::after { content: " ↓"; }
+.dispute-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.dispute-table tbody tr:hover { background: var(--row-hover); }
+.dispute-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.status-pill {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 4px;
+  font-size: 10px; font-weight: 700;
+  background: var(--chip-bg); color: var(--text);
+}
+.status-pill[data-status*="open" i],
+.status-pill[data-status*="active" i] { background: #C58820; color: #FFFFFF; }
+.status-pill[data-status*="resolved" i],
+.status-pill[data-status*="closed" i],
+.status-pill[data-status*="won" i]    { background: #2E8B57; color: #FFFFFF; }
+.status-pill[data-status*="lost" i],
+.status-pill[data-status*="rejected" i] { background: #C0392B; color: #FFFFFF; }
+.row-act { color: var(--link); cursor: pointer; font-size: 11px; }
+.row-act:hover { text-decoration: underline; }
+.empty { padding: 60px; text-align: center; color: var(--text-muted); }
+
+/* brand hidden — extra topbar space */
+.brand, .brand-mark, .brand-name, .brand-tag { display: none !important; }
+
+/* topbar slim — recover vertical space */
+.topbar { padding: 6px 14px !important; gap: 10px !important; }

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="iframe_shim.js"></script>
+<script src="../web_shared/util.js"></script>
+<script src="../web_shared/modal.js"></script>
+<script src="../web_shared/ctx_menu.js"></script>
+<script src="../web_shared/open_in.js"></script>
+<script src="../web_shared/trello_hover.js"></script>
+<script src="../web_shared/trello_attachments.js"></script>
+<script src="../web_shared/stage_picker.js"></script>
+<script src="../web_shared/keyboard.js"></script>
+<script src="../web_shared/keyboard_help.js"></script>
+<script src="../web_shared/undo_toast.js"></script>
+<script src="../web_shared/recent_jobs.js"></script>
+<script src="../web_shared/skeleton.js"></script>
+<script src="../web_shared/toast_log.js"></script>
+<link rel="stylesheet" href="../web_shared/skeleton.css" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Audit — EMS Tools</title>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · Daily Audit</span>
+    <span class="brand-tag">web spike · two-pane</span>
+  </div>
+  <div class="topbar-actions">
+    <input id="search-box" class="search" type="search"
+           placeholder="🔎 Search client / form / tech…" autocomplete="off" />
+    <button id="run-btn"      class="btn btn-primary" disabled title="Run the daily audit for today's run-doc (uses cached results where possible)">↻ Run Audit</button>
+    <button id="audit-one-btn" class="btn" title="Audit a single client by name — useful for one-off spot checks">🔍 Audit one</button>
+    <div id="more-wrap" style="position:relative;">
+      <button id="more-btn" class="btn" title="More actions">⋯ More</button>
+      <div id="more-menu"
+           style="position:absolute;top:36px;right:0;
+                  background:var(--surface);border:1px solid var(--border);
+                  border-radius:6px;min-width:240px;
+                  z-index:80;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4);
+                  overflow:hidden;">
+        <button class="more-item" id="rerun-btn">↺ Full re-scan (no cache)</button>
+        <button class="more-item" id="push-new-losses-btn">📊 Push new losses → APA</button>
+        <button class="more-item" id="post-daily-misses-btn">💬 Post daily misses → Trello</button>
+        <button class="more-item" id="export-flagged-btn">📄 Export flagged → PDF</button>
+        <button class="more-item" id="export-all-btn">📄 Export all → PDF</button>
+        <button class="more-item" id="archive-month-btn">🗄 Archive month…</button>
+        <button class="more-item" id="copy-xa-apology-btn"
+                title="Copy the standard XA apology text to your clipboard so you can paste it into XactAnalysis for each job that needs it">🔔 Copy XA apology note</button>
+      </div>
+    </div>
+  </div>
+</header>
+<style>
+  .more-item {
+    display: block; width: 100%; text-align: left;
+    background: transparent; color: var(--text);
+    border: none; padding: 9px 14px; cursor: pointer;
+    font: inherit; font-size: 13px;
+  }
+  .more-item:hover { background: var(--row-hover); }
+  .more-item + .more-item { border-top: 1px solid var(--border); }
+</style>
+
+<!-- Mode switcher -->
+<div class="audit-toolbar" style="border-bottom:none;padding-bottom:4px;">
+  <button class="mode-btn active" id="mode-daily" title="Today's run-doc audit">📋 Daily Run</button>
+  <button class="mode-btn" id="mode-backlog" title="Flagged jobs that haven't been closed (cumulative across days)">🗓 Backlog</button>
+  <button class="mode-btn" id="mode-sp" title="Recently-modified SharePoint folders that may need a job pinned">📥 SP Recent</button>
+  <button class="mode-btn" id="mode-oneoff" title="Manually-audited jobs (one-offs from 🔍 Audit one)">🔍 One-off</button>
+  <button class="mode-btn" id="mode-starred" title="Clients you've starred — sticky across days, regardless of today's run-doc">⭐ Starred</button>
+</div>
+
+<!-- Day walker + section toggles (Daily Run mode only) -->
+<div class="audit-toolbar" id="daily-toolbar">
+  <button class="btn" id="day-prev">⏮</button>
+  <button class="btn" id="day-today">📅 Today</button>
+  <button class="btn" id="day-next">⏭</button>
+  <span class="audit-date-label" id="audit-date-label">—</span>
+  <button class="btn" id="open-doc-btn">📄 Open run-doc</button>
+  <span class="spacer"></span>
+  <label class="sec-toggle">
+    <input type="checkbox" id="sec-work" checked /> <span>🛠 Work</span>
+  </label>
+  <label class="sec-toggle">
+    <input type="checkbox" id="sec-monitor" checked /> <span>📡 Monitor</span>
+  </label>
+</div>
+
+<section class="stats-bar">
+  <div class="stat" id="stat-total"><span class="stat-num">—</span><span class="stat-lbl">Total</span></div>
+  <div class="stat is-flagged" id="stat-flagged"><span class="stat-num">—</span><span class="stat-lbl">Flagged</span></div>
+  <div class="stat is-ok" id="stat-ok"><span class="stat-num">—</span><span class="stat-lbl">OK</span></div>
+  <div class="stat is-aging" id="stat-aging"><span class="stat-num">—</span><span class="stat-lbl">≥ 3 days</span></div>
+  <div class="stat is-missing" id="stat-missing"><span class="stat-num">—</span><span class="stat-lbl">Missing items</span></div>
+  <div class="stat is-sp" id="stat-sp" title="Click to filter jobs with SharePoint photos waiting to import"><span class="stat-num">—</span><span class="stat-lbl">📥 SP files</span></div>
+  <div class="stats-meta" id="stats-meta">—</div>
+</section>
+
+<nav class="filter-bar" id="filter-bar" aria-label="Filters">
+  <button class="filter active" data-filter="all">All</button>
+  <button class="filter" data-filter="needs_attention"
+          title="Combines flagged ≥3d + SP files waiting + missing forms — everything needing action right now"
+          style="background:var(--red);color:#FFF;font-weight:700;">🚨 Needs attention</button>
+  <button class="filter" data-filter="starred"
+          title="Only clients you've ⭐ starred">⭐ Starred</button>
+  <span style="width:1px;background:var(--border);margin:0 4px;"></span>
+  <button class="filter" data-filter="flagged">🚩 Flagged</button>
+  <button class="filter" data-filter="ok">✓ OK</button>
+  <button class="filter" data-filter="aging">⏰ ≥ 3 days</button>
+  <button class="filter" data-filter="forms">📋 Missing forms</button>
+  <button class="filter" data-filter="photos">📷 Missing photos</button>
+  <button class="filter" data-filter="not_found">⚠ Folder not found</button>
+  <button class="filter" data-filter="new_loss">🆕 New loss</button>
+  <button class="filter" data-filter="has_sp">📥 Has SP</button>
+</nav>
+
+<main class="split">
+  <!-- Left pane: compact list of all jobs -->
+  <aside class="list-pane">
+    <header class="pane-head">
+      <span id="list-count">— jobs</span>
+    </header>
+    <!-- Bulk-action toolbar — visible only when ≥1 row is checked -->
+    <div class="bulk-toolbar hidden" id="bulk-toolbar">
+      <span class="bulk-count" id="bulk-count">0 selected</span>
+      <span style="flex:1;"></span>
+      <button class="btn" id="bulk-import-sp" title="Open the SP import dialog for every selected client in sequence">📥 Import SP</button>
+      <button class="btn" id="bulk-flag" title="Flag a missing item across every selected client">🚩 Flag…</button>
+      <button class="btn" id="bulk-copy-issues" title="Copy the consolidated missing-items list for every selected client">📋 Copy issues</button>
+      <button class="btn" id="bulk-reaudit" title="Re-audit every selected client">↻ Re-audit</button>
+      <button class="btn" id="bulk-clear" title="Clear selection">✕</button>
+    </div>
+    <div class="list-body" id="list-body" role="listbox" tabindex="0">
+      <!-- One row per filtered job -->
+    </div>
+  </aside>
+
+  <!-- Right pane: detail of selected job -->
+  <section class="detail-pane" id="detail-pane">
+    <div id="detail-empty" class="empty-state">
+      <div class="empty-emoji">📋</div>
+      <div class="empty-title">Pick a job from the list</div>
+      <div class="empty-sub">or use ↑ / ↓ to step through them</div>
+    </div>
+    <article id="detail-view" class="detail-view hidden">
+      <!-- Detail of selected job — built by app.js -->
+    </article>
+  </section>
+</main>
+
+<div id="loading-state" class="loading-state hidden">
+  <div class="spinner"></div>
+  <div class="loading-label" id="loading-label">Running audit…</div>
+</div>
+
+<footer class="statusbar">
+  <span id="status-counts">—</span>
+  <span id="status-msg" class="status-msg"></span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>WC Audit — EMS Tools</title>
+<link rel="stylesheet" href="theme.css" />
+<script src="iframe_shim.js"></script>
+<script src="../web_shared/util.js"></script>
+<script src="../web_shared/keyboard.js"></script>
+<script src="../web_shared/toast_log.js"></script>
+<style>
+  .wrap { flex: 1; padding: 24px; max-width: 1100px; margin: 0 auto; width: 100%; overflow-y: auto; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 14px; }
+  .stat-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-row .num { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .meta { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .tab { background: transparent; color: var(--text-muted); border: none; border-bottom: 2px solid transparent; padding: 9px 16px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; }
+  .tab.active { color: var(--text); border-bottom-color: var(--green); }
+  .tab .tab-count { margin-left: 6px; font-size: 11px; background: var(--chip-bg); color: var(--text-muted); padding: 1px 7px; border-radius: 999px; }
+  .tab.active .tab-count { background: var(--green); color: #fff; }
+  table.rows { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.rows th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  table.rows td { padding: 4px 8px; border-bottom: 1px solid #2A2A2A; }
+  table.rows tr:hover { background: var(--row-hover); }
+  table.rows .move-btn { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; }
+  table.rows .move-btn:hover { color: var(--text); background: var(--border); }
+  table.rows .trello-cell { white-space: nowrap; font-size: 11px; color: var(--text-muted); }
+  table.rows .trello-link { background: transparent; color: var(--link); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 10px; cursor: pointer; font-family: inherit; }
+  table.rows .trello-link:hover { background: var(--surface-2); color: var(--link); border-color: var(--link); }
+  table.rows .pin-link { background: transparent; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; font-family: inherit; margin-left: 4px; }
+  table.rows .pin-link:hover { background: var(--surface-2); color: var(--text); border-color: var(--text-muted); }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal-card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.4); }
+  .pin-result:hover { background: var(--row-hover); }
+  .empty { padding: 30px; text-align: center; color: var(--text-muted); font-size: 12px; font-style: italic; }
+  #progress-bar { height: 6px; background: var(--border); border-radius: 3px; margin: 8px 0; overflow: hidden; display: none; }
+  #progress-fill { height: 100%; background: var(--green); width: 0; transition: width 200ms ease; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · WC Audit</span>
+    <span class="brand-tag">web</span>
+  </div>
+  <div class="topbar-actions">
+    <button id="run-btn" class="btn btn-primary">📂 Run classification…</button>
+    <button id="load-btn" class="btn"
+            title="Re-open a saved WC audit workbook and pick up where you left off. Use this when you've hand-edited a file in Excel and want to bring it back into the panel.">📥 Load saved workbook…</button>
+    <button id="save-btn" class="btn" disabled>💾 Save & Send</button>
+    <button id="teams-btn" class="btn" disabled title="Open Teams chat to Sam">💬 Teams Sam</button>
+    <button id="folder-btn" class="btn" title="Change the folder where WC audit workbooks are saved">📁 Folder</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- Run / status card -->
+  <section class="card">
+    <h2 style="margin-top:0;font-size:14px;">🗂 Workcenter classification</h2>
+    <div id="meta" class="meta">Pick a Workcenter export to classify. Last classification (if any) shown below.</div>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+    <div id="progress-text" class="meta" style="display:none;"></div>
+    <div id="counts"></div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" id="open-out" disabled
+              title="Available after Save & Send produces a workbook">📊 Open output workbook</button>
+      <button class="btn" id="open-in" disabled
+              title="Available after you pick a Workcenter export to classify">📥 Open input file</button>
+    </div>
+  </section>
+
+  <!-- Classified rows (per-category tabs) -->
+  <section class="card" id="rows-card" style="display:none;">
+    <h2 style="margin-top:0;font-size:14px;">📋 Classified rows</h2>
+    <nav class="tabs" id="cat-tabs"></nav>
+    <div id="rows-body"></div>
+  </section>
+</main>
+
+<footer class="statusbar">
+  <span id="status-counts">—</span>
+  <span id="status-msg" class="status-msg"></span>
+</footer>
+
+<script>
+"use strict";
+const state = { cats: [], activeCat: "", lastResult: null };
+const $ = (s) => document.querySelector(s);
+
+window.addEventListener("pywebviewready", async () => {
+  $("#run-btn").addEventListener("click", pickAndRun);
+  $("#load-btn").addEventListener("click", pickAndLoad);
+  $("#save-btn").addEventListener("click", saveAndSend);
+  $("#teams-btn").addEventListener("click",
+    () => pywebview.api.open_teams_to_sam());
+  $("#folder-btn").addEventListener("click", async () => {
+    const r = await pywebview.api.change_audit_folder();
+    if (r?.canceled) return;
+    if (!r?.ok) { setStatus(`Folder change failed: ${r?.error || "?"}`, "error"); return; }
+    setStatus(`📁 Save folder → ${r.dir}`, "ok");
+  });
+  // open-out / open-in: dispatch via a tiny helper that surfaces any
+  // failure from open_file (file deleted, no association, permission,
+  // etc.) instead of silently no-op'ing. Earlier this used a `&&`
+  // short-circuit that dropped the Python result on the floor — a
+  // missing/moved workbook looked indistinguishable from a working
+  // click.
+  async function openLast(kind) {
+    const p = state.lastResult?.[kind];
+    if (!p) {
+      setStatus(kind === "output_file"
+        ? "Run Save & Send first to produce a workbook."
+        : "No source file selected yet.", "warn");
+      return;
+    }
+    const res = await pywebview.api.open_file(p);
+    if (!res?.ok) {
+      setStatus(`Open failed: ${res?.error || "?"}`, "error");
+    }
+  }
+  $("#open-out").addEventListener("click", () => openLast("output_file"));
+  $("#open-in").addEventListener("click",  () => openLast("input_file"));
+  window.addEventListener("wc:classify-progress", onProgress);
+  window.addEventListener("wc:classify-done", onClassifyDone);
+  // Pre-load categories so the counts list renders with real labels
+  // even before the user runs a classification.
+  try { state.cats = await pywebview.api.categories() || []; }
+  catch (_) { state.cats = []; }
+  await loadLastResult();
+});
+
+async function loadLastResult() {
+  const r = await pywebview.api.last_result();
+  state.lastResult = r;
+  if (!r.ran_at) {
+    $("#meta").textContent = "No audit run yet. Click 📂 Run classification… to start.";
+    syncOpenButtons();
+    return;
+  }
+  $("#meta").textContent = `Last ran: ${r.ran_at} · ${r.total} rows from ${r.input_file || "?"}`;
+  renderCounts(r.counts || {});
+  syncOpenButtons();
+}
+
+function syncOpenButtons() {
+  // Enable Open buttons only when a real path is available — visual
+  // cue that you need to Save & Send before there's an output file.
+  // Updates a small hint in the button title so hovering tells the
+  // user which file (or why it's disabled).
+  const out = $("#open-out");
+  const inp = $("#open-in");
+  const op = state.lastResult?.output_file;
+  const ip = state.lastResult?.input_file;
+  if (out) {
+    out.disabled = !op;
+    out.title = op ? `Open ${op}`
+                   : "Available after Save & Send produces a workbook";
+  }
+  if (inp) {
+    inp.disabled = !ip;
+    inp.title = ip ? `Open ${ip}`
+                   : "Available after you pick a Workcenter export to classify";
+  }
+}
+
+function renderCounts(counts) {
+  // Use the actual category keys returned by the backend so this
+  // doesn't drift from wc_audit.CATEGORY_LABELS. Was hardcoded
+  // `pending_appr` / `ems_contents` which never matched the real
+  // keys (`pending_approval` / `active_ems`) — every count showed 0.
+  const cats = state.cats && state.cats.length ? state.cats : [
+    {key: "active_ems",       label: "Active EMS & Contents"},
+    {key: "recon",            label: "RECON"},
+    {key: "estimating",       label: "Estimating"},
+    {key: "pending_approval", label: "Pending approvals"},
+    {key: "not_sold",         label: "Not sold"},
+  ];
+  $("#counts").innerHTML = cats.map((c) => `
+    <div class="stat-row"><span>${esc(c.label)}</span><span class="num">${counts[c.key] || 0}</span></div>`).join("");
+}
+
+async function pickAndLoad() {
+  // Reopen a previously-saved WC audit workbook so the user can
+  // continue editing rows they already hand-fixed in Excel. Native
+  // picker is rooted at OUTPUT_DIR (the shared share where Save &
+  // Send writes) so the right files are one click away.
+  const path = await pywebview.api.pick_saved_workbook();
+  if (!path) { setStatus("No file picked", "warn"); return; }
+  $("#meta").textContent = "Loading saved workbook…";
+  const res = await pywebview.api.load_saved_workbook(path);
+  if (!res?.ok) {
+    setStatus(`Load failed: ${res?.error || "?"}`, "error");
+    $("#meta").textContent = "Load failed — pick another file.";
+    return;
+  }
+  state.lastResult = {
+    output_file: path,
+    input_file:  path,
+    counts:      res.counts || {},
+    total:       res.total,
+    ran_at:      new Date().toLocaleString(),
+  };
+  $("#meta").textContent =
+    `📥 Loaded ${res.total} rows from ${path.split(/[\\/]/).pop()}. Click a tab to review + edit, then 💾 Save & Send.`;
+  renderCounts(res.counts || {});
+  // Merge counts INTO each category object — renderTabs reads
+  // c.count to render the chip on each tab. categories() only
+  // returns key+label so we patch the count from the load result.
+  const baseCats = await pywebview.api.categories() || [];
+  state.cats = baseCats.map((c) => ({
+    ...c,
+    count: (res.counts || {})[c.key] || 0,
+  }));
+  // Pick the first non-empty tab so the user sees rows immediately.
+  // Falls back to the first tab in the list when every count is 0.
+  state.activeCat = (state.cats.find((c) => c.count > 0)?.key)
+                    || state.cats[0]?.key || "";
+  renderTabs();
+  // Reveal the row card — same step onClassifyDone takes. Without
+  // this, the per-tab row table stays hidden and the user sees
+  // only the stat counts.
+  const rowsCard = $("#rows-card");
+  if (rowsCard) rowsCard.style.display = "block";
+  $("#save-btn").disabled = false;
+  $("#teams-btn").disabled = false;
+  syncOpenButtons();
+  await renderRowsForCat(state.activeCat);
+  setStatus(`📥 Loaded ${res.total} rows · ready to edit`, "ok");
+}
+
+async function pickAndRun() {
+  const path = await pywebview.api.pick_source_file();
+  if (!path) { setStatus("No file picked", "warn"); return; }
+  // Stash the picked source so 📥 Open input file unlocks immediately
+  // — no need to wait for classification to finish.
+  state.lastResult = { ...(state.lastResult || {}), input_file: path };
+  syncOpenButtons();
+  $("#run-btn").disabled = true;
+  $("#save-btn").disabled = true;
+  $("#teams-btn").disabled = true;
+  $("#meta").textContent = "Loading source + indexing Trello boards…";
+  $("#progress-bar").style.display = "block";
+  $("#progress-text").style.display = "block";
+  $("#progress-fill").style.width = "0%";
+  $("#progress-text").textContent = "Starting…";
+  const res = await pywebview.api.run_classify(path);
+  if (!res?.started) {
+    setStatus(`Couldn't start: ${res?.reason || "?"}`, "error");
+    $("#run-btn").disabled = false;
+    $("#progress-bar").style.display = "none";
+    $("#progress-text").style.display = "none";
+  }
+}
+
+function onProgress(ev) {
+  const d = ev.detail || {};
+  const pct = d.n > 0 ? Math.round((d.i / d.n) * 100) : 0;
+  $("#progress-fill").style.width = pct + "%";
+  $("#progress-text").textContent =
+    `Indexing ${d.i || 0}/${d.n || "?"} · ${d.name || "…"}`;
+}
+
+async function onClassifyDone(ev) {
+  const d = ev.detail || {};
+  $("#progress-bar").style.display = "none";
+  $("#progress-text").style.display = "none";
+  $("#run-btn").disabled = false;
+  if (!d.ok) {
+    setStatus(`Classify failed: ${d.error || "?"}`, "error");
+    $("#meta").textContent = "Classification failed — try again.";
+    return;
+  }
+  $("#meta").textContent = `Classified ${d.total} rows from ${d.source}. Review tabs below, then 💾 Save & Send.`;
+  // Convert by_cat dict to counts for the stats display
+  renderCounts(d.by_cat || {});
+  state.cats = d.categories || [];
+  state.activeCat = state.cats[0]?.key || "";
+  renderTabs();
+  await renderRowsForCat(state.activeCat);
+  $("#rows-card").style.display = "block";
+  $("#save-btn").disabled = false;
+  $("#teams-btn").disabled = false;
+  setStatus(`✓ Classified ${d.total} rows`, "ok");
+}
+
+function renderTabs() {
+  $("#cat-tabs").innerHTML = state.cats.map((c) => `
+    <button class="tab ${c.key === state.activeCat ? "active" : ""}" data-cat="${esc(c.key)}">
+      ${esc(c.label)} <span class="tab-count">${c.count}</span>
+    </button>`).join("");
+  document.querySelectorAll(".tab").forEach((b) =>
+    b.addEventListener("click", async () => {
+      state.activeCat = b.dataset.cat;
+      renderTabs();
+      await renderRowsForCat(state.activeCat);
+    }));
+}
+
+async function renderRowsForCat(cat) {
+  const rows = await pywebview.api.list_rows_for_cat(cat) || [];
+  if (!rows.length) {
+    $("#rows-body").innerHTML = `<div class="empty">No rows in this category.</div>`;
+    return;
+  }
+  // Column headers mirror wc_audit.COL_HEADERS (the workbook writer's
+  // order). Hardcoded here so the on-screen layout matches what Sam
+  // will see in the downloaded xlsx.
+  //
+  // Assignee column shows on EVERY tab (not just Estimating) so the
+  // user can add or adjust the estimator for any row regardless of
+  // its current bucket. The workbook writer still only includes
+  // Assignee on the Estimating sheet; editing on other tabs is for
+  // the user's bookkeeping until they Move → Estimating.
+  const colCount = rows[0].cells.length;
+  const colHeaders = [
+    "Date Received", "Corporate Ref #", "Project #",
+    "Property Type", "Type", "Progress", "Customer",
+    "Assignee",
+  ];
+  $("#rows-body").innerHTML = `
+    <table class="rows">
+      <thead><tr>${colHeaders.map((h) => `<th>${esc(h)}</th>`).join("")}<th>Trello</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map((r) => {
+          // 🔗 Trello cell. Renders the link button when a matched
+          // card exists; otherwise renders a 📌 Pin button so the
+          // user can manually attach the right card (auto-classifier
+          // missed names like 'David Smith' vs 'Smith, David -
+          // Mercury' until the carrier-suffix strip landed). The pin
+          // button stays visible on matched rows too — small +
+          // alongside the 🔗 link — for cases where the
+          // auto-matched card is wrong and the user wants to swap it.
+          // row_id is the stable index into Python's _classify_rows.
+          // Carrying it on every data-* attr means duplicate-customer
+          // rows (e.g., Rory Nowell × 2 shells) route their action
+          // to the correct row — without row_id the Python side
+          // always picked the first customer match and the user saw
+          // "moved" status with no actual move.
+          const rid = (r.row_id !== undefined && r.row_id !== null) ? r.row_id : "";
+          const pinBtn = `<button class="pin-link"
+                                   data-customer="${esc(r.customer)}"
+                                   data-row-id="${esc(rid)}"
+                                   title="${r.card_id ? "Change which Trello card is pinned to this row" : "Pin a Trello card to this row"}">📌</button>`;
+          const trelloCell = r.card_url
+            ? `<td class="trello-cell">
+                 <button class="trello-link"
+                         data-url="${esc(r.card_url)}"
+                         title="${esc(r.board_name)} · ${esc(r.list_name)}\n${esc(r.card_name)}">🔗 Trello</button>
+                 ${pinBtn}
+               </td>`
+            : `<td class="trello-cell" title="No Trello card matched — classified by Project # suffix only">
+                 — ${pinBtn}
+               </td>`;
+          // Stash the full row payload on the <tr> so the edit modal
+          // can prefill without a round-trip. JSON-encoded into a
+          // data-* attr; URI-encoded to survive HTML-attribute quoting.
+          const rowJson = encodeURIComponent(JSON.stringify({
+            row_id:        r.row_id,
+            customer:      r.customer,
+            assignee:      r.assignee || "",
+            category:      r.category,
+            cells:         r.cells,
+          }));
+          return `
+          <tr class="wc-row"
+              data-customer="${esc(r.customer)}"
+              data-row-id="${esc(rid)}"
+              data-row-json="${rowJson}"
+              ${r.card_id ? `data-card-id="${esc(r.card_id)}"` : ""}
+              ${r.card_url ? `data-card-url="${esc(r.card_url)}"` : ""}>
+            ${r.cells.slice(0, colCount).map((c) => `<td>${esc(c)}</td>`).join("")}
+            <td class="assignee-cell" title="Double-click to set or change the estimator for this row">${esc(r.assignee || "—")}</td>
+            ${trelloCell}
+            <td>
+              <select class="move-btn"
+                      data-customer="${esc(r.customer)}"
+                      data-row-id="${esc(rid)}">
+                <option value="">Move →</option>
+                ${state.cats.map((c) => c.key === cat ? "" :
+                  `<option value="${esc(c.key)}">${esc(c.label)}</option>`).join("")}
+              </select>
+            </td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>`;
+  // Wire the per-row Trello button → open in browser via Python
+  // bridge (uses webbrowser.open). Click is async but we don't
+  // await — the click should feel instant; any error surfaces via
+  // setStatus on the next event-loop tick.
+  document.querySelectorAll(".trello-link").forEach((b) =>
+    b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const url = b.dataset.url;
+      if (!url) return;
+      const res = await pywebview.api.open_url(url);
+      if (!res?.ok) {
+        setStatus(`Open Trello failed: ${res?.error || "?"}`, "error");
+      }
+    }));
+  // Wire the per-row 📌 Pin button → open the pin modal for that
+  // customer's row. Passes the row_id so duplicate-customer rows
+  // pin the right one.
+  document.querySelectorAll(".pin-link").forEach((b) =>
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openPinModal(b.dataset.customer, b.dataset.rowId);
+    }));
+  // Double-click any row (outside the inline editable cells / buttons)
+  // → open the row-edit modal. Mirrors the Disputes page's
+  // dblclick-to-edit pattern. Skips the click if the user was
+  // targeting an interactive widget (Move dropdown, Trello link,
+  // pin button, the assignee cell which has its own prompt).
+  document.querySelectorAll(".wc-row").forEach((tr) =>
+    tr.addEventListener("dblclick", (e) => {
+      const tag = e.target.tagName;
+      if (tag === "SELECT" || tag === "BUTTON" || tag === "INPUT") return;
+      if (e.target.classList?.contains("assignee-cell")) return;
+      if (e.target.closest(".trello-cell .trello-link")) return;
+      if (e.target.closest(".trello-cell .pin-link")) return;
+      let payload = null;
+      try {
+        payload = JSON.parse(
+          decodeURIComponent(tr.dataset.rowJson || "null"));
+      } catch (_) {}
+      if (payload) openWcEditModal(payload);
+    }));
+  // Assignee dblclick → edit. Wired on every tab now (was Estimating-
+  // only) so the user can add or adjust an estimator regardless of
+  // bucket. Prompt prefills with the current value so common case
+  // (typo / surname update) is one edit. Empty string clears the
+  // assignee.
+  document.querySelectorAll(".assignee-cell").forEach((td) => {
+    td.style.cursor = "pointer";
+    td.addEventListener("dblclick", async () => {
+      const tr = td.closest("tr");
+      const customer = tr?.dataset.customer || "";
+      const rowId = tr?.dataset.rowId || "";
+      const cur = (td.textContent || "").trim().replace(/^—$/, "");
+      const next = prompt(`Estimator for ${customer}:`, cur);
+      if (next === null) return;
+      const res = await pywebview.api.set_assignee(customer, next, rowId);
+      if (!res?.ok) { setStatus(`Save failed: ${res?.error || "?"}`, "error"); return; }
+      td.textContent = next.trim() || "—";
+      setStatus(`✓ Assigned ${customer} → ${next || "(cleared)"}`, "ok");
+    });
+  });
+  document.querySelectorAll(".move-btn").forEach((s) =>
+    s.addEventListener("change", async () => {
+      if (!s.value) return;
+      const res = await pywebview.api.move_row_category(
+        s.dataset.customer, s.value, s.dataset.rowId);
+      if (res?.ok) {
+        setStatus(`✓ Moved → ${state.cats.find((c) => c.key === s.value)?.label}`, "ok");
+        // Refresh counts + current tab + tab labels
+        const cats = await pywebview.api.categories();
+        // Re-pull counts via the per-cat rows count
+        const counts = {};
+        for (const c of cats) {
+          const list = await pywebview.api.list_rows_for_cat(c.key) || [];
+          counts[c.key] = list.length;
+          c.count = list.length;
+        }
+        state.cats = cats;
+        renderCounts(counts);
+        renderTabs();
+        await renderRowsForCat(state.activeCat);
+      } else {
+        setStatus(`Move failed: ${res?.error || "?"}`, "error");
+      }
+    }));
+}
+
+// Row-edit modal — opens on double-click of any WC row. Lets the user
+// quickly fix Customer / Type / Progress / Project # / Assignee / etc.
+// in one place without opening the source xlsx. Mirrors the Disputes
+// page's edit-modal pattern (disputes_web_assets/app.js openDisputeModal).
+function openWcEditModal(row) {
+  // Cells are positional [date, ref, proj#, propertyType, type,
+  // progress, customer] — see wc_audit_web.list_rows_for_cat.
+  const cells = row.cells || [];
+  const initial = {
+    date_received:  cells[0] || "",
+    corp_ref:       cells[1] || "",
+    project_num:    cells[2] || "",
+    property_type:  cells[3] || "",
+    type:           cells[4] || "",
+    progress:       cells[5] || "",
+    customer:       cells[6] || row.customer || "",
+    assignee:       row.assignee || "",
+  };
+  // Field config — (key, label, optional list of dropdown choices)
+  // Type / Property Type / Progress get datalists from the values
+  // we know exist in WC (limits typos when the user adjusts).
+  const TYPES = ["Water","Fire","Mold","Smoke","Biohazard","Storm",
+                  "Trauma","Asbestos","Lead","Vandalism",
+                  "General Cleaning","Contents","Reconstruction",
+                  "Other","Roofing"];
+  const PROGS = ["Intake & Research","Contact & Schedule",
+                  "Customer Consultation","Initial Services",
+                  "Production Work Cycle","Approvals",
+                  "Closed","Cancelled","Not Sold"];
+  const PROPS = ["Residential","Commercial"];
+  const fields = [
+    ["date_received", "Date Received"],
+    ["corp_ref",      "Corporate Ref #"],
+    ["project_num",   "Project #"],
+    ["property_type", "Property Type", PROPS],
+    ["type",          "Type",          TYPES],
+    ["progress",      "Progress",      PROGS],
+    ["customer",      "Customer"],
+    ["assignee",      "Assignee"],
+  ];
+
+  const wrap = document.createElement("div");
+  wrap.className = "modal-overlay";
+  wrap.innerHTML = `
+    <div class="modal-card" style="width:560px;max-width:92vw;">
+      <header style="padding:16px 20px;background:var(--surface);border-bottom:1px solid var(--border);">
+        <div style="font-size:15px;font-weight:600;">✏ Edit row</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+          ${esc(initial.customer || "(no customer)")} · ${esc(initial.project_num || "—")}
+        </div>
+      </header>
+      <div style="padding:18px 20px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;max-height:60vh;">
+        ${fields.map(([k, label, choices]) => {
+          const listAttr = choices
+            ? `list="wcedit-${k}-list"` : "";
+          const datalist = choices
+            ? `<datalist id="wcedit-${k}-list">${choices.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>`
+            : "";
+          return `
+          <label style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);">${esc(label)}</span>
+            <input class="search" type="text" data-key="${esc(k)}"
+                   value="${esc(initial[k] || "")}" ${listAttr} />
+            ${datalist}
+          </label>`;
+        }).join("")}
+      </div>
+      <footer style="padding:12px 20px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn" id="wcedit-cancel">Cancel</button>
+        <button class="btn btn-primary" id="wcedit-save">💾 Save</button>
+      </footer>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.querySelector("#wcedit-cancel").addEventListener("click", close);
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  document.addEventListener("keydown", function onEsc(e) {
+    if (e.key === "Escape") { close(); document.removeEventListener("keydown", onEsc); }
+  });
+  // Focus the Customer field for quick name fixes (most common edit).
+  wrap.querySelector("[data-key='customer']")?.focus();
+
+  wrap.querySelector("#wcedit-save").addEventListener("click", async () => {
+    const payload = {};
+    wrap.querySelectorAll("[data-key]").forEach((el) => {
+      payload[el.dataset.key] = el.value.trim();
+    });
+    const btn = wrap.querySelector("#wcedit-save");
+    btn.disabled = true; btn.textContent = "Saving…";
+    const res = await pywebview.api.update_row_fields(row.row_id, payload);
+    if (!res?.ok) {
+      setStatus(`Save failed: ${res?.error || "?"}`, "error");
+      btn.disabled = false; btn.textContent = "💾 Save";
+      return;
+    }
+    close();
+    setStatus(`✓ Updated ${esc(payload.customer || "row")}`, "ok");
+    await renderRowsForCat(state.activeCat);
+  });
+}
+
+
+function openPinModal(customer, rowId) {
+  // Build a small search modal. Prepopulates the query with the row's
+  // customer name so the user just hits Enter for the common case
+  // where the only issue was a carrier-suffix mismatch.
+  const wrap = document.createElement("div");
+  wrap.className = "modal-overlay";
+  wrap.innerHTML = `
+    <div class="modal-card" style="width:560px;max-width:92vw;">
+      <header style="display:flex;align-items:center;gap:8px;
+                     padding:12px 16px;border-bottom:1px solid var(--border);">
+        <strong>📌 Pin Trello card</strong>
+        <span style="color:var(--text-muted);font-size:11px;">for ${esc(customer)}</span>
+        <span style="flex:1;"></span>
+        <button class="btn" id="pm-cancel">Cancel</button>
+      </header>
+      <div style="padding:14px 16px;">
+        <input id="pm-query" class="search" type="search"
+               placeholder="Search Trello cards…"
+               value="${esc(customer)}"
+               style="width:100%;margin-bottom:10px;" />
+        <div id="pm-results" style="min-height:120px;max-height:340px;
+             overflow-y:auto;border:1px solid var(--border);
+             border-radius:6px;padding:6px;background:var(--surface);">
+          <div class="empty">Type a name + Enter to search.</div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  wrap.querySelector("#pm-cancel").addEventListener("click", close);
+  const q = wrap.querySelector("#pm-query");
+  const res = wrap.querySelector("#pm-results");
+  q.focus();
+  q.select();
+  let debounceTimer = null;
+  async function doSearch() {
+    const query = q.value.trim();
+    if (!query) {
+      res.innerHTML = `<div class="empty">Type a name + Enter to search.</div>`;
+      return;
+    }
+    res.innerHTML = `<div class="empty">Searching Trello…</div>`;
+    const r = await pywebview.api.search_trello_for_pin(query);
+    if (!r?.ok) {
+      res.innerHTML = `<div class="empty" style="color:var(--red);">Error: ${esc(r?.error || "?")}</div>`;
+      return;
+    }
+    const list = r.results || [];
+    if (!list.length) {
+      res.innerHTML = `<div class="empty">No matches found.</div>`;
+      return;
+    }
+    res.innerHTML = list.map((c) => `
+      <button class="pin-result"
+              data-card-id="${esc(c.card_id)}"
+              style="display:block;width:100%;text-align:left;
+                     background:transparent;color:var(--text);
+                     border:none;border-bottom:1px solid var(--border);
+                     padding:8px 10px;cursor:pointer;font:inherit;">
+        <div style="font-weight:600;">${esc(c.card_name)}</div>
+        <div style="font-size:11px;color:var(--text-muted);
+                    margin-top:2px;">
+          ${esc(c.board_name || "?")} · ${esc(c.list_name || "?")}
+        </div>
+      </button>`).join("");
+    res.querySelectorAll(".pin-result").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const card_id = b.dataset.cardId;
+        b.disabled = true; b.style.opacity = "0.5";
+        const pin = await pywebview.api.pin_trello_card(customer, card_id, rowId);
+        if (!pin?.ok) {
+          setStatus(`Pin failed: ${pin?.error || "?"}`, "error");
+          b.disabled = false; b.style.opacity = "";
+          return;
+        }
+        // Splice the new fields into state.lastClassified so the
+        // row renders with the new card + bucket without a full
+        // re-fetch. Then re-render counts + tabs + active rows.
+        setStatus(`📌 Pinned · row now → ${state.cats.find((c) => c.key === pin.category)?.label || pin.category}`, "ok");
+        close();
+        // Refresh counts and the current tab to reflect the
+        // re-bucket. Same flow move_row_category uses.
+        const cats = await pywebview.api.categories();
+        const counts = {};
+        for (const c of cats) {
+          const li = await pywebview.api.list_rows_for_cat(c.key) || [];
+          counts[c.key] = li.length;
+          c.count = li.length;
+        }
+        state.cats = cats;
+        renderCounts(counts);
+        renderTabs();
+        await renderRowsForCat(state.activeCat);
+      }));
+  }
+  q.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); doSearch(); }
+    if (e.key === "Escape") close();
+  });
+  q.addEventListener("input", () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(doSearch, 400);
+  });
+  // Auto-search on open with the prefilled customer name.
+  doSearch();
+}
+
+async function saveAndSend() {
+  $("#save-btn").disabled = true;
+  const res = await pywebview.api.save_and_send();
+  $("#save-btn").disabled = false;
+  if (!res?.ok) { setStatus(`Save failed: ${res?.error || "?"}`, "error"); return; }
+  state.lastResult = {
+    output_file: res.output_file, input_file: state.lastResult?.input_file || "",
+    counts: res.counts || {}, total: res.total,
+    ran_at: new Date().toLocaleString(),
+  };
+  syncOpenButtons();
+  $("#meta").textContent = `✓ Saved to ${res.output_file} — opening for Teams send to Sam.`;
+  setStatus(`💾 Saved · ${res.total} rows · workbook opened`, "ok");
+}
+
+let _st = null;
+function setStatus(msg, kind = "") {
+  const el = $("#status-msg");
+  el.textContent = msg || ""; el.className = "status-msg" + (kind ? " " + kind : "");
+  if (_st) clearTimeout(_st);
+  if (kind === "ok") _st = setTimeout(() => { el.textContent = ""; el.className = "status-msg"; }, 4000);
+}
+function esc(s) { return String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+</script>
+</body>
+</html>

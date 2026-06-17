@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EMS Tools</title>
+<link rel="stylesheet" href="theme.css" />
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div class="shell">
+  <!-- Left sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <header class="sb-head">
+      <div class="brand-row">
+        <span class="brand-mark"></span>
+        <div>
+          <div class="brand-name">EMS Tools</div>
+          <div class="brand-sub" id="time-meta">—</div>
+        </div>
+      </div>
+    </header>
+    <nav class="sb-nav" id="sb-nav"></nav>
+    <footer class="sb-foot">
+      <button class="sb-foot-btn" id="refresh-btn" title="Reload current tool + refresh sidebar counts">↻</button>
+      <button class="sb-foot-btn" id="toast-log-btn" title="Toast log — last 50 status messages across every panel">🛎</button>
+      <button class="sb-foot-btn" id="legacy-btn" title="Open legacy Tk launcher">🪟</button>
+    </footer>
+  </aside>
+
+  <!-- Right pane — tool content (header removed; iframe gets full height) -->
+  <section class="pane">
+    <div class="pane-content">
+      <iframe id="content-frame" class="tool-frame" src="about:blank"
+              title="Tool content"></iframe>
+      <div class="welcome" id="welcome">
+        <div class="welcome-inner">
+          <div class="welcome-mark"></div>
+          <div class="welcome-greet" id="welcome-greet">Welcome to EMS Tools</div>
+          <div class="welcome-sub" id="welcome-sub">Pick a tool from the sidebar to get started</div>
+          <div class="welcome-quick" id="welcome-quick"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="../web_shared/toast_log.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

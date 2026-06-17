@@ -1,0 +1,286 @@
+"""Settings — Pywebview spike (config editor)."""
+from __future__ import annotations
+import os, sys
+import webview
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path: sys.path.insert(0, _HERE)
+import config
+
+ASSETS_DIR = os.path.join(_HERE, "settings_web_assets")
+INDEX_HTML = os.path.join(ASSETS_DIR, "index.html")
+
+
+# Field schema mirrors settings_gui.FIELDS but kept simple — every
+# value is treated as a string in the web form. Path validation lives
+# at save-time.
+FIELDS = [
+    ("audit_base",          "Job folders root",           "dir"),
+    ("runs_dir",            "Daily run docs folder",      "dir"),
+    ("photos_root",         "Photos root folder",         "dir"),
+    ("snapshot_template",   "Snapshot fillable PDF",      "file"),
+    ("snapshot_output",     "Snapshot PDF output folder", "dir"),
+    ("apa_monitor_root",    "APA Monitor docs folder",    "dir"),
+    ("workcenter_url",      "Workcenter URL",             "url"),
+    ("show_sort_files",     "Show Sort Files in toolbar", "bool"),
+    ("show_new_job",        "Show New EMS Job in toolbar","bool"),
+    ("trello_token",        "Trello token (per-user)",    "secret"),
+    ("appearance",          "Appearance",                 "choice", ["system","light","dark"]),
+    ("ui_scale",            "UI scale",                   "choice",
+                            ["auto","1.0","1.25","1.5","1.75","2.0","2.25","2.5"]),
+]
+
+
+class Api:
+    def __init__(self): self._window = None
+    def attach(self, w): self._window = w
+
+    def schema(self):
+        return [{"key": f[0], "label": f[1], "kind": f[2],
+                  "choices": (f[3] if len(f) > 3 else [])}
+                for f in FIELDS]
+
+    def load(self):
+        try:
+            return dict(config.load() or {})
+        except Exception:
+            return {}
+
+    def save(self, values):
+        if not isinstance(values, dict):
+            return {"ok": False, "error": "values must be a dict"}
+        try:
+            cfg = dict(config.load() or {})
+            cfg.update(values)
+            config.save(cfg)
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def _start_dir(self, start):
+        """Best initial folder for a picker, given the field's current
+        value (which may be a dir, a file, or empty)."""
+        s = (start or "").strip()
+        if not s:
+            return ""
+        if os.path.isdir(s):
+            return s
+        parent = os.path.dirname(s)
+        return parent if os.path.isdir(parent) else ""
+
+    def pick_dir(self, start_dir: str = "") -> dict:
+        """Native folder picker for a `dir` path field (e.g. the Daily
+        run docs folder when its OneDrive path shifts). Returns the chosen
+        absolute path so the field can be filled without typing."""
+        if self._window is None:
+            return {"ok": False, "error": "no window"}
+        try:
+            result = self._window.create_file_dialog(
+                webview.FOLDER_DIALOG,
+                directory=self._start_dir(start_dir),
+                allow_multiple=False)
+            if not result:
+                return {"ok": True, "path": "", "cancelled": True}
+            path = result[0] if isinstance(result, (list, tuple)) else result
+            return {"ok": True, "path": str(path)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def pick_file(self, start_dir: str = "") -> dict:
+        """Native file picker for a `file` path field (e.g. the snapshot
+        fillable PDF)."""
+        if self._window is None:
+            return {"ok": False, "error": "no window"}
+        try:
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                directory=self._start_dir(start_dir),
+                allow_multiple=False)
+            if not result:
+                return {"ok": True, "path": "", "cancelled": True}
+            path = result[0] if isinstance(result, (list, tuple)) else result
+            return {"ok": True, "path": str(path)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def open_data_folder(self):
+        """Open the per-user EMS data folder (logs, caches, persistence
+        JSON). Useful when the user needs to manually edit a config
+        file or share a log with support."""
+        try:
+            import paths
+            p = paths.DATA_DIR
+            if not os.path.isdir(p):
+                os.makedirs(p, exist_ok=True)
+            os.startfile(p); return True
+        except Exception:
+            return False
+
+    def open_config_file(self):
+        """Open config.json directly in Notepad."""
+        try:
+            import paths, subprocess
+            p = os.path.join(paths.DATA_DIR, "config.json")
+            if os.path.isfile(p):
+                subprocess.Popen(["notepad.exe", p])
+                return True
+        except Exception:
+            pass
+        return False
+
+    def get_tech_roster(self) -> dict:
+        """Return the parsed tech roster as a sorted list of
+        (initials, full_name) pairs. Drives the rich roster editor
+        inside the settings panel — no need to open Notepad just to
+        add a new tech's initials."""
+        try:
+            import paths, json
+            p = os.path.join(paths.DATA_DIR, "tech_roster.json")
+            data = {}
+            if os.path.isfile(p):
+                with open(p, "r", encoding="utf-8") as fh:
+                    data = json.load(fh) or {}
+            return {"path": p, "entries": [
+                {"initials": k, "full_name": v}
+                for k, v in sorted((data or {}).items(),
+                                    key=lambda kv: kv[0].upper())
+            ]}
+        except Exception as ex:
+            return {"path": "", "entries": [], "error": str(ex)}
+
+    def save_tech_roster(self, entries: list) -> dict:
+        """Persist the roster from the editor. `entries` is a list of
+        {initials, full_name} dicts. Trims, dedupes by initials, and
+        writes back as JSON the audit/IUQ/photo-folders tools all read."""
+        if not isinstance(entries, list):
+            return {"ok": False, "error": "entries must be a list"}
+        try:
+            import paths, json
+            p = os.path.join(paths.DATA_DIR, "tech_roster.json")
+            out = {}
+            for e in entries:
+                if not isinstance(e, dict): continue
+                k = (e.get("initials") or "").strip().upper()
+                v = (e.get("full_name") or "").strip()
+                if not k or not v: continue
+                out[k] = v
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(out, fh, indent=2, sort_keys=True)
+            return {"ok": True, "count": len(out)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def open_tech_roster(self):
+        """Open the tech roster JSON for direct editing. The roster
+        maps tech initials → full names (FB = Fernando Baca) and is
+        used across audit / IUQ / photo folders."""
+        try:
+            import paths, subprocess
+            p = os.path.join(paths.DATA_DIR, "tech_roster.json")
+            if not os.path.isfile(p):
+                with open(p, "w", encoding="utf-8") as fh:
+                    fh.write('{\n  "FB": "Fernando Baca"\n}\n')
+            subprocess.Popen(["notepad.exe", p])
+            return True
+        except Exception:
+            return False
+
+    def authorize_trello(self):
+        """Open Trello's per-user token-generation page in the browser.
+        User pastes the resulting token back into the Trello token
+        field above."""
+        try:
+            import webbrowser
+            webbrowser.open(
+                "https://trello.com/1/authorize"
+                "?expiration=never&scope=read,write,account"
+                "&response_type=token&name=EMS%20Tools"
+                "&key=4f7cf06b75c52d6c63a73e7a8df7d1a8")
+            return True
+        except Exception:
+            return False
+
+    def first_run_status(self) -> dict:
+        """Return a checklist for the first-run wizard: which critical
+        fields are configured and which still need attention.
+        Surfaced when the user opens Settings for the first time."""
+        cfg = {}
+        try: cfg = config.load() or {}
+        except Exception: cfg = {}
+        steps = []
+        # 1. Job folders root
+        af = cfg.get("audit_base") or ""
+        steps.append({
+            "key":   "audit_base",
+            "label": "📁 Job folders root configured",
+            "done":  bool(af) and os.path.isdir(af),
+            "current": af,
+        })
+        # 2. Run-doc folder
+        rd = cfg.get("runs_dir") or ""
+        steps.append({
+            "key":   "runs_dir",
+            "label": "📄 Run-doc folder configured",
+            "done":  bool(rd) and os.path.isdir(rd),
+            "current": rd,
+        })
+        # 3. Photos root
+        ph = cfg.get("photos_root") or ""
+        steps.append({
+            "key":   "photos_root",
+            "label": "📷 SharePoint photos root configured",
+            "done":  bool(ph) and os.path.isdir(ph),
+            "current": ph,
+        })
+        # 4. Trello token
+        tok = cfg.get("trello_token") or ""
+        steps.append({
+            "key":   "trello_token",
+            "label": "🔑 Trello token saved",
+            "done":  bool(tok),
+            "current": "(set)" if tok else "",
+        })
+        # 5. Snapshot template
+        st = cfg.get("snapshot_template") or ""
+        steps.append({
+            "key":   "snapshot_template",
+            "label": "📸 Snapshot template PDF set",
+            "done":  bool(st) and os.path.isfile(st),
+            "current": st,
+        })
+        done_count = sum(1 for s in steps if s["done"])
+        return {
+            "steps":  steps,
+            "done":   done_count,
+            "total":  len(steps),
+            "all_done": done_count == len(steps),
+        }
+
+    def trello_auth_status(self):
+        """Quick connection check — does the saved token actually
+        return a valid /me payload? Surfaces the username + email so
+        the user can confirm they pasted the right token."""
+        try:
+            import trello_client as tc
+            me = tc._call("/members/me") or {}
+            return {"ok": True,
+                    "username": me.get("username") or "",
+                    "full_name": me.get("fullName") or "",
+                    "email": me.get("email") or ""}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+
+def main(argv=None):
+    api = Api()
+    win = webview.create_window(
+        title="Settings — EMS Tools (web)",
+        url=INDEX_HTML, js_api=api,
+        width=820, height=820, min_size=(560, 500))
+    api.attach(win)
+    webview.start(debug=False)
+
+
+if __name__ == "__main__":
+    main()

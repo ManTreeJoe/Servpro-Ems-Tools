@@ -1,0 +1,40 @@
+# ── Python ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# ── Secrets / machine config — NEVER commit ────────────
+# config.json holds the live Trello API key + local machine paths.
+# state.json holds persistence (pins, resolved-issues, franchise tags).
+config.json
+state.json
+.credentials*
+*.env
+
+# ── Customer data / PII — NEVER commit ─────────────────
+EMS_Audit_Log.md
+EMS_Audit_Backlog.md
+audit_backlog.json
+*.xlsx
+*.xlsm
+*.docx
+*.pdf
+*.db
+*.sqlite*
+
+# ── Logs ───────────────────────────────────────────────
+logs/
+*.log
+
+# ── Caches / generated ─────────────────────────────────
+paste-cache/
+*.tmp
+*.bak
+
+# ── OS / OneDrive cruft ────────────────────────────────
+desktop.ini
+Thumbs.db
+.DS_Store

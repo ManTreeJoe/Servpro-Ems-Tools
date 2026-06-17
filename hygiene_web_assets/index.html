@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Hygiene — EMS Tools</title>
+<link rel="stylesheet" href="theme.css" />
+<script src="iframe_shim.js"></script>
+<script src="../web_shared/util.js"></script>
+<script src="../web_shared/ctx_menu.js"></script>
+<script src="../web_shared/trello_hover.js"></script>
+<script src="../web_shared/toast_log.js"></script>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · Hygiene</span>
+    <span class="brand-tag">priority</span>
+  </div>
+  <span class="spacer"></span>
+  <select id="board-filter" class="search" style="width:170px;">
+    <option value="">All boards</option>
+  </select>
+  <input id="search-box" class="search" type="search" placeholder="🔎 Filter…" style="width:180px;" />
+  <span id="cache-age" class="muted">—</span>
+  <select id="scan-tab" class="search" style="width:150px;" title="Limit the scan to one group of sections (faster / lighter than a full scan)">
+    <option value="">⟳ All tabs</option>
+  </select>
+  <button id="scan-btn" class="btn btn-primary" title="Re-scan every section on every in-scope board">↻ Run scan</button>
+  <button id="scan-min-btn" class="btn" title="Hygiene rules only · 50 cards/board cap · no side-fetches. Use if a full scan times out / OOMs.">⚡ Minimal</button>
+  <button id="xa-scan-btn" class="btn" title="Scan the Outlook inbox for XA adjuster inquiries (questions/requests) AND adjuster receipts to review">📨 Inbox scan</button>
+  <button id="cancel-btn" class="btn hidden" title="Stop the running scan">✕ Cancel</button>
+  <button id="diag-btn" class="btn" title="Scan diagnostics &amp; clear cache (use if the panel is slow or your laptop is low on memory)">🩺</button>
+</header>
+
+<section class="tiles" id="tiles"></section>
+
+<main class="feed-wrap">
+  <div class="feed-head">
+    <span class="title" id="feed-title">All action items</span>
+    <span class="spacer"></span>
+    <label title="Include the full list of every open Trello job (large)">
+      <input type="checkbox" id="show-open-jobs" /> Show all open jobs
+    </label>
+    <span class="muted" id="feed-count">—</span>
+  </div>
+  <div class="feed" id="feed"></div>
+  <div id="feed-empty" class="empty hidden">Nothing needs attention right now 🎉</div>
+</main>
+
+<footer class="statusbar">
+  <span id="scan-state" class="muted">—</span>
+  <span class="spacer"></span>
+  <span id="status-msg" class="status-msg"></span>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>

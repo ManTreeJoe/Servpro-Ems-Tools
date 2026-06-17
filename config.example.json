@@ -1,0 +1,18 @@
+{
+  "audit_base":        "X:\\IE_Public",
+  "snapshot_template": "X:\\IE_Public\\Front Operation\\snapshot_handoff_fillable.pdf",
+  "snapshot_output":   "C:\\Users\\<you>\\Downloads",
+  "photos_root":       "C:\\Users\\<you>\\OneDrive\\Photos",
+  "photos_extra_roots": [],
+  "runs_dir":          "C:\\Users\\<you>\\OneDrive\\Daily Run",
+  "apa_monitor_root":  "X:\\IE_Public\\APA Monitor",
+  "workcenter_url":    "",
+  "enable_workcenter_alpha": false,
+  "trello_api_key":      "<your-trello-api-key>",
+  "trello_token":        "<your-trello-token>",
+  "trello_workspace_id": "<your-workspace-id>",
+  "trello_boards_exclude": [],
+  "trello_snapshot_list_id": "<list-id>",
+  "graph_client_id": "<azure-app-client-id>",
+  "graph_tenant_id": "<azure-tenant-id>"
+}

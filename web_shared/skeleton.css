@@ -1,0 +1,41 @@
+/* EMS Tools — shared loading skeleton.
+ *
+ * Shimmer pulse on placeholder rows so a scan-in-progress doesn't
+ * look frozen. Add `<div class="ems-skel ems-skel-row"></div>` (or
+ * use mkSkeletonRows() helper from skeleton.js) to render N rows.
+ */
+.ems-skel {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,.04) 0%,
+    rgba(255,255,255,.10) 50%,
+    rgba(255,255,255,.04) 100%);
+  background-size: 200% 100%;
+  animation: ems-skel-shimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
+.ems-skel-row {
+  height: 36px;
+  margin: 8px 0;
+  border-radius: 6px;
+}
+.ems-skel-chip {
+  height: 14px;
+  width: 64px;
+  display: inline-block;
+  margin-right: 6px;
+  border-radius: 7px;
+}
+.ems-skel-title {
+  height: 14px;
+  width: 60%;
+  margin: 6px 0;
+}
+.ems-skel-sub {
+  height: 11px;
+  width: 40%;
+  margin: 4px 0;
+}
+@keyframes ems-skel-shimmer {
+  0%   { background-position: -100% 0; }
+  100% { background-position:  100% 0; }
+}

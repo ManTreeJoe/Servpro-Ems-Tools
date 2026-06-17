@@ -1,0 +1,10 @@
+# EMS Automation Suite — runtime dependencies.
+# Install with: pip install -r requirements.txt
+# After installing, fetch the Playwright Chromium binary one-time:
+#   python -m playwright install chromium
+
+python-docx>=1.1.0
+pdfrw>=0.4
+reportlab>=4.0
+playwright>=1.40
+customtkinter>=5.2.0

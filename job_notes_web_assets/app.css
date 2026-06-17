@@ -1,0 +1,94 @@
+.split { flex: 1; display: grid; grid-template-columns: 320px 1fr; overflow: hidden; min-height: 0; }
+.list-pane { border-right: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; min-height: 0; }
+.pane-head { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; flex-shrink: 0; }
+.list-body { flex: 1; overflow-y: auto; }
+.list-row {
+  padding: 9px 14px; border-left: 3px solid transparent;
+  border-bottom: 1px solid #2A2A2A; cursor: pointer;
+}
+.list-row:hover { background: var(--row-hover); }
+.list-row.active { background: var(--row-active); border-left-color: var(--green); }
+.list-name { font-weight: 600; font-size: 13px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+.detail-pane { background: var(--bg); overflow-y: auto; min-height: 0; position: relative; }
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; text-align: center; color: var(--text-muted); padding: 40px; }
+.empty-emoji { font-size: 42px; margin-bottom: 12px; }
+
+.detail { padding: 24px 28px; max-width: 880px; margin: 0 auto; }
+.detail-head { margin-bottom: 16px; }
+.detail-client { font-size: 22px; font-weight: 700; line-height: 1.2; }
+.detail-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.note-text {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 22px; font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 13px; line-height: 1.6;
+  color: var(--text); white-space: pre-wrap; word-wrap: break-word;
+}
+
+.note-text mark {
+  background: var(--green); color: #fff;
+  padding: 0 2px; border-radius: 2px;
+}
+/* Markdown rendering — Tk parity for the in-place markers */
+.md-h1 { font-size: 18px; font-weight: 700; color: var(--text); display: block; margin: 8px 0 4px; }
+.md-h2 { font-size: 15px; font-weight: 700; color: var(--text); display: block; margin: 6px 0 3px; }
+.md-h3 { font-size: 13px; font-weight: 700; color: var(--text-muted); display: block; margin: 4px 0 2px; text-transform: uppercase; letter-spacing: .04em; }
+.md-bold { font-weight: 700; color: var(--text); }
+.md-italic { font-style: italic; }
+.md-code {
+  background: var(--surface-2); color: var(--green);
+  padding: 1px 5px; border-radius: 3px;
+  font-family: "Cascadia Mono", "Consolas", monospace; font-size: 12px;
+}
+.md-bullet { display: block; padding-left: 14px; text-indent: -14px; }
+.md-trello-header {
+  display: block;
+  color: var(--green); font-weight: 600;
+  border-left: 3px solid var(--green);
+  padding-left: 10px; margin: 10px 0 4px;
+  background: rgba(46, 139, 87, 0.06);
+}
+
+/* Timeline + expected-files side rail (right of note text) */
+.side-rail { display: flex; flex-direction: column; }
+.rail-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 12px 14px;
+}
+.rail-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.tl-list { list-style: none; margin: 0; padding: 0; }
+.tl-stage {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0; font-size: 12px; color: var(--text-muted);
+  border-left: 2px solid var(--border); padding-left: 12px;
+  margin-left: 4px;
+}
+.tl-stage .tl-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--border); flex-shrink: 0;
+}
+.tl-stage.hit { color: var(--text); font-weight: 600; }
+.tl-stage.hit .tl-dot { background: var(--green); box-shadow: 0 0 0 3px rgba(46,139,87,0.18); }
+.ef-list { list-style: none; margin: 0; padding: 0; }
+.ef-list li {
+  padding: 4px 0; font-size: 12px; color: var(--text);
+  border-bottom: 1px dotted var(--border);
+}
+.ef-list li:last-child { border-bottom: none; }
+.ef-list li::before {
+  content: "📄"; margin-right: 6px; opacity: 0.6;
+}
+
+/* brand hidden — extra topbar space */
+.brand, .brand-mark, .brand-name, .brand-tag { display: none !important; }
+
+/* topbar slim — recover vertical space */
+.topbar { padding: 6px 14px !important; gap: 10px !important; }

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Cheat Sheet — EMS Tools</title>
+<link rel="stylesheet" href="theme.css" />
+<script src="iframe_shim.js"></script>
+<script src="../web_shared/util.js"></script>
+<script src="../web_shared/keyboard.js"></script>
+<script src="../web_shared/toast_log.js"></script>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · EMS Cheat Sheet</span>
+    <span class="brand-tag">web</span>
+  </div>
+  <div class="topbar-actions">
+    <input id="search-box" class="search" type="search" placeholder="🔎 Search…" />
+    <button id="export-pdf-btn" class="btn" title="Print cheat sheet to PDF">📄 Export PDF</button>
+  </div>
+</header>
+
+<main class="split">
+  <aside class="toc"><nav id="toc"></nav></aside>
+  <section class="content" id="content"></section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

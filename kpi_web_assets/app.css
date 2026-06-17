@@ -1,0 +1,269 @@
+/* EMS Tools KPI — Pywebview spike (Phase 2).
+ *
+ * Same palette as pipeline_web's app.css so the two web panels feel
+ * like one app. When we promote a third panel I'll factor these
+ * vars into shared/theme.css instead of duplicating.
+ */
+:root {
+  --bg:           #1A1A1A;
+  --surface:     #242424;
+  --surface-2:   #2E2E2E;
+  --border:      #3A3A3A;
+  --text:        #E8E8E8;
+  --text-muted:  #9A9A9A;
+  --text-dim:    #6E6E6E;
+  --green:       #2E8B57;
+  --green-hover: #38A668;
+  --amber:       #C58820;
+  --red:         #C0392B;
+  --link:        #4A9EFF;
+  --chip-bg:     #353535;
+  --shadow-1:    0 1px 3px rgba(0,0,0,0.4);
+  --radius:      8px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  overflow-x: hidden;
+}
+
+body { display: flex; flex-direction: column; min-height: 100vh; }
+
+/* ── Top bar ───────────────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  background: var(--green);
+}
+.brand-name { font-weight: 600; font-size: 15px; }
+.brand-tag {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  transition: background 120ms ease;
+}
+.btn:hover { background: var(--border); }
+.btn-primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #FFFFFF;
+}
+.btn-primary:hover { background: var(--green-hover); border-color: var(--green-hover); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ── Dashboard layout ──────────────────────────────────────────── */
+.dashboard {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 18px;
+  overflow-y: auto;
+}
+.dashboard .card.weekly { grid-column: 1 / -1; }     /* full width */
+.dashboard .card.repeat { grid-column: 1 / -1; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-1);
+}
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.card-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.muted { color: var(--text-muted); font-size: 12px; }
+
+.subhead {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 16px 0 8px;
+}
+
+/* ── Right-now tiles ───────────────────────────────────────────── */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+}
+.metric-tile {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  text-align: center;
+}
+.metric-tile .num {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.metric-tile .num.hot   { color: var(--red); }
+.metric-tile .num.warn  { color: var(--amber); }
+.metric-tile .num.cold  { color: var(--text-muted); }
+.metric-tile .lbl {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Weekly trends table ───────────────────────────────────────── */
+.metric-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.metric-table th {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.metric-table th.num,
+.metric-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.metric-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.metric-table tbody tr:last-child td { border-bottom: none; }
+.metric-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+.metric-table .label-cell {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Trend arrows in the weekly cells */
+.trend {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 11px;
+}
+.trend.up   { color: var(--green); }
+.trend.down { color: var(--red); }
+.trend.flat { color: var(--text-dim); }
+.trend.invert.up  { color: var(--red); }     /* metrics where up is bad */
+.trend.invert.down { color: var(--green); }  /* and down is good */
+
+/* ── Cycle-time stats ──────────────────────────────────────────── */
+.cycle-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.cycle-stats .metric-tile .num {
+  font-size: 24px;
+}
+.cycle-stats .metric-tile .num.dim { color: var(--text-dim); }
+
+.longest-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.longest-list li {
+  padding: 8px 0;
+  border-bottom: 1px dotted var(--border);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.longest-list li:last-child { border-bottom: none; }
+.longest-list .client { color: var(--text); }
+.longest-list .days {
+  color: var(--amber);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.longest-list .days.hot { color: var(--red); }
+.longest-list .empty { color: var(--text-muted); font-style: italic; }
+
+/* ── Repeat-offenders table ────────────────────────────────────── */
+.empty-inline {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 24px;
+  font-style: italic;
+}
+.hidden { display: none !important; }
+
+/* ── Status bar ────────────────────────────────────────────────── */
+.statusbar {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 6px 18px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.status-msg.ok    { color: var(--green); }
+.status-msg.warn  { color: var(--amber); }
+.status-msg.error { color: var(--red); }
+
+/* brand hidden — extra topbar space */
+.brand, .brand-mark, .brand-name, .brand-tag { display: none !important; }
+
+/* topbar slim — recover vertical space */
+.topbar { padding: 6px 14px !important; gap: 10px !important; }

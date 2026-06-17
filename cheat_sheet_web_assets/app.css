@@ -1,0 +1,98 @@
+.split { flex: 1; display: grid; grid-template-columns: 280px 1fr; overflow: hidden; min-height: 0; }
+.toc { background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; padding: 16px 0; }
+.toc a {
+  display: block; padding: 8px 18px; color: var(--text-muted);
+  cursor: pointer; text-decoration: none; font-size: 13px;
+  border-left: 3px solid transparent;
+}
+.toc a:hover { background: var(--row-hover); color: var(--text); }
+.toc a.active { background: var(--row-active); color: var(--text); border-left-color: var(--green); font-weight: 600; }
+.content { overflow-y: auto; padding: 28px 36px 60px; max-width: 920px; margin: 0 auto; }
+.content h2 { color: var(--text); font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-top: 36px; }
+.content h2:first-child { margin-top: 0; }
+.content h3 { color: var(--text); font-size: 16px; margin-top: 28px; }
+.content p, .content li { font-size: 14px; line-height: 1.6; }
+.content code {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 1px 6px; border-radius: 3px;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 12px;
+}
+.content pre {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px; overflow-x: auto;
+  font-family: "Cascadia Mono", "Consolas", monospace; font-size: 12px;
+}
+.content ul, .content ol { padding-left: 22px; }
+.content strong { color: var(--text); font-weight: 700; }
+.content mark { background: var(--highlight); color: var(--highlight-fg); padding: 0 3px; border-radius: 2px; }
+
+/* brand hidden — extra topbar space */
+.brand, .brand-mark, .brand-name, .brand-tag { display: none !important; }
+
+/* topbar slim — recover vertical space */
+.topbar { padding: 6px 14px !important; gap: 10px !important; }
+
+/* ── Interactive copy affordances ─────────────────────────────────── */
+/* Inline click-to-copy code spans (short canonical values + contents
+   comments). The hover hint + cursor signals they're actionable. */
+.content code.copyable { cursor: pointer; transition: background .12s, border-color .12s; }
+.content code.copyable:hover { border-color: var(--green); background: var(--row-hover); }
+.content code.copyable::after { content: " ⧉"; opacity: .45; font-size: 10px; }
+.content code.copyable.copied {
+  background: var(--green); color: #fff; border-color: var(--green);
+}
+
+/* Copyable snippet cards — canonical messages + code/folder blocks. */
+.snippet {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  margin: 12px 0; overflow: hidden; background: var(--surface);
+}
+.snippet-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 10px; background: var(--row-hover);
+  border-bottom: 1px solid var(--border);
+}
+.snippet-tag { font-size: 11px; color: var(--text-muted); letter-spacing: .03em; }
+.snippet .snip-quote, .snippet .snip-pre { margin: 0; border: none; border-radius: 0; }
+.snippet .snip-quote {
+  padding: 12px 14px; background: transparent;
+  border-left: 3px solid var(--green); font-size: 14px; line-height: 1.6;
+}
+.snippet .snip-pre { background: transparent; }
+
+.copy-btn {
+  cursor: pointer; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface); color: var(--text); font-size: 12px;
+  padding: 3px 10px; transition: background .12s, border-color .12s, color .12s;
+  white-space: nowrap;
+}
+.copy-btn:hover { border-color: var(--green); background: var(--row-hover); }
+.copy-btn.copied { background: var(--green); border-color: var(--green); color: #fff; }
+
+/* Floating "Copied!" hint shown over a clicked inline code span. */
+.copy-float {
+  position: fixed; transform: translate(-50%, -100%);
+  background: var(--green); color: #fff; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 5px; pointer-events: none; z-index: 9999;
+  opacity: 0; transition: opacity .12s, transform .12s;
+}
+.copy-float.show { opacity: 1; transform: translate(-50%, -130%); }
+
+/* ── Tables (forms list, dry-report defaults, tech initials, etc.) ── */
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+.cheat-table {
+  border-collapse: collapse; width: 100%; font-size: 13px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.cheat-table th, .cheat-table td {
+  border: 1px solid var(--border); padding: 6px 10px;
+  text-align: left; vertical-align: top; line-height: 1.45;
+}
+.cheat-table th { background: var(--row-hover); color: var(--text); font-weight: 600; }
+.cheat-table tbody tr:nth-child(even) { background: var(--row-hover); }
+
+/* ── Checklist items (Closing a Job, etc.) ────────────────────────── */
+.content li.chk-item { list-style: none; margin-left: -18px; }
+.content li.chk-item .chk { color: var(--green); }
+.content li.chk-item.done { color: var(--text-muted); }

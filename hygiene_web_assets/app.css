@@ -1,0 +1,176 @@
+/* Hygiene — priority dashboard. Clean rebuild (2026-06-10).
+   Count tiles on top, a single most-urgent-first feed below. Uses the
+   shared theme.css variables so it matches the audit / disputes panels. */
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg); color: var(--text);
+  font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+  display: flex; flex-direction: column;
+}
+
+/* ── Topbar ─────────────────────────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; background: var(--surface);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.brand-mark {
+  width: 10px; height: 10px; border-radius: 3px; background: var(--green);
+}
+.brand-tag {
+  font-size: 10px; color: var(--text-muted); background: var(--chip-bg);
+  padding: 1px 7px; border-radius: 999px; font-weight: 500;
+}
+.spacer { flex: 1; }
+.topbar input.search, .topbar select.search {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font: inherit; outline: none;
+}
+.topbar input.search:focus, .topbar select.search:focus {
+  border-color: var(--green);
+}
+.btn {
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 11px; font: inherit; cursor: pointer; white-space: nowrap;
+}
+.btn:hover { background: var(--row-hover); }
+.btn.btn-primary {
+  background: var(--green); color: #fff; border-color: var(--green);
+}
+.btn.btn-primary:hover { background: var(--green-hover); }
+.btn:disabled { opacity: .5; cursor: default; }
+.muted { color: var(--text-muted); font-size: 11px; }
+.hidden { display: none !important; }
+
+/* ── Tiles ──────────────────────────────────────────────────────── */
+.tiles {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 12px 16px; background: var(--bg);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.tile {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 9px; padding: 8px 12px; cursor: pointer;
+  min-width: 96px; transition: border-color .1s, background .1s;
+}
+.tile:hover { background: var(--surface-2); }
+.tile.active { border-color: var(--green); background: var(--row-active); }
+.tile.tier-0 .tile-count { color: var(--red); }
+.tile.tier-1 .tile-count { color: var(--amber); }
+.tile .tile-icon { font-size: 16px; }
+.tile .tile-meta { display: flex; flex-direction: column; line-height: 1.2; }
+.tile .tile-count { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tile .tile-label { font-size: 10.5px; color: var(--text-muted); }
+.tile.zero { opacity: .45; }
+.tile.zero .tile-count { color: var(--text-muted); }
+.tile.all { background: var(--surface-2); }
+
+/* ── Feed ───────────────────────────────────────────────────────── */
+.feed-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.feed-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.feed-head .title { font-weight: 600; }
+.feed-head label { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+.feed { flex: 1; overflow-y: auto; padding: 6px 0; }
+.feed::-webkit-scrollbar { width: 12px; }
+.feed::-webkit-scrollbar-thumb {
+  background: var(--border); border-radius: 6px; border: 3px solid var(--bg);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 4px auto 1fr auto;
+  align-items: center; gap: 10px;
+  padding: 9px 16px; border-bottom: 1px solid var(--border);
+}
+.row:hover { background: var(--row-hover); }
+.row .urg { width: 4px; height: 34px; border-radius: 2px; background: var(--border); }
+.row.tier-0 .urg { background: var(--red); }
+.row.tier-1 .urg { background: var(--amber); }
+.row.tier-2 .urg { background: var(--text-dim); }
+.row .sec-chip {
+  font-size: 10px; color: var(--text-muted); background: var(--chip-bg);
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+}
+.row .body { min-width: 0; }
+.row .client { font-weight: 600; cursor: pointer; }
+.row .client:hover { color: var(--link); text-decoration: underline; }
+.row .subtitle {
+  font-size: 11.5px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.row .days { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.row .acts { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.row .act {
+  font-size: 11px; padding: 4px 9px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); cursor: pointer;
+}
+.row .act:hover { background: var(--row-hover); }
+.row .act.go { border-color: var(--green); color: var(--green); }
+.row .act.warn { border-color: var(--red); color: var(--red); }
+.row .act.icon { padding: 4px 7px; }
+
+.empty {
+  text-align: center; color: var(--text-muted);
+  padding: 60px 20px; font-size: 14px;
+}
+
+/* ── Load more (per-section paging) ─────────────────────────────── */
+.load-more-wrap { padding: 12px 16px 20px; text-align: center; }
+.load-more {
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 7px 18px; font: inherit; cursor: pointer;
+}
+.load-more:hover { background: var(--row-hover); }
+.load-more:disabled { opacity: .5; cursor: default; }
+
+/* ── Modal (Diag) ───────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px;
+  width: min(560px, 92vw); max-height: 86vh; overflow: auto;
+  box-shadow: 0 12px 40px rgba(0,0,0,.4);
+}
+.modal-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.modal-head .title { font-weight: 600; font-size: 14px; }
+.modal-body { padding: 16px 18px; }
+.modal-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 18px; border-top: 1px solid var(--border);
+}
+.diag-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.diag-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.diag-table td.k { color: var(--text-muted); white-space: nowrap; width: 40%; }
+.diag-table td.v { font-variant-numeric: tabular-nums; word-break: break-all; }
+.btn.danger { border-color: var(--red); color: var(--red); }
+.btn.danger:hover { background: var(--row-hover); }
+
+/* ── Statusbar ──────────────────────────────────────────────────── */
+.statusbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 16px; background: var(--surface);
+  border-top: 1px solid var(--border); flex-shrink: 0; font-size: 11px;
+}
+.status-msg.ok { color: var(--green); }
+.status-msg.warn { color: var(--amber); }
+.status-msg.error { color: var(--red); }
+.stale-badge { color: var(--amber); }
+.stale-badge.very { color: var(--red); }

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Inquiries &amp; Disputes — EMS Tools</title>
+<link rel="stylesheet" href="theme.css" />
+<script src="iframe_shim.js"></script>
+<script src="../web_shared/util.js"></script>
+<script src="../web_shared/ctx_menu.js"></script>
+<script src="../web_shared/trello_hover.js"></script>
+<script src="../web_shared/keyboard.js"></script>
+<script src="../web_shared/toast_log.js"></script>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · Inquiries &amp; Disputes</span>
+    <span class="brand-tag">web</span>
+  </div>
+  <div class="topbar-actions">
+    <input id="search-box" class="search" type="search" placeholder="🔎 Search…" />
+    <button id="new-btn" class="btn btn-primary">➕ New entry</button>
+    <button id="sync-trello-btn" class="btn" title="Pull every Audit Dispute lane card on the Trello board into the workbook">🔄 Sync Trello</button>
+    <button id="export-pdf-btn" class="btn" title="Export disputes to PDF">📄 Export PDF</button>
+    <button id="refresh-btn" class="btn">↻ Refresh</button>
+    <button id="open-excel-btn" class="btn">📊 Open Excel</button>
+    <button id="location-btn" class="btn" title="Move or repoint the Dispute Tracker workbook">📁 Location</button>
+  </div>
+</header>
+
+<nav class="filter-bar" id="status-chips"></nav>
+
+<main class="table-wrap">
+  <table class="dispute-table" id="tbl">
+    <thead><tr>
+      <th data-sort="_status">Status</th>
+      <th data-sort="_claim">Claim#</th>
+      <th data-sort="_insured">Insured</th>
+      <th data-sort="_franchise">Franchise</th>
+      <th class="num" data-sort="_amount">Amount</th>
+      <th></th>
+    </tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div id="empty" class="empty hidden">No disputes match.</div>
+</main>
+
+<footer class="statusbar">
+  <span id="status-counts">—</span>
+  <span id="status-msg" class="status-msg"></span>
+  <span id="workbook-path" class="status-msg" style="margin-left:auto;opacity:.6;font-size:11px;" title="Dispute Tracker workbook location"></span>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>

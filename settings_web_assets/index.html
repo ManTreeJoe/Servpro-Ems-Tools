@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Settings — EMS Tools</title>
+<link rel="stylesheet" href="theme.css" />
+<script src="iframe_shim.js"></script>
+<script src="../web_shared/util.js"></script>
+<style>
+  .wrap { flex: 1; overflow-y: auto; padding: 24px; max-width: 720px; margin: 0 auto; width: 100%; }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-muted); margin-bottom: 6px; }
+  .field input[type=text], .field input[type=password], .field select {
+    width: 100%; background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 9px 12px; font: inherit; font-size: 13px; outline: none;
+  }
+  .field input:focus, .field select:focus { border-color: var(--green); }
+  .field.bool { display: flex; align-items: center; gap: 10px; }
+  .field.bool label { margin: 0; }
+  .footer {
+    position: sticky; bottom: 0;
+    padding: 16px 24px; background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: flex-end; gap: 10px;
+  }
+  .status { font-size: 12px; margin-right: auto; align-self: center; }
+  .status.ok { color: var(--green); }
+  .status.error { color: var(--red); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · Settings</span>
+    <span class="brand-tag">web</span>
+  </div>
+</header>
+<main class="wrap" id="wrap">
+  <!-- First-run wizard — only renders when not every critical
+       field is set. JS fetches first_run_status() on load + hides
+       this panel when all_done. -->
+  <section id="first-run-card"
+           style="display:none;margin-bottom: 18px; padding: 14px 18px;
+                  background: var(--surface); border: 1px solid var(--amber);
+                  border-left-width: 4px; border-radius: 8px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <div style="font-size: 14px; font-weight: 700;">🚀 First-run setup</div>
+      <span id="fr-progress" style="font-size:11px;color:var(--text-muted);"></span>
+    </div>
+    <div id="fr-steps" style="display:flex;flex-direction:column;gap:6px;"></div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">
+      Scroll below to fill in any missing path or token. The wizard hides itself once everything is set.
+    </div>
+  </section>
+
+  <section style="margin-bottom: 22px; padding: 14px 18px;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px;">
+    <div style="font-size: 13px; font-weight: 600; margin-bottom: 10px;">
+      🛠 Quick admin
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+      <button class="btn" id="open-data-folder">📁 Open data folder</button>
+      <button class="btn" id="open-config-file">⚙ Edit config.json</button>
+      <button class="btn" id="open-tech-roster">👷 Tech roster (JSON)</button>
+      <button class="btn" id="edit-tech-roster">👷 Edit roster…</button>
+      <button class="btn" id="authorize-trello">🔑 Authorize Trello…</button>
+      <button class="btn" id="check-trello">🔌 Test Trello connection</button>
+    </div>
+    <div id="trello-status" class="muted" style="margin-top:8px;font-size:12px;"></div>
+  </section>
+
+  <section style="margin-bottom: 22px; padding: 14px 18px;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px;">
+    <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">
+      📌 Sidebar visibility
+    </div>
+    <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
+      Hide panels you don't open often. The backend stays wired —
+      data still flows into audit / snapshot / hygiene popovers etc.
+      Job Notes is hidden by default since its timeline already shows
+      in the 🗒 hover popover on audit + snapshot rows.
+    </div>
+    <div id="panel-visibility-grid"
+         style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                gap: 8px;"></div>
+    <div class="muted" id="visibility-status" style="font-size: 11px; margin-top: 10px;"></div>
+  </section>
+
+  <div id="form-fields"></div>
+</main>
+<footer class="footer">
+  <span class="status" id="status"></span>
+  <button class="btn" id="reload">Reload</button>
+  <button class="btn btn-primary" id="save">💾 Save</button>
+</footer>
+<script>
+let SCHEMA = [];
+let VALUES = {};
+window.addEventListener("pywebviewready", async () => {
+  SCHEMA = await pywebview.api.schema() || [];
+  VALUES = await pywebview.api.load() || {};
+  render();
+  await renderFirstRunWizard();
+  document.getElementById("save").addEventListener("click", save);
+  document.getElementById("reload").addEventListener("click", async () => {
+    VALUES = await pywebview.api.load() || {};
+    render();
+    setStatus("Reloaded from disk", "ok");
+  });
+  // Quick-admin buttons
+  document.getElementById("open-data-folder").addEventListener("click",
+    () => pywebview.api.open_data_folder());
+  document.getElementById("open-config-file").addEventListener("click",
+    () => pywebview.api.open_config_file());
+  document.getElementById("open-tech-roster").addEventListener("click",
+    () => pywebview.api.open_tech_roster());
+  document.getElementById("edit-tech-roster").addEventListener("click",
+    openTechRosterEditor);
+  document.getElementById("authorize-trello").addEventListener("click",
+    () => pywebview.api.authorize_trello());
+  document.getElementById("check-trello").addEventListener("click", async () => {
+    const el = document.getElementById("trello-status");
+    el.textContent = "Checking…"; el.style.color = "";
+    const res = await pywebview.api.trello_auth_status();
+    if (res?.ok) {
+      el.textContent = `✓ Connected as ${res.full_name || res.username} ${res.email ? "· " + res.email : ""}`;
+      el.style.color = "var(--green)";
+    } else {
+      el.textContent = `✕ Not authorized: ${res?.error || "no token"}`;
+      el.style.color = "var(--red)";
+    }
+  });
+  // Sidebar visibility grid — one checkbox per panel.
+  await renderPanelVisibility();
+});
+
+async function renderPanelVisibility() {
+  const grid = document.getElementById("panel-visibility-grid");
+  if (!grid) return;
+  // The visibility helpers live on HomeApi, not on the settings
+  // sub-Api. The iframe shim's Proxy falls through to the un-
+  // prefixed method when no settings-namespaced match exists.
+  const res = await pywebview.api.list_panel_visibility();
+  if (!res?.ok) {
+    grid.innerHTML = `<div class="muted">Couldn't load: ${res?.error || "?"}</div>`;
+    return;
+  }
+  grid.innerHTML = (res.panels || []).map((p) => `
+    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;
+                  background:var(--surface-2);border:1px solid var(--border);
+                  border-radius:6px;cursor:pointer;font-size:13px;">
+      <input type="checkbox" data-key="${esc(p.key)}"
+             ${p.visible ? "checked" : ""} />
+      <span style="font-size:15px;">${esc(p.icon)}</span>
+      <span style="flex:1;font-weight:500;">${esc(p.name)}</span>
+      ${!p.default ? `<span class="muted" style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;">Hidden by default</span>` : ""}
+    </label>`).join("");
+  grid.querySelectorAll('input[type="checkbox"]').forEach((cb) =>
+    cb.addEventListener("change", async () => {
+      const key = cb.dataset.key;
+      const visible = cb.checked;
+      const r = await pywebview.api.set_panel_visibility(key, visible);
+      const status = document.getElementById("visibility-status");
+      if (!r?.ok) {
+        status.textContent = `Failed: ${r?.error || "?"}`;
+        status.style.color = "var(--red)";
+        cb.checked = !visible;
+        return;
+      }
+      status.textContent = `✓ ${visible ? "Showing" : "Hiding"} ${key} · sidebar refreshed`;
+      status.style.color = "var(--green)";
+      // Notify the launcher to re-render the sidebar so the
+      // change is visible immediately.
+      try { window.parent?.postMessage({ type: "sidebar-reload" }, "*"); } catch (_) {}
+    }));
+}
+function render() {
+  const wrap = document.getElementById("form-fields");
+  wrap.innerHTML = SCHEMA.map((f) => {
+    const v = VALUES[f.key];
+    if (f.kind === "bool") {
+      const checked = v ? "checked" : "";
+      return `<div class="field bool">
+        <input type="checkbox" id="f-${f.key}" data-key="${esc(f.key)}" ${checked} />
+        <label for="f-${f.key}">${esc(f.label)}</label>
+      </div>`;
+    }
+    if (f.kind === "choice") {
+      return `<div class="field">
+        <label>${esc(f.label)}</label>
+        <select id="f-${esc(f.key)}" data-key="${esc(f.key)}">
+          ${(f.choices || []).map((c) => `<option ${c === String(v||"") ? "selected" : ""}>${esc(c)}</option>`).join("")}
+        </select>
+      </div>`;
+    }
+    const inputType = f.kind === "secret" ? "password" : "text";
+    // `dir` / `file` fields get a native Browse… picker so a shifted
+    // OneDrive path (the run-docs folder, etc.) can be re-pointed without
+    // typing it out.
+    const browse = (f.kind === "dir" || f.kind === "file")
+      ? `<button type="button" class="btn browse-btn" data-browse="${esc(f.key)}"
+                 data-kind="${esc(f.kind)}" style="white-space:nowrap;">📂 Browse…</button>`
+      : "";
+    return `<div class="field">
+      <label>${esc(f.label)}</label>
+      <div style="display:flex;gap:8px;align-items:stretch;">
+        <input type="${inputType}" id="f-${esc(f.key)}" data-key="${esc(f.key)}"
+               value="${esc(v == null ? "" : String(v))}" autocomplete="off"
+               style="flex:1;min-width:0;" />
+        ${browse}
+      </div>
+    </div>`;
+  }).join("");
+  wireBrowse();
+}
+
+function wireBrowse() {
+  document.querySelectorAll(".browse-btn").forEach((b) => {
+    b.addEventListener("click", async () => {
+      const key = b.dataset.browse, kind = b.dataset.kind;
+      const input = document.getElementById("f-" + key);
+      const cur = input ? input.value : "";
+      const orig = b.textContent;
+      b.disabled = true; b.textContent = "…";
+      const res = kind === "file"
+        ? await pywebview.api.pick_file(cur)
+        : await pywebview.api.pick_dir(cur);
+      b.disabled = false; b.textContent = orig;
+      if (res?.cancelled) return;
+      if (!res?.ok) { setStatus(`Browse failed: ${res?.error || "?"}`, "error"); return; }
+      if (res.path && input) {
+        input.value = res.path;
+        setStatus("📂 Picked — click 💾 Save to apply (then restart EMS Tools)", "ok");
+      }
+    });
+  });
+}
+async function renderFirstRunWizard() {
+  let status;
+  try { status = await pywebview.api.first_run_status(); }
+  catch (_) { status = null; }
+  if (!status) return;
+  const card = document.getElementById("first-run-card");
+  if (!card) return;
+  if (status.all_done) {
+    card.style.display = "none";
+    return;
+  }
+  card.style.display = "block";
+  document.getElementById("fr-progress").textContent =
+    `${status.done} of ${status.total} configured`;
+  document.getElementById("fr-steps").innerHTML = (status.steps || []).map((s) => `
+    <div style="display:flex;gap:8px;font-size:12px;color:${s.done ? "var(--green)" : "var(--text)"};">
+      <span style="width:18px;">${s.done ? "✓" : "○"}</span>
+      <span style="flex:1;">${esc(s.label)}${s.current ? ` <code style="background:var(--surface-2);padding:1px 4px;border-radius:3px;font-size:11px;">${esc(s.current)}</code>` : ""}</span>
+    </div>`).join("");
+}
+
+async function save() {
+  const out = {};
+  document.querySelectorAll("[data-key]").forEach((el) => {
+    const k = el.dataset.key;
+    if (el.type === "checkbox") out[k] = el.checked;
+    else out[k] = el.value;
+  });
+  const res = await pywebview.api.save(out);
+  setStatus(res?.ok ? "💾 Saved — restart EMS Tools to pick up changes" : `Save failed: ${res?.error || "?"}`,
+            res?.ok ? "ok" : "error");
+  if (res?.ok) { VALUES = out; await renderFirstRunWizard(); }
+}
+let st = null;
+function setStatus(m, k="") {
+  const el = document.getElementById("status");
+  el.textContent = m; el.className = "status " + k;
+  if (st) clearTimeout(st);
+  if (k === "ok") st = setTimeout(() => { el.textContent = ""; el.className = "status"; }, 4000);
+}
+function esc(s) { return String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+
+// ── Tech roster editor (rich, no Notepad) ──────────────────────
+async function openTechRosterEditor() {
+  const data = await pywebview.api.get_tech_roster() || {};
+  const entries = data.entries || [];
+  const w = document.createElement("div");
+  w.id = "tr-modal";
+  w.style.cssText = "position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;";
+  w.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(520px,92vw);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+      <header style="padding:16px 20px;background:var(--surface);border-bottom:1px solid var(--border);">
+        <div style="font-size:15px;font-weight:600;">👷 Tech roster</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Initials → full name. Used by audit, IUQ, photo folders.</div>
+      </header>
+      <div id="tr-list" style="padding:14px 20px;overflow-y:auto;max-height:60vh;display:grid;grid-template-columns:120px 1fr 32px;gap:6px;align-items:center;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);">Initials</div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);">Full name</div>
+        <div></div>
+        ${entries.map((e) => _rosterRow(e.initials, e.full_name)).join("")}
+      </div>
+      <div style="padding:8px 20px;border-top:1px solid var(--border);">
+        <button class="btn" id="tr-add">+ Add tech</button>
+      </div>
+      <footer style="padding:12px 20px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn" id="tr-cancel">Cancel</button>
+        <button class="btn btn-primary" id="tr-save">💾 Save</button>
+      </footer>
+    </div>`;
+  document.body.appendChild(w);
+  const close = () => w.remove();
+  document.getElementById("tr-cancel").addEventListener("click", close);
+  w.addEventListener("click", (e) => { if (e.target === w) close(); });
+  document.getElementById("tr-add").addEventListener("click", () => {
+    const list = document.getElementById("tr-list");
+    list.insertAdjacentHTML("beforeend", _rosterRow("", ""));
+    _wireRosterRemovals();
+    list.lastElementChild.previousElementSibling.previousElementSibling.focus?.();
+  });
+  _wireRosterRemovals();
+  document.getElementById("tr-save").addEventListener("click", async () => {
+    const list = document.getElementById("tr-list");
+    const newEntries = [];
+    const inputs = list.querySelectorAll("input.tr-init");
+    inputs.forEach((inp) => {
+      const initials = inp.value.trim();
+      const full = inp.nextElementSibling?.value?.trim() || "";
+      if (initials && full) newEntries.push({ initials, full_name: full });
+    });
+    const res = await pywebview.api.save_tech_roster(newEntries);
+    if (!res?.ok) { setStatus(`Save failed: ${res?.error || "?"}`, "error"); return; }
+    close();
+    setStatus(`👷 Roster saved · ${res.count} techs`, "ok");
+  });
+}
+function _rosterRow(initials, full) {
+  return `<input class="search tr-init" type="text" value="${esc(initials)}" maxlength="6" placeholder="ME" style="font-family:monospace;font-weight:700;text-transform:uppercase;" />
+          <input class="search tr-name" type="text" value="${esc(full)}" placeholder="Mark Ensign" />
+          <button class="btn tr-rm" style="padding:3px 6px;font-size:11px;">✕</button>`;
+}
+function _wireRosterRemovals() {
+  document.querySelectorAll(".tr-rm").forEach((b) => {
+    if (b._wired) return;
+    b._wired = true;
+    b.addEventListener("click", () => {
+      // Remove the 3 grid cells (initials, name, button)
+      const init = b.previousElementSibling?.previousElementSibling;
+      const name = b.previousElementSibling;
+      init?.remove(); name?.remove(); b.remove();
+    });
+  });
+}
+</script>
+</body>
+</html>
