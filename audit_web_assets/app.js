@@ -2984,6 +2984,61 @@ async function openFindFolderModal(row) {
 function createOverlay(opts) { return window.openModal(opts); }
 function closeOverlay() { window.closeModal("modal-overlay"); }
 
+// Tech picker for CompanyCam imports — the export carries no
+// photographer, so ask who shot the batch. Defaults to the job's
+// run-doc tech; lists the roster + a free-text option. Resolves the
+// chosen tech name, "" to proceed with no tech, or null if cancelled.
+async function pickImportTech(row) {
+  const rowTechs = Array.isArray(row.techs) ? row.techs.filter(Boolean) : [];
+  let roster = [];
+  try {
+    const res = await pywebview.api.list_techs();
+    roster = (res && res.techs) || [];
+  } catch (_) { roster = []; }
+  const seen = new Set();
+  const ordered = [];
+  for (const t of [...rowTechs, ...roster]) {
+    const k = (t || "").toLowerCase();
+    if (t && !seen.has(k)) { seen.add(k); ordered.push(t); }
+  }
+  const def = rowTechs[0] || "";
+  return new Promise((resolve) => {
+    const overlay = createOverlay({
+      title: "📷 Who took these photos?",
+      sub: "CompanyCam doesn't tag the photographer — pick the tech so the import is filed under them.",
+      body: `
+        <label class="modal-lbl">Tech</label>
+        <select id="pt-tech" class="search" style="width:100%;">
+          ${ordered.map((t) => `<option value="${escapeAttr(t)}" ${t === def ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}
+          <option value="__other__">＋ Other (type a name)…</option>
+          <option value="">(skip — file without a tech)</option>
+        </select>
+        <input id="pt-other" class="search" type="text" placeholder="Tech name"
+               style="width:100%;margin-top:8px;display:none;" />
+        <div class="modal-footer">
+          <button class="btn modal-close" id="pt-cancel">Cancel</button>
+          <span style="flex:1;"></span>
+          <button class="btn btn-primary" id="pt-go">📥 Use this tech</button>
+        </div>`,
+    });
+    const sel = overlay.querySelector("#pt-tech");
+    const other = overlay.querySelector("#pt-other");
+    sel.addEventListener("change", () => {
+      const isOther = sel.value === "__other__";
+      other.style.display = isOther ? "block" : "none";
+      if (isOther) other.focus();
+    });
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; closeOverlay(); resolve(v); };
+    overlay.querySelector("#pt-cancel").addEventListener("click", () => finish(null));
+    overlay.querySelector("#pt-go").addEventListener("click", () => {
+      let v = sel.value;
+      if (v === "__other__") v = (other.value || "").trim();
+      finish(v);   // "" = skip (no tech); otherwise the chosen name
+    });
+  });
+}
+
 // After an import that landed photos with NO date metadata (screenshots,
 // pasted PNGs, undated downloads), ask when they were taken and stamp
 // that EXIF capture date on the whole batch — so CompanyCam + date
@@ -3093,16 +3148,23 @@ async function openJobImportModal(row) {
         const card = b.closest(".candidate");
         // Photo imports → ask which PICS stage folder first.
         let dest = "";
+        let tech = "";
         if (cand.kind === "companycam" || cand.kind === "wc_attachments") {
           const choice = await window.pickPicsStage({ client: row.client, allowAuto: true });
           if (choice === null) return;               // cancelled
           dest = choice === "AUTO" ? "" : choice;
         }
+        // CompanyCam exports carry no photographer — ask which tech shot
+        // these so the import attributes them (a "<Tech> <date>" folder).
+        if (cand.kind === "companycam") {
+          tech = await pickImportTech(row);
+          if (tech === null) return;                  // cancelled
+        }
         b.disabled = true; b.textContent = "Extracting…";
         state.importBtn = b;
         try {
           const res = await pywebview.api.do_import(
-            row.client, cand.kind, cand.paths, dest);
+            row.client, cand.kind, cand.paths, dest, tech);
           if (!res?.ok) {
             b.textContent = "Failed";
             card.classList.add("failed");

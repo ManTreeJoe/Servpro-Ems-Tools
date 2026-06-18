@@ -2846,6 +2846,30 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex), "emails": {}}
 
+    def list_techs(self) -> dict:
+        """Roster of tech names for the import tech-picker (CompanyCam
+        photos carry no photographer, so the user picks who shot them).
+        Merges the configured roster + anyone with a saved Teams email."""
+        names = []
+        try:
+            ut = persistence.get_user_techs() or {}
+            names += list(ut.get("names") or [])
+        except Exception:
+            pass
+        try:
+            names += list((persistence.get_tech_emails() or {}).keys())
+        except Exception:
+            pass
+        seen, out = set(), []
+        for n in names:
+            n = (n or "").strip()
+            k = n.lower()
+            if n and k not in seen:
+                seen.add(k)
+                out.append(n)
+        out.sort(key=str.lower)
+        return {"ok": True, "techs": out}
+
     def parse_trello_url(self, text: str) -> dict:
         """Detect + parse a Trello URL from arbitrary pasted text.
         Returns `{ok, card_id, name, lane, board, short_url}` or
@@ -4441,7 +4465,8 @@ class Api:
         }
 
     def do_import(self, client: str, kind: str,
-                   zip_paths: list[str], dest_subfolder: str = "") -> dict:
+                   zip_paths: list[str], dest_subfolder: str = "",
+                   tech: str = "") -> dict:
         """Extract one zip group into the target job's EMS folder.
 
         `dest_subfolder` (optional) is the PICS stage folder the user
@@ -4635,9 +4660,12 @@ class Api:
                 _force = ("" if _docs_dest is not None
                           else (_user_dest if (_user_dest
                                 and _user_dest.upper() != "AUTO") else ""))
+                # CompanyCam exports carry no photographer — `tech`
+                # (picked in the UI, defaulting to the run-doc tech)
+                # attributes the batch via a "<Tech> <date>" folder.
                 _landed = _ccz.import_zip(
                     zip_paths[0], pics_root, date_label=_date_lbl,
-                    force_subfolder=_force)
+                    force_subfolder=_force, tech=(tech or ""))
                 pics_count = sum(_landed.values())
                 # Surface the real stage folder(s) in the toast.
                 sub = _force or _ccz.summarize_landed(_landed)

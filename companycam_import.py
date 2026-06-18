@@ -168,18 +168,28 @@ def find_companycam_zips(downloads_dir, client_hint=None):
     return match + rest
 
 
-def import_zip(zip_path, pics_root, *, date_label="", force_subfolder=""):
+def import_zip(zip_path, pics_root, *, date_label="", force_subfolder="",
+               tech=""):
     """Extract a CompanyCam zip's photos into the job's PICS folder,
-    keeping CompanyCam's per-room organization: each photo lands in
-    PICS/<stage>/<room>/. The <stage> is the user-picked `force_subfolder`
-    when given, else the photo's own tag (Post / Demo / …), else a dated
-    "CompanyCam <date>" fallback. The <room> is parsed from the filename
-    ("Kitchen Post-1-…" → room "Kitchen"). Flattens the project top folder.
-    Collision-safe. Returns {stage: count} aggregated for the toast."""
+    keeping CompanyCam's per-room organization. Each photo lands in
+    PICS/<stage>/[<Tech date>/]<room>/. The <stage> is the user-picked
+    `force_subfolder` when given, else the photo's own tag (Post / Demo /
+    …), else a dated "CompanyCam <date>" fallback. The <room> is parsed
+    from the filename ("Kitchen Post-1-…" → "Kitchen").
+
+    `tech`: CompanyCam exports carry NO photographer, so the importer is
+    told who shot the batch. When provided, a "<Tech> <date>" folder
+    attributes the photos — inserted under the stage for tagged photos,
+    or as the top container for untagged ones (replacing the generic
+    "CompanyCam <date>"). Flattens the project top folder. Collision-safe.
+    Returns {stage: count} aggregated for the toast."""
     if not zip_path or not os.path.isfile(zip_path):
         raise FileNotFoundError(zip_path)
-    fallback = ("CompanyCam " + (date_label or "")).strip() or "CompanyCam"
+    dlabel = (date_label or "").strip()
+    fallback = ("CompanyCam " + dlabel).strip() or "CompanyCam"
     forced = (force_subfolder or "").strip()
+    tech = _safe_folder(tech)
+    tech_box = (f"{tech} {dlabel}".strip()) if tech else ""
     landed = {}
     with zipfile.ZipFile(zip_path, "r") as z:
         for info in z.infolist():
@@ -189,8 +199,17 @@ def import_zip(zip_path, pics_root, *, date_label="", force_subfolder=""):
             if not name or os.path.splitext(name)[1].lower() not in _IMAGE_EXTS:
                 continue
             room, tag = parse_room_stage(name)
-            stage = forced or tag or fallback
-            dest_dir = os.path.join(pics_root, stage)
+            stage = forced or tag            # "" when untagged
+            if stage:
+                dest_dir = os.path.join(pics_root, stage)
+                if tech_box:
+                    dest_dir = os.path.join(dest_dir, tech_box)
+                landed_key = stage
+            else:
+                # Untagged: the tech box (or generic CompanyCam box) is
+                # the container itself.
+                dest_dir = os.path.join(pics_root, tech_box or fallback)
+                landed_key = tech_box or fallback
             if room:
                 dest_dir = os.path.join(dest_dir, room)
             os.makedirs(dest_dir, exist_ok=True)
@@ -204,7 +223,7 @@ def import_zip(zip_path, pics_root, *, date_label="", force_subfolder=""):
                 dest = os.path.join(dest_dir, f"{stem} ({k}){ext}")
             with z.open(info) as src, open(dest, "wb") as dst:
                 dst.write(src.read())
-            landed[stage] = landed.get(stage, 0) + 1
+            landed[landed_key] = landed.get(landed_key, 0) + 1
     return landed
 
 
