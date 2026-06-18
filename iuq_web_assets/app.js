@@ -18,12 +18,18 @@ window.addEventListener("pywebviewready", async () => {
   $("#refresh-btn").addEventListener("click", refresh);
   $("#add-manual-btn").addEventListener("click", openAddManualModal);
   $("#search-box").addEventListener("input", (e) => { state.search = e.target.value; render(); });
+  $("#show-dismissed").addEventListener("change", async (e) => {
+    const r = await pywebview.api.set_show_dismissed(e.target.checked);
+    applyIuqRows(r);
+  });
   window.addEventListener("iuq:done", onDone);
   document.addEventListener("keydown", onKey);
 
   const cached = await pywebview.api.last_cards();
   state.rows = cached.rows || [];
   state.lanes = cached.lanes || [];
+  state.show_dismissed = !!cached.show_dismissed;
+  const sd = $("#show-dismissed"); if (sd) sd.checked = state.show_dismissed;
   if (!state.rows.length) await refresh();
   else { autoSelect(); render(); }
   // Deep-link focus from a cross-tool "Open in → Initial Uploads":
@@ -41,6 +47,20 @@ function _releaseLoading() {
   state.loading = false;
   $("#loading-state").classList.add("hidden");
   $("#refresh-btn").disabled = false;
+}
+
+// Apply a dismiss / undismiss / show-dismissed backend response: swap in
+// the freshly-filtered rows + sync the toggle, then re-render. Avoids a
+// full Trello re-fetch.
+function applyIuqRows(res) {
+  if (!res || !res.ok) { setStatus(`Failed: ${res?.error || "?"}`, "error"); return; }
+  if (Array.isArray(res.rows)) state.rows = res.rows;
+  if (typeof res.show_dismissed === "boolean") {
+    state.show_dismissed = res.show_dismissed;
+    const sd = $("#show-dismissed"); if (sd) sd.checked = state.show_dismissed;
+  }
+  autoSelect();
+  render();
 }
 
 // `quiet` skips the blocking spinner (used after a manual add — the new
@@ -81,10 +101,12 @@ function onDone(ev) {
   state.loading = false;
   $("#loading-state").classList.add("hidden");
   $("#refresh-btn").disabled = false;
-  const { ok, rows, lanes, error } = ev.detail || {};
+  const { ok, rows, lanes, error, show_dismissed } = ev.detail || {};
   if (!ok) { setStatus(`Refresh failed: ${error || "?"}`, "error"); return; }
   state.rows = rows || [];
   state.lanes = lanes || [];
+  state.show_dismissed = !!show_dismissed;
+  const _sd = $("#show-dismissed"); if (_sd) _sd.checked = state.show_dismissed;
   // Keep a just-added manual row selected after the refresh re-fetch
   // (which lists manual rows at a different position than the optimistic
   // unshift). Without this the selection would jump back to row 0.
@@ -153,8 +175,8 @@ function renderList() {
     // → context menu with Pin / Re-pin / Open / etc.
     const needsPin = !r.card_id;
     return `
-      <div class="list-row ${isActive ? "active" : ""}" data-card="${esc(r.card_id)}" data-client="${esc(r.client)}">
-        <span class="list-status">${needsPin ? "📌" : "📥"}</span>
+      <div class="list-row ${isActive ? "active" : ""} ${r.dismissed ? "dismissed" : ""}" data-card="${esc(r.card_id)}" data-client="${esc(r.client)}">
+        <span class="list-status">${r.dismissed ? "✕" : (needsPin ? "📌" : "📥")}</span>
         <div class="list-main">
           <div class="list-name">${esc(r.client || r.name)}</div>
           <div class="list-sub">
@@ -1074,6 +1096,23 @@ function showIuqCtxMenu(ev, row, opts = {}) {
     setStatus(r?.ok ? `♻ Reset: ${(r.cleared || []).join(", ")}` : `Failed: ${r?.error || "?"}`,
               r?.ok ? "ok" : "error");
   });
+  // ── Remove from the queue (auto-pulled rows; manual rows have their
+  // own ✕ Remove). Dismiss persists by card_id; "Show dismissed" + this
+  // menu's ↩ Restore brings it back.
+  sep();
+  if (row.dismissed) {
+    btn("↩ Restore to queue", async () => {
+      const r = await pywebview.api.undismiss(row.card_id);
+      applyIuqRows(r);
+      if (r?.ok) setStatus(`↩ Restored ${row.client}`, "ok");
+    }, { disabled: !row.card_id });
+  } else if (!row.manual) {
+    btn("✕ Dismiss from queue", async () => {
+      const r = await pywebview.api.dismiss(row.card_id);
+      applyIuqRows(r);
+      if (r?.ok) setStatus(`✕ Dismissed ${row.client} — “Show dismissed” to restore`, "ok");
+    }, { disabled: !row.card_id });
+  }
   document.body.appendChild(m);
   // Viewport clamp
   const r2 = m.getBoundingClientRect();

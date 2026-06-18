@@ -628,6 +628,49 @@ def clear_sp_recent_dismissals():
         _save(data)
 
 
+# ── IUQ (Initial Upload Queue) dismissals ────────────────────────────────────
+#
+# Lets the user remove an auto-pulled (Trello-card) IUQ row that shouldn't be
+# in the queue. Keyed by card_id so it's stable across lane-scan refreshes.
+# Persists until restored via the "Show dismissed" toggle.
+#
+# Schema: state["iuq_dismissed"] = {card_id: "YYYY-MM-DD"}
+
+def is_iuq_dismissed(card_id):
+    if not card_id:
+        return False
+    return str(card_id) in (_load().get("iuq_dismissed", {}) or {})
+
+
+def dismiss_iuq(card_id):
+    """Hide this card's IUQ row going forward. Persists until restored."""
+    cid = str(card_id or "").strip()
+    if not cid:
+        return
+    data = _load()
+    data.setdefault("iuq_dismissed", {})[cid] = \
+        datetime.today().strftime("%Y-%m-%d")
+    _save(data)
+
+
+def undismiss_iuq(card_id):
+    """Restore a single dismissed IUQ card to the visible queue."""
+    cid = str(card_id or "").strip()
+    if not cid:
+        return
+    data = _load()
+    rec = data.get("iuq_dismissed", {})
+    if cid in rec:
+        rec.pop(cid, None)
+        _save(data)
+
+
+def list_iuq_dismissals():
+    """Return [(card_id, dismissed_yyyy_mm_dd), ...] newest-first."""
+    rec = _load().get("iuq_dismissed", {}) or {}
+    return sorted(rec.items(), key=lambda kv: kv[1], reverse=True)
+
+
 # ── Audit-finding Trello comment posts ───────────────────────────────────────
 #
 # Tracks "I posted a 'CIF missing' comment to this card on this date" so the

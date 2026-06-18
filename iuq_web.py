@@ -167,12 +167,21 @@ class Api:
     def __init__(self):
         self._window = None
         self._loading = False
-        self._last_rows = []
+        self._last_rows = []          # ALL shaped rows (incl. dismissed)
+        self._show_dismissed = False
 
     def attach(self, w): self._window = w
 
+    def _visible(self):
+        """Rows to render: drops ✕-dismissed cards unless the user has
+        the 'Show dismissed' toggle on."""
+        if self._show_dismissed:
+            return list(self._last_rows)
+        return [r for r in self._last_rows if not r.get("dismissed")]
+
     def last_cards(self):
-        return {"rows": list(self._last_rows), "lanes": _lanes()}
+        return {"rows": self._visible(), "lanes": _lanes(),
+                "show_dismissed": self._show_dismissed}
 
     def refresh(self):
         if self._loading: return {"started": False, "reason": "already refreshing"}
@@ -187,6 +196,9 @@ class Api:
                 # flags as missing forms/photos so they can act on
                 # both checklist + audit gaps from one panel.
                 self._enrich_with_audit(shaped)
+                for r in shaped:
+                    r["dismissed"] = bool(
+                        persistence.is_iuq_dismissed(r.get("card_id")))
                 self._last_rows = shaped
                 self._emit_done(ok=True)
             except Exception as ex:
@@ -797,6 +809,45 @@ class Api:
         except Exception:
             return []
 
+    # ── Dismiss auto-pulled (Trello) rows ───────────────────────────
+    def dismiss(self, card_id):
+        """Hide an auto-pulled IUQ row that shouldn't be in the queue.
+        Persists (keyed by card_id) until restored via 'Show dismissed'.
+        Returns the freshly-filtered visible rows so the UI re-renders
+        without a full Trello re-fetch."""
+        if not card_id:
+            return {"ok": False, "error": "no card_id"}
+        try:
+            persistence.dismiss_iuq(card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        for r in self._last_rows:
+            if r.get("card_id") == card_id:
+                r["dismissed"] = True
+        return {"ok": True, "rows": self._visible(),
+                "show_dismissed": self._show_dismissed}
+
+    def undismiss(self, card_id):
+        """Restore a dismissed IUQ row to the queue."""
+        if not card_id:
+            return {"ok": False, "error": "no card_id"}
+        try:
+            persistence.undismiss_iuq(card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        for r in self._last_rows:
+            if r.get("card_id") == card_id:
+                r["dismissed"] = False
+        return {"ok": True, "rows": self._visible(),
+                "show_dismissed": self._show_dismissed}
+
+    def set_show_dismissed(self, flag):
+        """Toggle whether ✕-dismissed rows are shown (with a Restore
+        affordance). Returns the now-visible rows."""
+        self._show_dismissed = bool(flag)
+        return {"ok": True, "rows": self._visible(),
+                "show_dismissed": self._show_dismissed}
+
     # ── P1: Flag missing for IUQ row ────────────────────────────────
     def flag_missing(self, card_id, client, item_text, note=""):
         """Record a missing item for an IUQ card + post Trello comment.
@@ -849,8 +900,9 @@ class Api:
 
     def _emit_done(self, *, ok, error=""):
         import json
-        payload = {"ok": ok, "rows": self._last_rows if ok else [],
-                   "lanes": _lanes(), "error": error}
+        payload = {"ok": ok, "rows": self._visible() if ok else [],
+                   "lanes": _lanes(), "show_dismissed": self._show_dismissed,
+                   "error": error}
         js = json.dumps(payload, default=str)
         if not self._window:
             return
