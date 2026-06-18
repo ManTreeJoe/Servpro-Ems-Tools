@@ -1556,6 +1556,28 @@ class Api:
             pass
         return False
 
+    def get_claim_number(self, client: str) -> dict:
+        """Pull the claim number from the client's pinned Trello card desc
+        (INSURANCE INFORMATION → CLAIM NUMBER). Backs the audit's
+        '📋 Copy claim #' action — same idea as Copy name, but the claim
+        lives on the card, not the audit row. {ok, claim} or {ok:False}."""
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            import trello_client as tc
+            card_id = persistence.get_trello_card_id(client) or ""
+            if not card_id:
+                return {"ok": False, "error": "no pinned Trello card"}
+            card = tc.get_card(card_id) or {}
+            fields = tc.parse_card_desc(card.get("desc") or "") or {}
+            claim = ((fields.get("INSURANCE INFORMATION") or {})
+                     .get("CLAIM NUMBER") or "").strip()
+            if not claim:
+                return {"ok": False, "error": "no claim # on the card"}
+            return {"ok": True, "claim": claim}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     # ── P1: Escalation dialog (Teams to role + mark escalated) ──────
     def get_escalation_roles(self):
         """All saved escalation contacts (role → email)."""

@@ -767,6 +767,15 @@ function showCtxMenu(ev, row, customItems) {
     { label: "🔎 Match diagnostic…", action: () => openMatchDiagnostic(row) },
     { label: "↻ Re-audit this job", action: () => doReaudit(row) },
     { label: "📋 Copy client name", action: () => copyText(row.client) },
+    { label: "📋 Copy claim #", disabled: !row.trello_card_id,
+      action: async () => {
+        const res = await pywebview.api.get_claim_number(row.client);
+        if (res?.ok && res.claim) {
+          const ok = await copyText(res.claim);
+          setStatus(ok ? `📋 Copied claim #: ${res.claim}` : "Couldn't copy",
+                    ok ? "ok" : "error");
+        } else { setStatus(res?.error || "No claim # found", "warn"); }
+      } },
     { label: "📋 Copy issue list",
       action: () => {
         const lines = [
@@ -1558,6 +1567,9 @@ function renderDetail() {
         <button class="action-btn" data-action="sp-rundoc"
                 title="Open the run-doc for this SP folder's date (parsed from name, e.g. '3-19-26' → 3/19)">📄 Run-doc</button>` : ""}
       <button class="action-btn" data-action="copy-client">📋 Copy name</button>
+      <button class="action-btn" data-action="copy-claim"
+              title="Copy the claim number from this job's Trello card"
+              ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
     </footer>
     ${hasPin ? `<section class="detail-section inprog-cl" id="inprog-cl">
       <h3>🗂 In Progress checklist <span class="muted" id="inprog-cl-status">loading…</span></h3>
@@ -1933,6 +1945,15 @@ async function onDetailAction(action, row) {
     const ok = await copyText(row.client);
     setStatus(ok ? `📋 Copied: ${row.client}` : "Couldn't copy",
               ok ? "ok" : "error");
+  } else if (action === "copy-claim") {
+    const res = await pywebview.api.get_claim_number(row.client);
+    if (res?.ok && res.claim) {
+      const ok = await copyText(res.claim);
+      setStatus(ok ? `📋 Copied claim #: ${res.claim}` : "Couldn't copy",
+                ok ? "ok" : "error");
+    } else {
+      setStatus(res?.error || "No claim # found", "warn");
+    }
   } else if (action === "day-units") {
     openDayUnitsModal(row);
   } else if (action === "copy-pics") {
