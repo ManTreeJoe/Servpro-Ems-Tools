@@ -667,6 +667,17 @@ body { display: flex; flex-direction: column; }
   color: var(--text-muted, #999);
 }
 .detail-section.inprog-cl h3 .muted { font-weight: 400; font-size: 12px; }
+.detail-section.initial-cl h3 .muted { font-weight: 400; font-size: 12px; }
+/* INITIAL checklist groups (INITIAL / INITIAL - ADMIN) + canned-comment
+   buttons, folded in from the IUQ. */
+.cl-group-name {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin: 8px 0 2px;
+}
+.canned-comments {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px;
+}
 
 .detail-clean {
   background: var(--surface);

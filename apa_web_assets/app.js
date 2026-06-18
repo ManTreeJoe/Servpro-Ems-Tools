@@ -1826,8 +1826,6 @@ async function openApaItemCtxMenu(ev, itemEl) {
   btn("🔎 Open in Audit",
       () => window.emsNavigateTo?.("audit", focusClient),
       { bold: true });
-  btn("📥 Open in Initial Uploads",
-      () => window.emsNavigateTo?.("iuq", focusClient));
   btn("📸 Open in Snapshot",
       () => window.emsNavigateTo?.("snapshot", focusClient));
   btn("📁 Open OD folder",

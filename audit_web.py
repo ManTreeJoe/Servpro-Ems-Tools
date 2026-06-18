@@ -2097,16 +2097,84 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
         if ok:
-            try:
-                cache = getattr(self, "_inprog_cl_cache", None)
-                if cache and card_id in cache:
-                    _ts, payload = cache[card_id]
-                    for it in payload.get("items") or []:
-                        if it.get("id") == item_id:
-                            it["complete"] = bool(complete)
-            except Exception:
-                pass
+            for _cache_attr in ("_inprog_cl_cache", "_initial_cl_cache"):
+                try:
+                    cache = getattr(self, _cache_attr, None)
+                    if cache and card_id in cache:
+                        _ts, payload = cache[card_id]
+                        for cl in (payload.get("checklists")
+                                   or [{"items": payload.get("items") or []}]):
+                            for it in cl.get("items") or []:
+                                if it.get("id") == item_id:
+                                    it["complete"] = bool(complete)
+                except Exception:
+                    pass
         return {"ok": ok}
+
+    def get_initial_checklists(self, client: str) -> dict:
+        """Return the 'INITIAL' + 'INITIAL - ADMIN' Trello checklists for a
+        client's pinned card so the AUDIT detail can render the same intake
+        checklist the IUQ used to own. (Folded in 2026-06-18 — the initial
+        checklist + canned comments were the only real difference between
+        the two panels.) 45s cache. Shape:
+        {ok, card_id, checklists: [{name, items:[{id,name,complete}]}]}."""
+        if not client:
+            return {"ok": False}
+        try:
+            card_id = persistence.get_trello_card_id(client) or ""
+        except Exception:
+            card_id = ""
+        if not card_id:
+            return {"ok": False}
+        try:
+            cache = getattr(self, "_initial_cl_cache", None)
+            if cache is None:
+                cache = {}
+                self._initial_cl_cache = cache
+            import time as _time
+            now = _time.time()
+            cached = cache.get(card_id)
+            if cached and (now - cached[0]) < 45:
+                return cached[1]
+            import trello_client as tc
+            card = tc.get_card(card_id, actions_limit=0) or {}
+            by_name = {(c.get("name") or "").strip().lower(): c
+                       for c in (card.get("checklists") or [])}
+            out = []
+            for nm in ("initial", "initial - admin"):
+                c = by_name.get(nm)
+                if not c:
+                    continue
+                out.append({
+                    "name": c.get("name") or nm.title(),
+                    "items": [{
+                        "id":       it.get("id") or "",
+                        "name":     it.get("name") or "?",
+                        "complete": (it.get("state") or "").lower() == "complete",
+                    } for it in (c.get("checkItems") or [])],
+                })
+            payload = {"ok": True, "card_id": card_id, "checklists": out}
+            cache[card_id] = (now, payload)
+            return payload
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def post_canned(self, card_id: str, key: str) -> dict:
+        """Post a canned intake comment to a Trello card — folded in from
+        the IUQ. `key` is 'ipr' or 'upload'."""
+        canned = {
+            "ipr":    "Initial Photo Report Created and Uploaded to OD.",
+            "upload": "Initial Upload submitted To WC.",
+        }
+        text = canned.get(key, "")
+        if not card_id or not text:
+            return {"ok": False, "error": "card_id + valid key required"}
+        try:
+            import trello_client as tc
+            tc.post_comment(card_id, text)
+            return {"ok": True, "text": text}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def open_rundoc_for_sp_match(self, sp_path: str) -> dict:
         """Open the run-doc for the date encoded in the SP folder.

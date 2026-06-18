@@ -715,8 +715,6 @@ function showCtxMenu(ev, row, customItems) {
   const items = customItems || [
     // Cross-tool jump (Audit excluded — we're already here). Switches the
     // shell's view to the target tool, focused on this client.
-    { label: "📥 Open in Initial Uploads",
-      action: () => window.emsNavigateTo?.("iuq", row.client) },
     { label: "📸 Open in Snapshot",
       action: () => window.emsNavigateTo?.("snapshot", row.client) },
     { sep: true },
@@ -1575,6 +1573,10 @@ function renderDetail() {
       <h3>🗂 In Progress checklist <span class="muted" id="inprog-cl-status">loading…</span></h3>
       <ul class="issue-list" id="inprog-cl-items"></ul>
     </section>` : ""}
+    ${hasPin ? `<section class="detail-section initial-cl" id="initial-cl">
+      <h3>📥 Initial checklist <span class="muted" id="initial-cl-status">loading…</span></h3>
+      <div id="initial-cl-body"></div>
+    </section>` : ""}
   `;
 
   view.querySelectorAll(".action-btn[data-action]").forEach((b) => {
@@ -1584,6 +1586,10 @@ function renderDetail() {
   // Lets the user tick demo photos / order docusketch / etc. by hand
   // without leaving the audit. Loaded async so detail render is instant.
   if (hasPin) loadInProgressChecklist(r);
+  // Initial checklist (INITIAL / INITIAL - ADMIN) + canned intake
+  // comments — folded in from the IUQ so the audit is the one place
+  // to work a job from intake through closeout.
+  if (hasPin) loadInitialChecklists(r);
   // Hover the Trello button → popover with card name / lane / last
   // activity. Mirrors the Tk audit's pinned-card tooltip — saves a
   // click on every "what was this card about again?" check.
@@ -1859,6 +1865,76 @@ async function loadInProgressChecklist(row) {
       const span = cb.parentElement.querySelector("span");
       if (span) span.className = want ? "cl-done" : "";
       setStatus(want ? "Ticked ✓" : "Un-ticked", "ok");
+    });
+  });
+}
+
+// INITIAL checklist (INITIAL / INITIAL - ADMIN) + canned intake comments,
+// folded in from the IUQ. Renders the checklist item(s) with tick boxes
+// (reusing toggle_checklist_item) plus the two canned-comment buttons.
+async function loadInitialChecklists(row) {
+  const sec = document.getElementById("initial-cl");
+  const statusEl = document.getElementById("initial-cl-status");
+  const bodyEl = document.getElementById("initial-cl-body");
+  if (!sec || !bodyEl) return;
+  let res;
+  try {
+    res = await pywebview.api.get_initial_checklists(row.client);
+  } catch (_) { if (statusEl) statusEl.textContent = "(load failed)"; return; }
+  // Detail may have re-rendered to a different row while we waited.
+  if (document.getElementById("initial-cl-body") !== bodyEl) return;
+  const cardId = res && res.card_id;
+  if (!cardId) { sec.remove(); return; }   // no pinned card resolved
+  const checklists = (res.ok && res.checklists) || [];
+  const total = checklists.reduce((n, cl) => n + (cl.items || []).length, 0);
+  if (statusEl) statusEl.textContent = total ? `(${total})` : "";
+
+  const clHtml = checklists.map((cl) => `
+    <div class="cl-group">
+      <div class="cl-group-name">${escapeHtml(cl.name)}</div>
+      <ul class="issue-list">
+        ${(cl.items || []).map((it) => `
+          <li class="cl-item"><label>
+            <input type="checkbox" data-id="${escapeAttr(it.id)}" ${it.complete ? "checked" : ""}/>
+            <span class="${it.complete ? "cl-done" : ""}">${escapeHtml(it.name)}</span>
+          </label></li>`).join("")}
+      </ul>
+    </div>`).join("");
+  const cannedHtml = `
+    <div class="canned-comments">
+      <button class="action-btn" data-canned="ipr"
+              title="Post comment: Initial Photo Report Created and Uploaded to OD.">📷 IPR → comment</button>
+      <button class="action-btn" data-canned="upload"
+              title="Post comment: Initial Upload submitted To WC.">📤 Initial Upload → comment</button>
+    </div>`;
+  bodyEl.innerHTML =
+    (clHtml || `<div class="muted" style="padding:4px 0 2px;">No INITIAL checklist on this card.</div>`)
+    + cannedHtml;
+
+  bodyEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener("change", async () => {
+      const itemId = cb.dataset.id;
+      const want = cb.checked;
+      cb.disabled = true;
+      let ok = false;
+      try {
+        const r = await pywebview.api.toggle_checklist_item(cardId, itemId, want);
+        ok = !!(r && r.ok);
+      } catch (_) { ok = false; }
+      cb.disabled = false;
+      if (!ok) { cb.checked = !want; setStatus("Trello update failed", "error"); return; }
+      const span = cb.parentElement.querySelector("span");
+      if (span) span.className = want ? "cl-done" : "";
+      setStatus(want ? "Ticked ✓" : "Un-ticked", "ok");
+    });
+  });
+  bodyEl.querySelectorAll("button[data-canned]").forEach((b) => {
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      const r = await pywebview.api.post_canned(cardId, b.dataset.canned);
+      b.disabled = false;
+      setStatus(r?.ok ? `💬 Posted: ${r.text}` : `Post failed: ${r?.error || "?"}`,
+                r?.ok ? "ok" : "error");
     });
   });
 }

@@ -57,7 +57,6 @@ def _ensure_root_index():
 NAV_GROUPS = [
     ("Daily routine", [
         ("audit",       "🔎", "Audit"),
-        ("iuq",         "📥", "Initial Uploads"),
         ("apa",         "📊", "APA Monitor"),
         ("photo_folders","📷", "Photo Folders"),
     ]),
@@ -110,7 +109,6 @@ def _asset_folder_for(key: str) -> str:
 # them and auto-bind their methods with a tool-name prefix.
 SUB_MODULES = {
     "audit":       "audit_web",
-    "iuq":         "iuq_web",
     "disputes":    "disputes_web",
     "job_notes":   "job_notes_web",
     "cheat_sheet": "cheat_sheet_web",

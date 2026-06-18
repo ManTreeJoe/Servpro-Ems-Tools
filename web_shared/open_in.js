@@ -24,7 +24,6 @@
   // the shell understands; label carries the tool's icon.
   const NAV_TARGETS = [
     { key: "audit",    label: "🔎 Audit" },
-    { key: "iuq",      label: "📥 Initial Uploads" },
     { key: "snapshot", label: "📸 Snapshot" },
   ];
 
