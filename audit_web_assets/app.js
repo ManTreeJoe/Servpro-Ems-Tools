@@ -1569,13 +1569,13 @@ function renderDetail() {
               title="Copy the claim number from this job's Trello card"
               ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
     </footer>
-    ${hasPin ? `<section class="detail-section inprog-cl" id="inprog-cl">
-      <h3>🗂 In Progress checklist <span class="muted" id="inprog-cl-status">loading…</span></h3>
-      <ul class="issue-list" id="inprog-cl-items"></ul>
-    </section>` : ""}
     ${hasPin ? `<section class="detail-section initial-cl" id="initial-cl">
       <h3>📥 Initial checklist <span class="muted" id="initial-cl-status">loading…</span></h3>
       <div id="initial-cl-body"></div>
+    </section>` : ""}
+    ${hasPin ? `<section class="detail-section inprog-cl" id="inprog-cl">
+      <h3>🗂 In Progress checklist <span class="muted" id="inprog-cl-status">loading…</span></h3>
+      <ul class="issue-list" id="inprog-cl-items"></ul>
     </section>` : ""}
   `;
 
