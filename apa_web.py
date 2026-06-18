@@ -348,20 +348,24 @@ class Api:
         """Curated section list for the Add-to-APA dialog — matches
         the Tk `_open_add_to_apa_dialog` `sec_choices` exactly.
 
-        Skips PENDING REVIEW because that section is estimator-routed
-        (not user-typed), and includes the estimator section list so
-        the user can drop a card straight into JUAN / KIM / ZAC etc.
-        when the lane doesn't auto-resolve.
+        Includes PENDING REVIEW (a normal, non-estimator section) so a
+        card sitting in the estimating board's "Pending Review" lane can
+        be filed there — the lane→section map already routes to it, this
+        makes it selectable/confirmable in the dialog. Also includes the
+        estimator section list so the user can drop a card straight into
+        JUAN / KIM / ZAC etc. when the lane doesn't auto-resolve.
 
         Each entry: {name, has_subs} so the dialog can hide the Sub
         dropdown when subs are not applicable (estimator + Estimating-*
-        sections). Mirrors `apa._sub_options_for_section is not None`.
+        + Pending Review sections). Mirrors
+        `apa._sub_options_for_section is not None`.
         """
         try:
             curated = [
                 apa.SEC_FINAL_UPLOADS,
                 apa.SEC_EST_MISSING, apa.SEC_EST_SERVICE_CALL,
                 apa.SEC_EST_TBA, apa.SEC_EST_SNAPSHOT,
+                apa.SEC_PENDING_REVIEW,
             ]
             curated.extend(list(apa.ESTIMATORS_ORDERED or []))
             curated.extend([
