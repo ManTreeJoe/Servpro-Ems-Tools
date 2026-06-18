@@ -1,9 +1,9 @@
 /* APA Monitor — Pywebview spike (Phase 3 of Tk → web migration).
  *
- * Kanban-style layout: horizontal scrolling row of section columns,
- * each ~280px wide. On a 14" laptop this fits ~4 columns visible
- * with horizontal scrolling; on a 27" monitor ~7 columns. Native
- * browser Ctrl+= zoom scales everything together.
+ * Section columns (~280px each) WRAP into rows and the board scrolls
+ * vertically — no horizontal scrolling. ~4 columns fit on a 14" laptop,
+ * ~7 on a 27" monitor; the rest wrap below. Native Ctrl+= zoom scales
+ * everything together.
  *
  * Palette matches pipeline_web / kpi_web so the three spikes feel
  * like one app.
@@ -163,16 +163,19 @@ body { display: flex; flex-direction: column; }
 }
 
 /* ── Board ─────────────────────────────────────────────────────── */
+/* Sections WRAP into rows and the board scrolls VERTICALLY — no
+   horizontal scrolling. */
 .board {
   flex: 1;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
   gap: 10px;
   padding: 14px 18px;
-  scroll-behavior: smooth;
 }
-.board::-webkit-scrollbar { height: 10px; }
+.board::-webkit-scrollbar { width: 10px; }
 .board::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 5px; }
 
 .section {
@@ -182,7 +185,9 @@ body { display: flex; flex-direction: column; }
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
-  max-height: 100%;
+  /* Cap each section so a busy one scrolls internally instead of
+     making its wrapped row tall. */
+  max-height: 70vh;
   box-shadow: var(--shadow-1);
 }
 .section.is-estimator { border-top: 3px solid #5A7FB8; }
