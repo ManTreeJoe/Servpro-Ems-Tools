@@ -1538,11 +1538,11 @@ function renderDetail() {
     ${cleanSection}
     ${metaSection}
     <footer class="detail-actions">
+      <!-- Main row — ordered by typical workflow: open the folder, jump
+           to the systems (Trello / XA / CompanyCam), copy the
+           identifiers, then import. -->
       <button class="action-btn primary" data-action="open-folder"
               ${hasPath ? "" : "disabled"}>📁 OD folder</button>
-      <button class="action-btn" data-action="claim-folders"
-              title="See past claims in this job's directory — older 'Nth Claim' or date-named (9-20-25) folders — and open one"
-              ${hasPath ? "" : "disabled"}>🗂 Past claims</button>
       <button class="action-btn" data-action="open-trello"
               ${hasPin ? "" : "disabled"}><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello</button>
       <button class="action-btn" data-action="open-xa"
@@ -1550,24 +1550,31 @@ function renderDetail() {
       <button class="action-btn" data-action="open-companycam"
               title="Open this job's CompanyCam project (reads the CompanyCam link from the Trello card)"
               ${hasPin ? "" : "disabled"}><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>CompanyCam</button>
+      <button class="action-btn" data-action="copy-client">📋 Copy name</button>
+      <button class="action-btn" data-action="copy-claim"
+              title="Copy the claim number from this job's Trello card"
+              ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
+      <button class="action-btn primary" data-action="job-import"
+              title="Import photos/forms into this job's OD folder (WC zip, DocuSign packet, etc.)">📥 Import</button>
+      <!-- Secondary row — staging + attachment tools. -->
+      <button class="action-btn" data-action="copy-pics"
+              title="Stage every image in a PICS subfolder (Initial / Demo / Mold Prep / Post / etc.) into a TEMP folder + open it in Explorer — drag into XactAnalysis from there. Auto-deletes after 1 min."
+              ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
       <button class="action-btn" data-action="attachments"
               ${hasPin ? "" : "disabled"}
               title="Browse + download the Trello card's photos/files">📎 Attachments</button>
       <button class="action-btn" data-action="sp-import"
               title="Import matching files from SharePoint into the OD job folder">📥 Import SP</button>
+      <!-- The rest — less-frequent navigation. -->
+      <button class="action-btn" data-action="claim-folders"
+              title="See past claims in this job's directory — older 'Nth Claim' or date-named (9-20-25) folders — and open one"
+              ${hasPath ? "" : "disabled"}>🗂 Past claims</button>
       <button class="action-btn" data-action="day-units"
               title="Pick which unit subfolders to audit for TODAY only — replicates the row, one card per pinned unit (multi-unit properties only)"
               ${hasPath ? "" : "disabled"}>🏠 Day units…</button>
-      <button class="action-btn" data-action="copy-pics"
-              title="Stage every image in a PICS subfolder (Initial / Demo / Mold Prep / Post / etc.) into a TEMP folder + open it in Explorer — drag into XactAnalysis from there. Auto-deletes after 1 min."
-              ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
       ${r.section === "sp_recent" ? `
         <button class="action-btn" data-action="sp-rundoc"
                 title="Open the run-doc for this SP folder's date (parsed from name, e.g. '3-19-26' → 3/19)">📄 Run-doc</button>` : ""}
-      <button class="action-btn" data-action="copy-client">📋 Copy name</button>
-      <button class="action-btn" data-action="copy-claim"
-              title="Copy the claim number from this job's Trello card"
-              ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
     </footer>
     ${hasPin ? `<section class="detail-section initial-cl" id="initial-cl">
       <h3>📥 Initial checklist <span class="muted" id="initial-cl-status">loading…</span></h3>
@@ -2030,6 +2037,8 @@ async function onDetailAction(action, row) {
     } else {
       setStatus(res?.error || "No claim # found", "warn");
     }
+  } else if (action === "job-import") {
+    openJobImportModal(row);
   } else if (action === "day-units") {
     openDayUnitsModal(row);
   } else if (action === "copy-pics") {
@@ -2618,12 +2627,9 @@ renderDetail = function () {
     actions.appendChild(b);
     return b;
   };
-  // 📥 Import goes FIRST as the most common action when a job is
-  // flagged. Opens a per-job-scoped modal — no target picker since
-  // the target is the currently-selected client.
-  // Footer kept tight — 4 primary actions visible, everything else
-  // lives in the right-click menu (which already has the full set).
-  add("📥 Import", "primary", () => openJobImportModal(r));
+  // 📥 Import now lives in the static footer (main row, after Copy
+  // claim) so the button order is stable; everything below is "the
+  // rest" — appended after the footer's own buttons.
   add("📋 Scope", "", () => openScopeDialog(r));
   // When the audit couldn't resolve a folder, surface the find-
   // folder action prominently instead of burying it in the menu.
