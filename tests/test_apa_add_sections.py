@@ -10,7 +10,12 @@ def test_pending_review_is_offered_in_add_dialog():
     assert "PENDING REVIEW" in names
 
 
-def test_pending_review_has_no_sub_dropdown():
+def test_pending_review_sub_is_estimator():
+    # Pending Review uses the ESTIMATOR as its sub, just like the
+    # Audit Rejection/Dispute rows — so the dialog shows a Sub dropdown.
     rows = {d["name"]: d for d in apa_web.Api().add_dialog_sections()}
-    # Like estimators / Estimating-* — no Sub dropdown for Pending Review.
-    assert rows["PENDING REVIEW"]["has_subs"] is False
+    assert rows["PENDING REVIEW"]["has_subs"] is True
+
+    import apa_logic
+    subs = apa_web.Api().status_options("PENDING REVIEW").get("subs")
+    assert subs == [""] + list(apa_logic.ESTIMATORS_ORDERED)

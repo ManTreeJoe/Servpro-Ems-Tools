@@ -295,7 +295,12 @@ def _sub_options_for_section(section):
     section-specific tail value: Final gets 'Completed - Work Performed'
     (only meaningful for closed-out jobs), Initial+Daily get 'TBA' (used
     when a job hasn't been assigned yet)."""
-    if section in AUDIT_SECTIONS:
+    # Audit Rejection/Dispute AND Pending Review use the ESTIMATOR as the
+    # sub — a pending-review item belongs to whichever estimator owns it,
+    # exactly like the dispute rows. (We don't fold PENDING REVIEW into
+    # AUDIT_SECTIONS, which drives Teams rollups / note-appending; only
+    # the sub dropdown should match.)
+    if section in AUDIT_SECTIONS or section == SEC_PENDING_REVIEW:
         return [""] + ESTIMATORS_ORDERED
     if section == SEC_FINAL_UPLOADS:
         return SUB_OPTIONS + _FINAL_UPLOAD_EXTRAS
