@@ -54,6 +54,39 @@ class Api:
         self._cache_age_minutes: int | None = None
     def attach(self, w): self._window = w
 
+    # ── Simple job board (shared renderer web_shared/hygiene_board.js) ──
+    def hygiene_board_rows(self):
+        """Active jobs + their four admin milestones — the simplified
+        default view. Same source the audit Overview reads."""
+        try:
+            import hygiene_board as _hb
+            return {"ok": True, "rows": _hb.board_rows()}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "rows": []}
+
+    def hygiene_mark(self, canon, milestone, card_id=""):
+        try:
+            import hygiene_board as _hb
+            return _hb.mark_milestone(canon, milestone, card_id=card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def request_item_options(self):
+        try:
+            import request_items as _ri
+            return {"ok": True, "items": _ri.ITEMS,
+                    "handles": _ri.recent_handles()}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "items": [], "handles": []}
+
+    def request_items_send(self, card_id, canon, keys, other="",
+                           handle="", client=""):
+        try:
+            import request_items as _ri
+            return _ri.send(card_id, canon, keys or [], other, handle, client)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     def get_cache(self):
         """Return the latest hygiene scan from persistence, grouped
         into the same sections the Tk panel uses (see hygiene_gui.py
@@ -90,11 +123,18 @@ class Api:
         # handoff   ← rule=lane_move_no_handoff
         grouped["handoff"]  = [v for v in hyg_items
                                if v.get("rule") == "lane_move_no_handoff"]
+        # eq_on_site ← rule=equipment_on_site (equipment placed, no pickup)
+        grouped["eq_on_site"] = [v for v in hyg_items
+                                 if v.get("rule") == "equipment_on_site"]
+        # lost_job   ← rule=lost_job (customer went with another firm)
+        grouped["lost_job"] = [v for v in hyg_items
+                               if v.get("rule") == "lost_job"]
         # hygiene   ← everything else (no_owner / no_follow_up /
         #             no_next_action / stale_no_comment / etc)
+        _own_rules = ("customer_complaint", "lane_move_no_handoff",
+                      "equipment_on_site", "lost_job")
         grouped["hygiene"]  = [v for v in hyg_items
-                               if v.get("rule") not in
-                               ("customer_complaint", "lane_move_no_handoff")]
+                               if v.get("rule") not in _own_rules]
 
         # Other payload keys come pre-grouped from the scan
         for key in ("closeout", "xa_apology", "xa_gaps", "ipr",
@@ -1169,6 +1209,8 @@ _TK_SECTIONS = (
     ("wc_audit_due",      "🗂", "Monthly WC Audit due",          "Surfaces the first Monday of every month."),
     ("weekly",            "📆", "Weekly check-ins due",          "Estimating cards stale 7+ days."),
     ("estimates",         "💰", "Estimate Requests (48h SLA)",   "Adjuster/carrier inquiries; flips red when overdue."),
+    ("eq_on_site",        "🔌", "Equipment still on site",       "Air scrubbers / dehus placed with no pickup logged after 3+ days — rental / loss risk."),
+    ("lost_job",          "🚪", "Lost jobs — close out",         "Customer went with another firm; the card is still open."),
     ("adjuster_pending",  "📨", "Adjuster inquiries",            "Inbox messages queued for approval before posting."),
     ("xa_inquiries",      "📨", "XA inquiries",                  "Adjuster questions/requests from XA emails; approve to add to the Inquiries & Disputes tracker."),
     ("disputes",          "⚖",  "Inquiries & Disputes (open + overdue)", "Open inquiry/dispute tracker rows."),
@@ -1192,9 +1234,9 @@ _TK_SECTIONS = (
 # (tab_key, label, section_keys_tuple)
 _TABS_DEF = (
     ("action",  "🔴 Action Needed",
-     ("wc_audit_due", "weekly", "estimates", "adjuster_pending",
-      "xa_inquiries", "disputes", "concerns", "ipr", "xa_apology",
-      "docusketch_needed", "docusketch",
+     ("wc_audit_due", "weekly", "estimates", "eq_on_site", "lost_job",
+      "adjuster_pending", "xa_inquiries", "disputes", "concerns", "ipr",
+      "xa_apology", "docusketch_needed", "docusketch",
       "docusign", "docusign_resends", "missing_items")),
     ("quality", "⚠ Trello quality",
      ("hygiene", "handoff", "closeout", "stalled", "anomalies",
@@ -1216,6 +1258,8 @@ _SECTION_TO_TAB = {sk: t[0] for t in _TABS_DEF for sk in t[2]}
 # pending+resends, stalled+anomalies; demote open_jobs.
 _DISPLAY_SECTIONS = [
     {"key": "estimates",    "icon": "💰", "label": "Estimate Requests",      "keys": ["estimates"],                      "tier": 0},
+    {"key": "eq_on_site",   "icon": "🔌", "label": "Equipment on site",      "keys": ["eq_on_site"],                     "tier": 0},
+    {"key": "lost_job",     "icon": "🚪", "label": "Lost jobs",              "keys": ["lost_job"],                       "tier": 1},
     {"key": "adjuster",     "icon": "📨", "label": "Adjuster inquiries",     "keys": ["adjuster_pending"],               "tier": 0},
     {"key": "xa_inquiries", "icon": "📨", "label": "XA inquiries",           "keys": ["xa_inquiries"],                   "tier": 0},
     {"key": "disputes",     "icon": "⚖",  "label": "Inquiries & Disputes",   "keys": ["disputes"],                       "tier": 0},

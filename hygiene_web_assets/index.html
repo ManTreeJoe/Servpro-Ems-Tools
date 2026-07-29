@@ -4,12 +4,25 @@
 <meta charset="UTF-8" />
 <title>Hygiene — EMS Tools</title>
 <link rel="stylesheet" href="theme.css" />
-<script src="iframe_shim.js"></script>
+<script src="../web_shared/iframe_shim.js"></script>
 <script src="../web_shared/util.js"></script>
 <script src="../web_shared/ctx_menu.js"></script>
 <script src="../web_shared/trello_hover.js"></script>
 <script src="../web_shared/toast_log.js"></script>
 <link rel="stylesheet" href="app.css" />
+<link rel="stylesheet" href="../web_shared/hygiene_board.css?v=20260723a" />
+<script src="../web_shared/hygiene_board.js?v=20260723a"></script>
+<script src="../web_shared/request_items.js?v=20260723a"></script>
+<style>
+  /* Simple-first: the job board is the default; the legacy section feed
+     is hidden until the user flips "⚙ Sections". */
+  body:not(.show-legacy) .tiles,
+  body:not(.show-legacy) .feed-wrap { display: none; }
+  body.show-legacy #board-view { display: none; }
+  #board-view { padding: 6px 14px 20px; }
+  #board-view .hb-head { padding-top: 12px; }
+  #view-toggle.on { background: var(--chip-active, #2d4636); color: #fff; }
+</style>
 </head>
 <body>
 <header class="topbar">
@@ -31,8 +44,11 @@
   <button id="scan-min-btn" class="btn" title="Hygiene rules only · 50 cards/board cap · no side-fetches. Use if a full scan times out / OOMs.">⚡ Minimal</button>
   <button id="xa-scan-btn" class="btn" title="Scan the Outlook inbox for XA adjuster inquiries (questions/requests) AND adjuster receipts to review">📨 Inbox scan</button>
   <button id="cancel-btn" class="btn hidden" title="Stop the running scan">✕ Cancel</button>
+  <button id="view-toggle" class="btn" title="Toggle between the simple job board and the full section feed">⚙ Sections</button>
   <button id="diag-btn" class="btn" title="Scan diagnostics &amp; clear cache (use if the panel is slow or your laptop is low on memory)">🩺</button>
 </header>
+
+<section class="board-view" id="board-view"></section>
 
 <section class="tiles" id="tiles"></section>
 
@@ -54,6 +70,34 @@
   <span class="spacer"></span>
   <span id="status-msg" class="status-msg"></span>
 </footer>
+<script>
+  // Simple job board = default view. Self-contained so it doesn't depend
+  // on app.js's (heavy) scan/feed machinery — the legacy feed lives behind
+  // the ⚙ Sections toggle and renders exactly as before when shown.
+  (function () {
+    var booted = false;
+    function setStatus(m) { var e = document.getElementById("status-msg"); if (e) e.textContent = m; }
+    function renderBoard() {
+      var el = document.getElementById("board-view");
+      if (el && window.HygieneBoard && window.pywebview && window.pywebview.api)
+        window.HygieneBoard.render(el, { api: window.pywebview.api, setStatus: setStatus });
+    }
+    function boot() {
+      if (booted) return; booted = true;
+      var t = document.getElementById("view-toggle");
+      if (t) t.addEventListener("click", function () {
+        var on = document.body.classList.toggle("show-legacy");
+        t.classList.toggle("on", on);
+        t.textContent = on ? "🩺 Board" : "⚙ Sections";
+        if (!on) renderBoard();
+      });
+      renderBoard();
+    }
+    if (window.pywebview && window.pywebview.api) boot();
+    else window.addEventListener("pywebviewready", boot, { once: true });
+    setTimeout(function () { if (!booted && window.pywebview && window.pywebview.api) boot(); }, 1500);
+  })();
+</script>
 <script src="app.js"></script>
 </body>
 </html>

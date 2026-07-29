@@ -24,6 +24,84 @@ from typing import Any
 import persistence as per
 
 
+# ── Billing-dispute email parser ─────────────────────────────────────────
+# Carriers send line-item audit reductions in a stock format:
+#   "Line 4 please adjust to DMO DUMP ... (Net Reduction $751.05)"
+#   "Total adjustments of $6,899.45 to original invoice amount of
+#    $35,990.84 resulting in revised total of $29,091.39"
+# parse_billing_dispute() turns that into a structured dispute payload so it
+# can drop straight into the Dispute Tracker instead of being retyped.
+_BD_LINE_RE = re.compile(
+    r'Line\s+(\d+)\b(.*?)\(Net\s+Reduction[^\d$]*\$?\s*([\d,]+\.\d{2})\)',
+    re.IGNORECASE | re.DOTALL)
+_BD_ADJ_RE = re.compile(
+    r'adjustment[s]?\s+of\s*\$?\s*([\d,]+\.\d{2})', re.IGNORECASE)
+_BD_ORIG_RE = re.compile(
+    r'original\s+invoice\s+amount\s+of\s*\$?\s*([\d,]+\.\d{2})', re.IGNORECASE)
+_BD_REV_RE = re.compile(
+    r'revised\s+total\s+of\s*\$?\s*([\d,]+\.\d{2})', re.IGNORECASE)
+_BD_CLAIM_RE = re.compile(r'claim\s*#?\s*[:\-]?\s*(\d{6,}[-]?\d?)', re.IGNORECASE)
+
+
+def _bd_money(s):
+    try:
+        return float(str(s).replace(",", "").replace("$", "").strip())
+    except (ValueError, AttributeError):
+        return 0.0
+
+
+def parse_billing_dispute(text):
+    """Parse a carrier billing-dispute / audit-reduction email into a dispute
+    payload. Returns None when it doesn't look like one (no line adjustments
+    AND no totals). Otherwise:
+        {"claim": str, "amount": str, "summary": str,
+         "lines": [{"line": int, "reason": str, "reduction": float}, ...],
+         "totals": {"adjustments"/"original"/"revised": float}}
+    `amount` is the total disputed reduction (the adjustments figure, else the
+    sum of the per-line reductions)."""
+    t = text or ""
+    lines = []
+    for m in _BD_LINE_RE.finditer(t):
+        reason = " ".join(m.group(2).split()).strip(" .;:>-»")
+        reason = re.sub(r'^please\s+adjust\s+to\s+', "", reason, flags=re.I)
+        lines.append({"line": int(m.group(1)),
+                      "reason": reason,
+                      "reduction": _bd_money(m.group(3))})
+    totals = {}
+    for key, rx in (("adjustments", _BD_ADJ_RE), ("original", _BD_ORIG_RE),
+                    ("revised", _BD_REV_RE)):
+        mm = rx.search(t)
+        if mm:
+            totals[key] = _bd_money(mm.group(1))
+    if not lines and not totals:
+        return None
+
+    cm = _BD_CLAIM_RE.search(t)
+    claim = cm.group(1) if cm else ""
+
+    amount = totals.get("adjustments") or sum(l["reduction"] for l in lines)
+
+    summ = [f"Line {l['line']}: {l['reason']} (−${l['reduction']:,.2f})"
+            for l in lines]
+    if totals:
+        if summ:
+            summ.append("")
+        if "adjustments" in totals:
+            summ.append(f"Total adjustments: ${totals['adjustments']:,.2f}")
+        if "original" in totals:
+            summ.append(f"Original invoice: ${totals['original']:,.2f}")
+        if "revised" in totals:
+            summ.append(f"Revised total: ${totals['revised']:,.2f}")
+
+    return {
+        "claim":   claim,
+        "amount":  f"{amount:,.2f}" if amount else "",
+        "summary": "\n".join(summ),
+        "lines":   lines,
+        "totals":  totals,
+    }
+
+
 # Subject/body phrases that flag a message as a dispute. Tuned from the
 # real EMS@ inbox — claim-dispute language tends to cluster on a small
 # set of stock phrasings ("disputing the audit", "audit dispute filed",

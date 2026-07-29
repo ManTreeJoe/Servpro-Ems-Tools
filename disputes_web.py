@@ -181,6 +181,47 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def preview_dispute_email(self, text):
+        """Parse a pasted billing-dispute email WITHOUT saving — powers the
+        paste dialog's live preview. Returns {ok, parsed} or {ok:False}."""
+        try:
+            import dispute_email_scan as des
+            parsed = des.parse_billing_dispute(text or "")
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        if not parsed:
+            return {"ok": False,
+                    "error": "No line adjustments or totals found."}
+        return {"ok": True, "parsed": parsed}
+
+    def add_dispute_from_email(self, text, insured="", claim=""):
+        """Parse a carrier billing-dispute email and upsert it into the
+        tracker (Amount = total disputed reduction, Summary = the line-item
+        breakdown). Needs an insured or claim# to key the row; returns
+        need_insured + the parsed data when neither is available so the
+        dialog can prompt."""
+        try:
+            import dispute_email_scan as des
+            parsed = des.parse_billing_dispute(text or "")
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        if not parsed:
+            return {"ok": False,
+                    "error": "Doesn't look like a billing dispute — "
+                             "no line adjustments or totals found."}
+        ins = (insured or "").strip()
+        clm = (claim or "").strip() or (parsed.get("claim") or "")
+        if not ins and not clm:
+            return {"ok": False, "need_insured": True, "parsed": parsed,
+                    "error": "Add an insured name (or claim #) for this dispute."}
+        res = self.add_dispute({
+            "insured": ins, "claim": clm, "amount": parsed["amount"],
+            "status": "Open", "summary": parsed["summary"],
+        })
+        if isinstance(res, dict) and res.get("ok"):
+            res["parsed"] = parsed
+        return res
+
     # ── Tk parity: sync from Trello disputes board + XA link ────────
     def sync_from_trello(self):
         """Background-thread sync from the Trello disputes board into

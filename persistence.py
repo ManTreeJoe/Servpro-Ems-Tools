@@ -270,11 +270,26 @@ def _save(state):
     # caller bypasses the lock — corrupt-tmp is a hard-to-debug class
     # of bug, and the cost is one rand() per save.
     import uuid as _uuid
+    import copy as _copy
     tmp = _STATE_PATH + f".tmp-{_uuid.uuid4().hex[:8]}"
     with _CACHE_LOCK:
         try:
+            # Dump a STABLE snapshot, not the live cache. _load() hands
+            # callers the shared _CACHE dict and they mutate it without the
+            # lock, so json.dump iterating _CACHE directly could hit
+            # "dictionary changed size during iteration" (an uncaught
+            # RuntimeError that killed the writer thread and lost the save).
+            # deepcopy under the lock is fast; retry the rare case where a
+            # concurrent mutation lands mid-copy.
+            snapshot = state
+            for _attempt in range(3):
+                try:
+                    snapshot = _copy.deepcopy(state)
+                    break
+                except RuntimeError:
+                    continue
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2, default=_json_default)
+                json.dump(snapshot, f, indent=2, default=_json_default)
             os.replace(tmp, _STATE_PATH)
             _CACHE = state
             try:
@@ -1263,6 +1278,64 @@ def set_user_techs(names, abbrev):
     _save(state)
 
 
+def user_techs_seeded():
+    """True once the built-in roster has been migrated into the editable
+    user_techs store. After that, audit_logic builds TECH_PATTERN from
+    user_techs ALONE, so every tech (formerly-hardcoded included) is
+    removable/adjustable and a removal actually sticks."""
+    return bool(_load().get("user_techs_seeded"))
+
+
+def mark_user_techs_seeded():
+    """Record that the one-time builtin→user_techs migration has run."""
+    state = _load()
+    state["user_techs_seeded"] = True
+    _save(state)
+
+
+# ── CompanyCam sync state (per project) ─────────────────────────────────────
+# Tracks what we've already pulled from a CompanyCam project so the "any new
+# photos?" check and the downloader don't re-fetch the whole history each run.
+# `last_captured_at` is the newest photo capture time (unix seconds) we've seen;
+# `job` is a human label (the client name) purely for diagnostics.
+
+def get_companycam_seen(project_id):
+    """Return {"last_captured_at": int|None, "job": str} for a CompanyCam
+    project id — the high-water mark for its photo sync."""
+    pid = str(project_id or "").strip()
+    if not pid:
+        return {"last_captured_at": None, "job": ""}
+    bucket = _load().get("companycam_seen", {}) or {}
+    entry = bucket.get(pid) or {}
+    return {
+        "last_captured_at": entry.get("last_captured_at"),
+        "job": entry.get("job", ""),
+    }
+
+
+def set_companycam_seen(project_id, last_captured_at, job=""):
+    """Persist the newest photo capture time pulled for a project. Only
+    advances the mark (never rewinds), so a partial/older re-scan can't lose
+    ground already covered."""
+    pid = str(project_id or "").strip()
+    if not pid:
+        return
+    state = _load()
+    bucket = state.setdefault("companycam_seen", {})
+    prev = (bucket.get(pid) or {}).get("last_captured_at")
+    try:
+        newest = int(last_captured_at) if last_captured_at is not None else None
+    except (TypeError, ValueError):
+        newest = None
+    if prev is not None and newest is not None:
+        newest = max(int(prev), newest)
+    elif newest is None:
+        newest = prev
+    bucket[pid] = {"last_captured_at": newest, "job": job or
+                   (bucket.get(pid) or {}).get("job", "")}
+    _save(state)
+
+
 # ── Audit result cache (per run-date + client + unit) ───────────────────────
 # Re-running an audit on the same run-doc walks the same X:\ tree for jobs
 # that haven't changed since the last run. The cache stores the form/photo
@@ -1461,6 +1534,19 @@ def set_folder_path(client, path):
     else:
         paths.pop(key, None)
     _save(state)
+    # Teach the shared jobs graph: pinning a folder is the definitive
+    # "this spelling ↔ this job" moment. resolve_and_link ties the folder
+    # to the job AND — when that folder already belongs to a job filed
+    # under a DIFFERENT spelling — records `client` as an alias, so every
+    # other tool then resolves this spelling to the same job instead of
+    # re-guessing by name. Best-effort; a DB hiccup never blocks the pin.
+    if path:
+        try:
+            import ems_db
+            ems_db.resolve_and_link(client, folder_path=path,
+                                    create=True, source="folder_pin")
+        except Exception:
+            pass
 
 
 # ── Per-client search aliases (alternate names for SP / folder / Trello) ───
@@ -1595,16 +1681,49 @@ def set_trello_card_ids(client, card_ids):
         pins.pop(key, None)
     _save(state)
     # Mirror into the shared jobs DB so every tool sees the pin without
-    # consulting persistence.json directly. Best-effort — DB unavailable
-    # (first install, locked file) must not block the pin write itself.
+    # consulting persistence.json directly, AND teach the identity graph:
+    # a Trello card is a strong id, so if it already belongs to a job filed
+    # under a different spelling, resolve_and_link aliases `client` to that
+    # job instead of spawning a duplicate. Best-effort — a DB hiccup must
+    # not block the pin write itself.
     try:
         import ems_db
-        # Lightweight upsert just to ensure the job exists; display_name
-        # gets refined by sync_from_trello later.
-        ems_db.upsert_job(display_name=(client or "").strip() or key)
-        ems_db.remove_link(key, "trello_card")
+        if cleaned:
+            job = ems_db.resolve_and_link(client, trello_card=cleaned[0],
+                                          create=True, source="trello_pin")
+            job_key = job["canon_key"] if job else key
+        else:
+            found = ems_db.find_job_by_name(client)
+            job_key = (found["canon_key"] if found
+                       else ems_db.upsert_job(
+                           display_name=(client or "").strip() or key))
+        # Mirror the full card list onto the resolved job (replace-set).
+        ems_db.remove_link(job_key, "trello_card")
         for cid in cleaned:
-            ems_db.set_link(key, "trello_card", cid, added_by="persistence.set_trello_card_ids")
+            ems_db.set_link(job_key, "trello_card", cid,
+                            added_by="persistence.set_trello_card_ids")
+        # Adopt the Trello card's NAME as the job's identity (the
+        # 2026-07-22 rule: jobs are represented by their card name). Fetch
+        # the primary card once, name a canonical job after it, and fold
+        # the just-pinned spelling into it so all spellings converge on
+        # the one card-named job. Best-effort — a Trello hiccup or a
+        # missing card must never block the pin write.
+        if cleaned:
+            try:
+                import trello_client as _tc
+                _card = _tc.get_card(cleaned[0], actions_limit=0)
+                _nm = (_card or {}).get("name", "") or ""
+                _ck = ems_db.canon_key(_nm) if _nm else ""
+                if _ck:
+                    ems_db.upsert_job(display_name=_nm)
+                    for cid in cleaned:
+                        ems_db.set_link(_ck, "trello_card", cid,
+                                        added_by="pin_card_name")
+                    ems_db.add_alias(_ck, client, source="trello_pin")
+                    if _ck != job_key:
+                        ems_db.merge_jobs(_ck, [job_key])
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -1614,6 +1733,53 @@ def set_trello_card_id(client, card_id):
     any existing pins (use set_trello_card_ids directly to add to a
     multi-card list without dropping the others)."""
     set_trello_card_ids(client, [card_id] if card_id else [])
+
+
+def backfill_job_graph():
+    """One-time seed of the ems_db identity graph from EXISTING folder +
+    Trello pins, so auto-linking benefits from history — not just pins made
+    from now on. Every pin is ground truth ('this spelling ↔ this folder /
+    card'), so replaying them establishes the strong-id links that let a
+    differently-spelled reference auto-alias later.
+
+    Idempotent (resolve_and_link + set_link are), so it's safe to run more
+    than once. Returns {folders, cards, jobs} counts. Best-effort per
+    entry — a bad row is skipped, never fatal."""
+    try:
+        import ems_db
+    except Exception:
+        return {"folders": 0, "cards": 0, "jobs": 0}
+    state = _load()
+    folders = cards = 0
+    touched = set()
+    for key, path in (state.get("folder_paths") or {}).items():
+        if not (key and path):
+            continue
+        try:
+            job = ems_db.resolve_and_link(key, folder_path=path,
+                                          create=True, source="backfill_folder")
+            if job:
+                touched.add(job["canon_key"])
+                folders += 1
+        except Exception:
+            pass
+    for key, cids in (state.get("trello_card_ids") or {}).items():
+        cid_list = cids if isinstance(cids, list) else ([cids] if cids else [])
+        cid_list = [c for c in cid_list if c]
+        if not (key and cid_list):
+            continue
+        try:
+            job = ems_db.resolve_and_link(key, trello_card=cid_list[0],
+                                          create=True, source="backfill_trello")
+            job_key = job["canon_key"] if job else ems_db.canon_key(key)
+            touched.add(job_key)
+            for c in cid_list:
+                ems_db.set_link(job_key, "trello_card", c,
+                                added_by="backfill_trello")
+            cards += 1
+        except Exception:
+            pass
+    return {"folders": folders, "cards": cards, "jobs": len(touched)}
 
 
 # ── Starred (per-user followed) clients ───────────────────────────────────

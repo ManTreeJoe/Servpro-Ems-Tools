@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<script src="iframe_shim.js"></script>
+<script src="../web_shared/iframe_shim.js"></script>
 <script src="../web_shared/util.js"></script>
 <script src="../web_shared/ctx_menu.js"></script>
 <script src="../web_shared/open_in.js"></script>
@@ -38,6 +38,7 @@
     <input id="search-box" class="search" type="search"
            placeholder="🔎 Filter items…" autocomplete="off" />
     <button id="create-doc-btn" class="btn" style="display:none;" title="Auto-create today's APA file (carries forward active items from yesterday)">＋ Create today's APA</button>
+    <button id="refresh-lanes-btn" class="btn" style="display:none;" title="Re-route carried-forward items into the section matching each job's CURRENT Trello lane (new-day cleanup)">🔄 Refresh lanes from Trello</button>
     <button id="teams-all-btn" class="btn btn-primary">✉ Send Teams (all)</button>
     <button id="eod-btn" class="btn">📧 Send EOD email</button>
     <button id="bulk-paste-btn" class="btn">📋 Bulk paste</button>

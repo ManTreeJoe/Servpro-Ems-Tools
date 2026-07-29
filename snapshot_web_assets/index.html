@@ -1,8 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<script src="iframe_shim.js"></script>
+<script src="../web_shared/iframe_shim.js"></script>
 <script src="../web_shared/util.js"></script>
+<script src="../web_shared/modal.js"></script>
+<script src="../web_shared/umbrella_group.js?v=20260722a"></script>
+<script src="../web_shared/usage_track.js?v=20260723a"></script>
+<script src="../web_shared/request_items.js?v=20260723a"></script>
+<script src="../web_shared/xactimate_prep.js?v=20260723a"></script>
+<link rel="stylesheet" href="../web_shared/xactimate_prep.css?v=20260723a" />
 <script src="../web_shared/ctx_menu.js"></script>
 <script src="../web_shared/open_in.js"></script>
 <script src="../web_shared/trello_hover.js"></script>
@@ -12,6 +18,7 @@
 <script src="../web_shared/toast_log.js"></script>
 <meta charset="UTF-8" />
 <title>Snapshot — EMS Tools</title>
+<link rel="stylesheet" href="../web_shared/umbrella_group.css?v=20260722a" />
 <link rel="stylesheet" href="theme.css" />
 <style>
   .wrap { flex: 1; overflow-y: auto; padding: 20px 24px; max-width: 1100px; margin: 0 auto; width: 100%; }
@@ -208,10 +215,16 @@
 
   /* Action buttons (matches Audit panel exactly) */
   .detail-actions {
-    display: flex; gap: 8px; flex-wrap: wrap;
+    display: flex; flex-wrap: wrap; gap: 8px;
     margin-top: 22px; padding-top: 18px;
     border-top: 1px solid var(--border);
   }
+  /* Each row = one section; flex-basis:100% puts each on its own line,
+     buttons wrap within. Bare buttons (older render) flow horizontally,
+     never stack vertically. */
+  .action-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex-basis: 100%; }
+  .action-row + .action-row { padding-top: 6px; border-top: 1px dashed var(--border); }
+  .detail-actions > .action-btn { align-self: flex-start; }
   .action-btn {
     background: var(--surface); color: var(--text);
     border: 1px solid var(--border);
@@ -347,7 +360,10 @@
               <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Carrier</th>
               <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Claim#</th>
               <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Type</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Lead</th>
               <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Inspection</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Demo</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Docusketch</th>
               <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Scope</th>
               <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Final</th>
               <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Closing</th>
@@ -418,6 +434,10 @@
               style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font:inherit;font-family:'Cascadia Mono','Consolas',monospace;font-size:12px;outline:none;resize:vertical;"></textarea>
     <button class="btn" id="parse-comments-btn" style="margin-top:4px;">✂ Parse comments</button>
 
+    <!-- Autocomplete source for every Techs field (subs + logs). Kept in
+         sync with the canonical roster by loadTechRoster(). -->
+    <datalist id="tech-options"></datalist>
+
     <h3 class="form-h3">Subcontractors used <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">— drag ⋮⋮ to reorder</span></h3>
     <table class="row-table" id="subs-table">
       <thead><tr><th></th><th>Date</th><th>Day</th><th>Activity</th><th>Techs</th><th></th></tr></thead>
@@ -431,6 +451,8 @@
       <tbody id="logs-body"></tbody>
     </table>
     <button class="add-row-btn" data-tbl="logs">+ Add log row</button>
+    <button class="add-row-btn" id="manage-techs-btn" title="Add or remove techs. New techs are recognized in Trello comments everywhere, right away."
+            style="margin-left:8px;">👷 Manage techs</button>
 
     <!-- Inline audit subview — runs the same per-client audit the Audit panel does,
          so the user can see what's missing before generating. -->
@@ -474,11 +496,36 @@
   </section>
 </main>
 
+<!-- Manage-techs modal — add/remove techs on the canonical roster used
+     for Trello comment recognition + the field autocomplete. -->
+<div id="techs-overlay" class="modal-overlay hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:60;">
+  <div class="modal-card" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;width:min(460px,92vw);max-height:86vh;overflow:auto;padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+    <h3 style="margin:0 0 2px;">👷 Manage techs</h3>
+    <p class="muted" style="margin:0 0 12px;font-size:12px;">
+      Every tech here is recognized in Trello comments across all tools and
+      appears in the Techs autocomplete. Add, adjust, or remove any of them.
+    </p>
+    <div id="techs-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:12px;">
+      <input id="tech-add-name" type="text" placeholder="Name (e.g. Uli)"
+             style="flex:1 1 150px;min-width:120px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font:inherit;outline:none;" />
+      <input id="tech-add-initials" type="text" placeholder="Initials (opt.)" maxlength="4"
+             style="width:110px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font:inherit;outline:none;text-transform:uppercase;" />
+      <button class="btn btn-primary" id="tech-add-btn">+ Add</button>
+    </div>
+    <div id="techs-modal-status" class="muted" style="font-size:12px;margin-top:8px;min-height:16px;"></div>
+    <div style="text-align:right;margin-top:14px;">
+      <button class="btn" id="techs-close-btn">Done</button>
+    </div>
+  </div>
+</div>
+
 <footer class="statusbar">
   <span id="status-counts">—</span>
   <span id="status-msg" class="status-msg"></span>
 </footer>
 
-<script src="app.js"></script>
+<script src="../web_shared/audit_detail.js?v=20260721a"></script>
+<script src="app.js?v=20260710a"></script>
 </body>
 </html>

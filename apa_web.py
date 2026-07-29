@@ -700,11 +700,19 @@ class Api:
         "estimating missing":       apa.SEC_EST_MISSING,
         "snapshot":                 apa.SEC_EST_SNAPSHOT,
         "estimating snapshot":      apa.SEC_EST_SNAPSHOT,
+        # Estimating split its single TBA + Service Call lanes into
+        # Program / Non-Program / Storm columns (2026-06-24). The substring
+        # keys below intentionally COMBINE every variant into the one APA
+        # section: " TO BE ASSIGNED - PROGRAM ", "TO BE ASSIGNED - Non-
+        # Program", "TO BE ASSIGNED - STORM" all contain "to be assigned";
+        # "SERVICE CALLS - Program" / "SERVICE CALL - Non-Program" /
+        # "SERIVCE CALLS - STORM" all contain "service call"/"serivce call".
         "to be assigned":           apa.SEC_EST_TBA,
         "estimating tba":           apa.SEC_EST_TBA,
         "service call":             apa.SEC_EST_SERVICE_CALL,
         "service calls":            apa.SEC_EST_SERVICE_CALL,
-        "serivce call":             apa.SEC_EST_SERVICE_CALL,
+        "serivce call":             apa.SEC_EST_SERVICE_CALL,  # board typo
+        "serivce calls":            apa.SEC_EST_SERVICE_CALL,  # board typo
         "estimating service call":  apa.SEC_EST_SERVICE_CALL,
         "pending review":           apa.SEC_PENDING_REVIEW,
         # Estimator lanes — combo lanes default to FIRST listed name
@@ -756,6 +764,16 @@ class Api:
         "add'l work":            "Add'l Work/Missing Items",
         "additional items":      "Add'l Work/Missing Items",
         "missing items":         "Add'l Work/Missing Items",
+        # TBA + Service Call lanes collapse to ONE clean, program-agnostic
+        # sub so the Program / Non-Program / Storm split never leaks into
+        # the APA row (the ESTIMATING TBA / SERVICE CALL sections are
+        # has_subs=false anyway, but this keeps suggested_sub clean for any
+        # other consumer + future-proofs if they ever gain subs). (2026-06-24)
+        "to be assigned":        "To Be Assigned",
+        "service call":          "Service Call",
+        "service calls":         "Service Call",
+        "serivce call":          "Service Call",
+        "serivce calls":         "Service Call",
         "on hold":               "On Hold",
         "work in progress":      "Work in progress",
         "monitor":               "Monitor",
@@ -1483,12 +1501,18 @@ class Api:
                     "doc": _doc_payload_for(d),
                     "note": "Doc already exists"}
 
-        # Active-status detection: same loose pattern apa_monitor_gui's
-        # push_initial_uploads uses — substring match against the
-        # status keywords inside the rendered item text. Avoids needing
-        # to re-parse the structured status dict.
-        ACTIVE_STATUSES = {"pending", "pending upload",
-                           "extended", "uploading"}
+        # Carry-forward policy (user 2026-06-24):
+        #   • EVERY extended job rolls into the new doc.
+        #   • An UPLOADED job is done — it must NOT carry, even when its
+        #     row is still highlighted yellow (a stale highlight on an
+        #     "uploaded" row used to drag completed jobs forward).
+        # We parse the real status via apa.wrap_item (robust — peels the
+        # "-status" suffix, normalizes "uploading"→"pending upload") rather
+        # than loose substring matching, so "uploaded" can't be confused
+        # with an active status and the highlight can't override it.
+        DONE_STATUSES  = {"uploaded"}            # completed → leave behind
+        CARRY_STATUSES = {"pending", "pending upload",
+                          "extended", "uploading"}
         sections = {s: [] for s in apa.SECTION_ORDER}
         carried = 0
         if carry_forward:
@@ -1503,8 +1527,14 @@ class Api:
                     if sec not in sections:
                         sections[sec] = []
                     for text, highlighted in items:
-                        low = (text or "").lower()
-                        if highlighted or any(s in low for s in ACTIVE_STATUSES):
+                        try:
+                            status = (apa.wrap_item(text, highlighted)
+                                      .get("status") or "").strip().lower()
+                        except Exception:
+                            status = ""
+                        if status in DONE_STATUSES:
+                            continue   # uploaded — completed, don't carry
+                        if status in CARRY_STATUSES or highlighted:
                             sections[sec].append((text, bool(highlighted)))
                             carried += 1
                 break  # stop at first prior doc
@@ -1516,6 +1546,83 @@ class Api:
             return {"ok": False,
                     "error": f"write_doc: {ex}"}
         return {"ok": True, "created": True, "carried": carried,
+                "doc": _doc_payload_for(d)}
+
+    def refresh_doc_lanes(self, date_iso: str = "") -> dict:
+        """Re-route every APA item into the section matching its Trello
+        card's CURRENT lane. The new-day workflow: after `create_doc`
+        carries yesterday's extended/pending jobs forward in their OLD
+        sections, this pulls each item's pinned card, reads the lane it
+        sits in on Trello today (Estimating board etc.), and MOVES the
+        item to the matching APA section — so the fresh doc mirrors where
+        each job actually is in Trello.
+
+        Items with no pinned card, an unresolvable lane, or a lane that
+        doesn't map to an APA section stay exactly where they are.
+        Preserves each item's text + highlight. Returns
+        {ok, moved, checked, doc}.
+        """
+        try:
+            d = (_dt.date.fromisoformat(date_iso) if date_iso
+                 else _dt.date.today())
+        except Exception:
+            return {"ok": False, "error": "bad date"}
+        path = apa.doc_path_for_today(d)
+        if not os.path.isfile(path):
+            return {"ok": False, "error": "no doc for that date"}
+        try:
+            parsed = apa.parse_existing_doc(path) or {}
+        except Exception as ex:
+            return {"ok": False, "error": f"parse: {ex}"}
+        try:
+            import persistence as _per
+            import trello_client as _tc
+        except Exception as ex:
+            return {"ok": False, "error": f"trello unavailable: {ex}"}
+
+        valid_sections = set(apa.SECTION_ORDER)
+        new_sections = {s: [] for s in apa.SECTION_ORDER}
+        for sec in parsed:
+            new_sections.setdefault(sec, [])
+        moved = 0
+        checked = 0
+        _lane_cache = {}     # card_id → lane name (one fetch per card)
+        for sec, items in parsed.items():
+            for text, highlighted in items:
+                dest = sec
+                cid = ""
+                try:
+                    bare = apa.strip_status_from_text(text or "").strip()
+                    key = apa._franchise_key(bare) if bare else ""
+                    cid = (_per.get_trello_card_id(key) or "") if key else ""
+                except Exception:
+                    cid = ""
+                if cid:
+                    checked += 1
+                    lane = _lane_cache.get(cid)
+                    if lane is None:
+                        try:
+                            lane = _tc.get_card_lane(cid) or ""
+                        except Exception:
+                            lane = ""
+                        _lane_cache[cid] = lane
+                    if lane:
+                        try:
+                            suggested = self._suggest_section_for_lane(lane)
+                        except Exception:
+                            suggested = ""
+                        if (suggested and suggested in valid_sections
+                                and suggested != sec):
+                            dest = suggested
+                            moved += 1
+                new_sections.setdefault(dest, []).append(
+                    (text, bool(highlighted)))
+
+        try:
+            apa.write_doc(path, d, new_sections)
+        except Exception as ex:
+            return {"ok": False, "error": f"write: {ex}"}
+        return {"ok": True, "moved": moved, "checked": checked,
                 "doc": _doc_payload_for(d)}
 
     def save_doc(self, date_iso: str, sections: list) -> dict:

@@ -791,52 +791,56 @@ def dismiss_pending(message_id: str) -> bool:
 def find_sla_violations(*, threshold_days: int = 2) -> list[dict]:
     """Cards with the most recent posted-receipt timestamp older than
     `threshold_days` and no follow-up comment from our team since.
-    Reads the `adjuster_receipt_posted` map and cross-references each
-    card's action stream.
+    Reads the `adjuster_receipt_posted_log` (card_id → [YYYY-MM-DD]) for the
+    receipt date, then a single get_card per card to check for a reply.
 
-    Cheap to compute — all data already lives in persistence + a single
-    get_card per flagged card.
+    NOTE: this used to scan comments for a "📨 Adjuster inquiry received"
+    prefix, but `_format_receipt` posts the raw email body verbatim (no
+    wrapper — user's format rule), so that prefix was never present and the
+    whole feature silently returned []. We now take the receipt date from
+    the log we write in `_record_post` and treat ANY team comment after that
+    day as the follow-up reply.
     """
-    posted = per.get("adjuster_receipt_posted") or {}
-    if not isinstance(posted, dict):
+    log = per.get("adjuster_receipt_posted_log") or {}
+    if not isinstance(log, dict):
         return []
     cutoff = _utcnow() - _dt.timedelta(days=threshold_days)
+
+    def _parse_day(d):
+        try:
+            return _dt.datetime.fromisoformat((d or "")[:10])
+        except (ValueError, TypeError):
+            return None
+
     out: list[dict] = []
-    for cid, msg_ids in posted.items():
-        if not msg_ids:
+    for cid, days in log.items():
+        if not days:
             continue
+        # Most recent receipt we posted for this card.
+        receipt_dt = None
+        for d in days:
+            pd = _parse_day(d)
+            if pd is not None and (receipt_dt is None or pd > receipt_dt):
+                receipt_dt = pd
+        if receipt_dt is None or receipt_dt > cutoff:
+            continue   # unparseable or too recent to flag
         try:
             card = tc.get_card(cid, actions_limit=20)
         except Exception:
             card = None
         if not card:
             continue
-        # Find the newest comment from our team after the receipt was
-        # posted. The receipt comments we post start with "📨 Adjuster
-        # inquiry received from" — anything after that is treated as
-        # the SLA-clock-start for follow-up; comments NOT starting with
-        # that prefix are considered our team's responses.
-        receipt_dt = None
-        followup_dt = None
+        # Any team comment on a day AFTER the receipt = we replied → SLA met.
+        replied = False
         for a in card.get("actions") or []:
             if a.get("type") != "commentCard":
                 continue
-            text = ((a.get("data") or {}).get("text") or "")
             a_dt = _parse_iso(a.get("date") or "")
-            if a_dt is None:
-                continue
-            if text.startswith("📨 Adjuster inquiry received"):
-                if receipt_dt is None or a_dt > receipt_dt:
-                    receipt_dt = a_dt
-            elif receipt_dt is not None and a_dt > receipt_dt:
-                if followup_dt is None or a_dt > followup_dt:
-                    followup_dt = a_dt
-        if receipt_dt is None:
+            if a_dt is not None and a_dt.date() > receipt_dt.date():
+                replied = True
+                break
+        if replied:
             continue
-        if followup_dt is not None:
-            continue   # team replied after the receipt; SLA met
-        if receipt_dt > cutoff:
-            continue   # too recent to flag
         out.append({
             "card_id":      cid,
             "card_name":    card.get("name", ""),

@@ -36,6 +36,11 @@ def ok_job_layout(tmp_path):
     for d in (base, year, client, ems, docs, pics, initial):
         d.mkdir(parents=True, exist_ok=True)
     (initial / "img.jpg").write_bytes(b"x")
+    # FOH (front-of-house) is required on the initial visit — without it the
+    # audit flags the job and it won't cache (cache stores clean jobs only).
+    foh = initial / "FOH"
+    foh.mkdir()
+    (foh / "front.jpg").write_bytes(b"x")
     # Drop every required form so check_forms passes.
     for fname, _pat in audit_logic.REQUIRED_FORMS:
         (ems / f"{fname}.pdf").write_bytes(b"x")
@@ -186,6 +191,9 @@ def test_unit_separates_cache_keys(state_path, tmp_path):
     for d in (base, year, prop, ems, docs, pics, initial):
         d.mkdir(parents=True, exist_ok=True)
     (initial / "img.jpg").write_bytes(b"x")
+    foh = initial / "FOH"          # required on the initial visit
+    foh.mkdir()
+    (foh / "front.jpg").write_bytes(b"x")
     for fname, _pat in audit_logic.REQUIRED_FORMS:
         (ems / f"{fname}.pdf").write_bytes(b"x")
     (docs / "initial photo report.pdf").write_bytes(b"x")

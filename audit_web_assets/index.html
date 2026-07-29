@@ -1,9 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<script src="iframe_shim.js"></script>
+<script src="../web_shared/iframe_shim.js"></script>
 <script src="../web_shared/util.js"></script>
 <script src="../web_shared/modal.js"></script>
+<script src="../web_shared/umbrella_group.js?v=20260722a"></script>
+<script src="../web_shared/usage_track.js?v=20260723a"></script>
+<script src="../web_shared/hygiene_board.js?v=20260723a"></script>
+<script src="../web_shared/request_items.js?v=20260723a"></script>
+<script src="../web_shared/xactimate_prep.js?v=20260723a"></script>
 <script src="../web_shared/ctx_menu.js"></script>
 <script src="../web_shared/open_in.js"></script>
 <script src="../web_shared/trello_hover.js"></script>
@@ -16,6 +21,9 @@
 <script src="../web_shared/skeleton.js"></script>
 <script src="../web_shared/toast_log.js"></script>
 <link rel="stylesheet" href="../web_shared/skeleton.css" />
+<link rel="stylesheet" href="../web_shared/umbrella_group.css?v=20260722a" />
+<link rel="stylesheet" href="../web_shared/hygiene_board.css?v=20260723a" />
+<link rel="stylesheet" href="../web_shared/xactimate_prep.css?v=20260723a" />
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Audit — EMS Tools</title>
@@ -33,6 +41,11 @@
            placeholder="🔎 Search client / form / tech…" autocomplete="off" />
     <button id="run-btn"      class="btn btn-primary" disabled title="Run the daily audit for today's run-doc (uses cached results where possible)">↻ Run Audit</button>
     <button id="audit-one-btn" class="btn" title="Audit a single client by name — useful for one-off spot checks">🔍 Audit one</button>
+    <button id="new-loss-btn" class="btn" title="Create a new-loss Trello card from a carrier assignment email — paste it in, review the fields, done">🆕 New Loss</button>
+    <button id="incoming-btn" class="btn" title="Import new Workcenter / DocuSign downloads — pick the job, auto-splits photos by stage">📥 Incoming</button>
+    <button id="usage-btn" class="btn" title="See how you use the app — top tools, most-used buttons, activity by day">📊 Usage</button>
+    <button id="overview-btn" class="btn" title="Job admin overview — DocuSign, initial/final paperwork, weekly check-ins across active jobs">🩺 Overview</button>
+    <button id="notes-btn" class="btn" title="Tracked to-do notes — tied to a job or loose">📝 Notes</button>
     <div id="more-wrap" style="position:relative;">
       <button id="more-btn" class="btn" title="More actions">⋯ More</button>
       <div id="more-menu"
@@ -128,6 +141,7 @@
       <span class="bulk-count" id="bulk-count">0 selected</span>
       <span style="flex:1;"></span>
       <button class="btn" id="bulk-import-sp" title="Open the SP import dialog for every selected client in sequence">📥 Import SP</button>
+      <button class="btn" id="bulk-snapshot" title="Open Snapshot for the selected clients in sequence">📸 Snapshot</button>
       <button class="btn" id="bulk-flag" title="Flag a missing item across every selected client">🚩 Flag…</button>
       <button class="btn" id="bulk-copy-issues" title="Copy the consolidated missing-items list for every selected client">📋 Copy issues</button>
       <button class="btn" id="bulk-reaudit" title="Re-audit every selected client">↻ Re-audit</button>
@@ -161,6 +175,7 @@
   <span id="status-msg" class="status-msg"></span>
 </footer>
 
-<script src="app.js"></script>
+<script src="../web_shared/audit_detail.js?v=20260721a"></script>
+<script src="app.js?v=20260625c"></script>
 </body>
 </html>

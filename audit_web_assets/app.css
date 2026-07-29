@@ -712,11 +712,19 @@ body { display: flex; flex-direction: column; }
 }
 
 .detail-actions {
-  display: flex; gap: 8px; flex-wrap: wrap;
+  display: flex; flex-wrap: wrap; gap: 8px;
   margin-top: 22px;
   padding-top: 18px;
   border-top: 1px solid var(--border);
 }
+/* Each row = one section (Links / Import / Tools). `flex-basis:100%`
+   forces each section onto its own line; buttons wrap WITHIN the row.
+   Buttons sit at content width (NOT stretched full-width) — so even if
+   an older render drops bare buttons here they flow horizontally rather
+   than stacking vertically. */
+.action-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex-basis: 100%; }
+.action-row + .action-row { padding-top: 6px; border-top: 1px dashed var(--border); }
+.detail-actions > .action-btn { align-self: flex-start; }
 .action-btn {
   background: var(--surface-2);
   color: var(--text);

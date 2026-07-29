@@ -1,0 +1,80 @@
+/* EMS Tools — shared styles for the multi-unit umbrella helpers
+ * (web_shared/umbrella_group.js). Uses the host panel's theme vars
+ * (--surface, --border, --text, --accent…) so it themes automatically
+ * in Audit / IUQ / Snapshot. */
+
+.umb-create {
+  font-size: 11px;
+  padding: 1px 7px;
+  margin-left: 4px;
+  border: 1px solid var(--accent, #3b82f6);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent, #3b82f6);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.umb-create:hover { background: var(--accent, #3b82f6); color: #fff; }
+
+.umb-openparent {
+  font-size: 13px;
+  padding: 1px 6px;
+  margin-right: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #9aa4b2);
+  cursor: pointer;
+}
+.umb-openparent:hover { color: var(--text, #e6e9ef); }
+
+.umb-loose {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--amber-bg, rgba(245, 158, 11, 0.15));
+  color: var(--amber, #f59e0b);
+  white-space: nowrap;
+}
+
+.umb-crumb {
+  font-size: 11px;
+  color: var(--text-muted, #9aa4b2);
+  margin-right: 4px;
+}
+
+/* ── ➕ create-child confirm modal ─────────────────────────────────── */
+.umb-lbl {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted, #9aa4b2);
+  margin: 4px 0 4px;
+}
+.umb-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  font-size: 14px;
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 6px;
+  background: var(--surface, #1a1e27);
+  color: var(--text, #e6e9ef);
+  margin-bottom: 10px;
+}
+.umb-files {
+  font-size: 12px;
+  color: var(--text-muted, #9aa4b2);
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+.umb-files ul { margin: 6px 0 0; padding-left: 18px; }
+.umb-files li { margin: 1px 0; }
+.umb-files-empty { color: var(--text-dim, #6b7280); font-style: italic; }
+.umb-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

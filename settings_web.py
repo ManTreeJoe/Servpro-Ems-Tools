@@ -24,10 +24,30 @@ FIELDS = [
     ("workcenter_url",      "Workcenter URL",             "url"),
     ("show_sort_files",     "Show Sort Files in toolbar", "bool"),
     ("show_new_job",        "Show New EMS Job in toolbar","bool"),
+    ("trello_api_key",      "Trello API key",             "secret"),
     ("trello_token",        "Trello token (per-user)",    "secret"),
+    ("companycam_api_token", "CompanyCam access token",   "secret"),
     ("appearance",          "Appearance",                 "choice", ["system","light","dark"]),
     ("ui_scale",            "UI scale",                   "choice",
                             ["auto","1.0","1.25","1.5","1.75","2.0","2.25","2.5"]),
+]
+
+
+# Fields a department profile can override (multi-department mode). Grouped
+# for the Settings UI. Mirrors config.DEPT_OVERRIDE_KEYS (minus the two
+# list-typed keys, which stay in raw config.json for advanced edits).
+DEPT_FIELDS = [
+    ("trello_api_key",        "Trello API key",           "secret",  "Trello"),
+    ("trello_token",          "Trello token",             "secret",  "Trello"),
+    ("trello_workspace_id",   "Trello workspace ID",      "text",    "Trello"),
+    ("trello_snapshot_list_id","Trello snapshot list ID", "text",    "Trello"),
+    ("audit_base",            "Job folders root",         "dir",     "Folders"),
+    ("runs_dir",              "Daily run docs folder",    "dir",     "Folders"),
+    ("photos_root",           "Photos root folder",       "dir",     "Folders"),
+    ("snapshot_template",     "Snapshot fillable PDF",    "file",    "Folders"),
+    ("apa_monitor_root",      "APA Monitor docs folder",  "dir",     "Folders"),
+    ("franchise_name",        "Franchise legal name",     "text",    "Identity"),
+    ("office_phone",          "Office phone",             "text",    "Identity"),
 ]
 
 
@@ -41,8 +61,11 @@ class Api:
                 for f in FIELDS]
 
     def load(self):
+        # The global form edits the BASE config (the Inland Empire
+        # defaults), consistent with save() writing to base. Per-
+        # department overrides are edited in the Departments section.
         try:
-            return dict(config.load() or {})
+            return dict(config.load_base() or {})
         except Exception:
             return {}
 
@@ -50,9 +73,84 @@ class Api:
         if not isinstance(values, dict):
             return {"ok": False, "error": "values must be a dict"}
         try:
-            cfg = dict(config.load() or {})
+            # Write to the BASE config (never the department-overlaid view),
+            # so saving the global fields can't accidentally bake the active
+            # department's overrides into the base.
+            cfg = dict(config.load_base() or {})
             cfg.update(values)
             config.save(cfg)
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    # ── Multiple-department (OC / IE) config ─────────────────────────
+    def dept_config(self):
+        """State for the Departments settings section: whether it's on,
+        the field schema, each department's overrides, and the base values
+        (shown as the 'inherits' placeholder for blank overrides)."""
+        try:
+            base = config.load_base()
+            depts = base.get("departments") or {}
+            fields = [{"key": f[0], "label": f[1], "kind": f[2], "group": f[3]}
+                      for f in DEPT_FIELDS]
+            keyset = [f[0] for f in DEPT_FIELDS]
+            out = []
+            for k, v in depts.items():
+                v = v if isinstance(v, dict) else {}
+                out.append({
+                    "key": k,
+                    "label": (v.get("label") or k),
+                    "is_base": (k == "IE"),
+                    "overrides": {fk: v.get(fk, "") for fk in keyset},
+                })
+            return {
+                "ok": True,
+                "enabled": bool(base.get("multi_department_enabled")),
+                "active": (base.get("active_department") or "").strip(),
+                "fields": fields,
+                "departments": out,
+                "base": {fk: base.get(fk, "") for fk in keyset},
+            }
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def set_multi_dept(self, enabled: bool):
+        """Toggle multiple-department mode. Enabling scaffolds the IE + OC
+        profiles (IE inherits the current settings; OC starts blank)."""
+        try:
+            if enabled:
+                config.ensure_departments_scaffold()
+            base = config.load_base()
+            base["multi_department_enabled"] = bool(enabled)
+            config.save(base)
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def save_department(self, key: str, overrides: dict, label: str = ""):
+        """Persist one department's override fields. Only whitelisted
+        DEPT_FIELDS keys are written; blank values are kept (they mean
+        'inherit the base'). Never touches the base flat keys."""
+        key = (key or "").strip()
+        if not key:
+            return {"ok": False, "error": "missing department key"}
+        if not isinstance(overrides, dict):
+            return {"ok": False, "error": "overrides must be a dict"}
+        try:
+            base = config.load_base()
+            depts = base.get("departments")
+            if not isinstance(depts, dict):
+                depts = {}
+            prof = dict(depts.get(key) if isinstance(depts.get(key), dict) else {})
+            if label:
+                prof["label"] = label
+            allowed = {f[0] for f in DEPT_FIELDS}
+            for fk, val in overrides.items():
+                if fk in allowed:
+                    prof[fk] = ("" if val is None else str(val)).strip()
+            depts[key] = prof
+            base["departments"] = depts
+            config.save(base)
             return {"ok": True}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
@@ -185,6 +283,42 @@ class Api:
             return True
         except Exception:
             return False
+
+    def lookup_job_identity(self, name):
+        """Read-only 'what's tied to this job?' view — the canonical job the
+        `name` resolves to, its learned aliases, and every external link
+        (folder / Trello / CompanyCam). Lets the user verify the auto-linking
+        graph. Returns {ok, found, name, canon_key, display_name, aliases,
+        links:[{type,value}]}."""
+        name = (name or "").strip()
+        if not name:
+            return {"ok": False, "error": "type a name"}
+        try:
+            import ems_db
+            ident = ems_db.job_identity(name)
+            if not ident:
+                return {"ok": True, "found": False, "name": name}
+            job = ident["job"]
+            links = [{"type": l.get("link_type"), "value": l.get("link_value")}
+                     for l in ident.get("links", [])]
+            aliases = list(ident.get("aliases", []))   # already spelling strings
+            return {"ok": True, "found": True, "name": name,
+                    "canon_key": job.get("canon_key", ""),
+                    "display_name": job.get("display_name", ""),
+                    "status": job.get("status", ""),
+                    "aliases": aliases, "links": links}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def backfill_job_graph(self):
+        """Seed the identity graph from existing folder + Trello pins so
+        auto-linking benefits from history. Idempotent. Returns the counts."""
+        try:
+            import persistence
+            res = persistence.backfill_job_graph()
+            return {"ok": True, **res}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def authorize_trello(self):
         """Open Trello's per-user token-generation page in the browser.

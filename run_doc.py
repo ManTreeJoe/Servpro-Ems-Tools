@@ -16,9 +16,25 @@ import config
 import persistence
 from audit_logic import detect_activity, audit_jobs as _audit_jobs_core
 
-_CFG = config.load()
-RUNS_DIR = _CFG.get("runs_dir") or ""
-AUDIT_BASE = _CFG.get("audit_base") or ""
+# Run-doc + job-folder roots. Resolved lazily from config on every access
+# (config.load() is mtime-cached) so a Settings change or department (OC/IE)
+# switch is reflected without a restart. `run_doc.RUNS_DIR` / `.AUDIT_BASE`
+# still work via the module __getattr__ below; in-module code uses the
+# _runs_dir() / _audit_base() getters.
+def _runs_dir():
+    return config.load().get("runs_dir") or ""
+
+
+def _audit_base():
+    return config.load().get("audit_base") or ""
+
+
+def __getattr__(name):
+    if name == "RUNS_DIR":
+        return _runs_dir()
+    if name == "AUDIT_BASE":
+        return _audit_base()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # (month, day, year) -> compiled filename-date regex, so the pattern
 # compiles once per date and is reused on every audit re-render.
@@ -79,7 +95,8 @@ def _find_run_doc_for_date(d):
 
     Returns the absolute path of the first matching .docx, or None.
     """
-    if not d or not RUNS_DIR or not os.path.isdir(RUNS_DIR):
+    runs_dir = _runs_dir()
+    if not d or not runs_dir or not os.path.isdir(runs_dir):
         return None
     month_full = d.strftime("%B")
     month_abbr = d.strftime("%b")
@@ -88,20 +105,31 @@ def _find_run_doc_for_date(d):
     pattern = _RUN_DOC_DATE_RE_CACHE.get(cache_key)
     if pattern is None:
         sep = r"[.\-_/]"
+        # Two filename date forms:
+        #  • IE .docx — separated: "7.20.26" / "7-20-2026" / "7/20/26"
+        #  • OC .msg  — concatenated: "7202026" (M + DD + YYYY, no seps)
         pattern = re.compile(
             rf"(?<!\d)0?{d.month}{sep}0?{d.day}{sep}"
-            rf"(?:{yy_short:02d}|{d.year})(?!\d)")
+            rf"(?:{yy_short:02d}|{d.year})(?!\d)"
+            rf"|(?<!\d)0?{d.month}{d.day:02d}{d.year}(?!\d)")
         _RUN_DOC_DATE_RE_CACHE[cache_key] = pattern
 
+    # Search both the run root and a `<root>\<year>` level — IE stores
+    # docs as <root>\<Month>\..., but OC nests by year first
+    # (<root>\2026\<Month>\...). Checking both means the run folder can be
+    # pointed at either the year folder or its parent and still resolve,
+    # and it survives the year rollover without a settings change.
     search_dirs = []
-    for mname in (month_full, month_abbr):
-        mdir = os.path.join(RUNS_DIR, mname)
-        if os.path.isdir(mdir):
-            search_dirs.append(mdir)
-    # Also peek at RUNS_DIR directly — some techs save without the
-    # month subfolder. Cheap because os.listdir on a folder we already
-    # confirmed exists doesn't add a network round-trip per call.
-    search_dirs.append(RUNS_DIR)
+    for root in (runs_dir, os.path.join(runs_dir, str(d.year))):
+        for mname in (month_full, month_abbr):
+            mdir = os.path.join(root, mname)
+            if os.path.isdir(mdir):
+                search_dirs.append(mdir)
+        # Also peek at the root directly — some techs save without the
+        # month subfolder. Cheap because os.listdir on a folder we already
+        # confirmed exists doesn't add a network round-trip per call.
+        if os.path.isdir(root):
+            search_dirs.append(root)
 
     for sd in search_dirs:
         try:
@@ -109,7 +137,8 @@ def _find_run_doc_for_date(d):
         except OSError:
             continue
         for f in entries:
-            if not f.lower().endswith(".docx"):
+            # IE run docs are Word .docx; OC's are Outlook .msg emails.
+            if not f.lower().endswith((".docx", ".msg")):
                 continue
             if pattern.search(f):
                 return os.path.join(sd, f)
@@ -228,7 +257,7 @@ def audit_jobs(client_names, year=None, run_date=None, use_cache=True,
         run_date, base=folder_path_lookup, expand_map=expand_map)
     return _audit_jobs_core(
         client_names,
-        AUDIT_BASE,
+        _audit_base(),
         year=year,
         folder_path_lookup=lookup,
         run_date=run_date,

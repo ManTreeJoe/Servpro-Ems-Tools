@@ -24,6 +24,7 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 window.addEventListener("pywebviewready", async () => {
   $("#refresh-btn").addEventListener("click", () => loadDate(state.active_date));
   $("#create-doc-btn").addEventListener("click", createTodayDoc);
+  $("#refresh-lanes-btn").addEventListener("click", refreshLanesFromTrello);
   attachApaTrelloSearch();
   attachFranchiseFilter();
   attachMoreMenu();
@@ -309,12 +310,19 @@ function renderDateNav() {
   // has no doc — including past days. Backend's create_doc is a no-op
   // on existing docs, so even retroactive clicks are safe.
   const createBtn = document.getElementById("create-doc-btn");
+  const isToday = doc.date_iso === new Date().toISOString().slice(0, 10);
   if (createBtn) {
-    const isToday = doc.date_iso === new Date().toISOString().slice(0, 10);
     createBtn.style.display = doc.doc_exists ? "none" : "";
     createBtn.textContent = isToday
       ? "＋ Create today's APA"
       : `＋ Create APA for ${doc.date_label || "this day"}`;
+  }
+  // 🔄 Refresh lanes — only for TODAY's existing doc (the new-day
+  // cleanup: carried-forward items get re-routed to match each job's
+  // current Trello lane). Hidden on past days + before the doc exists.
+  const refreshLanesBtn = document.getElementById("refresh-lanes-btn");
+  if (refreshLanesBtn) {
+    refreshLanesBtn.style.display = (doc.doc_exists && isToday) ? "" : "none";
   }
   // Wire the empty-state "Create" button (rendered inside the
   // empty-state div, so it's only present when doc_exists is false).
@@ -1536,6 +1544,29 @@ async function createTodayDoc() {
     setStatus(res.note || "Doc already existed", "warn");
   }
   await loadDate(state.active_date);
+}
+
+// ── Refresh lanes from Trello (new-day cleanup) ─────────────────
+// After create_doc carries yesterday's extended/pending jobs forward in
+// their OLD sections, this re-routes each item into the section matching
+// its pinned Trello card's CURRENT lane — so the new doc mirrors where
+// each job sits in Trello today. Items with no pin / unmapped lane stay.
+async function refreshLanesFromTrello() {
+  const btn = document.getElementById("refresh-lanes-btn");
+  const orig = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "🔄 Checking Trello…"; }
+  const res = await pywebview.api.refresh_doc_lanes(state.active_date || "");
+  if (btn) { btn.disabled = false; btn.textContent = orig; }
+  if (!res?.ok) {
+    setStatus(`Refresh failed: ${res?.error || "?"}`, "error");
+    return;
+  }
+  if (res.doc) { state.doc = res.doc; renderBoard(); }
+  setStatus(
+    res.moved
+      ? `🔄 Moved ${res.moved} item${res.moved !== 1 ? "s" : ""} to match Trello lanes (${res.checked} pinned checked)`
+      : `🔄 All ${res.checked} pinned items already in the right section`,
+    "ok");
 }
 
 // ── APA right-click context menu (Tk parity) ────────────────────

@@ -19,6 +19,7 @@
           <div class="brand-sub" id="time-meta">—</div>
         </div>
       </div>
+      <div class="dept-switch" id="dept-switch" style="display:none;"></div>
     </header>
     <nav class="sb-nav" id="sb-nav"></nav>
     <footer class="sb-foot">
@@ -44,6 +45,102 @@
     </div>
   </section>
 </div>
+
+<!-- First-run welcome (shown once, until dismissed) -->
+<div class="fr-overlay hidden" id="fr-overlay">
+  <div class="fr-card" role="dialog" aria-modal="true" aria-labelledby="fr-title">
+    <div class="fr-emoji">👋</div>
+    <div class="fr-title" id="fr-title">Welcome to EMS Tools</div>
+    <div class="fr-body">
+      <p>Before the Trello-based panels (Audit, Hygiene, Snapshot, APA…) can
+         load, you need to connect your account and confirm your folders.</p>
+      <p>Open <strong>⚙ Settings</strong> (bottom of the sidebar) and set:</p>
+      <ul>
+        <li><strong>Trello API key</strong> and <strong>Trello token</strong> — your Trello login for the boards.</li>
+        <li><strong>Folder paths</strong> — these are auto-detected on first launch; just confirm they point to the right places.</li>
+      </ul>
+      <p class="fr-note">Your settings are saved to your own PC
+         (<code>%APPDATA%\EMS Automation</code>) — nothing is shared.</p>
+    </div>
+    <div class="fr-actions">
+      <button class="fr-btn fr-secondary" id="fr-later">I'll do it later</button>
+      <button class="fr-btn fr-primary" id="fr-settings">Open Settings</button>
+    </div>
+  </div>
+</div>
+
+<!-- Department switch splash — covers the window during relaunch -->
+<div class="dept-splash hidden" id="dept-splash">
+  <div class="dept-splash-inner">
+    <div class="dept-splash-spin"></div>
+    <div class="dept-splash-txt" id="dept-splash-txt">Switching department…</div>
+    <div class="dept-splash-sub">Reloading with the new board &amp; folders</div>
+  </div>
+</div>
+
+<style>
+  /* Department switcher pill in the sidebar header */
+  .dept-switch { display: flex; gap: 4px; margin-top: 12px;
+    background: var(--surface-2, #26272c); border: 1px solid var(--border, #34353b);
+    border-radius: 8px; padding: 3px; }
+  .dept-seg { flex: 1; text-align: center; cursor: pointer;
+    font-size: 12px; font-weight: 700; letter-spacing: .03em;
+    padding: 5px 8px; border-radius: 6px; color: var(--text-muted, #9aa5ae);
+    border: none; background: transparent; transition: background .12s, color .12s; }
+  .dept-seg:hover { color: var(--text, #e8e8ea); }
+  .dept-seg.active { background: var(--green, #2f9e69); color: #fff; }
+  .dept-seg:disabled { cursor: default; }
+  .dept-splash {
+    position: fixed; inset: 0; z-index: 2000;
+    background: var(--bg, #17181c);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dept-splash.hidden { display: none; }
+  .dept-splash-inner { text-align: center; }
+  .dept-splash-spin {
+    width: 40px; height: 40px; margin: 0 auto 16px;
+    border: 3px solid var(--border, #34353b);
+    border-top-color: var(--green, #2f9e69); border-radius: 50%;
+    animation: dept-spin .8s linear infinite;
+  }
+  @keyframes dept-spin { to { transform: rotate(360deg); } }
+  .dept-splash-txt { font-size: 16px; font-weight: 600; color: var(--text, #e8e8ea); }
+  .dept-splash-sub { font-size: 12px; color: var(--text-muted, #9aa5ae); margin-top: 6px; }
+
+  .fr-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .fr-overlay.hidden { display: none; }
+  .fr-card {
+    background: var(--surface, #1e1f24); color: var(--text, #e8e8ea);
+    border: 1px solid var(--border, #34353b); border-radius: 12px;
+    max-width: 460px; width: 100%; padding: 26px 28px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.5);
+  }
+  .fr-emoji { font-size: 34px; line-height: 1; }
+  .fr-title { font-size: 20px; font-weight: 700; margin: 8px 0 12px; }
+  .fr-body { font-size: 13.5px; line-height: 1.55; color: var(--text-muted, #b6b7bd); }
+  .fr-body p { margin: 0 0 10px; }
+  .fr-body ul { margin: 0 0 10px; padding-left: 18px; }
+  .fr-body li { margin: 4px 0; }
+  .fr-body strong { color: var(--text, #e8e8ea); }
+  .fr-note { font-size: 12px; opacity: .8; }
+  .fr-note code { font-family: monospace; }
+  .fr-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .fr-btn {
+    padding: 8px 16px; border-radius: 7px; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--border, #34353b); background: transparent;
+    color: var(--text, #e8e8ea);
+  }
+  .fr-primary {
+    background: var(--accent, #3b82f6); border-color: var(--accent, #3b82f6);
+    color: #fff; font-weight: 600;
+  }
+  .fr-secondary:hover { background: rgba(255,255,255,.06); }
+</style>
 
 <script src="../web_shared/toast_log.js"></script>
 <script src="app.js"></script>

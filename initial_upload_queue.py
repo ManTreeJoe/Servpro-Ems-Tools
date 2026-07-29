@@ -2654,6 +2654,9 @@ class InitialUploadApp(ToolPanel):
                          ".mp4", ".mov", ".m4v", ".avi"}
         photo_count = 0
         form_count = 0
+        # Files whose move+copy fallback BOTH failed — never landed, so
+        # they must not be counted as imported (audit bug #6).
+        failed_imports: list[str] = []
         with tempfile.TemporaryDirectory(prefix="wc_iu_") as staging:
             try:
                 _wcz.place_import_paths(chosen_paths, staging)
@@ -2663,55 +2666,44 @@ class InitialUploadApp(ToolPanel):
             # Walk the staging tree and route each file by extension. Use
             # basename-only at the destination so the WC zip's nested
             # folder structure doesn't leak into the job folder.
+            import child_folder_ops as _cfops
             for root, _dirs, files in os.walk(staging):
                 for fn in files:
                     src = os.path.join(root, fn)
                     ext = os.path.splitext(fn)[1].lower()
-                    if ext in _img_exts:
-                        dest_dir = pics_target
+                    is_img = ext in _img_exts
+                    dest_dir = pics_target if is_img else docs_target
+                    # Collision-safe, cloud-aware move; returns the final
+                    # landed path or None on total failure. Count ONLY on a
+                    # confirmed write (bug #6) — the old `except: pass`
+                    # swallowed double-failures and still counted them.
+                    landed = _cfops.safe_move(src, dest_dir)
+                    if not landed:
+                        failed_imports.append(fn)
+                        continue
+                    if is_img:
                         photo_count += 1
                     else:
-                        dest_dir = docs_target
                         form_count += 1
-                    dest = os.path.join(dest_dir, fn)
-                    # If a file with the same name already exists in the
-                    # target, suffix with " (N)" so neither version gets
-                    # clobbered. WC sometimes re-exports with identical
-                    # filenames after a re-upload.
-                    if os.path.exists(dest):
-                        base, ext2 = os.path.splitext(fn)
-                        n = 1
-                        while os.path.exists(dest):
-                            dest = os.path.join(
-                                dest_dir, f"{base} ({n}){ext2}")
-                            n += 1
-                    try:
-                        shutil.move(src, dest)
-                    except OSError:
-                        # Cross-volume fallback: copy then unlink.
-                        try:
-                            shutil.copy2(src, dest)
-                            os.remove(src)
-                        except OSError:
-                            pass
                     # Multi-target case (Demo+Mold Prep "Both"):
-                    # copy the file into each additional pics target
+                    # copy the landed file into each additional pics target
                     # so both folders end up with the same photo set.
-                    if ext in _img_exts and len(pics_targets) > 1:
+                    if is_img and len(pics_targets) > 1:
                         for extra in pics_targets[1:]:
                             try:
+                                os.makedirs(extra, exist_ok=True)
                                 extra_dest = os.path.join(
-                                    extra, os.path.basename(dest))
+                                    extra, os.path.basename(landed))
                                 if os.path.exists(extra_dest):
                                     base, ext2 = os.path.splitext(
-                                        os.path.basename(dest))
+                                        os.path.basename(landed))
                                     n = 1
                                     while os.path.exists(extra_dest):
                                         extra_dest = os.path.join(
                                             extra,
                                             f"{base} ({n}){ext2}")
                                         n += 1
-                                shutil.copy2(dest, extra_dest)
+                                shutil.copy2(landed, extra_dest)
                             except OSError:
                                 pass
         # Photos only: convert HEIC → JPEG and sort into per-room
@@ -2750,6 +2742,12 @@ class InitialUploadApp(ToolPanel):
                 f"→ PICS/{pics_label}")
         if form_count:
             bits.append(f"{form_count} form{'s' if form_count != 1 else ''} → DOCS")
+        if failed_imports:
+            bits.append(
+                f"⚠ {len(failed_imports)} file"
+                f"{'s' if len(failed_imports) != 1 else ''} FAILED to import "
+                f"(retry): {', '.join(failed_imports[:5])}"
+                + (" …" if len(failed_imports) > 5 else ""))
         if not bits:
             bits.append("(zip was empty)")
         msg = "Imported from Workcenter:\n  " + "\n  ".join(bits)

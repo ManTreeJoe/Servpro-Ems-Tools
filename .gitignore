@@ -38,3 +38,10 @@ paste-cache/
 desktop.ini
 Thumbs.db
 .DS_Store
+
+# ── Build work dirs / tooling ──────────────────────────
+build_qi/
+build_*.txt
+.claude/
+.agents/
+skills-lock.json

@@ -9,6 +9,7 @@ window.addEventListener("pywebviewready", async () => {
   $("#open-excel-btn").addEventListener("click", () => pywebview.api.open_workbook());
   $("#location-btn").addEventListener("click", openLocationModal);
   $("#new-btn").addEventListener("click", () => openDisputeModal(null));
+  $("#paste-btn").addEventListener("click", openPasteDisputeModal);
   $("#sync-trello-btn").addEventListener("click", async () => {
     const r = await pywebview.api.sync_from_trello();
     if (!r?.started) setStatus(`Sync busy: ${r?.reason || "?"}`, "warn");
@@ -206,6 +207,71 @@ async function showDisputeCtxMenu(ev, row) {
 }
 
 // ── New / Edit dispute modal (P1) ──────────────────────────────
+// Paste a carrier billing-dispute email → live-parse line adjustments +
+// totals → add to the tracker. Backed by preview_dispute_email /
+// add_dispute_from_email.
+async function openPasteDisputeModal() {
+  const lbl = "font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);";
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;";
+  wrap.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(640px,94vw);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+      <header style="padding:16px 20px;background:var(--surface);border-bottom:1px solid var(--border);">
+        <div style="font-size:15px;font-weight:600;">📋 Paste dispute email</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Paste the carrier's billing-dispute email — line adjustments + totals parse automatically.</div>
+      </header>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;">
+        <textarea id="pd-text" rows="8" placeholder="Paste the email here…" style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px;font-family:monospace;font-size:12px;resize:vertical;"></textarea>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <label style="display:flex;flex-direction:column;gap:4px;"><span style="${lbl}">Insured *</span><input id="pd-insured" class="search" type="text" placeholder="Last, First" /></label>
+          <label style="display:flex;flex-direction:column;gap:4px;"><span style="${lbl}">Claim #</span><input id="pd-claim" class="search" type="text" /></label>
+        </div>
+        <div id="pd-preview" style="font-size:12px;color:var(--text-muted);white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;min-height:40px;">Preview appears here…</div>
+      </div>
+      <footer style="padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn" id="pd-cancel">Cancel</button>
+        <button class="btn btn-primary" id="pd-add" disabled>➕ Add to tracker</button>
+      </footer>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  wrap.querySelector("#pd-cancel").addEventListener("click", close);
+  const txt = wrap.querySelector("#pd-text");
+  const insEl = wrap.querySelector("#pd-insured");
+  const clmEl = wrap.querySelector("#pd-claim");
+  const prev = wrap.querySelector("#pd-preview");
+  const addBtn = wrap.querySelector("#pd-add");
+  let timer = null;
+  const doPreview = async () => {
+    const t = txt.value.trim();
+    if (!t) { prev.textContent = "Preview appears here…"; addBtn.disabled = true; return; }
+    const r = await pywebview.api.preview_dispute_email(t);
+    if (!r?.ok) { prev.textContent = r?.error || "Couldn't parse."; addBtn.disabled = true; return; }
+    const p = r.parsed;
+    if (p.claim && !clmEl.value) clmEl.value = p.claim;
+    prev.textContent = `${p.lines.length} line adjustment(s) · disputed $${p.amount}\n\n${p.summary}`;
+    addBtn.disabled = false;
+  };
+  txt.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(doPreview, 300); });
+  addBtn.addEventListener("click", async () => {
+    addBtn.disabled = true; addBtn.textContent = "Adding…";
+    const r = await pywebview.api.add_dispute_from_email(txt.value, insEl.value, clmEl.value);
+    if (r?.need_insured) {
+      setStatus("Add an insured name or claim # first", "warn");
+      insEl.focus(); addBtn.disabled = false; addBtn.textContent = "➕ Add to tracker"; return;
+    }
+    if (!r?.ok) {
+      setStatus(`Add failed: ${r?.error || "?"}`, "error");
+      addBtn.disabled = false; addBtn.textContent = "➕ Add to tracker"; return;
+    }
+    setStatus(`✓ Dispute added${r.was_new ? "" : " (updated)"} · $${r.parsed?.amount || ""}`, "ok");
+    close();
+    await load();
+  });
+  setTimeout(() => txt.focus(), 50);
+}
+
 async function openDisputeModal(existing) {
   const isEdit = !!existing;
   const statuses = await pywebview.api.status_choices() || [];

@@ -67,13 +67,21 @@ _UNIT_FOLDER_RE = re.compile(
 
 # Looser pattern for parsing units OUT OF arbitrary text — SP folder
 # names, zip filenames, run-doc activity strings. Doesn't require the
-# token to be at start-of-string; matches anywhere. Also handles a
-# bare "#207" suffix that techs sometimes use ("Smith #207 Demo").
-# Branches so we can require a word boundary AFTER the literal
-# unit/apt/apartment prefix but NOT after the '#' character — '#' is
-# not a word char so `\b` would fail there anyway.
-_UNIT_TOKEN_RE = re.compile(
-    r"(?:(?:unit|apt|apartment)\b|#)[\s#:_-]*(?P<num>\d+)",
+# token to be at start-of-string; matches anywhere.
+_UNIT_WORD_TOKEN_RE = re.compile(
+    r"(?:unit|apt|apartment|suite|ste)\b[\s#:_-]*(?P<num>\d+)",
+    re.IGNORECASE)
+# Bare "#207" that techs sometimes use as a unit ("Smith #207 Demo").
+# GUARDED: a bare '#<digits>' is only treated as a unit when it is NOT a
+# claim / job / ticket / PO / WO / invoice / policy number — those all use
+# '#' too and used to false-match, mis-routing imports (audit bug #5:
+# "Job #2 water"→2, "Smith Claim #12345 Demo"→12345). Unit numbers are
+# ≤4 digits, so a longer run (typical of claim/ticket ids) is rejected
+# outright by the {1,4}\b anchor.
+_HASH_TOKEN_RE = re.compile(r"#\s*(?P<num>\d{1,4})\b")
+_HASH_NONUNIT_CTX_RE = re.compile(
+    r"(?:claim|job|ticket|inv(?:oice)?|po|w/?o|wo|order|ref(?:erence)?|"
+    r"policy|file|acct|account|no|number)\s*[#:.\-]?\s*$",
     re.IGNORECASE)
 
 
@@ -99,16 +107,27 @@ def parse_unit_token(text: str) -> int | None:
 
     Used to route SP imports / WC zips to the right unit subfolder
     when the source name carries the unit (e.g.
-    'Avila Apt 207 Demo 5-10-26' → 207)."""
+    'Avila Apt 207 Demo 5-10-26' → 207). A bare '#<n>' only counts as a
+    unit when it isn't a claim/job/ticket/etc. number (see guards above)."""
     if not text:
         return None
-    m = _UNIT_TOKEN_RE.search(text)
-    if not m:
-        return None
-    try:
-        return int(m.group("num"))
-    except ValueError:
-        return None
+    # Prefer an explicit unit/apt/suite word — unambiguous.
+    m = _UNIT_WORD_TOKEN_RE.search(text)
+    if m:
+        try:
+            return int(m.group("num"))
+        except ValueError:
+            return None
+    # Fall back to a bare "#207", but skip any hash that's preceded by a
+    # claim/job/ticket-style keyword (those aren't unit numbers).
+    for hm in _HASH_TOKEN_RE.finditer(text):
+        if _HASH_NONUNIT_CTX_RE.search(text[:hm.start()]):
+            continue
+        try:
+            return int(hm.group("num"))
+        except ValueError:
+            continue
+    return None
 
 
 # Folder names we should NEVER descend into while hunting for units.

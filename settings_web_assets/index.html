@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>Settings — EMS Tools</title>
 <link rel="stylesheet" href="theme.css" />
-<script src="iframe_shim.js"></script>
+<script src="../web_shared/iframe_shim.js"></script>
 <script src="../web_shared/util.js"></script>
 <style>
   .wrap { flex: 1; overflow-y: auto; padding: 24px; max-width: 720px; margin: 0 auto; width: 100%; }
@@ -77,6 +77,28 @@
                   background: var(--surface); border: 1px solid var(--border);
                   border-radius: 8px;">
     <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">
+      🔗 Job identity
+    </div>
+    <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
+      Look up what's tied to a job — its canonical name, the alternate
+      spellings that resolve to it, and its folder / Trello / CompanyCam
+      links. Auto-linking learns these as you pin folders and cards.
+      "Backfill" seeds the graph from every folder + Trello pin you've
+      already made.
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <input class="search" id="ji-name" type="text" placeholder="Job / client name (any spelling)"
+             style="flex:1 1 220px; min-width:180px;" />
+      <button class="btn" id="ji-lookup">🔎 Look up</button>
+      <button class="btn" id="ji-backfill" title="Seed the graph from existing folder + Trello pins">🌱 Backfill from pins</button>
+    </div>
+    <div id="ji-result" style="margin-top:12px;"></div>
+  </section>
+
+  <section style="margin-bottom: 22px; padding: 14px 18px;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px;">
+    <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">
       📌 Sidebar visibility
     </div>
     <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
@@ -89,6 +111,37 @@
          style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
                 gap: 8px;"></div>
     <div class="muted" id="visibility-status" style="font-size: 11px; margin-top: 10px;"></div>
+  </section>
+
+  <section style="margin-bottom: 22px; padding: 14px 18px;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="font-size: 13px; font-weight: 600;">🏢 Departments</div>
+      <label class="field bool" style="margin:0 0 0 auto;display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="dept-enable" />
+        <span style="font-size:12px;font-weight:600;">Enable multiple departments (OC / IE)</span>
+      </label>
+    </div>
+    <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
+      Run the tools against two SERVPRO departments, each with its own Trello
+      board, job/photo folders, and office identity. Switch between them from
+      the launcher. The main settings below stay as your <b>Inland Empire</b>
+      defaults; any field you leave blank for a department <b>inherits</b> those.
+      CompanyCam, appearance, and feature flags stay shared.
+    </div>
+    <div id="dept-body" style="display:none;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);">Editing</label>
+        <select id="dept-pick" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font:inherit;font-size:13px;"></select>
+        <span id="dept-active-badge" class="muted" style="font-size:11px;"></span>
+      </div>
+      <div id="dept-fields"></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+        <button class="btn btn-primary" id="dept-save">💾 Save department</button>
+        <span id="dept-status" class="muted" style="font-size:12px;"></span>
+      </div>
+    </div>
   </section>
 
   <div id="form-fields"></div>
@@ -123,6 +176,12 @@ window.addEventListener("pywebviewready", async () => {
     openTechRosterEditor);
   document.getElementById("authorize-trello").addEventListener("click",
     () => pywebview.api.authorize_trello());
+  // Job identity lookup + backfill
+  document.getElementById("ji-lookup").addEventListener("click", lookupJobIdentity);
+  document.getElementById("ji-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); lookupJobIdentity(); }
+  });
+  document.getElementById("ji-backfill").addEventListener("click", backfillJobGraph);
   document.getElementById("check-trello").addEventListener("click", async () => {
     const el = document.getElementById("trello-status");
     el.textContent = "Checking…"; el.style.color = "";
@@ -137,7 +196,116 @@ window.addEventListener("pywebviewready", async () => {
   });
   // Sidebar visibility grid — one checkbox per panel.
   await renderPanelVisibility();
+  // Departments (multi-account) editor.
+  await renderDepartments();
+  document.getElementById("dept-enable").addEventListener("change", async (e) => {
+    const on = e.target.checked;
+    const r = await pywebview.api.set_multi_dept(on);
+    if (!r?.ok) { e.target.checked = !on; setStatus(`Failed: ${r?.error || "?"}`, "error"); return; }
+    await renderDepartments();
+    setStatus(on ? "🏢 Multiple departments ON — configure OC below, then switch from the launcher"
+                 : "Multiple departments off", "ok");
+    try { window.parent?.postMessage({ type: "sidebar-reload" }, "*"); } catch (_) {}
+  });
+  document.getElementById("dept-pick").addEventListener("change", renderDeptFields);
+  document.getElementById("dept-save").addEventListener("click", saveDepartment);
 });
+
+// ── Departments (multi-account) ────────────────────────────────────
+let DEPT = null;   // last dept_config() result
+
+async function renderDepartments() {
+  DEPT = await pywebview.api.dept_config();
+  const enable = document.getElementById("dept-enable");
+  const body = document.getElementById("dept-body");
+  if (!DEPT?.ok) { body.style.display = "none"; enable.checked = false; return; }
+  enable.checked = !!DEPT.enabled;
+  body.style.display = DEPT.enabled ? "block" : "none";
+  if (!DEPT.enabled) return;
+  const pick = document.getElementById("dept-pick");
+  pick.innerHTML = (DEPT.departments || []).map((d) =>
+    `<option value="${esc(d.key)}">${esc(d.label)} (${esc(d.key)})${d.is_base ? " · inherits main settings" : ""}</option>`
+  ).join("");
+  // Default to editing the first NON-base department (OC) — that's the
+  // one that actually needs values typed in.
+  const oc = (DEPT.departments || []).find((d) => !d.is_base);
+  if (oc) pick.value = oc.key;
+  renderDeptFields();
+}
+
+function _deptByKey(key) {
+  return (DEPT.departments || []).find((d) => d.key === key) || null;
+}
+
+function renderDeptFields() {
+  const key = document.getElementById("dept-pick").value;
+  const dept = _deptByKey(key);
+  const wrap = document.getElementById("dept-fields");
+  const badge = document.getElementById("dept-active-badge");
+  badge.textContent = DEPT.active === key ? "● currently active" : "";
+  badge.style.color = DEPT.active === key ? "var(--green)" : "";
+  if (!dept) { wrap.innerHTML = ""; return; }
+  const base = DEPT.base || {};
+  const groups = {};
+  (DEPT.fields || []).forEach((f) => { (groups[f.group] = groups[f.group] || []).push(f); });
+  const inheritNote = dept.is_base
+    ? `<div class="muted" style="font-size:11px;margin-bottom:12px;">Inland Empire uses the main settings below — edit those. Values typed here override them only for IE.</div>`
+    : `<div class="muted" style="font-size:11px;margin-bottom:12px;">Blank = inherit the Inland Empire value (shown as the grey placeholder).</div>`;
+  wrap.innerHTML = inheritNote + Object.entries(groups).map(([g, fields]) => `
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:14px 0 8px;">${esc(g)}</div>
+    ${fields.map((f) => {
+      const v = dept.overrides[f.key] ?? "";
+      const inherit = base[f.key] ? String(base[f.key]) : "(none set)";
+      const inputType = f.kind === "secret" ? "password" : "text";
+      const browse = (f.kind === "dir" || f.kind === "file")
+        ? `<button type="button" class="btn dept-browse" data-browse="${esc(f.key)}" data-kind="${esc(f.kind)}" style="white-space:nowrap;">📂</button>` : "";
+      return `<div class="field">
+        <label>${esc(f.label)}</label>
+        <div style="display:flex;gap:8px;align-items:stretch;">
+          <input type="${inputType}" id="d-${esc(f.key)}" data-key="${esc(f.key)}"
+                 value="${esc(v)}" placeholder="inherits: ${esc(inherit)}" autocomplete="off"
+                 style="flex:1;min-width:0;" />
+          ${browse}
+        </div>
+      </div>`;
+    }).join("")}
+  `).join("");
+  wrap.querySelectorAll(".dept-browse").forEach((b) => {
+    b.addEventListener("click", async () => {
+      const k = b.dataset.browse, kind = b.dataset.kind;
+      const input = document.getElementById("d-" + k);
+      const orig = b.textContent; b.disabled = true; b.textContent = "…";
+      const res = kind === "file"
+        ? await pywebview.api.pick_file(input ? input.value : "")
+        : await pywebview.api.pick_dir(input ? input.value : "");
+      b.disabled = false; b.textContent = orig;
+      if (res?.cancelled) return;
+      if (!res?.ok) { setDeptStatus(`Browse failed: ${res?.error || "?"}`, "error"); return; }
+      if (res.path && input) input.value = res.path;
+    });
+  });
+}
+
+async function saveDepartment() {
+  const key = document.getElementById("dept-pick").value;
+  const dept = _deptByKey(key);
+  const overrides = {};
+  document.querySelectorAll("#dept-fields input[data-key]").forEach((el) => {
+    overrides[el.dataset.key] = el.value;
+  });
+  const r = await pywebview.api.save_department(key, overrides, dept?.label || "");
+  if (!r?.ok) { setDeptStatus(`Save failed: ${r?.error || "?"}`, "error"); return; }
+  setDeptStatus(`💾 Saved ${dept?.label || key}` + (DEPT.active === key ? " — reload / switch to apply" : ""), "ok");
+  await renderDepartments();
+  document.getElementById("dept-pick").value = key;
+  renderDeptFields();
+}
+
+function setDeptStatus(m, k = "") {
+  const el = document.getElementById("dept-status");
+  el.textContent = m;
+  el.style.color = k === "error" ? "var(--red)" : (k === "ok" ? "var(--green)" : "");
+}
 
 async function renderPanelVisibility() {
   const grid = document.getElementById("panel-visibility-grid");
@@ -259,6 +427,49 @@ async function renderFirstRunWizard() {
       <span style="width:18px;">${s.done ? "✓" : "○"}</span>
       <span style="flex:1;">${esc(s.label)}${s.current ? ` <code style="background:var(--surface-2);padding:1px 4px;border-radius:3px;font-size:11px;">${esc(s.current)}</code>` : ""}</span>
     </div>`).join("");
+}
+
+const _JI_LINK_LABEL = {
+  folder_path: "📁 Folder",
+  trello_card: "🔵 Trello card",
+  companycam_project: "📷 CompanyCam",
+};
+
+async function lookupJobIdentity() {
+  const name = document.getElementById("ji-name").value.trim();
+  const box = document.getElementById("ji-result");
+  if (!name) { box.innerHTML = ""; setStatus("Type a name to look up", "error"); return; }
+  box.innerHTML = `<span class="muted" style="font-size:12px;">Looking up…</span>`;
+  const res = await pywebview.api.lookup_job_identity(name);
+  if (!res?.ok) { box.innerHTML = `<span style="color:var(--red);font-size:12px;">${esc(res?.error || "lookup failed")}</span>`; return; }
+  if (!res.found) {
+    box.innerHTML = `<div class="muted" style="font-size:12px;">No job resolves from “${esc(name)}” yet. Pin its folder or Trello card (or run Backfill) to teach the graph.</div>`;
+    return;
+  }
+  const aliases = (res.aliases || []).length
+    ? (res.aliases).map((a) => `<code style="background:var(--surface-2);padding:1px 6px;border-radius:3px;font-size:11px;margin:2px;">${esc(a)}</code>`).join(" ")
+    : `<span class="muted" style="font-size:12px;">none learned yet</span>`;
+  const links = (res.links || []).length
+    ? (res.links).map((l) => `<div style="font-size:12px;margin:3px 0;"><b>${_JI_LINK_LABEL[l.type] || esc(l.type)}</b>: <span style="word-break:break-all;">${esc(l.value)}</span></div>`).join("")
+    : `<span class="muted" style="font-size:12px;">no links yet</span>`;
+  box.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:6px;padding:12px 14px;background:var(--surface-2);">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${esc(res.display_name || res.canon_key)}
+        ${res.status ? `<span class="muted" style="font-weight:400;font-size:11px;">· ${esc(res.status)}</span>` : ""}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">canonical key: <code>${esc(res.canon_key)}</code></div>
+      <div style="margin-bottom:8px;"><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Also resolves from</div>${aliases}</div>
+      <div><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Linked to</div>${links}</div>
+    </div>`;
+}
+
+async function backfillJobGraph() {
+  const btn = document.getElementById("ji-backfill");
+  btn.disabled = true;
+  setStatus("🌱 Seeding identity graph from existing pins…", "");
+  const res = await pywebview.api.backfill_job_graph();
+  btn.disabled = false;
+  if (!res?.ok) { setStatus(`Backfill failed: ${res?.error || "?"}`, "error"); return; }
+  setStatus(`🌱 Backfill done · ${res.folders} folder pins · ${res.cards} Trello pins · ${res.jobs} jobs tied`, "ok");
 }
 
 async function save() {

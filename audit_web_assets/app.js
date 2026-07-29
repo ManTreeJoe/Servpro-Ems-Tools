@@ -20,12 +20,26 @@ const state = {
   starred_clients: [],     // lowercase client names the user has ⭐'d
   selected_set: new Set(), // client names selected for bulk action
   importBtn: null,         // <button> currently running an import (HEIC progress target)
+  oneoffHits: [],          // one-off audit rows surfaced when a search finds nothing
+  oneoffTried: "",         // last term we auto-ran a one-off for (avoid repeats)
+  oneoffRunning: false,    // guard against overlapping auto one-off audits
 };
 
 // Commercial-parent groups (e.g. "Menifee Union School District") the
 // user has collapsed in the list. Keyed by lowercased parent name.
 // Module-level so it survives re-renders within the session.
 const collapsedParents = new Set();
+// Parent keys we've already seeded as collapsed-on-startup, so a manual
+// expand isn't re-collapsed on the next render — only brand-new parents
+// (from a fresh audit) get auto-collapsed.
+const _seenParentKeys = new Set();
+
+// Multi-unit umbrellas: rows that carry a unit are clustered under a
+// synthetic property header. Today's referenced units always peek through;
+// the caret expands to reveal the property's OTHER units (fetched lazily
+// from disk). Keyed by lowercased client name.
+const expandedUnitGroups = new Set();     // which unit umbrellas are expanded
+const unitSiblingsCache = new Map();      // key -> [{name, path}] (all units on disk)
 
 // Live HEIC→JPEG conversion progress from the backend (do_import emits
 // `import:progress` per file). Updates whichever import button is
@@ -60,6 +74,11 @@ window.addEventListener("pywebviewready", async () => {
   $("#open-doc-btn").addEventListener("click",
     () => pywebview.api.open_run_doc(state.dayOffset || 0));
   $("#audit-one-btn").addEventListener("click", () => openAuditOneDialog());
+  $("#new-loss-btn")?.addEventListener("click", () => openNewLossModal());
+  $("#incoming-btn")?.addEventListener("click", () => openIncomingPanel());
+  $("#usage-btn")?.addEventListener("click", () => openUsagePanel());
+  $("#overview-btn")?.addEventListener("click", () => openOverviewPanel());
+  $("#notes-btn")?.addEventListener("click", () => openNotesPanel());
   $("#sec-work").addEventListener("change", () => refreshDayLabel());
   $("#sec-monitor").addEventListener("change", () => refreshDayLabel());
   // Right-click context menu (close on outside click)
@@ -67,6 +86,7 @@ window.addEventListener("pywebviewready", async () => {
   state.dayOffset = 0;
   state.mode = "daily";
   refreshDayLabel();
+  updateNotesBadge();          // show the open-notes count on the 📝 button
   // Mode switcher
   $("#mode-daily").addEventListener("click",   () => switchMode("daily"));
   $("#mode-backlog").addEventListener("click", () => switchMode("backlog"));
@@ -147,6 +167,13 @@ window.addEventListener("pywebviewready", async () => {
     ]);
   }
 
+  // Deep-link focus from a cross-tool "Open in → Audit" (a one-off /
+  // quick pull-up). Read it BEFORE loading the daily board so we can
+  // skip the board's async auto-refresh — that background re-audit's
+  // re-render is what used to wipe the pulled-up job and dump the user
+  // back on the whole board.
+  const _focus = window.emsDeepLinkFocus ? window.emsDeepLinkFocus() : "";
+
   try {
     const cached = await pywebview.api.last_audit();
     if (cached && cached.rows && cached.rows.length) {
@@ -155,14 +182,17 @@ window.addEventListener("pywebviewready", async () => {
       renderAll();
       // Auto-refresh if the cached audit is >30 min old. Quietly
       // triggers a background re-audit — the user gets fresh data
-      // without having to remember to click ↻.
+      // without having to remember to click ↻. Skipped when deep-
+      // linking to one job: we're about to leave the daily board for
+      // one-off mode, so a background daily re-audit would just fight
+      // the pull-up.
       const ranAt = cached.meta?.ran_at_iso;
       const ageMin = ranAt ? (Date.now() - new Date(ranAt).getTime()) / 60000 : Infinity;
-      if (ageMin > 30) {
+      if (!_focus && ageMin > 30) {
         setStatus(`Cached audit ${Math.floor(ageMin)}min old — refreshing…`, "");
         runAudit(true);
       }
-    } else {
+    } else if (!_focus) {
       const meta = await pywebview.api.today_meta();
       state.meta = {
         ...meta,
@@ -183,15 +213,46 @@ window.addEventListener("pywebviewready", async () => {
   } catch (ex) {
     setStatus(`Failed to load: ${ex}`, "error");
   }
-  // Deep-link focus from a cross-tool "Open in → Audit": pre-fill the
-  // search box so the job filters into view. Works against cached rows
-  // immediately; otherwise the term waits for the next Run Audit.
-  const _focus = window.emsDeepLinkFocus ? window.emsDeepLinkFocus() : "";
+
+  // A deep-link pulls up that ONE job in one-off mode (audit it on the
+  // spot and land on its row) instead of dropping the user on the daily
+  // board and hoping the name filters — a one-off job usually isn't on
+  // today's run-doc, so filtering matched nothing.
   if (_focus) {
-    const box = $("#search-box");
-    if (box) { box.value = _focus; box.dispatchEvent(new Event("input")); }
+    await openFocusJob(_focus);
   }
 });
+
+// Pull up a single job from a cross-tool deep-link: audit it and switch
+// to one-off mode with the row selected. Falls back to filtering the
+// current rows if the one-off audit can't resolve the name.
+async function openFocusJob(name) {
+  setStatus(`🔍 Pulling up ${name}…`, "");
+  let res = null;
+  try {
+    res = await pywebview.api.audit_one_job(name, "", false);
+  } catch (ex) {
+    res = { ok: false, error: String(ex) };
+  }
+  if (!res?.ok || !res.row) {
+    // Couldn't resolve to a single job — degrade to a name filter on
+    // whatever's already loaded so the user still gets a starting point.
+    const box = $("#search-box");
+    if (box) { box.value = name; box.dispatchEvent(new Event("input")); }
+    setStatus(`Couldn't pull up “${name}”${res?.error ? ": " + res.error : ""} — filtered instead`,
+              "error");
+    return;
+  }
+  await switchMode("oneoff");
+  state.selected_client = rowKey(res.row);
+  renderAll();
+  // Bring the selected row into view.
+  try {
+    document.querySelector(".list-row.active")
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+  } catch (_) { /* best-effort */ }
+  setStatus(`🔍 ${name}`, "ok");
+}
 
 // ── Mode switcher (Daily / Backlog / SP Recent / One-off — P1) ──
 async function switchMode(mode) {
@@ -201,6 +262,12 @@ async function switchMode(mode) {
   });
   // Only Daily Run uses the day-walker + section toggles
   $("#daily-toolbar").style.display = mode === "daily" ? "" : "none";
+  // A daily-run load keeps running in the background when you leave the tab.
+  // Its loading overlay is only meaningful on Daily Run, so show/hide it to
+  // match the current tab — never cover One-off / SP / Backlog with it.
+  if (state.loading) {
+    $("#loading-state").classList.toggle("hidden", mode !== "daily");
+  }
   // Run-button text varies by mode
   $("#run-btn").textContent = mode === "daily"   ? "↻ Run Audit"
     : mode === "backlog" ? "↻ Reload backlog"
@@ -415,59 +482,604 @@ async function runAuditFiltered(useCache) {
 }
 
 // ── Audit One Job dialog (P0) ───────────────────────────────────
+// Type a name → show candidate jobs (run-doc / pinned card / year
+// folder) → the user CONFIRMS the right one before auditing. Replaces
+// the old "grab the single top fuzzy match and audit it" behavior so a
+// weak/partial match no longer silently audits the wrong job.
 function openAuditOneDialog() {
   const overlay = createOverlay({
     title: "🔍 Audit one job",
-    sub:   "Type a client name — auto-discovers the OD folder + audits",
+    sub:   "Type a client name, then pick the matching job to audit.",
     body: `
       <label class="modal-lbl">Client name</label>
-      <input id="ao-name" class="search" type="text" autocomplete="off"
-             style="width:100%;" placeholder="Last, First or Last name…" />
+      <div style="display:flex;gap:8px;">
+        <input id="ao-name" class="search" type="text" autocomplete="off"
+               style="flex:1;" placeholder="Last, First or Last name…" />
+        <button class="btn btn-primary" id="ao-find">🔎 Find</button>
+      </div>
+      <div id="ao-status" class="muted" style="margin-top:10px;"></div>
+      <div id="ao-list" class="target-list" style="margin-top:8px; max-height:320px;"></div>
       <div class="modal-footer">
-        <button class="btn" id="ao-cancel">Cancel</button>
-        <button class="btn btn-primary" id="ao-go">🔍 Audit</button>
+        <button class="btn modal-close" id="ao-cancel">Cancel</button>
       </div>`,
   });
-  overlay.querySelector("#ao-cancel").addEventListener("click", closeOverlay);
-  overlay.querySelector("#ao-go").addEventListener("click", async () => {
-    const name = overlay.querySelector("#ao-name").value.trim();
-    if (!name) return;
-    const btn = overlay.querySelector("#ao-go");
-    btn.disabled = true; btn.textContent = "Auditing…";
-    const res = await pywebview.api.audit_one_job(name);
+
+  const nameEl   = overlay.querySelector("#ao-name");
+  bindTitleCaseInput(nameEl);
+  const findBtn  = overlay.querySelector("#ao-find");
+  const statusEl = overlay.querySelector("#ao-status");
+  const listEl   = overlay.querySelector("#ao-list");
+  let lastScope  = "";       // "" = current year, "all" = every year
+  let widened    = false;    // already searched all years?
+
+  const sourceBadge = (src) => {
+    const map = {
+      run:    ["📋", "On run-doc", "var(--act-monitor,#4A9EFF)"],
+      pin:    ["📌", "Pinned",     "var(--green,#3FB950)"],
+      folder: ["📁", "Folder",     "var(--text-muted)"],
+    };
+    const [icon, label, color] = map[src] || ["•", src, "var(--text-muted)"];
+    return `<span style="font-size:10px;font-weight:600;color:${color};white-space:nowrap;">${icon} ${label}</span>`;
+  };
+
+  // Audit a confirmed candidate (skipCanon=true) or the raw typed
+  // string (skipCanon=false → old auto-resolve fallback).
+  const auditChosen = async (name, path, skipCanon) => {
+    statusEl.textContent = `Auditing ${name}…`;
+    listEl.innerHTML = "";
+    findBtn.disabled = true;
+    const res = await pywebview.api.audit_one_job(name, path || "", !!skipCanon);
     if (!res?.ok) {
       setStatus(`Audit failed: ${res?.error || "?"}`, "error");
-      btn.disabled = false; btn.textContent = "🔍 Audit";
+      statusEl.textContent = `Audit failed: ${res?.error || "?"}`;
+      findBtn.disabled = false;
       return;
     }
     closeOverlay();
-    // One-off results live in their own mode/list — switch over so
-    // the user lands on the result. switchMode("oneoff") will pull
-    // the fresh list from the backend (which already contains the
-    // newly-audited row keyed by canonical name, so repeated audits
-    // of "Munson" update the same row instead of duplicating).
+    // One-off results live in their own mode/list — switch over so the
+    // user lands on the freshly-audited row.
     await switchMode("oneoff");
     state.selected_client = rowKey(res.row);
     renderAll();
-    const resolvedNote = res.resolved
-      ? ` (matched "${res.typed}" → ${res.canonical})`
-      : "";
-    // Multi-claim / commercial-parent names expand into several rows —
-    // tell the user all of them landed (not just the selected one).
     if ((res.count || 1) > 1) {
       setStatus(
-        `🔍 Audited ${res.canonical} — ${res.count} claims/sub-jobs added below`,
+        `🔍 Audited ${firstLast(res.canonical)} — ${res.count} claims/sub-jobs added below`,
         "ok");
     } else {
       setStatus(
-        `🔍 Audited ${res.row.client}${resolvedNote} — ${res.row.flagged ? `${res.row.total_missing} missing` : "clean ✓"}`,
+        `🔍 Audited ${res.row.client} — ${res.row.flagged ? `${res.row.total_missing} missing` : "clean ✓"}`,
         res.row.flagged ? "warn" : "ok");
     }
+  };
+
+  // All source chips for a combined row (a job matched on run-doc AND
+  // pinned AND folder shows all three).
+  const sourceChips = (c) => {
+    const srcs = (c.sources && c.sources.length) ? c.sources : [c.source];
+    return srcs.map(sourceBadge).join(" ");
+  };
+
+  // Cardless job → offer a Trello card, THEN audit. 1 match → Attach/Skip;
+  // several → pick-list; none → audit anyway. (Q4/Q5)
+  const offerCardThenAudit = async (c) => {
+    statusEl.textContent = `Looking for a Trello card for ${c.name}…`;
+    let cards = [];
+    try {
+      const sres = await pywebview.api.suggest_card_for(c.name);
+      cards = (sres && sres.cards) || [];
+    } catch (_) { cards = []; }
+    if (!cards.length) { auditChosen(c.name, c.path, true); return; }
+    const one = cards.length === 1;
+    statusEl.textContent = `Attach a card to ${c.name}?`;
+    listEl.innerHTML = `
+      <div class="muted" style="margin-bottom:6px;">${one
+        ? "Found a matching Trello card — attach it?"
+        : `Found ${cards.length} possible cards — pick one to attach:`}</div>
+      ${cards.map((cd, i) => `
+        <div class="target-row ao-card" data-i="${i}" style="cursor:pointer;">
+          <span>📎</span>
+          <div style="flex:1;min-width:0;">
+            <div class="name">${escapeHtml(cd.name)}</div>
+            <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(cd.board || "")}${cd.list_name ? " · " + escapeHtml(cd.list_name) : ""}</div>
+          </div>
+          <span style="font-size:10px;font-weight:600;color:var(--green,#3FB950);white-space:nowrap;">📎 Attach</span>
+        </div>`).join("")}
+      <div class="target-row ao-skipcard" style="cursor:pointer;opacity:0.85;">
+        <span>⏭</span>
+        <div style="flex:1;"><div class="name">Skip — audit without a card</div></div>
+      </div>`;
+    listEl.querySelectorAll(".ao-card").forEach((el) => {
+      el.addEventListener("click", async () => {
+        const cd = cards[parseInt(el.dataset.i, 10)];
+        try { await pywebview.api.pin_trello(c.name, cd.card_id); } catch (_) {}
+        auditChosen(c.name, c.path, true);
+      });
+    });
+    listEl.querySelector(".ao-skipcard")?.addEventListener("click", () =>
+      auditChosen(c.name, c.path, true));
+  };
+
+  const pickCandidate = (c) => {
+    if (!c.has_card) { offerCardThenAudit(c); return; }
+    auditChosen(c.name, c.path, true);
+  };
+
+  // 🔗 Merge — permanently fold the duplicate spellings into one job.
+  const mergeCandidate = async (c) => {
+    statusEl.textContent = `Merging ${c.variants.length} spellings into ${c.name}…`;
+    let res;
+    try { res = await pywebview.api.merge_candidates(c.name, c.variants); }
+    catch (ex) { res = { ok: false, error: String(ex) }; }
+    if (!res?.ok) { statusEl.textContent = `Merge failed: ${res?.error || "?"}`; return; }
+    setStatus(`🔗 Merged ${res.dropped} duplicate${res.dropped === 1 ? "" : "s"} into ${c.name}`, "ok");
+    doFind(lastScope);   // re-list — dupes gone, one clean row
+  };
+
+  const renderCandidates = (cands, typed) => {
+    const rows = cands.map((c, i) => `
+      <div class="target-row ao-cand" data-i="${i}" style="cursor:pointer;">
+        <span>${(c.sources || []).includes("run") ? "📋" : (c.source === "folder" ? "📁" : (c.source === "pin" ? "📌" : "📋"))}</span>
+        <div style="flex:1;min-width:0;">
+          <div class="name">${escapeHtml(titleCase(c.label || c.name))}</div>
+          <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(c.detail || "")}${(!c.has_card && !c.path) ? " · no folder/card yet" : ""}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${sourceChips(c)}
+          ${c.mergeable ? `<button class="ao-merge btn" data-i="${i}" style="font-size:10px;padding:2px 8px;" title="Fold ${c.variants.length} duplicate spellings into one job">🔗 Merge ${c.variants.length}</button>` : ""}
+        </div>
+      </div>`).join("");
+    // Widen-scope row — only when we're still on the current year.
+    const moreRow = (!widened && lastScope === "")
+      ? `<div class="target-row ao-more" style="cursor:pointer;">
+           <span>🗂</span>
+           <div style="flex:1;"><div class="name">Search all years + fire jobs…</div></div>
+         </div>`
+      : "";
+    // Fallback row — audit exactly what was typed (old auto-resolve).
+    const rawRow = `
+      <div class="target-row ao-raw" style="cursor:pointer;opacity:0.85;">
+        <span>⌨</span>
+        <div style="flex:1;min-width:0;">
+          <div class="name">Audit “${escapeHtml(typed)}” as typed</div>
+          <div style="font-size:10px;color:var(--text-muted);">Skip the picker — auto-resolve like before</div>
+        </div>
+      </div>`;
+    listEl.innerHTML = rows + moreRow + rawRow;
+
+    listEl.querySelectorAll(".ao-cand").forEach((el) => {
+      el.addEventListener("click", (ev) => {
+        if (ev.target.closest(".ao-merge")) return;   // merge handled below
+        pickCandidate(cands[parseInt(el.dataset.i, 10)]);
+      });
+    });
+    listEl.querySelectorAll(".ao-merge").forEach((el) => {
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        mergeCandidate(cands[parseInt(el.dataset.i, 10)]);
+      });
+    });
+    listEl.querySelector(".ao-more")?.addEventListener("click", () => doFind("all"));
+    listEl.querySelector(".ao-raw")?.addEventListener("click", () =>
+      auditChosen(typed, "", false));
+  };
+
+  const doFind = async (scope) => {
+    const typed = nameEl.value.trim();
+    if (!typed) { nameEl.focus(); return; }
+    lastScope = scope || "";
+    if (scope === "all") widened = true;
+    findBtn.disabled = false;
+    statusEl.textContent = "Searching…";
+    listEl.innerHTML = "";
+    const res = await pywebview.api.list_audit_candidates(typed, lastScope);
+    if (!res?.ok) { statusEl.textContent = `Search failed: ${res?.error || "?"}`; return; }
+    const cands = res.candidates || [];
+    statusEl.textContent = cands.length
+      ? `${cands.length} match${cands.length !== 1 ? "es" : ""} — pick the right one:`
+      : (widened ? `No matches anywhere for “${typed}”.`
+                 : `No current-year matches for “${typed}”.`);
+    renderCandidates(cands, typed);
+  };
+
+  findBtn.addEventListener("click", () => doFind(""));
+  nameEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doFind("");
   });
-  overlay.querySelector("#ao-name").focus();
-  overlay.querySelector("#ao-name").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") overlay.querySelector("#ao-go").click();
+  nameEl.focus();
+}
+
+// ── Incoming downloads panel ─────────────────────────────────────
+// Surfaces every importable download (WC attachments / WC docs /
+// DocuSign) sitting in Downloads and lets the user pick the job + import
+// in one place — no need to find the row first. WC photo dumps carry no
+// client name, so the job field defaults to the currently-selected row
+// but is editable. Multi-stage/day batches auto-split via pickImportGroups.
+async function importDownloadForClient(client, cand) {
+  const kind = cand.kind;
+  const paths = cand.paths || [];
+  if (kind === "companycam" || kind === "wc_attachments") {
+    let detection = null;
+    try { detection = await pywebview.api.detect_import_groups(paths); }
+    catch (_) { detection = null; }
+    if (detection && detection.ok && detection.multi) {
+      const assignments = await window.pickImportGroups({ client, techs: [], detection });
+      if (!assignments) return null;             // cancelled
+      return await pywebview.api.do_import_grouped(client, kind, paths, assignments, "ems");
+    }
+    const choice = await window.pickPicsStage({ client, allowAuto: true });
+    if (choice === null) return null;            // cancelled
+    const dest = choice === "AUTO" ? "" : choice;
+    const tech = await window.pickImportTech({ client, techs: [] });
+    if (!tech) return null;                       // cancelled
+    return await pywebview.api.do_import(client, kind, paths, dest, tech, "ems");
+  }
+  // WC documents / DocuSign → paperwork, straight to DOCS (no stage/tech).
+  return await pywebview.api.do_import(client, kind, paths, "", "", "ems");
+}
+
+async function openIncomingPanel() {
+  const overlay = createOverlay({
+    title: "📥 Incoming downloads",
+    sub:   "New Workcenter / DocuSign files in Downloads — pick the job and import (photos auto-split by stage).",
+    body: `
+      <div id="inc-status" class="muted"></div>
+      <div id="inc-list" class="target-list" style="margin-top:8px;max-height:360px;"></div>
+      <div class="modal-footer">
+        <button class="btn" id="inc-rescan">🔄 Rescan</button>
+        <button class="btn modal-close">Close</button>
+      </div>`,
   });
+  const listEl   = overlay.querySelector("#inc-list");
+  const statusEl = overlay.querySelector("#inc-status");
+
+  const defClient = (() => {
+    const r = findRowByKey(state.selected_client);
+    return r ? (r.display_name || titleCase(r.client)) : "";
+  })();
+
+  const scan = async () => {
+    statusEl.textContent = "Scanning Downloads…";
+    listEl.innerHTML = "";
+    let res;
+    try { res = await pywebview.api.scan_downloads(""); }
+    catch (ex) { statusEl.textContent = `Scan failed: ${ex}`; return; }
+    const cands = (res && res.candidates) || [];
+    if (!cands.length) {
+      statusEl.textContent = "Nothing importable in Downloads right now.";
+      return;
+    }
+    statusEl.textContent = `${cands.length} download${cands.length !== 1 ? "s" : ""} — set a job and import each:`;
+    listEl.innerHTML = cands.map((c, i) => `
+      <div class="target-row" data-i="${i}" style="align-items:center;">
+        <span>${escapeHtml(c.icon || "📥")}</span>
+        <div style="flex:1;min-width:0;">
+          <div class="name">${escapeHtml(c.label || c.kind)}</div>
+          <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(c.kind_label || c.kind)}${(c.paths && c.paths.length > 1) ? ` · ${c.paths.length} parts` : ""}</div>
+        </div>
+        <input class="inc-job search" data-i="${i}" type="text" placeholder="Job / client…"
+               value="${escapeAttr(defClient)}" autocomplete="off" style="width:190px;" />
+        <button class="btn btn-primary inc-go" data-i="${i}" style="margin-left:6px;white-space:nowrap;">📥 Import</button>
+      </div>`).join("");
+    listEl.querySelectorAll(".inc-go").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const i = parseInt(btn.dataset.i, 10);
+        const client = (listEl.querySelector(`.inc-job[data-i="${i}"]`).value || "").trim();
+        if (!client) { setStatus("Type a job/client for this download first.", "warn"); return; }
+        btn.disabled = true; btn.textContent = "Importing…";
+        try {
+          const r = await importDownloadForClient(client, cands[i]);
+          if (r === null) { btn.disabled = false; btn.textContent = "📥 Import"; return; }
+          if (!r.ok) {
+            btn.disabled = false; btn.textContent = "📥 Import";
+            setStatus(`Import failed for ${client}: ${r.error || "?"}`, "error");
+            return;
+          }
+          btn.textContent = "✓ Done";
+          const parts = r.routed
+            ? Object.entries(r.routed).map(([f, n]) => `${n} → ${f}`)
+            : (r.pics_count ? [`${r.pics_count} photos`]
+               : (r.docs_count ? [`${r.docs_count} → DOCS`] : ["imported"]));
+          if (r.failed && r.failed.length) parts.push(`⚠ ${r.failed.length} failed`);
+          setStatus(`✓ ${client}: ${parts.join(" · ")}`, "ok");
+          // Refresh the audit row if this job is in today's list.
+          try {
+            const re = await pywebview.api.reaudit_one(client);
+            if (re?.ok) {
+              const ix = state.rows.findIndex((x) => x.client === client);
+              if (ix >= 0) { state.rows[ix] = re.row; renderAll(); }
+            }
+          } catch (_) { /* not in today's list — fine */ }
+        } catch (ex) {
+          btn.disabled = false; btn.textContent = "📥 Import";
+          setStatus(`Import error: ${ex}`, "error");
+        }
+      });
+    });
+  };
+
+  overlay.querySelector("#inc-rescan")?.addEventListener("click", scan);
+  scan();
+}
+
+// ── Job admin overview (🩺) ──────────────────────────────────────
+// The simplified Hygiene job board, surfaced right in the audit so the
+// DocuSign / initial+final paperwork / weekly-check-in status of every
+// active job is one click away. Shares web_shared/hygiene_board.js with
+// the Hygiene panel, so the two never drift.
+function openOverviewPanel() {
+  const overlay = createOverlay({
+    title: "🩺 Job admin overview",
+    sub:   "DocuSign · initial/final paperwork · weekly check-ins — click a — chip to stamp today.",
+    body: `
+      <div id="ov-board"></div>
+      <div class="modal-footer"><button class="btn modal-close">Close</button></div>`,
+  });
+  const board = overlay.querySelector("#ov-board");
+  if (window.HygieneBoard) {
+    window.HygieneBoard.render(board, { api: pywebview.api, setStatus });
+  } else {
+    board.innerHTML = "Board renderer not loaded.";
+  }
+}
+
+// ── Tracked notes (📝) ───────────────────────────────────────────
+// To-do notes, tied to a job or loose. Check to mark done. Shared with the
+// audit detail's "📝 Note" action (window.openAuditNotes).
+async function updateNotesBadge() {
+  const btn = document.getElementById("notes-btn");
+  if (!btn) return;
+  try {
+    const r = await pywebview.api.notes_open_count("");
+    const n = (r && r.count) || 0;
+    btn.textContent = n ? `📝 Notes (${n})` : "📝 Notes";
+  } catch (_) {}
+}
+
+function openNotesPanel(prefillJob) {
+  const selClient = (() => {
+    const r = findRowByKey(state.selected_client); return r ? r.client : "";
+  })();
+  const scopeJob = prefillJob || "";
+  let filter = scopeJob || "all";       // "all" | "__untied__" | <client>
+  let showDone = false;
+  const chipJob = scopeJob || selClient;
+  const overlay = createOverlay({
+    title: "📝 Tracked notes",
+    sub:   "To-dos tied to a job or loose — check to mark done.",
+    body: `
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <input id="nt-text" class="search" type="text" placeholder="New note…" style="flex:1;" />
+        <input id="nt-job" class="search" type="text" placeholder="Job (optional)" value="${escapeAttr(prefillJob || selClient || "")}" style="width:160px;" />
+        <button class="btn btn-primary" id="nt-add-btn">➕ Add</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+        <button class="btn nt-f" data-f="all">All</button>
+        <button class="btn nt-f" data-f="__untied__">Loose</button>
+        ${chipJob ? `<button class="btn nt-f" data-f="${escapeAttr(chipJob)}">🔗 ${escapeHtml(chipJob)}</button>` : ""}
+        <span style="flex:1;"></span>
+        <label style="font-size:12px;cursor:pointer;"><input type="checkbox" id="nt-showdone" /> Show done</label>
+      </div>
+      <div id="nt-list" class="target-list" style="max-height:340px;"></div>
+      <div class="modal-footer"><button class="btn modal-close">Close</button></div>`,
+  });
+  const listEl = overlay.querySelector("#nt-list");
+
+  const render = async () => {
+    overlay.querySelectorAll(".nt-f").forEach((b) =>
+      b.classList.toggle("active", b.dataset.f === filter));
+    listEl.innerHTML = `<div class="muted" style="padding:8px;">Loading…</div>`;
+    let notes = [];
+    try {
+      const res = await pywebview.api.notes_list(filter === "all" ? "" : filter, showDone);
+      notes = (res && res.notes) || [];
+    } catch (ex) { listEl.innerHTML = `Failed: ${escapeHtml(String(ex))}`; return; }
+    if (!notes.length) {
+      listEl.innerHTML = `<div class="muted" style="padding:10px;">No ${showDone ? "" : "open "}notes${filter !== "all" ? " here" : ""} — add one above.</div>`;
+      return;
+    }
+    listEl.innerHTML = notes.map((n) => `
+      <div class="nt-note" data-id="${n.id}" style="display:flex;gap:8px;align-items:flex-start;padding:8px 4px;border-bottom:1px solid var(--border);">
+        <input type="checkbox" class="nt-done" ${n.done ? "checked" : ""} style="margin-top:3px;cursor:pointer;" title="Mark ${n.done ? "open" : "done"}" />
+        <div style="flex:1;min-width:0;">
+          <div class="nt-txt" style="font-size:13px;${n.done ? "text-decoration:line-through;color:var(--text-muted);" : ""}">${escapeHtml(n.text)}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${n.job ? `🔗 ${escapeHtml(n.job)} · ` : "loose · "}${escapeHtml((n.created_at || "").slice(0, 16))}${n.done && n.done_at ? ` · ✓ ${escapeHtml(n.done_at.slice(0, 10))}` : ""}</div>
+        </div>
+        <button class="nt-edit" title="Edit" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;">✏</button>
+        <button class="nt-del" title="Delete" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;">✕</button>
+      </div>`).join("");
+    listEl.querySelectorAll(".nt-note").forEach((el) => {
+      const id = parseInt(el.dataset.id, 10);
+      el.querySelector(".nt-done").addEventListener("change", async (e) => {
+        await pywebview.api.notes_set_done(id, e.target.checked);
+        render(); updateNotesBadge();
+      });
+      el.querySelector(".nt-del").addEventListener("click", async () => {
+        await pywebview.api.notes_delete(id); render(); updateNotesBadge();
+      });
+      el.querySelector(".nt-edit").addEventListener("click", async () => {
+        const t = prompt("Edit note:", el.querySelector(".nt-txt").textContent);
+        if (t != null && t.trim()) { await pywebview.api.notes_update(id, t.trim()); render(); }
+      });
+    });
+  };
+
+  const addNote = async () => {
+    const text = overlay.querySelector("#nt-text").value.trim();
+    const job = overlay.querySelector("#nt-job").value.trim();
+    if (!text) { overlay.querySelector("#nt-text").focus(); return; }
+    await pywebview.api.notes_add(text, job);
+    overlay.querySelector("#nt-text").value = "";
+    render(); updateNotesBadge();
+  };
+  overlay.querySelector("#nt-add-btn").addEventListener("click", addNote);
+  overlay.querySelector("#nt-text").addEventListener("keydown", (e) => { if (e.key === "Enter") addNote(); });
+  overlay.querySelectorAll(".nt-f").forEach((b) =>
+    b.addEventListener("click", () => { filter = b.dataset.f; render(); }));
+  overlay.querySelector("#nt-showdone").addEventListener("change", (e) => { showDone = e.target.checked; render(); });
+  overlay.querySelector("#nt-text").focus();
+  render();
+}
+window.openAuditNotes = openNotesPanel;
+
+// ── Usage report (📊) ────────────────────────────────────────────
+// Shows how the app is actually used — top tools, most-clicked buttons,
+// and activity by day — from the local usage_tracker log. Read-only, no
+// job data. Meant to guide what to streamline next.
+async function openUsagePanel() {
+  const overlay = createOverlay({
+    title: "📊 My usage",
+    sub:   "How you use the app — to find what to make faster. Local only, no job data.",
+    body: `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+        <label class="modal-lbl" style="margin:0;">Last</label>
+        <select id="us-days" class="search" style="width:120px;">
+          <option value="7">7 days</option>
+          <option value="30" selected>30 days</option>
+          <option value="90">90 days</option>
+          <option value="3650">All time</option>
+        </select>
+        <span style="flex:1;"></span>
+        <button class="btn" id="us-reset" title="Erase the usage log">🗑 Reset log</button>
+      </div>
+      <div id="us-body" class="muted">Loading…</div>
+      <div class="modal-footer"><button class="btn modal-close">Close</button></div>`,
+  });
+  const bodyEl = overlay.querySelector("#us-body");
+  const daysSel = overlay.querySelector("#us-days");
+
+  const bar = (n, max) => {
+    const w = max > 0 ? Math.round((n / max) * 100) : 0;
+    return `<span style="display:inline-block;height:9px;width:${w}%;min-width:2px;background:var(--green,#3D6549);border-radius:3px;vertical-align:middle;"></span>`;
+  };
+
+  const load = async () => {
+    bodyEl.innerHTML = "Loading…";
+    let rep;
+    try { rep = await pywebview.api.usage_report(parseInt(daysSel.value, 10)); }
+    catch (ex) { bodyEl.innerHTML = `Failed: ${escapeHtml(String(ex))}`; return; }
+    if (!rep?.ok) { bodyEl.innerHTML = `Failed: ${escapeHtml(rep?.error || "?")}`; return; }
+    if (!rep.total) {
+      bodyEl.innerHTML = `<div style="padding:10px 0;">No usage recorded yet — use the app for a bit and check back. (Tracking is on; it logs buttons/tools, never job data.)</div>`;
+      return;
+    }
+    const tools = rep.tools || [];
+    const buttons = rep.buttons || [];
+    const perDay = rep.per_day || [];
+    const tMax = Math.max(...tools.map((t) => t.count), 1);
+    const bMax = Math.max(...buttons.map((b) => b.count), 1);
+    const dMax = Math.max(...perDay.map((d) => d.count), 1);
+    bodyEl.innerHTML = `
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+        ${rep.total.toLocaleString()} actions over ${rep.active_days} active day${rep.active_days === 1 ? "" : "s"}${rep.first ? ` · since ${escapeHtml(rep.first.slice(0, 10))}` : ""}
+      </div>
+      <h3 style="margin:6px 0;">Tools used</h3>
+      <div class="us-table">${tools.map((t) => `
+        <div style="display:grid;grid-template-columns:110px 1fr 44px;gap:8px;align-items:center;padding:2px 0;font-size:12px;">
+          <span>${escapeHtml(t.tool)}</span>${bar(t.count, tMax)}<span style="text-align:right;color:var(--text-muted);">${t.count}</span>
+        </div>`).join("")}</div>
+      <h3 style="margin:14px 0 6px;">Most-used buttons</h3>
+      <div class="us-table">${buttons.slice(0, 20).map((b) => `
+        <div style="display:grid;grid-template-columns:1fr 44px;gap:8px;align-items:center;padding:2px 0;font-size:12px;">
+          <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(b.label)} <span style="color:var(--text-dim,#6b7280);font-size:10px;">· ${escapeHtml(b.tool)}</span></span>
+          <span style="text-align:right;color:var(--text-muted);">${b.count}</span>
+        </div>`).join("")}</div>
+      <h3 style="margin:14px 0 6px;">Activity by day</h3>
+      <div class="us-table">${perDay.slice(-21).map((d) => `
+        <div style="display:grid;grid-template-columns:80px 1fr 44px;gap:8px;align-items:center;padding:1px 0;font-size:11px;">
+          <span style="color:var(--text-muted);">${escapeHtml(d.day.slice(5))}</span>${bar(d.count, dMax)}<span style="text-align:right;color:var(--text-muted);">${d.count}</span>
+        </div>`).join("")}</div>`;
+  };
+
+  daysSel.addEventListener("change", load);
+  overlay.querySelector("#us-reset")?.addEventListener("click", async () => {
+    if (!confirm("Erase the entire usage log? This can't be undone.")) return;
+    try { await pywebview.api.usage_reset(); } catch (_) {}
+    load();
+  });
+  load();
+}
+
+// ── Quick-jump palette (Ctrl+K) ──────────────────────────────────
+// Type a client → Enter opens it in Audit (selects the row + detail);
+// 📸/📁 buttons jump to Snapshot / open the OD folder. No match → Enter
+// runs a one-off audit of what was typed.
+function openQuickJump() {
+  if (document.getElementById("qj-input")) return;   // already open
+  const overlay = createOverlay({
+    title: "⚡ Quick jump",
+    sub:   "Type a client · ↑↓ to move · Enter opens in Audit · 📸 Snapshot · 📁 OD",
+    body: `
+      <input id="qj-input" class="search" type="text" autocomplete="off" placeholder="Client name…" style="width:100%;" />
+      <div id="qj-list" class="target-list" style="margin-top:8px;max-height:340px;"></div>`,
+  });
+  const input  = overlay.querySelector("#qj-input");
+  const listEl = overlay.querySelector("#qj-list");
+  let hits = [];
+  let active = 0;
+
+  const jumpAudit = (r) => {
+    closeOverlay();
+    state.search = "";
+    const sb = $("#search-box"); if (sb) sb.value = "";
+    state.filter = "all";
+    state.selected_client = rowKey(r);
+    renderList(); renderDetail();
+    scrollSelectedIntoView();
+    setStatus(`⚡ ${r.display_name || titleCase(r.client)}`, "");
+  };
+
+  const render = () => {
+    const q = input.value.trim().toLowerCase();
+    hits = (q
+      ? state.rows.filter((r) =>
+          (r.client || "").toLowerCase().includes(q) ||
+          (r.display_name || "").toLowerCase().includes(q))
+      : state.rows).slice(0, 10);
+    if (active >= hits.length) active = Math.max(0, hits.length - 1);
+    if (!hits.length) {
+      listEl.innerHTML = q
+        ? `<div class="muted" style="padding:8px;">No loaded job matches — press Enter to audit “${escapeHtml(input.value.trim())}” as a one-off.</div>`
+        : `<div class="muted" style="padding:8px;">Start typing a client name…</div>`;
+      return;
+    }
+    listEl.innerHTML = hits.map((r, i) => `
+      <div class="target-row qj-hit" data-i="${i}" style="cursor:pointer;${i === active ? "background:var(--chip-active,#2d4636);" : ""}">
+        <span>${r.flagged ? "🚩" : "✓"}</span>
+        <div style="flex:1;min-width:0;">
+          <div class="name">${escapeHtml(titleCase(r.display_name || r.client))}</div>
+          <div style="font-size:10px;color:var(--text-muted);">${escapeHtml((r.techs || []).join(", "))}${r.unit ? ` · 🏢 ${escapeHtml(String(r.unit))}` : ""}</div>
+        </div>
+        <button class="btn qj-snap" data-i="${i}" title="Open in Snapshot" style="font-size:11px;padding:2px 7px;">📸</button>
+        <button class="btn qj-od" data-i="${i}" title="Open OD folder" style="font-size:11px;padding:2px 7px;">📁</button>
+      </div>`).join("");
+    listEl.querySelectorAll(".qj-hit").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        const i = parseInt(el.dataset.i, 10);
+        if (e.target.closest(".qj-snap")) {
+          closeOverlay();
+          if (window.emsNavigateTo) window.emsNavigateTo("snapshot", hits[i].client);
+          return;
+        }
+        if (e.target.closest(".qj-od")) { onDetailAction("open-folder", hits[i]); return; }
+        jumpAudit(hits[i]);
+      });
+    });
+  };
+
+  input.addEventListener("input", () => { active = 0; render(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { active = Math.min(active + 1, hits.length - 1); render(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { active = Math.max(active - 1, 0); render(); e.preventDefault(); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      if (hits[active]) jumpAudit(hits[active]);
+      else { const t = input.value.trim(); if (t) { closeOverlay(); runOneoffFromSearch(t); } }
+    } else if (e.key === "Escape") {
+      closeOverlay();
+    }
+  });
+  render();
+  setTimeout(() => input.focus(), 30);
 }
 
 // ── Scope dialog (P0) ───────────────────────────────────────────
@@ -696,6 +1308,202 @@ function showClaimFoldersModal(row, folders) {
     }));
 }
 
+// Shows the actual folders + files inside a job's OD folder without
+// leaving the app. Folders drill in (breadcrumb 'up'); files show size
+// and a ☁/✓ badge marking OneDrive cloud-only placeholders vs. downloaded
+// files. Backed by Api.od_contents; clicking opens folders/files.
+function showOdContentsModal(row, startPath) {
+  if (!startPath) {
+    setStatus("No OD folder resolved yet — use Find/Change folder first", "warn");
+    return;
+  }
+  document.getElementById("od-contents-modal")?.remove();
+  const stack = [];            // breadcrumb of parent paths
+  let curPath = startPath;
+  const fmtSize = (n) => {
+    if (!n) return "0 B";
+    const u = ["B", "KB", "MB", "GB"]; let i = 0, v = n;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return (i === 0 ? v : v.toFixed(1)) + " " + u[i];
+  };
+  const wrap = document.createElement("div");
+  wrap.id = "od-contents-modal";
+  wrap.style.cssText = "position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
+  wrap.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(620px,94vw);max-height:82vh;display:flex;flex-direction:column;overflow:hidden;">
+      <header style="padding:14px 18px;background:var(--surface);border-bottom:1px solid var(--border);">
+        <div style="font-size:14px;font-weight:600;">📁 OD contents · ${escapeHtml(row.client)}</div>
+        <div class="muted" id="od-crumb" style="font-size:11px;margin-top:2px;word-break:break-all;"></div>
+      </header>
+      <div id="od-list" style="padding:14px 18px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;">Loading…</div>
+      <footer style="padding:10px 18px;background:var(--surface);border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <button class="btn" id="od-up" style="visibility:hidden;">↑ Up</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn" id="od-open">📂 Open in Explorer</button>
+          <button class="btn" id="od-close">Close</button>
+        </div>
+      </footer>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.querySelector("#od-close").addEventListener("click", close);
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  const upBtn = wrap.querySelector("#od-up");
+  upBtn.addEventListener("click", () => { if (stack.length) { curPath = stack.pop(); load(); } });
+  wrap.querySelector("#od-open").addEventListener("click", async () => {
+    const ok = await pywebview.api.open_folder(curPath);
+    setStatus(ok ? `📁 Opened ${curPath}` : "Couldn't open folder", ok ? "ok" : "warn");
+  });
+  async function load() {
+    const listEl = wrap.querySelector("#od-list");
+    wrap.querySelector("#od-crumb").textContent = curPath;
+    upBtn.style.visibility = stack.length ? "visible" : "hidden";
+    listEl.textContent = "Loading…";
+    let r;
+    try { r = await pywebview.api.od_contents(curPath); }
+    catch (e) { listEl.textContent = "Error: " + e; return; }
+    if (!r || !r.ok) { listEl.textContent = (r && r.error) || "Couldn't read folder"; return; }
+    const folders = r.folders || [], files = r.files || [];
+    if (!folders.length && !files.length) {
+      listEl.innerHTML = '<div class="muted" style="padding:8px;">(empty folder)</div>';
+      return;
+    }
+    const foldersHtml = folders.map((f) => `
+      <button class="od-folder" data-path="${escapeHtml(f.path)}"
+        style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;font:inherit;color:var(--text);">
+        <span>📁</span><span style="flex:1;">${escapeHtml(f.name)}</span>
+        <span class="muted" style="font-size:11px;">Open ↘</span>
+      </button>`).join("");
+    const filesHtml = files.map((f) => `
+      <button class="od-file" data-path="${escapeHtml(f.path)}"
+        style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;background:transparent;border:1px solid transparent;border-radius:6px;cursor:pointer;font:inherit;color:var(--text);">
+        <span>📄</span><span style="flex:1;">${escapeHtml(f.name)}</span>
+        <span class="muted" style="font-size:11px;">${fmtSize(f.size)}</span>
+        <span title="${f.cloud_only ? "Online-only (not downloaded)" : "Downloaded to this PC"}" style="font-size:12px;">${f.cloud_only ? "☁" : "✓"}</span>
+      </button>`).join("");
+    listEl.innerHTML =
+      (folders.length ? `<div class="muted" style="font-size:10px;letter-spacing:.05em;">FOLDERS · ${folders.length}</div>${foldersHtml}` : "") +
+      (files.length ? `<div class="muted" style="font-size:10px;letter-spacing:.05em;margin-top:8px;">FILES · ${files.length}</div>${filesHtml}` : "");
+    listEl.querySelectorAll(".od-folder").forEach((b) =>
+      b.addEventListener("click", () => { stack.push(curPath); curPath = b.dataset.path; load(); }));
+    listEl.querySelectorAll(".od-file").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const ok = await pywebview.api.open_file(b.dataset.path);
+        if (!ok) setStatus("Couldn't open file", "warn");
+      }));
+  }
+  load();
+}
+
+// Per-job JOB TRACKER — one newest-first timeline weaving the run-doc
+// activity (with the crew each day) together with the Trello upload
+// history (who uploaded which form/photo, when). Backed by
+// Api.job_work_log (→ job_history.job_tracker); 💾 writes a .md doc.
+function showWorkLogModal(row) {
+  if (!row.client) { setStatus("No client on this row", "warn"); return; }
+  document.getElementById("worklog-modal")?.remove();
+  const wrap = document.createElement("div");
+  wrap.id = "worklog-modal";
+  wrap.style.cssText = "position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
+  wrap.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(600px,94vw);max-height:82vh;display:flex;flex-direction:column;overflow:hidden;">
+      <header style="padding:14px 18px;background:var(--surface);border-bottom:1px solid var(--border);">
+        <div style="font-size:14px;font-weight:600;">📖 Job tracker · ${escapeHtml(titleCase(row.client))}</div>
+        <div class="muted" id="wl-sub" style="font-size:11px;margin-top:2px;">compiling activity + uploads…</div>
+      </header>
+      <div id="wl-list" style="padding:14px 18px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;">
+        <div class="muted" style="padding:8px;">⏳ Scanning run docs + Trello…</div>
+      </div>
+      <footer style="padding:10px 18px;background:var(--surface);border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <span class="muted" id="wl-saved" style="font-size:11px;"></span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn" id="wl-save" disabled>💾 Save as doc</button>
+          <button class="btn" id="wl-close">Close</button>
+        </div>
+      </footer>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.querySelector("#wl-close").addEventListener("click", close);
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  const saveBtn = wrap.querySelector("#wl-save");
+  saveBtn.addEventListener("click", async () => {
+    saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+    const r = await pywebview.api.save_job_work_log(row.client);
+    if (r && r.ok) {
+      wrap.querySelector("#wl-saved").textContent = "saved · opening…";
+      await pywebview.api.open_file(r.path);
+      setStatus("📖 Job tracker saved & opened", "ok");
+    } else {
+      setStatus((r && r.error) || "Couldn't save tracker", "warn");
+    }
+    saveBtn.disabled = false; saveBtn.textContent = "💾 Save as doc";
+  });
+  (async () => {
+    const listEl = wrap.querySelector("#wl-list");
+    let r;
+    try { r = await pywebview.api.job_work_log(row.client); }
+    catch (e) { listEl.textContent = "Error: " + e; return; }
+    if (!r || !r.ok) { listEl.textContent = (r && r.error) || "Couldn't build tracker"; return; }
+    const timeline = r.timeline || [];
+    const a = r.activity_count || 0, u = r.upload_count || 0;
+    wrap.querySelector("#wl-sub").textContent = timeline.length
+      ? `${a} activity · ${u} upload${u === 1 ? "" : "s"} — newest first`
+      : "no activity or uploads found";
+    if (r.saved_path) wrap.querySelector("#wl-saved").textContent = "saved doc exists";
+    saveBtn.disabled = false;
+    if (!timeline.length) {
+      listEl.innerHTML = '<div class="muted" style="padding:8px;">No run-doc activity or Trello uploads for this job yet.</div>';
+      return;
+    }
+    listEl.innerHTML = timeline.map((h) => {
+      if (h.kind === "upload") {
+        const who = h.uploader ? `<span style="color:var(--green);">${escapeHtml(h.uploader)}</span>` : '<span class="muted">unknown</span>';
+        return `
+          <div style="display:flex;gap:10px;align-items:baseline;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;" title="${escapeHtml(h.file || "")}">
+            <span style="min-width:58px;font-variant-numeric:tabular-nums;font-weight:600;font-size:12px;">${escapeHtml(h.date_str || "—")}</span>
+            <span style="flex:1;font-size:13px;">${h.is_image ? "📷" : "📎"} ${escapeHtml(h.file || "(file)")}</span>
+            <span style="font-size:11px;">⬆ ${who}</span>
+          </div>`;
+      }
+      const techs = (h.techs || []).length
+        ? `<span style="font-size:11px;color:var(--act-monitor,#4A9EFF);">👷 ${escapeHtml(h.techs.join(", "))}</span>`
+        : "";
+      const slot = h.time_slot ? `<span class="muted" style="font-size:10px;">${escapeHtml(h.time_slot)}</span>` : "";
+      // The full run-doc line is the "note" — show it collapsed, expand
+      // on click, but only when it actually adds detail beyond the work
+      // summary (recognized stages: work="Demo", note=the whole line).
+      const noteText = (h.raw || "").trim();
+      const hasNote = noteText && noteText !== (h.work || "").trim();
+      const caret = hasNote
+        ? `<span class="wl-caret" style="cursor:pointer;user-select:none;font-size:10px;color:var(--text-muted);width:10px;">▸</span>`
+        : `<span style="width:10px;display:inline-block;"></span>`;
+      return `
+        <div class="wl-entry">
+          <div class="wl-head" style="display:flex;gap:8px;align-items:baseline;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);${hasNote ? "cursor:pointer;" : ""}">
+            ${caret}
+            <span style="min-width:52px;font-variant-numeric:tabular-nums;font-weight:600;font-size:12px;">${escapeHtml(h.date_str || "—")}</span>
+            <span style="flex:1;font-size:13px;">🔧 ${escapeHtml(h.work || "—")} ${slot}</span>
+            ${techs}
+          </div>
+          ${hasNote ? `<div class="wl-note" style="display:none;font-size:12px;color:var(--text-muted);white-space:pre-wrap;padding:6px 10px 8px 30px;">📝 ${escapeHtml(noteText)}</div>` : ""}
+        </div>`;
+    }).join("");
+    // Click an entry with a note to expand/collapse the run-doc detail.
+    listEl.querySelectorAll(".wl-entry").forEach((el) => {
+      const note = el.querySelector(".wl-note");
+      const caret = el.querySelector(".wl-caret");
+      const head = el.querySelector(".wl-head");
+      if (!note || !caret || !head) return;
+      head.addEventListener("click", () => {
+        const open = note.style.display !== "none";
+        note.style.display = open ? "none" : "";
+        caret.textContent = open ? "▸" : "▾";
+      });
+    });
+  })();
+}
+
 // ── Right-click context menu (P0) ───────────────────────────────
 function showCtxMenu(ev, row, customItems) {
   ev.preventDefault();
@@ -720,13 +1528,18 @@ function showCtxMenu(ev, row, customItems) {
     { sep: true },
     { label: "📁 Open OD folder",
       action: () => onDetailAction("open-folder", row) },
+    { label: "📄 Show OD files/folders…",
+      action: () => onDetailAction("od-contents", row),
+      disabled: !row.path },
+    { label: "📖 Job tracker (activity + who)…",
+      action: () => onDetailAction("work-log", row) },
     { label: "🗂 Past claims…",
       action: () => onDetailAction("claim-folders", row),
       disabled: !row.path },
     { label: row.found ? "🔀 Change folder…" : "🔎 Find folder…",
       action: () => openFindFolderModal(row) },
     { iconImg: "../web_shared/trello.png", label: "Open Trello card", action: () => pywebview.api.open_trello_card(row.trello_card_id), disabled: !row.trello_card_id },
-    { iconImg: "../web_shared/xactanalysis.png", label: "Open XactAnalysis", action: () => pywebview.api.open_xa_link(row.client), disabled: !row.trello_card_id },
+    { iconImg: "../web_shared/xactanalysis.png", label: "Open XactAnalysis", action: async () => { const ok = await pywebview.api.open_xa_link(row.client, row.trello_card_id || ""); if (!ok) setStatus("No XactAnalysis link on this card yet — add an 'EMS Xactanalysis Link' line to the card's LINKS section.", "warn"); }, disabled: !row.trello_card_id },
     { iconImg: "../web_shared/companycam.png", label: "Open CompanyCam", action: async () => {
         const ok = await pywebview.api.open_companycam_link(row.client);
         if (!ok) setStatus("No CompanyCam link on this card yet", "warn");
@@ -929,7 +1742,7 @@ function onSpUpdate(ev) {
   renderList();
   // Refresh detail when the currently-selected row is one of the
   // updated ones (any unit of this property).
-  const sel = state.rows.find((r) => rowKey(r) === state.selected_client);
+  const sel = findRowByKey(state.selected_client);
   if (sel && sel.client === d.client) renderDetail();
 }
 
@@ -952,6 +1765,16 @@ function onAuditDone(ev) {
   $("#rerun-btn").disabled = false;
   if (!ok) {
     setStatus(`Audit failed: ${error || "unknown"}`, "error");
+    return;
+  }
+  // If you navigated to another tab while the run was loading, DON'T yank
+  // you back to Daily Run. The fresh rows are cached on the backend, so
+  // switching back to Daily (which calls last_audit) shows them then. Just
+  // note completion in the status bar.
+  if (state.mode !== "daily") {
+    setStatus(
+      `✓ Daily Run finished in background · ${meta?.flagged || 0} flagged / ${meta?.ok || 0} OK`,
+      "ok");
     return;
   }
   state.rows = rows || [];
@@ -1031,16 +1854,91 @@ function renderList() {
   }
 
   if (filtered.length === 0) {
-    body.innerHTML = `<div class="list-empty">No jobs match.</div>`;
+    const q = state.search.trim();
+    if (q) {
+      body.innerHTML =
+        `<div class="list-empty">No jobs match “${escapeHtml(q)}”.`
+        + `<br><button class="btn" id="oneoff-search-btn" style="margin-top:8px;"`
+        + (state.oneoffRunning ? " disabled" : "")
+        + `>${state.oneoffRunning ? "🔍 Searching…" : `🔍 Audit “${escapeHtml(q)}” as a one-off`}</button></div>`;
+      const b = document.getElementById("oneoff-search-btn");
+      if (b) b.addEventListener("click", () => runOneoffFromSearch(q));
+    } else {
+      body.innerHTML = `<div class="list-empty">No jobs match.</div>`;
+    }
     $("#list-count").textContent = `0 / ${state.rows.length} jobs`;
     $("#status-counts").textContent =
       `0 shown · ${state.rows.length} total`;
     return;
   }
 
+  // Collapsed-on-startup: the first time a set of umbrella parents shows,
+  // start them collapsed so a big multi-unit/campus property doesn't eat
+  // the whole list. Only referenced children peek through (renderSubjobGroup
+  // keeps the header + collapsed body). Manual expands persist for the
+  // session; a fresh audit re-seeds any newly-seen parents as collapsed.
+  for (const r of filtered) {
+    const pk = (r.claim_origin || "").toLowerCase();
+    if (pk && !_seenParentKeys.has(pk)) {
+      _seenParentKeys.add(pk);
+      collapsedParents.add(pk);
+    }
+  }
+
   body.innerHTML = buildListHtml(filtered);
+  // ➕ create-missing-unit / 📁 open-parent — one delegated handler on the
+  // list body (guards against double-wiring internally). After a create,
+  // re-run the audit so the new folder shows up populated.
+  if (window.UmbrellaGroup) {
+    window.UmbrellaGroup.wire(body, {
+      api: pywebview.api,
+      setStatus,
+      onCreated: (res) => { if (res && res.ok) runAudit(false); },
+    });
+    // ⚠ loose-files chip — flag (don't move) photos sitting in a property
+    // root that never made it into a unit. Filled async per umbrella so
+    // the initial paint isn't blocked on N scandir calls.
+    body.querySelectorAll(".umb-loose-slot[data-umbrella]").forEach((slot) => {
+      const u = slot.dataset.umbrella;
+      if (!u) return;
+      pywebview.api.count_loose_parent_photos(u).then((res) => {
+        if (res && res.count) {
+          slot.innerHTML = window.UmbrellaGroup.looseChipHTML(res.count);
+        }
+      }).catch(() => {});
+    });
+  }
   body.querySelectorAll(".list-row").forEach((row) => {
     row.addEventListener("click", (e) => {
+      // Caret on a multi-unit umbrella → reveal/hide the property's OTHER
+      // units (lazily fetched from disk). Checked before the campus caret
+      // since a unit caret also carries the .subjob-caret class.
+      const unitCaret = e.target.closest(".unit-caret");
+      if (unitCaret) {
+        e.stopPropagation();
+        const key = unitCaret.dataset.unitKey;
+        if (expandedUnitGroups.has(key)) {
+          expandedUnitGroups.delete(key);
+          renderList();
+        } else {
+          expandedUnitGroups.add(key);
+          if (!unitSiblingsCache.has(key)) {
+            const match = state.rows.find(
+              (r) => (r.client || "").toLowerCase() === key);
+            const client = (match && match.client) || key;
+            renderList();   // shows the "Loading…" ghost row
+            pywebview.api.list_day_units(client).then((res) => {
+              const units = (res && res.units) || [];
+              unitSiblingsCache.set(key,
+                units.map((u) => ({ name: u.name, path: u.path })));
+              renderList();
+            }).catch(() => { unitSiblingsCache.set(key, []); renderList(); });
+          } else {
+            renderList();
+          }
+        }
+        return;
+      }
       // Caret on a commercial-parent header → collapse/expand its
       // campuses, don't select the row.
       const caret = e.target.closest(".subjob-caret");
@@ -1119,9 +2017,27 @@ function buildListHtml(rows) {
       childrenByParent.get(r.claim_origin).push(r);
     }
   }
-  if (childrenByParent.size === 0) return rows.map((r) => renderListRow(r)).join("");
+  // Multi-unit umbrellas — cluster non-campus rows that carry a unit by
+  // their property (client). Group only when ≥2 units of one property are
+  // on today's run (the canonical Avila 1413+1416 case); a lone unit row
+  // stays flat (it still gets its 🏢 tag / ➕ create button).
+  const unitRowsByClient = new Map();
+  for (const r of rows) {
+    if (r.subjob || r.is_parent) continue;
+    if (!r.unit && !r.unit_folder) continue;
+    const k = r.client || "";
+    if (!unitRowsByClient.has(k)) unitRowsByClient.set(k, []);
+    unitRowsByClient.get(k).push(r);
+  }
+  const unitGroupClients = new Set();
+  for (const [k, v] of unitRowsByClient) if (v.length >= 2) unitGroupClients.add(k);
+
+  if (childrenByParent.size === 0 && unitGroupClients.size === 0) {
+    return rows.map((r) => renderListRow(r)).join("");
+  }
 
   const emitted = new Set();
+  const emittedUnit = new Set();
   const out = [];
   for (const r of rows) {
     // A parent (umbrella) row: client name matches a sub-job's origin.
@@ -1130,7 +2046,7 @@ function buildListHtml(rows) {
       emitted.add(r.client);
       continue;
     }
-    // A child row: rendered inside its parent's group, skip standalone.
+    // A campus child row: rendered inside its parent's group, skip standalone.
     if (r.subjob && childrenByParent.has(r.claim_origin)) {
       if (!emitted.has(r.claim_origin)) {
         // Parent row filtered out of this view — emit a synthetic
@@ -1141,9 +2057,104 @@ function buildListHtml(rows) {
       }
       continue;
     }
+    // A multi-unit row → render the whole property's unit umbrella once.
+    if (!r.subjob && !r.is_parent && (r.unit || r.unit_folder)
+        && unitGroupClients.has(r.client)) {
+      if (!emittedUnit.has(r.client)) {
+        out.push(renderUnitGroup(r.client, unitRowsByClient.get(r.client)));
+        emittedUnit.add(r.client);
+      }
+      continue;
+    }
     out.push(renderListRow(r));
   }
   return out.join("");
+}
+
+// Parent (umbrella) directory of a path — the folder that CONTAINS a unit
+// folder is the property root new siblings get created under.
+function _parentDir(p) {
+  const parts = (p || "").split(/[\\/]+/).filter(Boolean);
+  parts.pop();
+  return parts.join("\\");
+}
+
+// Best-effort property-root for a cluster of unit rows: the folder holding
+// a resolved unit is the umbrella; failing that, a missing unit's `path`
+// is the property root find_unit searched.
+function deriveUnitUmbrella(children) {
+  for (const c of children) {
+    if (c.unit_folder && c.path) return _parentDir(c.path);
+  }
+  for (const c of children) { if (c.path) return c.path; }
+  return "";
+}
+
+// One collapsible multi-unit property. Today's referenced units always
+// show (peek); the caret reveals the property's OTHER on-disk units.
+function renderUnitGroup(clientName, children) {
+  const key = (clientName || "").toLowerCase();
+  const expanded = expandedUnitGroups.has(key);
+  const umbrella = deriveUnitUmbrella(children);
+  const attention = children.filter((c) => c.flagged).length;
+  const openBtn = (umbrella && window.UmbrellaGroup)
+    ? window.UmbrellaGroup.openParentBtnHTML(umbrella) : "";
+  const caret = `<button class="subjob-caret unit-caret" data-unit-key="${escapeAttr(key)}"
+                   title="${expanded ? "Hide other units" : "Show the property's other units"}">${expanded ? "▾" : "▸"}</button>`;
+  const looseSlot = `<span class="umb-loose-slot" data-umbrella="${escapeAttr(umbrella || "")}"></span>`;
+  const header = `
+    <div class="list-row subjob-parent unit-parent">
+      ${caret}
+      <div class="list-main">
+        <div class="list-name"><span class="list-status umbrella">🏢</span> ${escapeHtml(titleCase(clientName))}</div>
+        <div class="list-sub">
+          <span class="subjob-badge" title="${children.length} unit(s) on today's run">🏢 ${children.length} today</span>
+          ${attention
+            ? `<span class="subjob-attn">${attention} need attention</span>`
+            : `<span class="subjob-attn ok">all clean</span>`}
+          ${looseSlot}
+        </div>
+      </div>
+      <div class="list-end">${openBtn}</div>
+    </div>`;
+  const kids = children.map((c) => renderListRow(c, { role: "child" })).join("");
+  const siblings = expanded ? renderUnitSiblings(key, children) : "";
+  return `
+    <div class="subjob-group unit-group" data-unit-key="${escapeAttr(key)}">
+      ${header}
+      <div class="subjob-children">${kids}${siblings}</div>
+    </div>`;
+}
+
+// Ghost rows for the property's units that are NOT on today's run — only
+// rendered when the group is expanded. Fetched lazily into unitSiblingsCache.
+function renderUnitSiblings(key, children) {
+  const sibs = unitSiblingsCache.get(key);
+  if (sibs === undefined) {
+    return `<div class="list-row subjob-child unit-sibling loading">
+              <span class="list-status">⏳</span>
+              <div class="list-main"><div class="list-sub">Loading other units…</div></div>
+            </div>`;
+  }
+  const todayPaths = new Set(
+    children.map((c) => (c.unit_folder || c.path || "").toLowerCase()).filter(Boolean));
+  const others = sibs.filter((s) => !todayPaths.has((s.path || "").toLowerCase()));
+  if (!others.length) {
+    return `<div class="list-row subjob-child unit-sibling none">
+              <div class="list-main"><div class="list-sub" style="color:var(--text-muted);">No other units on disk.</div></div>
+            </div>`;
+  }
+  return others.map((s) => `
+    <div class="list-row subjob-child unit-sibling">
+      <span class="list-status ok">🏢</span>
+      <div class="list-main">
+        <div class="list-name">${escapeHtml(s.name)}</div>
+        <div class="list-sub"><span class="mini-chip" title="Not referenced on today's run">not on today's run</span></div>
+      </div>
+      <div class="list-end">
+        <button class="umb-openparent" data-parent-path="${escapeAttr(s.path)}" title="Open this unit folder">📁</button>
+      </div>
+    </div>`).join("");
 }
 
 // One collapsible parent group: header (the umbrella insured) + its
@@ -1216,7 +2227,20 @@ function campusShortName(r) {
 function renderListRow(r, opts = {}) {
   const role = opts.role;          // "parent" | "child" | undefined
   const group = opts.group || null;
-  const displayName = (role === "child") ? campusShortName(r) : r.client;
+  // Prefer the pinned Trello card's name (r.display_name) for normal
+  // rows — the job's canonical identity. Campus children keep their
+  // short name; parents fall back to the client (no card).
+  const displayName = (role === "child")
+    ? titleCase(campusShortName(r))
+    : firstLast(r.display_name || titleCase(r.client));
+  // Flat-search breadcrumb: while searching, a matched child can render
+  // far from its umbrella header, so prefix the property name ("Keystone ›
+  // Unit 1416B") to keep context — the "find the one-off, don't pull the
+  // parent" ask. Injected as raw HTML (breadcrumbHTML self-escapes); kept
+  // separate from displayName, which is escaped downstream.
+  const crumbHTML = (role === "child" && state.search.trim() && window.UmbrellaGroup)
+    ? window.UmbrellaGroup.breadcrumbHTML(r.claim_origin || r.client || "")
+    : "";
   const classes = ["list-row"];
   if (role === "child")  classes.push("subjob-child");
   if (role === "parent") classes.push("subjob-parent");
@@ -1272,8 +2296,11 @@ function renderListRow(r, opts = {}) {
   const _starred = (state.starred_clients || []).includes((r.client || "").toLowerCase());
   // Parent (umbrella) header shows a campus rollup instead of its own
   // (noisy) missing count.
+  const openParentBtn = (role === "parent" && r.path && window.UmbrellaGroup)
+    ? window.UmbrellaGroup.openParentBtnHTML(r.path) : "";
   const listEnd = (role === "parent" && group)
-    ? `<span class="subjob-badge" title="${group.childCount} campus job(s) under this insured">🏫 ${group.childCount}</span>`
+    ? openParentBtn
+      + `<span class="subjob-badge" title="${group.childCount} campus job(s) under this insured">🏫 ${group.childCount}</span>`
       + (group.attention
           ? `<span class="subjob-attn">${group.attention} need attention</span>`
           : `<span class="subjob-attn ok">all clean</span>`)
@@ -1306,11 +2333,18 @@ function renderListRow(r, opts = {}) {
     ? r.unit_folder
     : (r.unit ? `Unit ${r.unit}` : "");
   const unitMissing = !!r.unit && !r.unit_folder;
+  // When the run-doc names a unit but no matching subfolder exists yet,
+  // offer a ➕ to create it under the property root (r.path) — matches
+  // the property's sibling naming, scaffolds, routes any pending import.
+  const createBtn = (unitMissing && r.path && window.UmbrellaGroup)
+    ? " " + window.UmbrellaGroup.createBtnHTML(
+        r.path, `Unit ${r.unit}`, r.client)
+    : "";
   const nameSuffix = unitLabel
     ? ` <span class="list-unit-tag ${unitMissing ? "missing" : ""}"
               title="${unitMissing ? `Run-doc says Unit ${escapeAttr(r.unit)} but no matching subfolder was found` : `Resolved unit subfolder: ${escapeAttr(r.unit_folder)}`}">
             🏢 ${escapeHtml(unitLabel)}
-        </span>`
+        </span>${createBtn}`
     : "";
   // Tenant — when present (e.g. "Mendiola, Mary" inside a Unit 104 SP
   // folder), show it as a smaller secondary chip so the user can scan
@@ -1329,7 +2363,7 @@ function renderListRow(r, opts = {}) {
       ${techStripe}
       ${statusIcon}
       <div class="list-main">
-        <div class="list-name">${escapeHtml(displayName)}${nameSuffix}</div>
+        <div class="list-name">${crumbHTML}${escapeHtml(displayName)}${nameSuffix}</div>
         <div class="list-sub">${subChips.join(" ")}</div>
       </div>
       <div class="list-end">
@@ -1356,10 +2390,58 @@ function techStripeColor(tech) {
   return _TECH_PALETTE[Math.abs(h) % _TECH_PALETTE.length];
 }
 
+// Context injected into the shared web_shared/audit_detail.js renderer so
+// the Audit + Snapshot tools render the per-job detail from ONE source
+// (can't drift). Audit maps it to its own modals / helpers / re-render.
+function buildAuditDetailCtx() {
+  return {
+    helpers: { escapeHtml, escapeAttr, titleCase, copyText, setStatus },
+    modals: {
+      openFindFolder: openFindFolderModal,
+      openSpImport: openSpImportModal,
+      openJobImport: openJobImportModal,
+      openScope: openScopeDialog,
+      openCopyPicsToXa: openCopyPicsToXaModal,
+      openDayUnits: openDayUnitsModal,
+      openPin: openPinModal,
+      openComment: openCommentModal,
+      openMatchDiag: openMatchDiagnostic,
+      openAttachments: (row) => window.openTrelloAttachmentsModal(
+        { cardId: row.trello_card_id, client: row.client }),
+      showClaimFolders: showClaimFoldersModal,
+      showOdContents: showOdContentsModal,
+      showWorkLog: showWorkLogModal,
+    },
+    rerender: () => renderDetail(),
+    rerenderList: () => renderList(),
+    reauditAndRerender: async (client) => {
+      const re = await pywebview.api.reaudit_one(client);
+      if (re?.ok) {
+        const ix = state.rows.findIndex((x) => x.client === client);
+        if (ix >= 0) state.rows[ix] = re.row;
+        renderAll();
+      } else { renderDetail(); }
+    },
+    attachTrelloHover: (btn, cardId) => attachTrelloHoverPopover(btn, cardId),
+  };
+}
+
+// Find a row by rowKey across BOTH the loaded list AND one-off search
+// hits. A search for a job that isn't in today's run surfaces it via
+// state.oneoffHits (a separate array); without checking it, the row shows
+// in the list but selecting it left the detail blank and Enter/actions
+// did nothing ("can't see the audit for what I just searched"). Hoisted,
+// so earlier callers resolve fine. (bugfix 2026-07-23)
+function findRowByKey(key) {
+  const pool = (state.oneoffHits && state.oneoffHits.length)
+    ? state.oneoffHits.concat(state.rows) : state.rows;
+  return pool.find((x) => rowKey(x) === key);
+}
+
 function renderDetail() {
-  // selected_client now holds a row_key (e.g. "Avila Apartments::1413")
-  // so look up by rowKey to disambiguate multi-unit rows.
-  const r = state.rows.find((x) => rowKey(x) === state.selected_client);
+  // selected_client holds a row_key (e.g. "Avila Apartments::1413") so
+  // look up by rowKey to disambiguate multi-unit rows.
+  const r = findRowByKey(state.selected_client);
   const empty = $("#detail-empty");
   const view = $("#detail-view");
   if (!r) {
@@ -1381,7 +2463,7 @@ function renderDetail() {
     const hasPath = !!r.path;
     view.innerHTML = `
       <header class="detail-head">
-        <div class="detail-name">🏫 ${escapeHtml(r.client)}</div>
+        <div class="detail-name">🏫 ${escapeHtml(titleCase(r.client))}</div>
         <div class="detail-techs">Umbrella folder · ${kids.length} campus job${kids.length === 1 ? "" : "s"}${attention ? ` · ${attention} need attention` : ""}</div>
       </header>
       <section class="detail-section">
@@ -1400,9 +2482,13 @@ function renderDetail() {
         </div>
       </section>
       <footer class="detail-actions">
-        <button class="action-btn primary" data-action="open-folder" ${hasPath ? "" : "disabled"}>📁 OD folder</button>
-        <button class="action-btn" data-action="claim-folders" ${hasPath ? "" : "disabled"}>🗂 Past claims</button>
-        <button class="action-btn" data-action="copy-client">📋 Copy name</button>
+        <div class="action-row">
+          <button class="action-btn primary" data-action="open-folder" ${hasPath ? "" : "disabled"}>📁 OD folder</button>
+        </div>
+        <div class="action-row">
+          <button class="action-btn" data-action="copy-client">📋 Copy name</button>
+          <button class="action-btn" data-action="copy-path" ${hasPath ? "" : "disabled"}>📋 Copy path</button>
+        </div>
       </footer>`;
     view.querySelectorAll(".action-btn[data-action]").forEach((b) => {
       b.addEventListener("click", () => onDetailAction(b.dataset.action, r));
@@ -1410,272 +2496,9 @@ function renderDetail() {
     return;
   }
 
-  const techs = (r.techs || []).join(" · ");
-  const misplacedForms  = r.misplaced_forms  || [];
-  const misplacedPhotos = r.misplaced_photos || [];
-  const misplacedCount  = misplacedForms.length + misplacedPhotos.length;
-  const chips = [];
-  if (r.total_missing > 0) {
-    chips.push(`<span class="detail-chip missing">${r.total_missing} missing</span>`);
-  } else if (!r.flagged) {
-    chips.push(`<span class="detail-chip ok">✓ clean</span>`);
-  }
-  if (misplacedCount > 0) {
-    chips.push(`<span class="detail-chip misplaced" title="Found in the wrong folder under the parent — needs re-filing">⚠ ${misplacedCount} misfiled</span>`);
-  }
-  if (r.aging_days >= 3) {
-    const hot = r.aging_days >= 7 ? "hot" : "";
-    chips.push(`<span class="detail-chip aging ${hot}">⏰ ${r.aging_days}d aging</span>`);
-  }
-  if (!r.found) {
-    chips.push(`<span class="detail-chip not-found">⚠ Folder not found</span>`);
-  }
-  if (r.new_loss) {
-    chips.push(`<span class="detail-chip new-loss">🆕 New loss</span>`);
-  }
-  if ((r.sharepoint_new || 0) > 0) {
-    chips.push(`<span class="detail-chip sp-new" style="background:var(--act-monitor);color:#fff;cursor:pointer;" title="Click to import — ${r.sharepoint_new} files on SharePoint not in OneDrive yet">📥 SP +${r.sharepoint_new} new</span>`);
-  }
-  // 🏢 Commercial toggle chip — sticky per-client flag. Click to
-  // toggle ON: auto-marks every commercial-only form (ATP/CIF/CER/CoS)
-  // resolved for this run-date.
-  chips.push(`<span class="detail-chip commercial-chip ${r.is_commercial ? "on" : ""}"
-                data-commercial-client="${escapeAttr(r.client)}"
-                title="Toggle commercial — auto-resolves ATP/CIF/CER/CoS">
-                🏢 ${r.is_commercial ? "Commercial" : "Mark commercial"}
-              </span>`);
-  for (const a of r.activity || []) {
-    chips.push(`<span class="detail-chip activity" data-act="${escapeAttr(a)}">${escapeHtml(a)}</span>`);
-  }
-
-  const formsSection = r.form_issues.length ? `
-    <section class="detail-section">
-      <h3>📋 Missing forms (${r.form_issues.length})</h3>
-      <ul class="issue-list">
-        ${r.form_issues.map((it) => `<li>${escapeHtml(it)}</li>`).join("")}
-      </ul>
-    </section>` : "";
-
-  const photosSection = r.photo_issues.length ? `
-    <section class="detail-section">
-      <h3>📷 Missing photos (${r.photo_issues.length})</h3>
-      <ul class="issue-list photos">
-        ${r.photo_issues.map((it) => `<li>${escapeHtml(it)}</li>`).join("")}
-      </ul>
-    </section>` : "";
-
-  // Day-by-day photo requirements (Demo day 2, etc.) — repeated
-  // activities that each owe their own dated photos. Auto-clear once a
-  // photo dated to that day lands, so anything shown here is still due.
-  const reqs = r.requirements || [];
-  const reqSection = reqs.length ? `
-    <section class="detail-section">
-      <h3>📸 Photo requirements by day (${reqs.length})</h3>
-      <ul class="issue-list photos">
-        ${reqs.map((q) => `<li>${escapeHtml(q.label)}${q.date ? ` <span class="muted">(${escapeHtml(q.date)})</span>` : ""}</li>`).join("")}
-      </ul>
-    </section>` : "";
-
-  // Misplaced items — present in the parent tree but NOT in this
-  // campus's own folder. Found, not missing: the fix is to MOVE them,
-  // so we show where each one currently lives (e.g. "in Kirkpatrick
-  // Elementary, expected here"). Subfolder is checked first; this only
-  // appears when the campus folder lacked it but a sibling/parent had it.
-  const misItems = [
-    ...misplacedForms.map((m) => ({ ...m, icon: "📋" })),
-    ...misplacedPhotos.map((m) => ({ ...m, icon: "📷" })),
-  ];
-  const misplacedSection = misItems.length ? `
-    <section class="detail-section">
-      <h3>⚠ Misfiled — found in the wrong folder (${misItems.length})</h3>
-      <p class="muted" style="margin:2px 0 6px;">Exists under the parent insured, just not in this campus's folder. Move it here.</p>
-      <ul class="issue-list misplaced">
-        ${misItems.map((m) => `<li>${m.icon} ${escapeHtml(m.label)} <span class="muted">— in <code>${escapeHtml(m.where || "parent")}</code></span></li>`).join("")}
-      </ul>
-    </section>` : "";
-
-  const cleanSection = (!r.form_issues.length && !r.photo_issues.length
-                        && !reqs.length && !misItems.length && r.found) ? `
-    <section class="detail-section">
-      <div class="detail-clean">
-        ✓ All required forms + photos present.
-      </div>
-    </section>` : "";
-
-  const metaSection = `
-    <section class="detail-section">
-      <h3>Job details</h3>
-      <div class="detail-meta">
-        <span class="label">Folder</span>
-        <span class="value">${escapeHtml(r.folder || "—")}</span>
-        <span class="label">Path</span>
-        <span class="value">${escapeHtml(r.path || "—")}</span>
-        ${r.last_seen ? `
-          <span class="label">Last activity</span>
-          <span class="value">${escapeHtml(r.last_seen)}</span>
-        ` : ""}
-        ${r.trello_card_id ? `
-          <span class="label">Trello card</span>
-          <span class="value">${escapeHtml(r.trello_card_id)}</span>
-        ` : ""}
-      </div>
-    </section>
-  `;
-
-  const hasPath = !!r.path;
-  const hasPin = !!r.trello_card_id;
-
-  view.innerHTML = `
-    <header class="detail-head">
-      <div class="detail-name">${escapeHtml(r.client)}</div>
-      ${techs ? `<div class="detail-techs">${escapeHtml(techs)}</div>` : ""}
-    </header>
-    <div class="detail-chip-row">${chips.join(" ")}</div>
-    ${formsSection}
-    ${photosSection}
-    ${reqSection}
-    ${misplacedSection}
-    ${cleanSection}
-    ${metaSection}
-    <footer class="detail-actions">
-      <!-- Main row — ordered by typical workflow: open the folder, jump
-           to the systems (Trello / XA / CompanyCam), copy the
-           identifiers, then import. -->
-      <button class="action-btn primary" data-action="open-folder"
-              ${hasPath ? "" : "disabled"}>📁 OD folder</button>
-      <button class="action-btn" data-action="open-trello"
-              ${hasPin ? "" : "disabled"}><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello</button>
-      <button class="action-btn" data-action="open-xa"
-              ${hasPin ? "" : "disabled"}><img class="btn-icon" src="../web_shared/xactanalysis.png" alt="" onerror="this.remove()"/>XA</button>
-      <button class="action-btn" data-action="open-companycam"
-              title="Open this job's CompanyCam project (reads the CompanyCam link from the Trello card)"
-              ${hasPin ? "" : "disabled"}><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>CompanyCam</button>
-      <button class="action-btn" data-action="copy-client">📋 Copy name</button>
-      <button class="action-btn" data-action="copy-claim"
-              title="Copy the claim number from this job's Trello card"
-              ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
-      <button class="action-btn primary" data-action="job-import"
-              title="Import photos/forms into this job's OD folder (WC zip, DocuSign packet, etc.)">📥 Import</button>
-      <!-- Secondary row — staging + attachment tools. -->
-      <button class="action-btn" data-action="copy-pics"
-              title="Stage every image in a PICS subfolder (Initial / Demo / Mold Prep / Post / etc.) into a TEMP folder + open it in Explorer — drag into XactAnalysis from there. Auto-deletes after 1 min."
-              ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
-      <button class="action-btn" data-action="attachments"
-              ${hasPin ? "" : "disabled"}
-              title="Browse + download the Trello card's photos/files">📎 Attachments</button>
-      <button class="action-btn" data-action="sp-import"
-              title="Import matching files from SharePoint into the OD job folder">📥 Import SP</button>
-      <!-- The rest — less-frequent navigation. -->
-      <button class="action-btn" data-action="claim-folders"
-              title="See past claims in this job's directory — older 'Nth Claim' or date-named (9-20-25) folders — and open one"
-              ${hasPath ? "" : "disabled"}>🗂 Past claims</button>
-      <button class="action-btn" data-action="day-units"
-              title="Pick which unit subfolders to audit for TODAY only — replicates the row, one card per pinned unit (multi-unit properties only)"
-              ${hasPath ? "" : "disabled"}>🏠 Day units…</button>
-      ${r.section === "sp_recent" ? `
-        <button class="action-btn" data-action="sp-rundoc"
-                title="Open the run-doc for this SP folder's date (parsed from name, e.g. '3-19-26' → 3/19)">📄 Run-doc</button>` : ""}
-    </footer>
-    ${hasPin ? `<section class="detail-section initial-cl" id="initial-cl">
-      <h3>📥 Initial checklist <span class="muted" id="initial-cl-status">loading…</span></h3>
-      <div id="initial-cl-body"></div>
-    </section>` : ""}
-    ${hasPin ? `<section class="detail-section inprog-cl" id="inprog-cl">
-      <h3>🗂 In Progress checklist <span class="muted" id="inprog-cl-status">loading…</span></h3>
-      <ul class="issue-list" id="inprog-cl-items"></ul>
-    </section>` : ""}
-  `;
-
-  view.querySelectorAll(".action-btn[data-action]").forEach((b) => {
-    b.addEventListener("click", () => onDetailAction(b.dataset.action, r));
-  });
-  // In Progress - ADMIN Trello checklist, inline below the buttons.
-  // Lets the user tick demo photos / order docusketch / etc. by hand
-  // without leaving the audit. Loaded async so detail render is instant.
-  if (hasPin) loadInProgressChecklist(r);
-  // Initial checklist (INITIAL / INITIAL - ADMIN) + canned intake
-  // comments — folded in from the IUQ so the audit is the one place
-  // to work a job from intake through closeout.
-  if (hasPin) loadInitialChecklists(r);
-  // Hover the Trello button → popover with card name / lane / last
-  // activity. Mirrors the Tk audit's pinned-card tooltip — saves a
-  // click on every "what was this card about again?" check.
-  const trelloBtn = view.querySelector('.action-btn[data-action="open-trello"]');
-  if (trelloBtn && r.trello_card_id) {
-    attachTrelloHoverPopover(trelloBtn, r.trello_card_id);
-  }
-  // Right-click the Trello button → 📌 Pin / Change pinned card.
-  // Mirrors the OD-folder right-click pattern (which opens
-  // Find/Change folder…). Works whether the button is enabled or
-  // disabled — disabled state means "no card pinned yet", which is
-  // exactly when "Pin Trello card" is the most useful action.
-  if (trelloBtn) {
-    trelloBtn.addEventListener("contextmenu", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      showCtxMenu(ev, r, [
-        { label: r.trello_card_id
-            ? "📌 Change pinned card…" : "📌 Pin Trello card…",
-          action: () => openPinModal(r) },
-      ]);
-    });
-  }
-  // Same for the OD folder button — the row-level menu already
-  // covers this but binding here gives users the same affordance
-  // wherever they happen to right-click.
-  const folderBtn = view.querySelector('.action-btn[data-action="open-folder"]');
-  if (folderBtn) {
-    folderBtn.addEventListener("contextmenu", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      showCtxMenu(ev, r, [
-        { label: r.found
-            ? "🔀 Change folder…" : "🔎 Find folder…",
-          action: () => openFindFolderModal(r) },
-      ]);
-    });
-  }
-  // 🏢 Commercial chip click → toggle the sticky flag. Use direct
-  // element lookup + click listener (event delegation was unreliable
-  // because the chip's multi-line attribute string sometimes
-  // bubbled the click to the chip-row instead of the span itself).
-  // SP +N chip → open the SharePoint import dialog directly.
-  const spChip = view.querySelector(".detail-chip.sp-new");
-  if (spChip) {
-    spChip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openSpImportModal(r);
-    });
-  }
-  const commChip = view.querySelector(".commercial-chip");
-  if (commChip) {
-    commChip.style.cursor = "pointer";
-    commChip.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const cur = !!r.is_commercial;
-      commChip.textContent = "Working…";
-      const res = await pywebview.api.set_commercial(r.client, !cur);
-      if (!res?.ok) {
-        setStatus(`Toggle failed: ${res?.error || "?"}`, "error");
-        commChip.textContent = (cur ? "🏢 Commercial" : "🏢 Mark commercial");
-        return;
-      }
-      r.is_commercial = res.on;
-      const re = await pywebview.api.reaudit_one(r.client);
-      if (re?.ok) {
-        const ix = state.rows.findIndex((x) => x.client === r.client);
-        if (ix >= 0) state.rows[ix] = re.row;
-        renderAll();
-      } else {
-        renderDetail();
-      }
-      if (res.resolved_count) {
-        setStatus(`🏢 Marked commercial · ${res.resolved_count} forms auto-resolved`, "ok");
-      } else {
-        setStatus(res.on ? "🏢 Marked commercial" : "Unmarked commercial", "ok");
-      }
-    });
-  }
+  const ctx = buildAuditDetailCtx();
+  view.innerHTML = window.AuditDetail.buildDetailBodyHTML(r, ctx);
+  window.AuditDetail.wireDetail(view, r, ctx);
 }
 
 function scrollSelectedIntoView() {
@@ -1686,6 +2509,13 @@ function scrollSelectedIntoView() {
 // ── Filtering ────────────────────────────────────────────────────
 function filterRows() {
   let rows = state.rows;
+  // One-off audit rows surfaced by a search that found nothing in the
+  // loaded list — prepend them (deduped) so they show up as matches.
+  if (state.oneoffHits && state.oneoffHits.length) {
+    const have = new Set(rows.map(rowKey));
+    const extra = state.oneoffHits.filter((h) => !have.has(rowKey(h)));
+    if (extra.length) rows = extra.concat(rows);
+  }
   const f = state.filter;
   if (f === "flagged")    rows = rows.filter((r) => r.flagged);
   else if (f === "ok")    rows = rows.filter((r) => !r.flagged);
@@ -1799,6 +2629,15 @@ function attachBulkToolbar() {
     if (first) openSpImportModal(first);
     setStatus(`📥 SP import for ${clients[0]} (${clients.length} selected — close to continue to next)`, "");
   });
+  document.getElementById("bulk-snapshot")?.addEventListener("click", () => {
+    const clients = sel();
+    if (!clients.length) return;
+    // Snapshots are interactive (fill the form), so open the Snapshot
+    // tool for the FIRST selected; the rest stay selected to work through.
+    // Mirrors the serial bulk-SP pattern.
+    if (window.emsNavigateTo) window.emsNavigateTo("snapshot", clients[0]);
+    setStatus(`📸 Snapshot for ${clients[0]}${clients.length > 1 ? ` (${clients.length} selected — come back for the next)` : ""}`, "");
+  });
   document.getElementById("bulk-flag")?.addEventListener("click", () => {
     const clients = sel();
     if (!clients.length) return;
@@ -1823,6 +2662,70 @@ function attachBulkToolbar() {
 // detail pane below the action buttons. Fetched async so the detail
 // render stays instant; each item is a checkbox that writes straight
 // back to Trello on toggle (reverting on failure).
+// 🎴 Trello enrichment — everything the audit row doesn't carry, pulled
+// from ONE get_card call (backend caches 60s): lane, loss type, labels,
+// due, last activity, members, checklist %, adjuster/customer email, and
+// the latest comments. Loaded async so the detail render stays instant.
+async function loadTrelloInfo(row) {
+  const statusEl = document.getElementById("trello-info-status");
+  const bodyEl = document.getElementById("trello-info-body");
+  if (!bodyEl) return;
+  let r;
+  try { r = await pywebview.api.trello_enrichment(row.client, row.trello_card_id || ""); }
+  catch (e) { if (statusEl) statusEl.textContent = "error"; return; }
+  // Detail may have re-rendered to a different row while awaiting.
+  const still = document.getElementById("trello-info-body");
+  if (!still || still !== bodyEl) return;
+  if (!r || !r.ok) { if (statusEl) statusEl.textContent = r && r.error ? "error" : ""; return; }
+  if (!r.has_card) { document.getElementById("trello-info")?.remove(); return; }
+  if (statusEl) statusEl.textContent = "";
+  const chip = (txt, color) => `<span style="display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${color || "var(--surface-2)"};color:var(--text);margin:0 4px 4px 0;">${escapeHtml(txt)}</span>`;
+  const chips = [];
+  if (r.lane) chips.push(chip("📍 " + r.lane, "rgba(74,158,255,.18)"));
+  if (r.loss_type) chips.push(chip("💧 " + r.loss_type, "rgba(245,166,35,.18)"));
+  const lossLc = (r.loss_type || "").toLowerCase();
+  (r.labels || []).forEach((l) => { if (l && l.toLowerCase() !== lossLc) chips.push(chip(l)); });
+  if (r.due) chips.push(chip((r.due_complete ? "✅ due " : "📅 due ") + r.due, r.due_complete ? "rgba(63,185,80,.18)" : "rgba(245,166,35,.18)"));
+  if (r.last_activity) chips.push(chip("🕒 " + r.last_activity));
+  if ((r.members || []).length) chips.push(chip("👤 " + r.members.join(", ")));
+  if (r.checklist_total > 0) {
+    const pct = Math.round((r.checklist_done / r.checklist_total) * 100);
+    chips.push(chip(`☑ ${r.checklist_done}/${r.checklist_total} (${pct}%)`, pct === 100 ? "rgba(63,185,80,.18)" : "var(--surface-2)"));
+  }
+  let html = chips.length ? `<div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">${chips.join("")}</div>` : "";
+  const emails = [];
+  if (r.customer_email) emails.push(["Customer", r.customer_email]);
+  if (r.adjuster_email) emails.push(["Adjuster", r.adjuster_email]);
+  if (emails.length) {
+    html += `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${emails.map(([k, v]) => `${k}: <a href="#" class="tr-email" data-email="${escapeAttr(v)}" style="color:var(--text);">${escapeHtml(v)}</a>`).join(" &nbsp;·&nbsp; ")}</div>`;
+  }
+  if ((r.comments || []).length) {
+    html += `<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin:6px 0 4px;">Recent comments</div>`;
+    html += r.comments.map((c) => `
+      <div style="border-left:2px solid var(--border);padding:2px 0 2px 8px;margin-bottom:4px;">
+        <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(c.author || "")}${c.date ? " · " + escapeHtml(c.date) : ""}</div>
+        <div style="font-size:12px;white-space:pre-wrap;">${escapeHtml((c.text || "").slice(0, 400))}</div>
+      </div>`).join("");
+  }
+  if (!html) html = '<div class="muted" style="font-size:11px;">Card pinned, but no extra info filled in yet.</div>';
+  bodyEl.innerHTML = html;
+  const email = r.customer_email || r.adjuster_email || "";
+  const emailBtn = document.getElementById("trello-copy-email");
+  if (emailBtn && email) {
+    emailBtn.style.display = "";
+    emailBtn.onclick = async () => {
+      const ok = await copyText(email);
+      setStatus(ok ? `📧 Copied ${email}` : "Couldn't copy", ok ? "ok" : "warn");
+    };
+  }
+  bodyEl.querySelectorAll(".tr-email").forEach((a) =>
+    a.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const ok = await copyText(a.dataset.email);
+      setStatus(ok ? `📧 Copied ${a.dataset.email}` : "Couldn't copy", ok ? "ok" : "warn");
+    }));
+}
+
 async function loadInProgressChecklist(row) {
   const statusEl = document.getElementById("inprog-cl-status");
   const listEl = document.getElementById("inprog-cl-items");
@@ -1968,95 +2871,63 @@ async function toggleStarred(client) {
 let searchTimer = null;
 function onSearchInput(ev) {
   state.search = ev.target.value;
+  // Clearing the box drops any one-off results we surfaced.
+  if (!state.search.trim()) {
+    state.oneoffHits = [];
+    state.oneoffTried = "";
+  }
   if (searchTimer) clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
+  searchTimer = setTimeout(async () => {
     renderList();
     renderDetail();
-  }, 120);
+    // Nothing in the loaded list matches → fall back to a one-off audit
+    // of the typed name (resolves the folder + audits it), so the search
+    // still surfaces the job. Debounced + guarded so it fires once per
+    // distinct term, not on every keystroke.
+    const q = state.search.trim();
+    if (q.length >= 3 && !state.oneoffRunning
+        && q.toLowerCase() !== (state.oneoffTried || "").toLowerCase()
+        && filterRows().length === 0) {
+      await runOneoffFromSearch(q);
+    }
+  }, 300);
+}
+
+// Run a one-off audit for a typed search term and surface the result in
+// the list. Shared by the auto-fallback and the empty-state button.
+async function runOneoffFromSearch(term) {
+  const t = (term || "").trim();
+  if (!t || state.oneoffRunning) return;
+  state.oneoffRunning = true;
+  state.oneoffTried = t;
+  renderList();  // repaint the empty-state button as "Searching…"
+  setStatus(`🔍 Not in the list — running a one-off audit for “${t}”…`, "info");
+  try {
+    const res = await pywebview.api.audit_one_job(t);
+    if (res?.ok && (res.rows || []).length) {
+      state.oneoffHits = res.rows;
+      renderList();
+      renderDetail();
+      setStatus(
+        `🔍 One-off: ${firstLast(res.canonical)}`
+        + (res.resolved ? ` (from “${t}”)` : "")
+        + ` — ${res.count} row${res.count === 1 ? "" : "s"}`, "ok");
+    } else {
+      setStatus(res?.error
+        ? `No one-off match for “${t}”: ${res.error}`
+        : `No job found for “${t}”`, "warn");
+    }
+  } catch (ex) {
+    setStatus(`One-off audit failed: ${ex}`, "error");
+  } finally {
+    state.oneoffRunning = false;
+    renderList();
+  }
 }
 
 // ── Detail actions ───────────────────────────────────────────────
 async function onDetailAction(action, row) {
-  if (action === "open-folder") {
-    // Smart open: backend falls through to the validated resolver
-    // chain when row.path is stale (folder renamed/moved since the
-    // audit ran). Updates the row in place when a fresh path is
-    // found so subsequent actions don't keep hitting the dead path.
-    const res = await pywebview.api.open_od_for_client(
-      row.client, row.path || "");
-    if (res?.ok) {
-      if (res.refreshed && res.path && res.path !== row.path) {
-        // Splice the fresh path into local state so the next action
-        // sees the right value (without waiting for a re-audit).
-        row.path = res.path;
-        row.found = true;
-        renderDetail();
-        setStatus(`Opened ${row.client} · path refreshed`, "ok");
-      } else {
-        setStatus(`Opened ${row.client}`, "ok");
-      }
-    } else if (res?.needs_find) {
-      if (confirm(`Couldn't open ${row.client}:\n${res.error || "no folder"}\n\nOpen Find Folder to pick one?`)) {
-        openFindFolderModal(row);
-      } else {
-        setStatus(res.error || "No folder", "warn");
-      }
-    } else {
-      setStatus(res?.error || "Couldn't open folder", "warn");
-    }
-  } else if (action === "claim-folders") {
-    const r = await pywebview.api.claim_folders(row.path || "");
-    const folders = (r && r.folders) || [];
-    if (!folders.length) {
-      setStatus("No past claim / date folders in this job's directory", "warn");
-      return;
-    }
-    showClaimFoldersModal(row, folders);
-  } else if (action === "open-trello") {
-    await pywebview.api.open_trello_card(row.trello_card_id);
-  } else if (action === "open-xa") {
-    pywebview.api.open_xa_link(row.client);
-  } else if (action === "open-companycam") {
-    const ok = await pywebview.api.open_companycam_link(row.client);
-    if (!ok) setStatus("No CompanyCam link on this card yet — add a 'CompanyCam Link' line to the Trello card's LINKS section.", "warn");
-  } else if (action === "attachments") {
-    window.openTrelloAttachmentsModal({
-      cardId: row.trello_card_id, client: row.client });
-  } else if (action === "sp-import") {
-    openSpImportModal(row);
-  } else if (action === "copy-client") {
-    const ok = await copyText(row.client);
-    setStatus(ok ? `📋 Copied: ${row.client}` : "Couldn't copy",
-              ok ? "ok" : "error");
-  } else if (action === "copy-claim") {
-    const res = await pywebview.api.get_claim_number(row.client);
-    if (res?.ok && res.claim) {
-      const ok = await copyText(res.claim);
-      setStatus(ok ? `📋 Copied claim #: ${res.claim}` : "Couldn't copy",
-                ok ? "ok" : "error");
-    } else {
-      setStatus(res?.error || "No claim # found", "warn");
-    }
-  } else if (action === "job-import") {
-    openJobImportModal(row);
-  } else if (action === "day-units") {
-    openDayUnitsModal(row);
-  } else if (action === "copy-pics") {
-    openCopyPicsToXaModal(row);
-  } else if (action === "sp-rundoc") {
-    // Per-row run-doc opener for SP Recent rows. row.path is the
-    // SharePoint folder path; backend parses the date out of the
-    // folder name (or falls back to mtime).
-    const res = await pywebview.api.open_rundoc_for_sp_match(row.path);
-    if (res?.ok) {
-      const back = res.days_back > 0 ? ` · ${res.days_back}d back` : "";
-      const tail = res.source && res.source !== "today"
-        ? ` (from ${res.source})` : "";
-      setStatus(`📄 Opening ${res.date_label}${tail}${back}`, "ok");
-    } else {
-      setStatus(`Couldn't open: ${res?.error || "no run-doc"}`, "warn");
-    }
-  }
+  return window.AuditDetail.detailAction(action, row, buildAuditDetailCtx());
 }
 
 // ── Archive month modal (P2) ────────────────────────────────────
@@ -2368,8 +3239,16 @@ async function openSpImportModal(row) {
           // resolved the job folder. `side` routes to EMS or CONTENTS.
           const side = document.getElementById("sp-contents")?.checked
             ? "contents" : "ems";
-          const res = await pywebview.api.sp_copy_to_pics(
-            row.client, path, "", row.path || "", side);
+          let res = await pywebview.api.sp_copy_to_pics(
+            row.client, path, "", row.path || "", side, "");
+          // SP folders are usually named by the tech; only prompt when the
+          // backend couldn't determine one, then retry with the pick.
+          if (res?.need_tech) {
+            const t = await window.pickImportTech({ client: row.client, techs: row.techs });
+            if (!t) { btn.disabled = false; btn.textContent = "📥 Copy"; return; }
+            res = await pywebview.api.sp_copy_to_pics(
+              row.client, path, "", row.path || "", side, t);
+          }
           if (!res?.ok) {
             // "Couldn't resolve PICS folder" → the OD job folder
             // isn't pinned yet. Offer to open Find Folder so the
@@ -2518,6 +3397,13 @@ async function copyDaySummary() {
 }
 
 function onKeyDown(ev) {
+  // Ctrl/Cmd+K → quick-jump palette. Checked BEFORE the input guard so it
+  // fires even while typing in a field.
+  if ((ev.ctrlKey || ev.metaKey) && (ev.key === "k" || ev.key === "K")) {
+    ev.preventDefault();
+    openQuickJump();
+    return;
+  }
   if (ev.target.tagName === "INPUT") return;
   if (ev.key === "/") {
     $("#search-box").focus();
@@ -2535,7 +3421,7 @@ function onKeyDown(ev) {
   }
   if (ev.key === "Enter") {
     // Open OD for the selected row.
-    const r = state.rows.find((x) => rowKey(x) === state.selected_client);
+    const r = findRowByKey(state.selected_client);
     if (r) onDetailAction("open-folder", r);
     return;
   }
@@ -2579,6 +3465,41 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;");
 }
 function escapeAttr(s) { return escapeHtml(s); }
+// Display-only Title Case: uppercase the first letter of every word,
+// leaving the rest untouched so acronyms (LLC, IPR) and internal caps
+// (McDonald) survive. NEVER mutate the stored/identity value — apply
+// this only when rendering a name into the DOM.
+function titleCase(s) {
+  return String(s == null ? "" : s).replace(
+    /(^|[\s\-\/,.'"“”‘’([])([a-zà-ÿ])/g,
+    (_m, sep, ch) => sep + ch.toUpperCase());
+}
+// "Last, First" → "First Last" for personal names (strips a trailing
+// " - Carrier" / " (Unit …)"); names without a comma are returned as-is.
+// So one-off jobs (resolved from a "Last, First" folder) display the same
+// First-Last order as run-doc rows.
+function firstLast(name) {
+  const raw = String(name == null ? "" : name).trim();
+  const ci = raw.indexOf(",");
+  if (ci < 0) return raw;
+  const last = raw.slice(0, ci).trim();
+  const first = raw.slice(ci + 1).trim()
+    .replace(/\s+[-–—]\s+.*$/, "").replace(/\s*\(.*$/, "").trim();
+  return (first && last) ? `${first} ${last}` : raw;
+}
+// Live auto-capitalize for a search <input>: title-cases what the user
+// types while preserving the caret position.
+function bindTitleCaseInput(el) {
+  if (!el) return;
+  el.addEventListener("input", () => {
+    const pos = el.selectionStart;
+    const next = titleCase(el.value);
+    if (next !== el.value) {
+      el.value = next;
+      try { el.setSelectionRange(pos, pos); } catch (_e) {}
+    }
+  });
+}
 
 // Browser-native clipboard with a hidden-textarea fallback for
 // when navigator.clipboard isn't available (older WebView2 or
@@ -2614,17 +3535,20 @@ async function copyText(text) {
 const origRenderDetail = renderDetail;
 renderDetail = function () {
   origRenderDetail();
-  const r = state.rows.find((x) => rowKey(x) === state.selected_client);
+  const r = findRowByKey(state.selected_client);
   if (!r) return;
   const actions = document.querySelector(".detail-actions");
   if (!actions) return;
-  // Append Phase 2 buttons after the Phase 1 set.
+  // Append Phase 2 buttons (Scope / Find folder / Re-audit / More) INTO
+  // the last section-row ("Tools") so they stay grouped with the other
+  // tools instead of dangling on a loose line below the groups.
+  const toolsRow = actions.querySelector(".action-row:last-child") || actions;
   const add = (label, cls, fn) => {
     const b = document.createElement("button");
     b.className = "action-btn" + (cls ? " " + cls : "");
     b.textContent = label;
     b.addEventListener("click", fn);
-    actions.appendChild(b);
+    toolsRow.appendChild(b);
     return b;
   };
   // 📥 Import now lives in the static footer (main row, after Copy
@@ -2675,8 +3599,11 @@ async function decorateIssueListsWithCheckboxes(r) {
   // Skip when there are no issues
   if (!r.form_issues.length && !r.photo_issues.length) return;
   const resolvedMap = await pywebview.api.get_resolved_map(r.client) || {};
-  // Walk every <li> in .issue-list and prepend a checkbox
-  document.querySelectorAll(".issue-list li").forEach((li) => {
+  // Walk every audit-issue <li> and prepend a "resolved" checkbox.
+  // Skip .cl-item rows — those are Trello checklist items (Initial /
+  // In Progress) that already carry their own native checkbox; adding
+  // a resolved-box there renders a confusing double checkbox.
+  document.querySelectorAll(".issue-list li:not(.cl-item)").forEach((li) => {
     const text = li.textContent.trim();
     if (li.querySelector(".resolved-box")) return; // already decorated
     const isResolved = !!resolvedMap[text];
@@ -2926,6 +3853,16 @@ async function openFindFolderModal(row) {
     setStatus(`📁 Folder set: ${label || path}`, "ok");
   };
 
+  // Reset the search box — the term used to find the PARENT candidate
+  // ("Avil") almost never matches its child folders ("Unit 526 2-28-26"),
+  // so carrying it into browse mode hides every real subfolder. Clear it on
+  // any drill / breadcrumb move; the user can retype to filter children.
+  const clearSearch = () => {
+    searchTerm = "";
+    const el = document.getElementById("ff-search");
+    if (el) el.value = "";
+  };
+
   // Drill INTO a folder — load its subfolders and switch to browse mode.
   const drillInto = async (folder) => {
     const status = document.getElementById("ff-status");
@@ -2934,11 +3871,13 @@ async function openFindFolderModal(row) {
     if (!res?.ok) { setStatus(`Couldn't open: ${res?.error || "?"}`, "error"); return; }
     browseStack.push({ name: folder.name, path: folder.path });
     browseSubs = res.subfolders || [];
+    clearSearch();
     renderList();
   };
 
   // Climb to a given depth in the breadcrumb (0 = back to candidates).
   const goToDepth = async (depth) => {
+    clearSearch();
     if (depth <= 0) { browseStack = []; browseSubs = []; renderList(); return; }
     browseStack = browseStack.slice(0, depth);
     const cur = browseStack[browseStack.length - 1];
@@ -3063,6 +4002,7 @@ async function openFindFolderModal(row) {
     searchTerm = e.target.value.trim();
     renderList();
   });
+  bindTitleCaseInput(document.getElementById("ff-search"));
   document.getElementById("ff-search").focus();
   const clearBtn = document.getElementById("ff-clear");
   if (clearBtn) {
@@ -3091,56 +4031,9 @@ function closeOverlay() { window.closeModal("modal-overlay"); }
 // photographer, so ask who shot the batch. Defaults to the job's
 // run-doc tech; lists the roster + a free-text option. Resolves the
 // chosen tech name, "" to proceed with no tech, or null if cancelled.
-async function pickImportTech(row) {
-  const rowTechs = Array.isArray(row.techs) ? row.techs.filter(Boolean) : [];
-  let roster = [];
-  try {
-    const res = await pywebview.api.list_techs();
-    roster = (res && res.techs) || [];
-  } catch (_) { roster = []; }
-  const seen = new Set();
-  const ordered = [];
-  for (const t of [...rowTechs, ...roster]) {
-    const k = (t || "").toLowerCase();
-    if (t && !seen.has(k)) { seen.add(k); ordered.push(t); }
-  }
-  const def = rowTechs[0] || "";
-  return new Promise((resolve) => {
-    const overlay = createOverlay({
-      title: "📷 Who took these photos?",
-      sub: "CompanyCam doesn't tag the photographer — pick the tech so the import is filed under them.",
-      body: `
-        <label class="modal-lbl">Tech</label>
-        <select id="pt-tech" class="search" style="width:100%;">
-          ${ordered.map((t) => `<option value="${escapeAttr(t)}" ${t === def ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}
-          <option value="__other__">＋ Other (type a name)…</option>
-          <option value="">(skip — file without a tech)</option>
-        </select>
-        <input id="pt-other" class="search" type="text" placeholder="Tech name"
-               style="width:100%;margin-top:8px;display:none;" />
-        <div class="modal-footer">
-          <button class="btn modal-close" id="pt-cancel">Cancel</button>
-          <span style="flex:1;"></span>
-          <button class="btn btn-primary" id="pt-go">📥 Use this tech</button>
-        </div>`,
-    });
-    const sel = overlay.querySelector("#pt-tech");
-    const other = overlay.querySelector("#pt-other");
-    sel.addEventListener("change", () => {
-      const isOther = sel.value === "__other__";
-      other.style.display = isOther ? "block" : "none";
-      if (isOther) other.focus();
-    });
-    let done = false;
-    const finish = (v) => { if (done) return; done = true; closeOverlay(); resolve(v); };
-    overlay.querySelector("#pt-cancel").addEventListener("click", () => finish(null));
-    overlay.querySelector("#pt-go").addEventListener("click", () => {
-      let v = sel.value;
-      if (v === "__other__") v = (other.value || "").trim();
-      finish(v);   // "" = skip (no tech); otherwise the chosen name
-    });
-  });
-}
+// The import tech-picker lives in web_shared/stage_picker.js as
+// window.pickImportTech — one implementation shared by the Daily Run,
+// IUQ, and Snapshot import surfaces so they never drift.
 
 // After an import that landed photos with NO date metadata (screenshots,
 // pasted PNGs, undated downloads), ask when they were taken and stamp
@@ -3210,9 +4103,14 @@ async function openJobImportModal(row) {
           <button class="btn" id="job-ds-via-trello">✍ Send DocuSign via Trello</button>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer" style="align-items:center;">
+        <label id="job-import-side" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none;"
+               title="Route this import into the CONTENTS side (CONTENTS/PICS, CONTENTS/DOCS) instead of EMS — a separate tree outside EMS">
+          <input type="checkbox" id="job-import-contents" style="cursor:pointer;" /> 📦 Contents side
+        </label>
         <button class="btn" id="job-import-pick">📁 Pick a file…</button>
         <button class="btn" id="job-import-rescan">↻ Re-scan</button>
+        <span style="flex:1;"></span>
         <button class="btn modal-close">Close</button>
       </div>`,
   });
@@ -3220,8 +4118,16 @@ async function openJobImportModal(row) {
   async function scan() {
     const data = await pywebview.api.scan_downloads(row.client);
     const cands = data.candidates || [];
-    overlay.querySelector("#job-import-path").textContent =
-      "Scanned: " + (data.downloads || "—");
+    const fixed = data.repaired || [];
+    let scannedMsg = "Scanned: " + (data.downloads || "—");
+    if (fixed.length) {
+      // CompanyCam etc. drop files with no extension; scan_downloads
+      // auto-added the right one so they open + import normally.
+      scannedMsg += `  ·  🔧 fixed ${fixed.length} file name${
+        fixed.length !== 1 ? "s" : ""} (` +
+        fixed.map((r) => r.new).join(", ") + ")";
+    }
+    overlay.querySelector("#job-import-path").textContent = scannedMsg;
     const empty = overlay.querySelector("#job-import-empty");
     const wrap = overlay.querySelector("#job-import-candidates");
     if (!cands.length) {
@@ -3252,22 +4158,69 @@ async function openJobImportModal(row) {
         // Photo imports → ask which PICS stage folder first.
         let dest = "";
         let tech = "";
+        // Auto-split: when a download spans multiple stages/days, review +
+        // route each group to its own PICS folder with one tech per
+        // day+stage (instead of the single stage/tech pickers below).
+        if (cand.kind === "companycam" || cand.kind === "wc_attachments") {
+          let detection = null;
+          try { detection = await pywebview.api.detect_import_groups(cand.paths); }
+          catch (_) { detection = null; }
+          if (detection && detection.ok && detection.multi) {
+            const assignments = await window.pickImportGroups({
+              client: row.client, techs: row.techs, detection });
+            if (!assignments) return;                // cancelled
+            b.disabled = true; b.textContent = "Extracting…"; state.importBtn = b;
+            const gside = overlay.querySelector("#job-import-contents")?.checked
+              ? "contents" : "ems";
+            try {
+              const res = await pywebview.api.do_import_grouped(
+                row.client, cand.kind, cand.paths, assignments, gside);
+              if (!res?.ok) {
+                b.textContent = "Failed"; card.classList.add("failed");
+                setStatus(`Import failed: ${res?.error || "?"}`, "error");
+                return;
+              }
+              b.textContent = "✓ Done"; card.classList.add("done");
+              const parts = Object.entries(res.routed || {})
+                .map(([f, n]) => `${n} → PICS/${f}`);
+              if (res.failed && res.failed.length)
+                parts.push(`⚠ ${res.failed.length} failed`);
+              setStatus(`✓ ${row.client}: ${parts.join(" · ")}`, "ok");
+              const reRes = await pywebview.api.reaudit_one(row.client);
+              if (reRes?.ok) {
+                const ix = state.rows.findIndex((x) => x.client === row.client);
+                if (ix >= 0) state.rows[ix] = reRes.row;
+                renderAll();
+              }
+            } catch (ex) {
+              b.textContent = "Failed"; card.classList.add("failed");
+              setStatus(`Import error: ${ex}`, "error");
+            } finally {
+              if (state.importBtn === b) state.importBtn = null;
+            }
+            return;                                  // grouped import handled
+          }
+        }
         if (cand.kind === "companycam" || cand.kind === "wc_attachments") {
           const choice = await window.pickPicsStage({ client: row.client, allowAuto: true });
           if (choice === null) return;               // cancelled
           dest = choice === "AUTO" ? "" : choice;
         }
-        // CompanyCam exports carry no photographer — ask which tech shot
-        // these so the import attributes them (a "<Tech> <date>" folder).
-        if (cand.kind === "companycam") {
-          tech = await pickImportTech(row);
-          if (tech === null) return;                  // cancelled
+        // Every photo import must be filed under a tech — CompanyCam and
+        // WC attachments are both field photos. Ask (pre-filled from the
+        // run-doc); a cancel or empty pick aborts the import.
+        if (cand.kind === "companycam" || cand.kind === "wc_attachments") {
+          tech = await window.pickImportTech({ client: row.client, techs: row.techs });
+          if (!tech) return;                          // cancelled / no tech
         }
         b.disabled = true; b.textContent = "Extracting…";
         state.importBtn = b;
+        // 📦 Contents side → route into CONTENTS/ instead of EMS/.
+        const side = overlay.querySelector("#job-import-contents")?.checked
+          ? "contents" : "ems";
         try {
           const res = await pywebview.api.do_import(
-            row.client, cand.kind, cand.paths, dest, tech);
+            row.client, cand.kind, cand.paths, dest, tech, side);
           if (!res?.ok) {
             b.textContent = "Failed";
             card.classList.add("failed");
@@ -3310,10 +4263,19 @@ async function openJobImportModal(row) {
       const choice = await window.pickPicsStage({ client: row.client, allowAuto: true, allowDocs: true });
       if (choice === null) return;                   // cancelled
       const dest = choice === "AUTO" ? "" : choice;
+      // A PICS stage (or AUTO) means photos → require a tech, same as the
+      // other photo-import paths. A DOCS destination is paperwork → skip.
+      let tech = "";
+      if (!/^DOCS/i.test(String(choice))) {
+        tech = await window.pickImportTech({ client: row.client, techs: row.techs });
+        if (!tech) return;                           // cancelled / no tech
+      }
       btn.disabled = true; btn.textContent = "Picking…";
       state.importBtn = btn;
+      const side = overlay.querySelector("#job-import-contents")?.checked
+        ? "contents" : "ems";
       try {
-        const res = await pywebview.api.pick_and_import_file(row.client, dest);
+        const res = await pywebview.api.pick_and_import_file(row.client, dest, side, tech);
         if (res?.cancelled) {
           // User closed the picker — no-op, just restore the button.
         } else if (!res?.ok) {
@@ -3618,6 +4580,149 @@ async function openPaperworkRequestModal(row) {
     }
     closeOverlay();
     setStatus(`📨 Teams opened (${res.chat || "group"} chat) — ${tech} for ${row.client}`, "ok");
+  });
+}
+
+// ── New Loss modal — paste a carrier assignment email, make the card ──
+const NL_FIELD_GROUPS = [
+  { group: "Customer", items: [
+    ["insured_name", "Customer Name"],
+    ["address", "Address"],
+    ["phone", "Phone"],
+    ["email", "Email"],
+    ["additional_contacts", "Additional Contacts"],
+  ]},
+  { group: "Insurance", items: [
+    ["carrier", "Insurance Company"],
+    ["claim_number", "Claim Number"],
+    ["adjuster_name", "Adjuster / Claim Rep"],
+    ["adjuster_email", "Adjuster Email"],
+    ["adjuster_number", "Adjuster Phone"],
+    ["deductible", "Deductible"],
+    ["agent_name", "Agent Name"],
+  ]},
+  { group: "Property / claim", items: [
+    ["year_built", "Year Built"],
+    ["date_of_loss", "Date of Loss"],
+    ["date_received", "Date Received"],
+    ["xa_id", "XA ID"],
+  ]},
+  { group: "Notes", items: [
+    ["field_notes", "Field Notes (loss details)"],
+    ["office_notes", "Office Notes"],
+  ]},
+];
+const NL_TEXTAREA_KEYS = new Set(["field_notes", "office_notes", "address"]);
+
+function openNewLossModal() {
+  const inputStyle =
+    "width:100%;font:inherit;background:var(--surface-2);color:var(--text);" +
+    "border:1px solid var(--border);border-radius:6px;padding:6px 9px;";
+  const fieldRow = ([key, label]) => `
+    <label class="modal-lbl" style="display:block;font-size:11px;color:var(--text-muted);margin:8px 0 2px;">${label}</label>
+    ${NL_TEXTAREA_KEYS.has(key)
+      ? `<textarea id="nl-${key}" rows="${key === "field_notes" ? 3 : 2}" style="${inputStyle}resize:vertical;"></textarea>`
+      : `<input type="text" id="nl-${key}" style="${inputStyle}" autocomplete="off" />`}`;
+  const groupBlock = (g) => `
+    <div style="margin-top:14px;">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:3px;">${g.group}</div>
+      ${g.items.map(fieldRow).join("")}
+    </div>`;
+
+  const overlay = createOverlay({
+    title: "🆕 New Loss — create Trello card from assignment email",
+    sub:   "Paste the carrier email, hit Parse, review/fill the fields, then Create. Fields the email omits can be typed in.",
+    body: `
+      <div id="nl-board-line" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Resolving board…</div>
+      <label class="modal-lbl" style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:2px;">Paste assignment email</label>
+      <textarea id="nl-paste" rows="6" placeholder="From: Mercury - Servpro …" style="${inputStyle}resize:vertical;"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <button class="btn" id="nl-parse">✨ Parse email</button>
+        <span id="nl-parse-status" style="font-size:11px;color:var(--text-muted);"></span>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <div style="flex:1;">
+          <label class="modal-lbl" style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:2px;">Loss type / template</label>
+          <select id="nl-loss_type" class="search" style="width:100%;">
+            <option value="water">Water</option>
+            <option value="fire">Fire</option>
+            <option value="property">Property Mgmt</option>
+          </select>
+        </div>
+        <div style="flex:2;">
+          <label class="modal-lbl" style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:2px;">Card name</label>
+          <input type="text" id="nl-card_name" style="${inputStyle}" autocomplete="off" placeholder="Insured - Carrier" />
+        </div>
+      </div>
+
+      ${NL_FIELD_GROUPS.map(groupBlock).join("")}
+
+      <div class="modal-footer" style="margin-top:16px;display:flex;gap:8px;align-items:center;">
+        <span id="nl-status" style="flex:1;font-size:11px;"></span>
+        <button class="btn modal-close">Cancel</button>
+        <button class="btn btn-primary" id="nl-create">🆕 Create card</button>
+      </div>`,
+  });
+
+  const $$ = (sel) => overlay.querySelector(sel);
+  const setVal = (key, val) => { const el = $$(`#nl-${key}`); if (el) el.value = val || ""; };
+
+  // Show which board / intake list / templates we'll use.
+  (async () => {
+    try {
+      const t = await pywebview.api.new_loss_templates();
+      const line = $$("#nl-board-line");
+      if (t?.ok) {
+        const avail = ["water", "fire", "property"].filter((k) => t[k]);
+        line.innerHTML = `Board: <b>${escapeHtml(t.board || "?")}</b> · Intake: <b>${escapeHtml(t.intake || "?")}</b> · Templates: ${avail.join(", ") || "none"}`;
+        // grey unavailable options
+        ["water", "fire", "property"].forEach((k) => {
+          const opt = overlay.querySelector(`#nl-loss_type option[value="${k}"]`);
+          if (opt && !t[k]) { opt.disabled = true; opt.textContent += " (no template)"; }
+        });
+      } else {
+        line.innerHTML = `<span style="color:var(--amber);">⚠ ${escapeHtml(t?.error || "No WIP board found for this department")}</span>`;
+      }
+    } catch (e) { /* non-fatal */ }
+  })();
+
+  $$("#nl-parse").addEventListener("click", async () => {
+    const text = $$("#nl-paste").value.trim();
+    if (!text) { $$("#nl-parse-status").textContent = "Paste the email first"; return; }
+    $$("#nl-parse-status").textContent = "Parsing…";
+    const res = await pywebview.api.parse_new_loss(text);
+    if (!res?.ok) { $$("#nl-parse-status").textContent = res?.error || "Parse failed"; return; }
+    const f = res.fields || {};
+    NL_FIELD_GROUPS.forEach((g) => g.items.forEach(([key]) => setVal(key, f[key])));
+    if (f.loss_type) $$("#nl-loss_type").value = f.loss_type;
+    setVal("card_name", f.card_name);
+    const got = Object.keys(f).filter((k) => f[k] && k !== "loss_type").length;
+    $$("#nl-parse-status").innerHTML = `<span style="color:var(--green);">✓ Parsed ${got} field${got === 1 ? "" : "s"} — review below</span>`;
+  });
+
+  $$("#nl-create").addEventListener("click", async () => {
+    const fields = { loss_type: $$("#nl-loss_type").value };
+    NL_FIELD_GROUPS.forEach((g) => g.items.forEach(([key]) => {
+      fields[key] = ($$(`#nl-${key}`)?.value || "").trim();
+    }));
+    fields.card_name = ($$("#nl-card_name")?.value || "").trim();
+    if (!fields.card_name && !fields.insured_name) {
+      $$("#nl-status").innerHTML = `<span style="color:var(--amber);">Enter a customer name (or card name) first</span>`;
+      return;
+    }
+    const btn = $$("#nl-create");
+    btn.disabled = true;
+    $$("#nl-status").textContent = "Creating card…";
+    const res = await pywebview.api.create_new_loss(fields);
+    if (!res?.ok) {
+      btn.disabled = false;
+      $$("#nl-status").innerHTML = `<span style="color:var(--red);">${escapeHtml(res?.error || "Create failed")}</span>`;
+      return;
+    }
+    closeOverlay();
+    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom). ${res.url || ""}`, "ok");
+    if (typeof runAudit === "function") { try { runAudit(true); } catch (e) {} }
   });
 }
 

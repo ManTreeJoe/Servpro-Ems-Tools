@@ -40,8 +40,17 @@ import trello_client as tc
 # ── Customer-facing DocuSign request email ───────────────────────────
 # The body the office sends to the insured asking them to e-sign the
 # closeout paperwork. The property city is auto-filled from the job's
-# address; the office phone is fixed.
+# address; the office phone comes from config so it follows the active
+# department (IE vs OC) — falls back to the IE number when unset.
 OFFICE_PHONE = "951-398-3240"
+
+
+def _office_phone() -> str:
+    try:
+        import config
+        return config.office_phone()
+    except Exception:
+        return OFFICE_PHONE
 
 # Street-type tokens — the city in a comma-less address ("5671 Northwood
 # Dr. Riverside 92509") is whatever follows the LAST of these.
@@ -90,7 +99,7 @@ def customer_email_text(city: str = "") -> str:
         f"property{loc}, we will need the following form(s) to be signed "
         "in order to close out this part of your claim with us. Please "
         "sign at your earliest convenience and if you have any questions, "
-        f"please contact our office at {OFFICE_PHONE}. Thank you."
+        f"please contact our office at {_office_phone()}. Thank you."
     )
 
 

@@ -18,11 +18,21 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 window.addEventListener("pywebviewready", async () => {
+  // WebView2 focus fix: nudge the app window to the foreground on click so
+  // a text field doesn't just blink a caret while the window stays inactive.
+  let _focusNudgeAt = 0;
+  document.addEventListener("pointerdown", () => {
+    const now = Date.now();
+    if (now - _focusNudgeAt < 400) return;
+    _focusNudgeAt = now;
+    try { pywebview?.api?.focus_window?.(); } catch (_) { /* ignore */ }
+  }, true);
   $("#refresh-btn").addEventListener("click", reloadEverything);
   $("#legacy-btn").addEventListener("click", () => pywebview.api.open_tk_launcher());
   $("#toast-log-btn").addEventListener("click", () => window.openToastLogDrawer?.());
   await loadShell();
   refreshCounts();
+  maybeShowFirstRun();
   // ── Hybrid live updates ────────────────────────────────────────
   // Sidebar badges auto-refresh every 30 seconds. Pauses when the
   // window is hidden (alt-tabbed away) so we don't burn CPU /
@@ -45,6 +55,53 @@ async function loadShell() {
   renderSidebar();
   renderWelcome();
   updateClock();
+  renderDeptSwitch();
+}
+
+// ── Department switcher (multi-account) ────────────────────────────
+async function renderDeptSwitch() {
+  const host = document.getElementById("dept-switch");
+  if (!host) return;
+  let st;
+  try { st = await pywebview.api.department_state(); } catch (_) { st = null; }
+  if (!st?.ok || !st.enabled || !(st.departments || []).length) {
+    host.style.display = "none";
+    return;
+  }
+  host.style.display = "flex";
+  host.innerHTML = (st.departments || []).map((d) =>
+    `<button class="dept-seg ${d.key === st.active ? "active" : ""}"
+             data-key="${esc(d.key)}" title="${esc(d.label)}">${esc(d.key)}</button>`
+  ).join("");
+  host.querySelectorAll(".dept-seg").forEach((b) =>
+    b.addEventListener("click", () => switchDept(b.dataset.key, st.active)));
+}
+
+async function switchDept(key, active) {
+  if (!key || key === active) return;
+  const splash = document.getElementById("dept-splash");
+  const txt = document.getElementById("dept-splash-txt");
+  if (txt) txt.textContent = `Switching to ${key}…`;
+  if (splash) splash.classList.remove("hidden");
+  // Disable the pills so a double-click can't fire two switches.
+  document.querySelectorAll(".dept-seg").forEach((b) => (b.disabled = true));
+  const unlock = () => {
+    if (splash) splash.classList.add("hidden");
+    document.querySelectorAll(".dept-seg").forEach((b) => (b.disabled = false));
+  };
+  try {
+    const r = await pywebview.api.switch_department(key);
+    if (!r?.ok) { unlock(); window.toastLog?.(`Switch failed: ${r?.error || "?"}`); return; }
+    if (r.unchanged) { unlock(); return; }
+    // In-process switch: Python persisted the choice and cleared the
+    // workspace-scoped caches; reload the shell so every tool + poller
+    // re-reads the now-active department. Sub-Apis read config lazily,
+    // so a web reload is enough — no process relaunch.
+    if (r.reload) { location.reload(); return; }
+    unlock();
+  } catch (_) {
+    unlock();
+  }
 }
 
 // Cross-frame message bus — settings panel posts
@@ -57,6 +114,7 @@ window.addEventListener("message", async (ev) => {
     state.nav = await pywebview.api.nav();
     renderSidebar();
     refreshCounts();
+    renderDeptSwitch();
   } else if (d.type === "ems-navigate" && d.key) {
     // Cross-tool jump from a panel's "Open in…" right-click. Switch the
     // content frame to the target tool, handing it `focus` (a client
@@ -86,12 +144,17 @@ function renderSidebar() {
 
 function renderNavItem(it) {
   const isActive = state.active && state.active.key === it.key;
-  return `<div class="sb-item ${isActive ? "active" : ""}"
+  // A panel whose backend Api failed to import is a dead tab — show ⚠
+  // instead of a spinner so it's not silently broken.
+  const badge = it.error
+    ? `<span class="sb-badge hot" id="badge-${esc(it.key)}" title="This panel failed to load — see ems.log">⚠</span>`
+    : `<span class="sb-badge loading" id="badge-${esc(it.key)}">…</span>`;
+  return `<div class="sb-item ${isActive ? "active" : ""}${it.error ? " errored" : ""}"
               data-key="${esc(it.key)}" data-src="${esc(it.src)}"
               data-icon="${esc(it.icon)}" data-name="${esc(it.name)}">
     <span class="sb-icon">${esc(it.icon)}</span>
     <span class="sb-name">${esc(it.name)}</span>
-    <span class="sb-badge loading" id="badge-${esc(it.key)}">…</span>
+    ${badge}
   </div>`;
 }
 
@@ -122,9 +185,32 @@ function findItem(key) {
   return null;
 }
 
+// ── First-run welcome modal ──────────────────────────────────────
+// Shown once on a fresh machine to point the user at Settings (Trello
+// key/token + folder paths). Dismissing either way drops the
+// `.configured` marker server-side so it never reappears.
+async function maybeShowFirstRun() {
+  let info;
+  try { info = await pywebview.api.first_run(); } catch { return; }
+  if (!info || !info.show) return;
+  const overlay = $("#fr-overlay");
+  if (!overlay) return;
+  const close = () => {
+    overlay.classList.add("hidden");
+    pywebview.api.dismiss_first_run().catch(() => {});
+  };
+  $("#fr-later").onclick = close;
+  $("#fr-settings").onclick = () => {
+    close();
+    const item = findItem("settings");
+    if (item) navigate("settings", item.src);
+  };
+  overlay.classList.remove("hidden");
+}
+
 function renderWelcome() {
   $("#welcome-greet").innerHTML =
-    `${esc(state.header.greeting)}, <strong>Nathan</strong>.`;
+    `${esc(state.header.greeting)}.`;
   // Quick-pick tiles — first item of each group
   const quick = [];
   for (const g of state.nav) {
@@ -182,6 +268,18 @@ async function refreshCounts() {
     b.textContent = val;
     b.className = "sb-badge " + kind(key, val);
   }
+  // Clear the loading spinner on any panel counts() didn't return a value
+  // for — otherwise those badges (notifications, kpi, wc_audit, spreadsheet,
+  // multi_unit, cheat_sheet, settings, photo_folders) spin "…" forever.
+  $$(".sb-badge").forEach((b) => {
+    const key = (b.id || "").replace(/^badge-/, "");
+    // Leave the ⚠ dead-panel marker alone; only clear stale spinners.
+    if (b.textContent === "⚠") return;
+    if (!(key in state.counts)) {
+      b.textContent = "";
+      b.className = "sb-badge";
+    }
+  });
 }
 
 function kind(key, v) {

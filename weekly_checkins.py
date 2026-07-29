@@ -65,6 +65,16 @@ def _parse_iso(s: str | None) -> _dt.datetime | None:
 _board_id_cache: str | None = None
 
 
+def invalidate_caches():
+    """Drop the process-lifetime Estimating-board id cache. Called on a
+    department (OC/IE) switch — this module is imported by the live
+    Hygiene panel, so without this the previous department's Estimating
+    board id survives the in-process switch. Mirrors
+    trello_client.invalidate_caches()."""
+    global _board_id_cache
+    _board_id_cache = None
+
+
 def _estimating_board_id() -> str | None:
     """Resolve `ESTIMATING_BOARD_NAME` to a board id once per process.
     Returns None when the workspace doesn't have an Estimating board.

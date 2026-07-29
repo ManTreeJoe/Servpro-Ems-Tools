@@ -91,9 +91,13 @@ class Api:
         explicitly call `cleanup_apply(...)` to execute."""
         try:
             import multi_unit_cleanup as muc
-            import paths
+            import paths, datetime
             base = paths.audit_base()
-            reports = muc.find_multi_unit_properties(base) or []
+            # Current year only — never rename closed-out historical-year
+            # folders (matches the CLI default; audit bug #1). The web
+            # panel used to omit year_filter and walk every <YYYY> Jobs\.
+            reports = muc.find_multi_unit_properties(
+                base, year_filter=datetime.date.today().year) or []
         except Exception as ex:
             return {"ok": False, "error": str(ex), "properties": []}
         out = []
@@ -103,16 +107,20 @@ class Api:
                 renames = muc.propose_renames_for(rep.path) or []
             except Exception:
                 renames = []
-            if not renames:
-                continue
             items = []
             for r in renames:
+                # Drop no-op / already-canonical / skip rows so the preview
+                # count isn't inflated with blank-target rows (finding #8).
+                if getattr(r, "skip", False) or not r.dst or r.dst == r.src:
+                    continue
                 items.append({
-                    "src":  getattr(r, "src", "") or "",
-                    "dst":  getattr(r, "dst", "") or "",
-                    "name": os.path.basename(getattr(r, "src", "") or ""),
-                    "new_name": os.path.basename(getattr(r, "dst", "") or ""),
+                    "src":      r.src,
+                    "dst":      r.dst,
+                    "name":     os.path.basename(r.src),
+                    "new_name": os.path.basename(r.dst),
                 })
+            if not items:
+                continue
             out.append({
                 "property": os.path.basename(rep.path),
                 "path":     rep.path,
@@ -122,31 +130,58 @@ class Api:
         return {"ok": True, "properties": out,
                 "total_renames": total_renames}
 
-    def cleanup_apply(self, selected_srcs: list = None) -> dict:
-        """Execute previously-previewed renames. `selected_srcs`
-        filters to a subset; passing None applies everything."""
+    def cleanup_apply(self, selected: list = None) -> dict:
+        """Execute exactly the renames the user previewed.
+
+        `selected` is a list of {"src","dst"} pairs (the rows checked in
+        the dialog) — executed verbatim rather than re-proposed, so a
+        Trello Date-Received change between preview and apply can't
+        silently retarget a rename to a destination the user never saw
+        (audit bug #3). A legacy list of src strings falls back to the
+        current-year re-propose path."""
         try:
             import multi_unit_cleanup as muc
-            import paths
-            base = paths.audit_base()
-            reports = muc.find_multi_unit_properties(base) or []
-            picked = set(selected_srcs or [])
-            all_renames = []
-            for rep in reports:
-                try:
-                    rs = muc.propose_renames_for(rep.path) or []
-                except Exception:
-                    continue
-                for r in rs:
-                    if picked and r.src not in picked:
+            pairs = []
+            for item in (selected or []):
+                if (isinstance(item, dict)
+                        and item.get("src") and item.get("dst")):
+                    pairs.append((item["src"], item["dst"]))
+            if pairs:
+                renames = [muc.Rename(src=s, dst=d, reason="user-approved")
+                           for s, d in pairs]
+            else:
+                # Legacy src-string list → re-derive (current year only).
+                import paths, datetime
+                base = paths.audit_base()
+                picked = set(selected or [])
+                reports = muc.find_multi_unit_properties(
+                    base, year_filter=datetime.date.today().year) or []
+                renames = []
+                for rep in reports:
+                    try:
+                        rs = muc.propose_renames_for(rep.path) or []
+                    except Exception:
                         continue
-                    all_renames.append(r)
-            if not all_renames:
+                    for r in rs:
+                        if (getattr(r, "skip", False)
+                                or not r.dst or r.dst == r.src):
+                            continue
+                        if picked and r.src not in picked:
+                            continue
+                        renames.append(r)
+            if not renames:
                 return {"ok": False, "error": "Nothing to rename"}
-            result = muc.execute_renames(all_renames, dry_run=False) or {}
+            result = muc.execute_renames(renames, dry_run=False) or {}
+            # execute_renames returns renamed/skipped/failed/events — map
+            # to the moved/errors the UI reads (audit bug #2: the old code
+            # read nonexistent 'moved'/'errors' keys, always showing 0).
+            fail_events = [
+                f"{os.path.basename(s)}: {msg}"
+                for (s, _d, status, msg) in result.get("events", [])
+                if status in ("FAIL", "CONFLICT")]
             return {"ok": True,
-                    "moved":  int(result.get("moved") or 0),
-                    "errors": result.get("errors") or []}
+                    "moved":  int(result.get("renamed") or 0),
+                    "errors": fail_events}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 

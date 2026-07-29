@@ -19,16 +19,35 @@ from tool_panel import (ToolPanel, run_standalone,
 from ui_buttons import (done_button, secondary_button, danger_button,
                           warn_button, send_button, icon_button)
 
-_CFG = config.load()
-RUNS_DIR    = _CFG["runs_dir"]
-AUDIT_BASE  = _CFG["audit_base"]
-# SharePoint helpers live in `sharepoint.py` now — re-import here so the
-# rest of this file continues to use bare `PHOTOS_ROOT` / `_long_path` /
-# `_file_fingerprint` / `_IMAGE_EXTS` / `_date_variants` and keeps the
-# existing call sites for `_build_sp_match`, `find_sharepoint_folders_for_client`,
-# `list_image_*_in_tree` working without churn.
+# Job-folder + run-doc roots. Resolved lazily from config each access so a
+# Settings change or department (OC/IE) switch is reflected without a
+# restart — this module is imported at process start by photo_folders_web,
+# so a frozen value here would cross-wire OC/IE. `daily_photos_gui.RUNS_DIR`
+# / `.AUDIT_BASE` still work via the module __getattr__ below.
+def _runs_dir():
+    return config.load().get("runs_dir") or ""
+
+
+def _audit_base():
+    return config.load().get("audit_base") or ""
+
+
+def __getattr__(name):
+    # PHOTOS_ROOT delegates to sharepoint (single lazy source); RUNS_DIR /
+    # AUDIT_BASE resolve fresh from config.
+    if name == "PHOTOS_ROOT":
+        return sharepoint._photos_root()
+    if name == "RUNS_DIR":
+        return _runs_dir()
+    if name == "AUDIT_BASE":
+        return _audit_base()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# SharePoint helpers live in `sharepoint.py` now. Import the module (for the
+# lazy `sharepoint.PHOTOS_ROOT`) plus the pure helpers this file calls.
+import sharepoint
 from sharepoint import (
-    PHOTOS_ROOT,
     _IMAGE_EXTS, _long_path, _file_fingerprint, _date_variants,
     _build_sp_match, find_sharepoint_folders_for_client,
     list_image_names_in_tree, list_image_fingerprints_in_tree,
@@ -50,7 +69,7 @@ from audit_logic import DOCUSKETCH_RE
 
 def audit_jobs(client_names, year=None):
     """Thin wrapper around `audit_logic.audit_jobs` that supplies AUDIT_BASE."""
-    return _audit_jobs_core(client_names, AUDIT_BASE, year=year)
+    return _audit_jobs_core(client_names, _audit_base(), year=year)
 
 from theme import (GREEN, GREEN_DARK, WHITE, BG, TEXT_DARK, TEXT_GRAY,
                     TEXT_MUTED, BORDER, FLAG_RED, SURFACE_2,
@@ -108,7 +127,8 @@ def _find_od_folder_for_client(client_name):
     Walks AUDIT_BASE/<current year> then <previous year>, picking the first
     folder whose name contains the client's last name (word-boundary).
     Network walk — call from a background thread."""
-    if not client_name or not AUDIT_BASE or not os.path.isdir(AUDIT_BASE):
+    _base = _audit_base()
+    if not client_name or not _base or not os.path.isdir(_base):
         return None
     # Use the last-name token as the search key — handles "Smith, John"
     # → "smith" and "John Smith" → "smith" alike, and avoids matching
@@ -125,8 +145,8 @@ def _find_od_folder_for_client(client_name):
     for y in (now_year, now_year - 1):
         year_dir = None
         try:
-            for d in os.listdir(AUDIT_BASE):
-                p = os.path.join(AUDIT_BASE, d)
+            for d in os.listdir(_base):
+                p = os.path.join(_base, d)
                 if (os.path.isdir(p) and str(y) in d
                         and not ("LA" in d.upper() and "FIRE" in d.upper())):
                     year_dir = p
@@ -199,7 +219,7 @@ def _photo_folder_path(tech, run_date, client):
     Search PHOTOS_ROOT for a folder matching tech+date+client.
     Returns the matched directory path, or None if not found / root unreachable.
     """
-    if not os.path.isdir(PHOTOS_ROOT):
+    if not os.path.isdir(sharepoint.PHOTOS_ROOT):
         return None
 
     label       = _TECH_INITIALS.get(tech, tech)
@@ -215,7 +235,7 @@ def _photo_folder_path(tech, run_date, client):
                 and any(l in nl for l in label_lower))
 
     try:
-        with os.scandir(PHOTOS_ROOT) as it_root:
+        with os.scandir(sharepoint.PHOTOS_ROOT) as it_root:
             for e in it_root:
                 if not e.is_dir():
                     continue
@@ -248,7 +268,7 @@ def _photo_folder_exists(tech, run_date, client):
     Check if a photo folder exists for this tech+date+client.
     Returns True = found, False = not found, None = PHOTOS_ROOT unreachable.
     """
-    if not os.path.isdir(PHOTOS_ROOT):
+    if not os.path.isdir(sharepoint.PHOTOS_ROOT):
         return None
     return _photo_folder_path(tech, run_date, client) is not None
 
@@ -373,7 +393,7 @@ def find_photo_folder_for_job(techs, run_date, client):
     """Return (path, count) for the first tech with photos for this job —
     or (None, 0) if nobody has photos. Network-walk: callers should run
     this off the main thread."""
-    if not os.path.isdir(PHOTOS_ROOT) or not techs:
+    if not os.path.isdir(sharepoint.PHOTOS_ROOT) or not techs:
         return (None, 0)
     for t in techs:
         try:
@@ -400,11 +420,11 @@ def _resolve_tech_root_folder(tech, label):
     Preference order when multiple candidates match: exact > full-name
     starts-with > initials starts-with. Returns the path or None.
     """
-    if not os.path.isdir(PHOTOS_ROOT):
+    if not os.path.isdir(sharepoint.PHOTOS_ROOT):
         return None
     # Pass 1: exact match (fast).
     for cand in (tech, label):
-        p = os.path.join(PHOTOS_ROOT, cand)
+        p = os.path.join(sharepoint.PHOTOS_ROOT, cand)
         if os.path.isdir(p):
             return p
     # Pass 2: starts-with scan. List once, check both name + label
@@ -413,7 +433,7 @@ def _resolve_tech_root_folder(tech, label):
     # initials, which sometimes collide ("AP" inside "Aparna's
     # Apartment Cleaning" etc.).
     try:
-        with os.scandir(PHOTOS_ROOT) as it:
+        with os.scandir(sharepoint.PHOTOS_ROOT) as it:
             entries = [e.name for e in it if e.is_dir(
                 follow_symlinks=False)]
     except OSError:
@@ -432,7 +452,7 @@ def _resolve_tech_root_folder(tech, label):
             if initials_match is None:
                 initials_match = name
     chosen = full_match or initials_match
-    return os.path.join(PHOTOS_ROOT, chosen) if chosen else None
+    return os.path.join(sharepoint.PHOTOS_ROOT, chosen) if chosen else None
 
 
 def make_folders(jobs, run_date):
@@ -587,7 +607,7 @@ class App(ToolPanel):
         jobs. Call from a background thread — does 3 levels of os.scandir on
         the network share."""
         result = {}
-        if not os.path.isdir(PHOTOS_ROOT):
+        if not os.path.isdir(sharepoint.PHOTOS_ROOT):
             for job in jobs:
                 for tech in job["techs"]:
                     result[(tech, job["client"])] = None
@@ -1119,7 +1139,7 @@ class App(ToolPanel):
         path = filedialog.askopenfilename(
             title="Select Daily Run",
             filetypes=[("Word Documents", "*.docx"), ("All Files", "*.*")],
-            initialdir=RUNS_DIR
+            initialdir=_runs_dir()
         )
         if not path:
             return
@@ -1239,7 +1259,7 @@ class App(ToolPanel):
             self.hide_loading()
             return
 
-        photos_reachable = os.path.isdir(PHOTOS_ROOT)
+        photos_reachable = os.path.isdir(sharepoint.PHOTOS_ROOT)
         fmap = getattr(self, "_folder_map", None) or {}
 
         def _path_for(tech, client):

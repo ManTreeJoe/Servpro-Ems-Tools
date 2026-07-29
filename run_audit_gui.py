@@ -526,20 +526,21 @@ def _extract_time_slot(text):
     return s
 
 
-def parse_run_doc(path):
-    # OD-on-demand can stamp today's mtime when it materializes the file;
-    # snapshot before reading and restore after so the user's "Date modified"
-    # stays accurate to when the doc was actually edited.
-    _ts_snap = _preserve_mtime(path)
-    doc = Document(path)
+def _parse_run_doc_entries(entries):
+    """Core run-doc parser over a list of ``(text, is_struck)`` lines.
+
+    Shared by the `.docx` path (IE — Word paragraphs, real strikethrough)
+    and the `.msg` path (OC — Outlook email body lines, no strikethrough).
+    Returns ``(jobs, run_date)``; the caller handles merge + run_date
+    fallback so this stays format-agnostic."""
     current_section = None
     jobs = []
     run_date = ""
     date_re = re.compile(r'\b(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\b')
     stop_re = re.compile(r'^(upcoming|tbs\b|pending|on hold|marketing)', re.IGNORECASE)
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
+    for text, struck in entries:
+        text = (text or "").strip()
         if not text:
             continue
         tl = text.lower()
@@ -566,7 +567,7 @@ def parse_run_doc(path):
             continue
         if not current_section:
             continue
-        if para_is_struck(para):
+        if struck:
             continue
         if re.search(r'\bwarehouse\b', tl):
             continue
@@ -647,14 +648,55 @@ def parse_run_doc(path):
                      # callers since it's just an extra key on the dict.
                      "raw": text})
 
+    return jobs, run_date
+
+
+def _yesterday_run_date():
+    d = datetime.today() - timedelta(days=1)
+    return f"{d.month:02d}-{d.day:02d}-{d.year}"
+
+
+def _run_date_from_msg_name(path):
+    """OC `.msg` filenames encode the date as 'Weekday MDDYYYY' (e.g.
+    'Monday 7202026' → 7/20/2026). Return 'MM-DD-YYYY' or ''."""
+    base = os.path.basename(str(path))
+    m = re.search(r'(?<!\d)(\d{1,2})(\d{2})(\d{4})(?!\d)', base)
+    if not m:
+        return ""
+    try:
+        d = datetime(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+        return f"{d.month:02d}-{d.day:02d}-{d.year}"
+    except ValueError:
+        return ""
+
+
+def parse_run_doc(path):
+    """Parse a daily run doc into ``(jobs, run_date)``. Handles both the
+    IE Word `.docx` format and the OC Outlook `.msg` email format — same
+    job-list content, different container."""
+    p = str(path)
+    if p.lower().endswith(".msg"):
+        # OC — read the email body, parse its lines (no strikethrough
+        # info in plain text, so every listed job is treated as active).
+        import msg_reader
+        body = msg_reader.read_msg_text(p)
+        entries = [(ln, False) for ln in body.splitlines()]
+        jobs, run_date = _parse_run_doc_entries(entries)
+        if not run_date:
+            run_date = _run_date_from_msg_name(p) or _yesterday_run_date()
+        return _merge_duplicate_jobs(jobs), run_date
+
+    # IE — Word doc. OD-on-demand can stamp today's mtime when it
+    # materializes the file; snapshot before reading and restore after so
+    # the user's "Date modified" stays accurate to when the doc was
+    # actually edited.
+    _ts_snap = _preserve_mtime(p)
+    doc = Document(p)
+    entries = [(para.text, para_is_struck(para)) for para in doc.paragraphs]
+    jobs, run_date = _parse_run_doc_entries(entries)
     if not run_date:
-        d = datetime.today() - timedelta(days=1)
-        run_date = f"{d.month:02d}-{d.day:02d}-{d.year}"
-
-    # Restore the original mtime so OD's on-demand download doesn't show
-    # the doc as "modified today" in Explorer just because we read it.
-    _restore_mtime(path, _ts_snap)
-
+        run_date = _yesterday_run_date()
+    _restore_mtime(p, _ts_snap)
     return _merge_duplicate_jobs(jobs), run_date
 
 
@@ -1095,9 +1137,13 @@ class RunAuditApp(ToolPanel):
     #   key           — internal mode id (matches `self._mode`)
     #   label         — button text including emoji
     #   show_method   — method to call when the tab is clicked
+    # NOTE: the "Initial Upload" tab was retired (2026-07-22) — the
+    # standalone IUQ tool was removed. The InitialUploadView class remains
+    # in initial_upload_queue.py as a shared library (Snapshot / APA /
+    # snapshots_excel still import helpers from it), just no longer surfaced
+    # as an Audit tab.
     _TAB_DEFS = (
         ("run",      "🔎 Daily Run",      "_show_run"),
-        ("initial",  "📤 Initial Upload", "_show_initial"),
         ("backlog",  "📋 Backlog",        "_show_backlog"),
         ("sprecent", "🗂 SP Recent",      "_show_sprecent"),
     )
@@ -1171,22 +1217,6 @@ class RunAuditApp(ToolPanel):
                 self._render(results, err)
             except tk.TclError:
                 pass
-
-    def _show_initial(self):
-        if self._mode == "initial":
-            return
-        self._mode = "initial"
-        self._hide_all_bodies()
-        if self._initial_view is None:
-            try:
-                from initial_upload_queue import InitialUploadView
-                self._initial_view = InitialUploadView(self._initial_body)
-                self._initial_view.pack(fill="both", expand=True)
-            except Exception as ex:
-                self._render_tab_error(self._initial_body,
-                                        "Initial Upload", ex)
-        self._initial_body.pack(fill="both", expand=True)
-        self._update_tab_styles()
 
     def _show_backlog(self):
         if self._mode == "backlog":

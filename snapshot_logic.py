@@ -24,10 +24,18 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
 import audit_logic
 import config
 
-_CFG = config.load()
-# Fillable snapshot template path — fill_pdf reads it. Same value
-# snapshot_gui computes; kept here so the PDF fill is UI-free.
-TEMPLATE = _CFG["snapshot_template"]
+# Fillable snapshot template path — fill_pdf reads it. Resolved lazily
+# from config each call so a Settings change or department (OC/IE) switch
+# is picked up without a restart. `snapshot_logic.TEMPLATE` still works via
+# the module __getattr__ below.
+def _template():
+    return config.load().get("snapshot_template", "")
+
+
+def __getattr__(name):
+    if name == "TEMPLATE":
+        return _template()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_weekday(date_str):
@@ -39,12 +47,19 @@ def get_weekday(date_str):
     return ""
 
 def fmt_techs(names, initials_only=False):
-    names = [n.strip() for n in names if n.strip()]
-    if not names:
-        return ""
-    if len(names) <= 2:
-        return ", ".join(names)
-    return f"{names[0]} +{len(names)-1}"
+    # List EVERY tech on the day. The old "first +N" collapse was a crutch for
+    # the narrow fillable-template cell; the rendered handoff wraps the techs
+    # cell, so all names fit. De-dupe (order-preserving) so a line that repeats
+    # a tech doesn't double them.
+    seen, out = set(), []
+    for n in (nm.strip() for nm in names):
+        if not n:
+            continue
+        k = n.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(n)
+    return ", ".join(out)
 
 def detect_first_visit(raw):
     """Find the earliest Initial Inspection date from dispatch lines only."""
@@ -408,6 +423,13 @@ def parse_comments(raw):
         (r"\bpack\s*back\b|\bpack-back\b|\bpackback\b|\bPB\b", "Pack Back", False),
         (r"\bdemo\b",                  "Demo",               False),
         (r"\bmonitor\b",               "Monitor",            True),
+        # Equipment pickup — a standalone visit ("Pick up EQ - FB",
+        # "EQ picked up", "Air scrubber pickup"). Its own log row so the
+        # snapshot shows the EQ retrieval, not just an aside on another line.
+        (r"\bpick(?:ed|ing)?[\s-]*up\s+(?:eq|equipment|air\s*scrubbers?|"
+         r"dehus?|air\s*movers?)\b|"
+         r"\b(?:eq|equipment|air\s*scrubbers?|dehus?|air\s*movers?)"
+         r"[\s-]*pick(?:ed|ing)?[\s-]*up\b", "EQ Pickup", False),
         (r"\bmold\s+prep\b",           "Mold Prep",          False),
         (r"\btear[\s-]?down\b",        "Teardown",           False),
         (r"\babatement\b",             "Abatement",          False),
@@ -815,6 +837,195 @@ def parse_comments(raw):
     return sub_rows, log_rows
 
 
+# ── Structured job log from get_all_comments ─────────────────────────────
+# parse_comments works on a concatenated text blob and needs a date ON each
+# dispatch line. Real Trello threads (especially estimate-heavy commercial
+# jobs) are mostly quoted EMAIL chains with no in-body dates — the field
+# note "Air scrubber picked up" carries its date only in the COMMENT's
+# timestamp. extract_job_log / eq_lifecycle consume the get_all_comments
+# list (each {date, data.text, memberCreator.fullName}) so every event is
+# stamped by its comment date, and quoted-email/proposal noise is dropped.
+
+# A line that starts a quoted email chain — everything from here down in a
+# comment is forwarded history, not the note the person just typed.
+_EMAIL_QUOTE_RE = re.compile(
+    r'^\s*(?:from:|sent:|to:|cc:|subject:|-+\s*original message|'
+    r'on .+ wrote:|get outlook|sent from my )', re.IGNORECASE)
+# Proposal / pricing language — a comment that reads like an estimate email
+# describes work that MIGHT happen, not work performed. We still mine it for
+# decision events (lost/hold) but never for field-work events (cleaning/demo).
+_PROPOSAL_RE = re.compile(
+    r'\$\s?\d[\d,]{2,}|\boption\s*#?\s*[1-4]\b|\bproposal\b|'
+    r'\brevised\s+(?:estimate|pricing|scope)\b|\bbudget(?:ary)?\b|'
+    r'\bestimated?\s+cost\b', re.IGNORECASE)
+
+# Field-work events (only mined from non-proposal notes). (label, regex)
+_JOBLOG_WORK_EVENTS = [
+    ("Initial Inspection",
+     r'\binitial\s+inspection\b|completed?\s+the\s+(?:site\s+)?inspection|'
+     r'inspection\s+(?:field\s+)?template'),
+    ("EQ placed",
+     r'\beq\s+placed\b|equipment\s+placed\b|equipment\s+placed:\s*yes|'
+     r'\b(?:air\s*scrubber|dehu(?:midifier)?|air\s*mover)s?\b[^.\n]{0,30}'
+     r'(?:placed|set|in\s+the\b)'),
+    ("EQ picked up",
+     r'\beq\s+pick(?:ed)?\s*up\b|equipment\s+pick(?:ed)?\s*up|'
+     r'\b(?:air\s*scrubber|dehu(?:midifier)?|air\s*mover)s?\b[^.\n]{0,20}'
+     r'pick(?:ed)?\s*up|pick(?:ed)?\s*up[^.\n]{0,20}'
+     r'(?:air\s*scrubber|dehu|equipment)'),
+    ("Demo", r'\bdemo(?:lition|ed|\'d)?\b'),
+    ("Monitor", r'\bmonitor(?:ing|ed)?\b'),
+    ("Cleaning", r'\bhepa\s+vac|detailed\s+clean|cleaning\s+(?:complete|done)'),
+]
+# Decision / status events (mined from EVERY note, incl. emails).
+_JOBLOG_DECISION_EVENTS = [
+    ("Job lost — went with another firm",
+     r'another\s+(?:firm|company|contractor|vendor|restoration)|'
+     r'mov(?:ed|ing)\s+(?:ahead|forward)\s+with\s+another|'
+     r'go(?:ing|ne)?\s+with\s+another|went\s+with\s+another|'
+     r'declined\s+(?:our|the)\s+(?:proposal|estimate)'),
+    ("Cancelled", r'\bcancel(?:led|ed|ling)?\b|withdrawn|not\s+proceeding'),
+    ("On hold",
+     r'\bon\s*hold\b|plac(?:e|ed|ing)\s+on\s+hold|put\s+.*\bpause\b|'
+     r'pause\s+until|hold\s+(?:the\s+)?(?:job|estimate|revised)'),
+    ("Resumed", r'\boff\s+hold\b|resum(?:e|ed|ing)\b|take\s+off\s+hold'),
+]
+
+
+def _initials(name):
+    """First+last initials from a full name ("Mark Escobar" → "ME"). Falls
+    back to the first token's first two letters."""
+    parts = [p for p in re.split(r'\s+', (name or "").strip()) if p]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
+def _comment_dt(c):
+    """Parse a get_all_comments action's ISO `date` to a naive datetime."""
+    s = (c.get("date") or "")[:19]
+    for fmt in ("%Y-%m-%dT%H:%M:%S",):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            pass
+    return None
+
+
+def _fresh_text(c):
+    """The note a person actually typed.
+
+    Trello "forward" comments put an email-HEADER block (From/Sent/To/Cc/
+    Subject) at the TOP, then the actual message, then often a DEEPER quoted
+    chain. We skip a leading header block, keep the body, and stop at the
+    next quote marker — so Dan's reply that opens with "From: Dan Danzig…"
+    still yields "we moved ahead with another firm" instead of nothing."""
+    raw = ((c.get("data") or {}).get("text") or "")
+    lines = raw.splitlines()
+    n = len(lines)
+    i = 0
+    while i < n and not lines[i].strip():
+        i += 1
+    # Skip a leading email-header block (contiguous header lines → blank).
+    if i < n and _EMAIL_QUOTE_RE.match(lines[i]):
+        while i < n and lines[i].strip():
+            i += 1
+        while i < n and not lines[i].strip():
+            i += 1
+    out = []
+    for ln in lines[i:]:
+        if _EMAIL_QUOTE_RE.match(ln):
+            break  # deeper quoted message starts here
+        out.append(ln)
+    return "\n".join(out).strip()
+
+
+def extract_job_log(comments):
+    """Build a clean, dated job log from a get_all_comments list.
+
+    Returns a list of dicts sorted oldest-first:
+        {"date": "M/D/YY", "weekday": str, "activity": str, "who": initials}
+
+    Each event is stamped with its COMMENT date (not an in-body date), so a
+    bare "Air scrubber picked up" note is logged on the day it was posted.
+    Quoted email chains are stripped; proposal/estimate emails contribute
+    only decision events (lost / on-hold / cancelled), never field work — so
+    a proposal that merely describes "HEPA cleaning" doesn't fake a cleaning
+    visit. Identical (date, activity) pairs are de-duplicated."""
+    rows, seen = [], set()
+    for c in (comments or []):
+        dt = _comment_dt(c)
+        if dt is None:
+            continue
+        fresh = _fresh_text(c)
+        if not fresh:
+            continue
+        who = _initials((c.get("memberCreator") or {}).get("fullName"))
+        date_str = f"{dt.month}/{dt.day}/{str(dt.year)[2:]}"
+        weekday = get_weekday(date_str)
+        is_proposal = bool(_PROPOSAL_RE.search(fresh))
+        events = list(_JOBLOG_DECISION_EVENTS)
+        if not is_proposal:
+            events = _JOBLOG_WORK_EVENTS + events
+        for label, pat in events:
+            if not re.search(pat, fresh, re.IGNORECASE):
+                continue
+            # Respect explicit "No" answers on the field template
+            # (e.g. "Equipment Placed: No" must not log EQ placed).
+            if label == "EQ placed" and _is_no_answer(
+                    fresh.lower(), r'equipment\s+placed'):
+                continue
+            key = (date_str, label)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({"date": date_str, "weekday": weekday,
+                         "activity": label, "who": who})
+    rows.sort(key=lambda r: (datetime.strptime(r["date"], "%m/%d/%y")
+                             if re.match(r'\d', r["date"]) else datetime.min))
+    return rows
+
+
+def eq_lifecycle(comments):
+    """Track equipment placed vs picked up across a job's comments.
+
+    Returns {"placed": ["M/D/YY", ...], "picked_up": ["M/D/YY", ...],
+             "outstanding": bool, "days_out": int|None}. `outstanding` is
+    True when equipment was placed and never picked up; `days_out` is the
+    age of the earliest un-recovered placement (caller passes today via the
+    most recent comment, so no clock needed here — uses the latest comment
+    date as 'now')."""
+    placed, picked = [], []
+    latest = None
+    for c in (comments or []):
+        dt = _comment_dt(c)
+        if dt is None:
+            continue
+        latest = dt if (latest is None or dt > latest) else latest
+        fresh = _fresh_text(c)
+        if not fresh or _PROPOSAL_RE.search(fresh):
+            continue
+        ds = f"{dt.month}/{dt.day}/{str(dt.year)[2:]}"
+        if re.search(_JOBLOG_WORK_EVENTS[2][1], fresh, re.IGNORECASE):
+            picked.append((dt, ds))
+        elif (re.search(_JOBLOG_WORK_EVENTS[1][1], fresh, re.IGNORECASE)
+              and not _is_no_answer(fresh.lower(), r'equipment\s+placed')):
+            placed.append((dt, ds))
+    outstanding = len(placed) > len(picked)
+    days_out = None
+    if outstanding and placed and latest is not None:
+        earliest_unrecovered = sorted(placed)[len(picked)][0]
+        days_out = max(0, (latest - earliest_unrecovered).days)
+    return {
+        "placed":      [ds for _dt, ds in sorted(placed)],
+        "picked_up":   [ds for _dt, ds in sorted(picked)],
+        "outstanding": outstanding,
+        "days_out":    days_out,
+    }
+
+
 _SCOPE_MATERIAL_RE = re.compile(
     # Materials / equipment / containment vocabulary
     r'\b(?:drywall|base\s*pf|floorpro|floor\s*pro|plastic|zipper|scrubber|dehu|'
@@ -841,6 +1052,49 @@ _SCOPE_WEEKDAY_RE = re.compile(
 _SCOPE_EMAIL_RE   = re.compile(
     r'^(from:|to:|subject:|sent:|regards|good morning|good afternoon|sincerely|thank you)',
     re.IGNORECASE)
+# Room/area vocabulary — a strong positive signal that a bare line is a
+# ROOM HEADER (not a scope item or sub-point). Guarded by `not is_item`
+# at the call site, so an item line that happens to mention a room word
+# ("Removed Kitchen Cabinets") still stays an item.
+_SCOPE_ROOM_RE = re.compile(
+    r'\b(?:bath(?:room)?|kitchen|bed\s*room|bedroom|living|family|dining|'
+    r'garage|hall(?:way)?|master|closet|laundry|office|den|basement|attic|'
+    r'loft|foyer|entry(?:way)?|mud\s*room|pantry|nook|stair(?:s|way|well)?|'
+    r'landing|porch|patio|deck|balcony|exterior|interior|unit|suite|room|'
+    r'area|level|upstairs|downstairs|bonus|rec\s*room|utility|storage|'
+    r'great\s*room|powder|sun\s*room|breakfast|study|nursery|garage)\b',
+    re.IGNORECASE)
+# A top-level scope action (removal / demo / tear-out). Used to decide
+# where an indented sub-list ENDS — the first line like this resumes the
+# main list beneath a room. Sub-points (component/quantity lines) don't
+# carry these verbs, so they keep indenting under their "Foo:" header.
+_SCOPE_RESUME_RE = re.compile(
+    r'\b(remov\w*|demo\w*|tear\s*out|haul(?:ed)?)\b', re.IGNORECASE)
+
+
+def _scope_item_kinds(items):
+    """Classify each scope item for PDF indentation:
+       'head' — a "Foo:" sub-list header (group label)
+       'sub'  — an indented sub-point beneath the current header
+       'item' — a normal top-level scope line
+
+    A sub-list runs from a "Foo:" header (e.g. "Detached Appliances:",
+    "Containment:") until a top-level removal/demo action — or another
+    header / end of room — resumes the main list. Pure re-derivation from
+    the flat item strings, so it survives the web save path (which strips
+    items) without changing the room/items data contract."""
+    kinds, in_sub = [], False
+    for it in items:
+        txt = str(it).strip()
+        if txt.endswith(":"):
+            kinds.append("head")
+            in_sub = True
+        elif in_sub and not _SCOPE_RESUME_RE.search(txt):
+            kinds.append("sub")
+        else:
+            kinds.append("item")
+            in_sub = False
+    return kinds
 
 
 def parse_scope(raw):
@@ -907,22 +1161,56 @@ def parse_scope(raw):
     # / "Vanity (3 ft)" should never become room headers).
     rooms, current_room = [], None
     prev_ended_with_colon = False
+    in_sublist = False
     for line in best_block:
+        # Pure separators (──, ⸻, ---) hold a block together during the
+        # split pass above but are neither a room nor an item — skip them.
+        if not re.search(r'[A-Za-z0-9]', line):
+            continue
         is_material = bool(_SCOPE_MATERIAL_RE.search(line))
         has_colon   = ":" in line
         has_digit   = any(c.isdigit() for c in line)
         is_short    = len(line) < 45
-        is_item     = is_material or has_colon or prev_ended_with_colon
-        is_room     = (not is_item) and is_short and not has_digit
+        ends_colon  = line.rstrip().endswith(":")
+        is_bare     = not (is_material or has_colon or has_digit)
+        # A line is an ITEM when it carries scope vocabulary, a colon, the
+        # previous line opened a sub-list ("X:" then a bare line), OR we're
+        # still inside a sub-list and this is a bare sub-point. That last
+        # clause is the fix for multi-line sub-lists: "Detached Appliances:"
+        # followed by "Microwave" / "Refrigerator" / "Dishwasher" — every
+        # bare appliance stays an item instead of the 2nd-and-later ones
+        # turning into empty room headers (which then got dropped).
+        is_item = (is_material or has_colon or prev_ended_with_colon
+                   or (in_sublist and is_bare))
+        has_room_word = bool(_SCOPE_ROOM_RE.search(line))
+        # A bare line is a ROOM only when it isn't an item, is short, has no
+        # measurement digit, isn't mid-sub-list, AND either names a room or
+        # the previous room already collected items (so a genuinely new room
+        # is starting). This keeps note-style sub-headers like "Supported
+        # Countertops" as items under the current room rather than spawning
+        # an empty room that swallows the lines beneath it.
+        room_ok = (has_room_word or current_room is None
+                   or bool(current_room and current_room["items"]))
+        is_room = ((not is_item) and is_short and (not has_digit)
+                   and (not in_sublist) and room_ok)
         if is_room:
             if current_room:
                 rooms.append(current_room)
             current_room = {"room": line.rstrip('.').strip(), "items": []}
+            in_sublist = False
         else:
             if current_room is None:
                 current_room = {"room": "General", "items": []}
             current_room["items"].append(line)
-        prev_ended_with_colon = line.rstrip().endswith(":")
+            # Sub-list state: a "X:" header opens one, a bare sub-point
+            # keeps it open, a measured/material item closes it.
+            if ends_colon:
+                in_sublist = True
+            elif in_sublist and is_bare:
+                in_sublist = True
+            else:
+                in_sublist = False
+        prev_ended_with_colon = ends_colon
     if current_room:
         rooms.append(current_room)
 
@@ -999,6 +1287,11 @@ def build_scope_pdf(rooms, insured, out_path):
                  spaceBefore=10, spaceAfter=3)
     item_s  = _s("SI", fontSize=9,  fontName="Helvetica",
                  leftIndent=14, spaceAfter=2)
+    # Sub-list header ("Detached Appliances:") and its indented sub-points.
+    subhead_s = _s("SHD", fontSize=9, fontName="Helvetica-Bold",
+                   leftIndent=14, spaceBefore=1, spaceAfter=1)
+    subitem_s = _s("SUB", fontSize=9, fontName="Helvetica",
+                   leftIndent=34, textColor=_dgray, spaceAfter=2)
 
     today_str = datetime.today().strftime("%B %d, %Y")
     doc = SimpleDocTemplate(
@@ -1034,8 +1327,17 @@ def build_scope_pdf(rooms, insured, out_path):
         # the repeated header for "<Name> (cont.)" so the user can
         # tell the room is continuing rather than a fresh listing.
         data = [[Paragraph(room_data["room"], room_s)]]
-        for item in room_data["items"]:
-            data.append([Paragraph(item, item_s)])
+        kinds = _scope_item_kinds(room_data["items"])
+        for item, kind in zip(room_data["items"], kinds):
+            txt = str(item).strip()
+            if not txt:
+                continue
+            if kind == "head":
+                data.append([Paragraph(txt, subhead_s)])
+            elif kind == "sub":
+                data.append([Paragraph("–  " + txt, subitem_s)])
+            else:
+                data.append([Paragraph(txt, item_s)])
         tbl = _RoomTable(data, colWidths=[7*inch], repeatRows=1,
                           room_name=room_data["room"], room_style=room_s)
         tbl.setStyle(TableStyle([
@@ -1071,8 +1373,20 @@ def build_scope_pdf(rooms, insured, out_path):
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
 
 
+def _auto_size_da(existing) -> str:
+    """Force font-size 0 (auto-size) in an AcroForm /DA string so long text
+    shrinks to fit the field box instead of clipping. Preserves the font
+    name from the existing /DA when present."""
+    s = "" if existing is None else str(existing)
+    if s.startswith("(") and s.endswith(")"):
+        s = s[1:-1]
+    if "Tf" in s:
+        return re.sub(r"(/[^\s]+)\s+[\d.]+\s+Tf", r"\1 0 Tf", s, count=1)
+    return "/Helv 0 Tf 0 g"
+
+
 def fill_pdf(data, output_path):
-    template = pdfrw.PdfReader(TEMPLATE)
+    template = pdfrw.PdfReader(_template())
     for page in template.pages:
         annots = page.get('/Annots')
         if not annots:
@@ -1083,12 +1397,140 @@ def fill_pdf(data, output_path):
                 if key:
                     k = key[1:-1]
                     if k in data:
-                        annot.update(pdfrw.PdfDict(
+                        upd = pdfrw.PdfDict(
                             V=pdfrw.objects.pdfstring.PdfString.encode(data[k]),
-                            AP=pdfrw.PdfDict()
-                        ))
+                            AP=pdfrw.PdfDict())
+                        # Overflow-prone columns (Activity / Techs): auto-size
+                        # the font so a long entry shrinks to fit the box
+                        # rather than running off the edge (the fixed template
+                        # boxes can't grow taller). Dates/weekdays keep their
+                        # template font.
+                        if ("activity" in k or "techs" in k):
+                            upd.DA = pdfrw.objects.pdfstring.PdfString.encode(
+                                _auto_size_da(annot.get('/DA')))
+                        annot.update(upd)
     template.Root.AcroForm.update(pdfrw.PdfDict(NeedAppearances=pdfrw.PdfObject('true')))
     pdfrw.PdfWriter().write(output_path, template)
+
+
+def _snapshot_office_line() -> str:
+    """Best-effort office / franchise name for the snapshot header."""
+    try:
+        import config as _cfg
+        c = _cfg.load()
+        for key in ("franchise", "franchise_name", "office_name", "office"):
+            v = (c.get(key) or "").strip() if isinstance(c, dict) else ""
+            if v:
+                return v
+    except Exception:
+        pass
+    return "SERVPRO of Woodcrest / El Cerrito / Lake Mathews"
+
+
+def render_snapshot(output_path, *, insured, carrier="", dol="",
+                    first_visit="", cause="", subs=None, logs=None):
+    """Render the EMS job snapshot as a fully rendered PDF (NOT the fillable
+    template): a header block + Sub/Vendor Log + Daily Job Log as tables
+    whose Activity/Techs cells WRAP and whose rows grow to fit — so nothing
+    clips and long entries flow onto the next line. ReportLab paginates the
+    logs naturally across as many pages as needed."""
+    from reportlab.lib.pagesizes import letter as _letter
+    from reportlab.lib.units import inch as _inch
+    from reportlab.lib import colors as _colors
+    from reportlab.lib.styles import (getSampleStyleSheet as _styles,
+                                      ParagraphStyle as _PS)
+    from reportlab.platypus import (SimpleDocTemplate as _Doc,
+                                    Paragraph as _P, Spacer as _Sp,
+                                    Table as _T, TableStyle as _TS)
+    import xml.sax.saxutils as _sx
+
+    subs = subs or []
+    logs = logs or []
+    base = _styles()
+
+    def _s(name, **kw):
+        kw.setdefault("parent", base["Normal"])
+        return _PS(name, **kw)
+
+    cell     = _s("sn_cell", fontName="Helvetica", fontSize=9, leading=11)
+    hcell    = _s("sn_hcell", parent=cell, fontName="Helvetica-Bold")
+    title_s  = _s("sn_title", fontName="Helvetica-Bold", fontSize=16, spaceAfter=1)
+    office_s = _s("sn_office", fontSize=10,
+                  textColor=_colors.HexColor("#666666"), alignment=2)
+    sect_s   = _s("sn_sect", fontName="Helvetica-Bold", fontSize=11,
+                  spaceBefore=10, spaceAfter=4)
+    mlbl     = _s("sn_mlbl", fontName="Helvetica-Bold", fontSize=9)
+    mval     = _s("sn_mval", fontSize=9)
+
+    def P(t, st=cell):
+        return _P(_sx.escape(str("" if t is None else t)), st)
+
+    doc = _Doc(output_path, pagesize=_letter,
+               leftMargin=0.6 * _inch, rightMargin=0.6 * _inch,
+               topMargin=0.55 * _inch, bottomMargin=0.55 * _inch,
+               title=f"{insured} — EMS Job Snapshot")
+    # Title left, office name right-aligned on the same baseline (letterhead).
+    _title_tbl = _T([[_P("EMS Job Snapshot", title_s),
+                      _P(_sx.escape(_snapshot_office_line()), office_s)]],
+                    colWidths=[4.7 * _inch, 2.6 * _inch])
+    _title_tbl.setStyle(_TS([
+        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    story = [
+        _title_tbl,
+        _Sp(1, 0.14 * _inch),
+    ]
+
+    # Header meta — two label/value pairs per row.
+    meta = [
+        [P("Insured / Job", mlbl), P(insured, mval),
+         P("Carrier / Claim", mlbl), P(carrier, mval)],
+        [P("Date of Loss", mlbl), P(dol, mval),
+         P("First Site Visit", mlbl), P(first_visit, mval)],
+        [P("Cause / Category / Class", mlbl), P(cause, mval),
+         P("Subs Used", mlbl), P("Yes" if subs else "No", mval)],
+    ]
+    mt = _T(meta, colWidths=[1.55 * _inch, 2.25 * _inch,
+                             1.45 * _inch, 2.05 * _inch])
+    mt.setStyle(_TS([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.25, _colors.HexColor("#E2E2E2")),
+    ]))
+    story.append(mt)
+
+    col_w = [0.7 * _inch, 0.95 * _inch, 3.6 * _inch, 1.4 * _inch]
+    header_row = [[P("Date", hcell), P("Weekday", hcell),
+                   P("Activity / Status", hcell), P("Techs", hcell)]]
+    tbl_style = _TS([
+        ("BACKGROUND", (0, 0), (-1, 0), _colors.HexColor("#E0E0E0")),
+        ("GRID", (0, 0), (-1, -1), 0.25, _colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ])
+
+    def _table_for(rows):
+        body = header_row + [
+            [P(r.get("date")), P(r.get("weekday")),
+             P(r.get("activity")), P(r.get("techs"))] for r in rows]
+        t = _T(body, colWidths=col_w, repeatRows=1)
+        t.setStyle(tbl_style)
+        return t
+
+    if subs:
+        story.append(_P("Sub / Vendor Log", sect_s))
+        story.append(_table_for(subs))
+    story.append(_P("Daily Job Log", sect_s))
+    story.append(_table_for(logs) if logs
+                 else _P("(no daily log entries)", cell))
+    doc.build(story)
 
 
 # Template field capacity — anything beyond this lands on the overflow
@@ -1138,7 +1580,26 @@ def append_overflow_pages(output_path, sub_overflow, log_overflow,
         ("VALIGN",     (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING",  (0, 0), (-1, -1), 4),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING",   (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
     ])
+
+    # Wrap every cell in a Paragraph so a long Activity / Techs value
+    # WRAPS onto more lines and ReportLab auto-grows that row's height,
+    # instead of a plain string clipping / spilling past the column edge.
+    from reportlab.lib.styles import ParagraphStyle as _RLParaStyle
+    import xml.sax.saxutils as _rl_sx
+    _cell_style = _RLParaStyle("cont_cell", parent=styles["Normal"],
+                               fontName="Helvetica", fontSize=9, leading=11)
+    _hdr_style = _RLParaStyle("cont_hdr", parent=_cell_style,
+                              fontName="Helvetica-Bold")
+
+    def _cell(val, style=_cell_style):
+        return _RLPara(_rl_sx.escape(str("" if val is None else val)), style)
+
+    def _table_rows(rows):
+        head = [[_cell(h, _hdr_style) for h in header_row[0]]]
+        return head + [[_cell(c) for c in r] for r in rows]
 
     fd, cont_path = tempfile.mkstemp(suffix=".pdf",
                                       prefix="snapshot_overflow_")
@@ -1159,7 +1620,7 @@ def append_overflow_pages(output_path, sub_overflow, log_overflow,
                 f"<b>Sub / Vendor Log (continued — rows "
                 f"{SNAPSHOT_TEMPLATE_SUBS_MAX + 1}+)</b>",
                 styles["Heading2"]))
-            tbl = _RLTable(header_row + [list(r) for r in sub_overflow],
+            tbl = _RLTable(_table_rows(sub_overflow),
                             colWidths=col_widths, repeatRows=1)
             tbl.setStyle(table_style)
             story.append(tbl)
@@ -1171,7 +1632,7 @@ def append_overflow_pages(output_path, sub_overflow, log_overflow,
                 f"<b>Daily Job Log (continued — rows "
                 f"{SNAPSHOT_TEMPLATE_LOGS_MAX + 1}+)</b>",
                 styles["Heading2"]))
-            tbl = _RLTable(header_row + [list(r) for r in log_overflow],
+            tbl = _RLTable(_table_rows(log_overflow),
                             colWidths=col_widths, repeatRows=1)
             tbl.setStyle(table_style)
             story.append(tbl)

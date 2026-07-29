@@ -100,6 +100,41 @@ def test_user_abbrev_merges_with_hardcoded(monkeypatch):
         audit_logic.rebuild_tech_pattern()
 
 
+def test_seeding_makes_all_techs_removable(monkeypatch):
+    """After ensure_roster_seeded, the former hardcoded names live in the
+    editable user_techs store and TECH_PATTERN builds from it alone — so
+    removing a former built-in actually drops it from recognition."""
+    _isolate(monkeypatch)
+    assert not persistence.user_techs_seeded()
+    seeded = audit_logic.ensure_roster_seeded()
+    assert seeded and persistence.user_techs_seeded()
+
+    names = persistence.get_user_techs()["names"]
+    assert "Fernando" in names            # a former built-in is now editable
+    assert "FB" not in names              # initials seed into abbrev, not names
+    assert persistence.get_user_techs()["abbrev"].get("FB") == "Fernando"
+
+    # Still recognized after seeding…
+    assert "Pablo" in _matches("Demo - Pablo/George")
+    assert "FB" in _matches("Demo - FB")  # initials via abbrev keys in pattern
+
+    # …and now a former built-in can be removed for real.
+    kept = [n for n in names if n.lower() != "pablo"]
+    persistence.set_user_techs(kept, persistence.get_user_techs()["abbrev"])
+    audit_logic.rebuild_tech_pattern()
+    assert "Pablo" not in _matches("Demo - Pablo/George")
+    # A second seed call is a no-op (won't resurrect Pablo).
+    assert audit_logic.ensure_roster_seeded() is False
+
+
+def test_seeding_is_idempotent_and_keeps_user_adds(monkeypatch):
+    _isolate(monkeypatch)
+    persistence.set_user_techs(["Uli"], {"UL": "Uli"})
+    audit_logic.ensure_roster_seeded()
+    names = persistence.get_user_techs()["names"]
+    assert "Uli" in names and "Fernando" in names   # merged, not replaced
+
+
 def test_persistence_failure_falls_back_to_hardcoded(monkeypatch):
     """If persistence raises (e.g. corrupt state.json), the regex must
     still build from the hardcoded list — the tools shouldn't crash on

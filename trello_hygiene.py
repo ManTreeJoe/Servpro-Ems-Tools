@@ -393,6 +393,68 @@ def rule_customer_complaint(card: dict[str, Any], lane_name: str,
     return None
 
 
+# Customer chose a competitor / declined our proposal — the phrasing that
+# loses a job. Only the competitor/decline subset (not "no charge" / generic
+# cancel) so the nudge specifically means "close out a lost bid".
+_LOST_JOB_RE = re.compile(
+    r'another\s+(?:firm|company|contractor|vendor|restoration)|'
+    r'(?:went|going|mov(?:ed|ing)\s+(?:ahead|forward))\s+with\s+another|'
+    r'declined\s+(?:our|the)\s+(?:proposal|estimate)', re.IGNORECASE)
+
+
+def rule_lost_job(card: dict[str, Any], lane_name: str) -> dict[str, Any] | None:
+    """OPEN card whose comments say the customer went with another firm —
+    nudge to close it out. Closed/archived lost jobs are already handled by
+    the Snapshots routing; this catches the one still sitting in a working
+    lane after the 'no'."""
+    if card.get("closed"):
+        return None
+    for action in card.get("actions") or []:
+        if action.get("type") != "commentCard":
+            continue
+        text = ((action.get("data") or {}).get("text") or "")
+        m = _LOST_JOB_RE.search(text)
+        if m:
+            return _violation(
+                rule="lost_job", severity="warn",
+                detail="Customer went with another firm — close this job out",
+                card=card, lane_name=lane_name,
+                extra={"matched": m.group(0),
+                       "comment_iso": action.get("date") or ""})
+    return None
+
+
+def rule_equipment_on_site(card: dict[str, Any],
+                           lane_name: str) -> dict[str, Any] | None:
+    """OPEN card with equipment placed and no pickup logged for 3+ days —
+    rental/loss risk. Uses the same eq_lifecycle detection as the audit
+    Job-log button, on the card's inline comment stream."""
+    if card.get("closed"):
+        return None
+    try:
+        import snapshot_logic as _sl
+    except Exception:
+        return None
+    comments = [a for a in (card.get("actions") or [])
+                if a.get("type") == "commentCard"]
+    try:
+        eq = _sl.eq_lifecycle(comments)
+    except Exception:
+        return None
+    if not eq.get("outstanding"):
+        return None
+    d = eq.get("days_out")
+    if d is not None and d < 3:
+        return None   # too fresh to nag
+    detail = ("Equipment still on site"
+              + (f" ({d}d)" if d else "")
+              + f" — placed {', '.join(eq.get('placed') or [])}, no pickup logged")
+    return _violation(
+        rule="equipment_on_site", severity="warn", detail=detail,
+        card=card, lane_name=lane_name,
+        extra={"days_out": d, "placed": eq.get("placed") or []})
+
+
 # Order matters for display only — first violation per card is the one
 # the GUI's count badge highlights. Severity sort is applied separately
 # in scan_card so the most actionable rule wins regardless of order here.
@@ -402,6 +464,8 @@ _CARD_RULES = (
     rule_stale_no_comment,
     rule_no_next_action,
     rule_customer_complaint,
+    rule_lost_job,
+    rule_equipment_on_site,
 )
 
 
@@ -565,16 +629,24 @@ def scan_inbox_for_complaints(*, days: int = 14,
             continue
         match = None
         match_label = ""
+        hit_severity = ""
+        _sev_rank = {"error": 2, "warn": 1}
         for regex, severity, label in _COMPLAINT_COMPILED:
             mm = regex.search(text)
-            if mm:
+            if not mm:
+                continue
+            # Prefer the HIGHEST-severity match, not the first. The warn
+            # "complaint" patterns are listed before the error legal/
+            # lawsuit/BBB ones, so first-match-wins mislabeled an email
+            # that mentioned both as merely warn — under-prioritizing the
+            # legal escalation.
+            if (match is None
+                    or _sev_rank.get(severity, 0) > _sev_rank.get(hit_severity, 0)):
                 match = mm
                 match_label = label
-                # Track severity from the match for the violation —
-                # error severity (legal/lawsuit/BBB) overrides warn
-                # if multiple patterns matched.
                 hit_severity = severity
-                break
+                if _sev_rank.get(severity, 0) >= 2:
+                    break   # error is the max severity — no need to look further
         if match is None:
             continue
         # Build a small snippet around the matched phrase for context.

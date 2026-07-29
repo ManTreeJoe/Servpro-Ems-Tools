@@ -1,0 +1,21 @@
+/* Xactimate prep dialog (web_shared/xactimate_prep.js). Theme-var driven. */
+.xp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.xp-label {
+  width: 118px; flex: none; font-size: 12px;
+  color: var(--text-muted, #9aa4b2);
+}
+.xp-in {
+  flex: 1; min-width: 0;
+  background: var(--surface-2, #1e232c); color: var(--text, #e6e9ef);
+  border: 1px solid var(--border, #2a2f3a); border-radius: 6px;
+  padding: 7px 10px; font: inherit; font-size: 13px; outline: none;
+}
+.xp-in:focus { border-color: var(--accent, #3b82f6); }
+.xp-copy {
+  flex: none; font: inherit; font-size: 13px;
+  padding: 6px 9px; border-radius: 6px; cursor: pointer;
+  background: var(--surface-2, #1e232c); color: var(--text, #e6e9ef);
+  border: 1px solid var(--border, #2a2f3a);
+}
+.xp-copy:hover { border-color: var(--accent, #3b82f6); }
+.xp-pl .xp-label { width: auto; }

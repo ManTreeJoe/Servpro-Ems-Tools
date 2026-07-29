@@ -143,3 +143,17 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 
 /* topbar slim — recover vertical space */
 .topbar { padding: 6px 14px !important; gap: 10px !important; }
+
+/* ── Dark-mode form controls (select dropdown legibility) ───────────
+ * Without an explicit color-scheme, recent WebView2/Chromium paints the
+ * native <select> popup with dark option text on the control's dark
+ * background — options become invisible (just empty boxes). Declaring the
+ * dark scheme makes the UA render the popup dark-aware; the explicit
+ * option colors cover engines that honor author styling on <option>.
+ * (2026-06-23 — fixes "dropdowns show no text, just the box".) */
+:root { color-scheme: dark; }
+select, .search { color-scheme: dark; }
+option, optgroup {
+  background-color: #2E2E2E;
+  color: #E8E8E8;
+}

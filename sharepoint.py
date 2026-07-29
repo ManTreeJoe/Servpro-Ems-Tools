@@ -25,14 +25,28 @@ import persistence
 # liberal — phones produce HEIC/HEIF, drone footage shows up as MP4/MOV,
 # and screenshots come in as PNG.
 _IMAGE_EXTS = {
-    ".jpg", ".jpeg", ".png", ".heic", ".heif",
+    ".jpg", ".jpeg", ".jfif", ".png", ".heic", ".heif",
     ".webp", ".bmp", ".tif", ".tiff", ".gif",
     ".mp4", ".mov", ".m4v", ".avi",
 }
 
-# SharePoint photos share root, read once at module import. Kept module-level
-# (rather than lazily resolved) so tests + helpers can import it directly.
-PHOTOS_ROOT = config.load().get("photos_root", "")
+# SharePoint photos share root. Resolved LAZILY from config on every access
+# (config.load() is mtime-cached, so this is cheap) so a Settings change or
+# a department (OC/IE) switch is reflected without restarting the process.
+# `sharepoint.PHOTOS_ROOT` still works for callers via the module __getattr__
+# below; in-module code calls _photos_root() directly.
+def _photos_root():
+    return config.load().get("photos_root", "")
+
+
+def __getattr__(name):
+    # PEP 562 module-level attribute hook. Makes `sharepoint.PHOTOS_ROOT`
+    # (and function-local `from sharepoint import PHOTOS_ROOT`) resolve
+    # fresh each time instead of freezing the import-time value — the key
+    # to live department switching.
+    if name == "PHOTOS_ROOT":
+        return _photos_root()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _extra_photo_roots():
@@ -312,10 +326,11 @@ def _infer_tech(path):
     nesting (archive, sub-archives, etc.) without each one needing
     its own special case. Returns "" if the path isn't under
     PHOTOS_ROOT (e.g. extra roots are flat with no tech layer)."""
-    if not path or not PHOTOS_ROOT:
+    _root = _photos_root()
+    if not path or not _root:
         return ""
     try:
-        root_norm = os.path.normpath(PHOTOS_ROOT)
+        root_norm = os.path.normpath(_root)
         cur = os.path.normpath(path)
     except Exception:
         return ""
@@ -690,7 +705,7 @@ def plan_month_archive(year, month):
         except OSError:
             return
 
-    _scan_root(PHOTOS_ROOT, skip_excluded=True)
+    _scan_root(_photos_root(), skip_excluded=True)
     for er in _extra_photo_roots():
         _scan_root(er, skip_excluded=False)
 
@@ -782,8 +797,9 @@ def build_sharepoint_folder_index():
             _walk(entry.path, depth + 1, max_depth,
                   has_tech_layer=has_tech_layer)
 
-    if PHOTOS_ROOT and os.path.isdir(PHOTOS_ROOT):
-        _walk(PHOTOS_ROOT, 0, has_tech_layer=True)
+    _root = _photos_root()
+    if _root and os.path.isdir(_root):
+        _walk(_root, 0, has_tech_layer=True)
     for er in _extra_photo_roots():
         if er and os.path.isdir(er):
             # Extra roots are typically flat (jobs at depth-1) — don't
@@ -1091,7 +1107,7 @@ def find_sharepoint_folders_for_client(client, run_date=None,
 
             _walk(root, 0)
 
-        _scan(PHOTOS_ROOT, has_tech_layer=True)
+        _scan(_photos_root(), has_tech_layer=True)
         for er in _extra_photo_roots():
             _scan(er, has_tech_layer=False)
 

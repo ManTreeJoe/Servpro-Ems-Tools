@@ -61,7 +61,13 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
                 raw = r.read()
             break
         except urllib.request.HTTPError as ex:
-            if ex.code in (429, 503) and attempt < _max_retries:
+            # 429 (rate limit) is always safe to retry — the request was
+            # rejected, never processed. 503 (transient) can occur AFTER
+            # Trello accepted a write, so retrying a POST risks a DUPLICATE
+            # card/comment; only retry 503 for idempotent methods.
+            retryable = (ex.code == 429
+                         or (ex.code == 503 and method != "POST"))
+            if retryable and attempt < _max_retries:
                 retry_after = ex.headers.get("Retry-After") if ex.headers else None
                 try:
                     delay = float(retry_after) if retry_after else 0.0
@@ -122,6 +128,30 @@ def quality_excluded_board_ids() -> set[str]:
         out = set()
     _QUALITY_EXCLUDED_IDS_CACHE = out
     return out
+
+
+def invalidate_caches():
+    """Drop EVERY process-lifetime cache that is scoped to the active
+    Trello workspace. Called on a department (OC/IE) switch so the next
+    call re-resolves against the newly-active workspace instead of
+    returning the previous department's board/list ids.
+
+    The in-process switch only reloads the web page, not the Python
+    process, so any module-level cache seeded before the switch survives
+    it. Every cache here is keyed on (or derived from) a board looked up
+    BY NAME in the active workspace, so it MUST be reset — otherwise IE
+    keeps serving OC's LOGS/AR board (or an empty "" sentinel when the
+    name doesn't exist in the other workspace, i.e. "can't find any
+    cards"). If you add another name-resolved workspace cache, reset it
+    here too."""
+    global _QUALITY_EXCLUDED_IDS_CACHE
+    global _logs_board_id_cache, _ar_board_id_cache, _logs_list_ids_cache
+    _QUALITY_EXCLUDED_IDS_CACHE = None
+    _logs_board_id_cache = None
+    _ar_board_id_cache = None
+    _logs_list_ids_cache = None
+    _LIST_NAME_CACHE.clear()
+    _MEMBER_NAME_CACHE.clear()
 
 
 def list_boards(*, exclude_quality: bool = False):
@@ -297,6 +327,82 @@ def get_lane_name(board_id, list_id):
             by_list = {}
         _LIST_NAME_CACHE[board_id] = by_list
     return by_list.get(list_id, "")
+
+
+def get_card_lane(card_id):
+    """Return a card's CURRENT lane (list) display name, or "".
+
+    Light-weight: fetches ONLY idBoard/idList (no checklists, members,
+    attachments, or actions like the full `get_card`), then resolves the
+    lane via `get_lane_name`'s per-board cache — so re-routing a whole APA
+    doc costs ~one cheap card call per item plus one board-list call per
+    distinct board. Used by the APA "refresh lanes from Trello" button.
+    """
+    if not card_id:
+        return ""
+    try:
+        c = _call(f"/cards/{card_id}", params={"fields": "idBoard,idList"})
+    except Exception:
+        return ""
+    if not c:
+        return ""
+    return get_lane_name(c.get("idBoard"), c.get("idList"))
+
+
+def list_notifications(*, limit=50, only_unread=False):
+    """Fetch the current member's Trello notifications, newest-first.
+
+    Each item: {id, type, unread, date, data{card,board,text,...},
+    memberCreator{fullName,username}}. `type` is e.g. mentionedOnCard /
+    commentCard / changeCard / addedToCard / makeAdminOfBoard / etc.
+    Returns [] on any failure. Powers the in-app Notifications panel.
+    """
+    params = {
+        "limit": str(max(1, min(int(limit or 50), 1000))),
+        "filter": "all",
+        "memberCreator": "true",
+        "memberCreator_fields": "fullName,username",
+    }
+    if only_unread:
+        params["read_filter"] = "unread"
+    try:
+        return _call("/members/me/notifications", params=params) or []
+    except Exception:
+        return []
+
+
+def unread_notification_count():
+    """Count of UNREAD Trello notifications (for a sidebar/topbar badge).
+    Cheap-ish: fetches unread ids only. 0 on failure."""
+    try:
+        r = _call("/members/me/notifications",
+                  params={"read_filter": "unread", "fields": "id",
+                          "limit": "1000"}) or []
+        return len(r)
+    except Exception:
+        return 0
+
+
+def mark_notification_read(notification_id, read=True):
+    """Mark ONE notification read (read=True → unread=false) or unread.
+    Writes back to Trello so the real bell clears. True on success."""
+    if not notification_id:
+        return False
+    try:
+        _call(f"/notifications/{notification_id}", method="PUT",
+              params={"unread": "false" if read else "true"})
+        return True
+    except Exception:
+        return False
+
+
+def mark_all_notifications_read():
+    """Mark EVERY notification read (POST /notifications/all/read)."""
+    try:
+        _call("/notifications/all/read", method="POST")
+        return True
+    except Exception:
+        return False
 
 
 # Identifier patterns used by parse_card_identifier for the manual-link
@@ -562,6 +668,16 @@ _INCOMPLETE_COMMENT_MARKERS = (
     # 3rd party / wrong-territory handoff
     "3rd party", "third party", "wrong franchise", "wrong territory",
     "transferred to", "handed off to",
+    # Customer chose a competitor / declined our proposal. The phrasing
+    # that loses these jobs ("we moved ahead with another firm") never
+    # tripped any marker before, so the card sat in estimating limbo.
+    "another firm", "another company", "another contractor",
+    "another vendor", "another restoration", "going with another",
+    "went with another", "moved ahead with another", "moved forward with another",
+    "going a different direction", "different direction",
+    "chose another", "going elsewhere", "declined our proposal",
+    "declined our estimate", "declined the proposal", "declined the estimate",
+    "going in house", "going in-house", "in-house crew",
     # Generic incomplete tag
     "marked incomplete", "incomplete job",
 )

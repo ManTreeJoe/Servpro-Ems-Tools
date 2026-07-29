@@ -484,8 +484,8 @@ class Api:
 
     def open_trello_card(self, card_id):
         return self._aw().open_trello_card(card_id)
-    def open_xa_link(self, client):
-        return self._aw().open_xa_link(client)
+    def open_xa_link(self, client, card_id=""):
+        return self._aw().open_xa_link(client, card_id)
     def open_companycam_link(self, client):
         return self._aw().open_companycam_link(client)
     def request_docusketch(self, client, card_id: str = ""):
@@ -536,19 +536,186 @@ class Api:
         return self._aw().clear_folder_path(client)
     def reset_client_memory(self, client):
         return self._aw().reset_client_memory(client)
+    # Parity proxies (Audit → Snapshot): Past claims, Copy claim #, and
+    # the Teams paperwork-request flow — same single-sourced audit_web
+    # logic so the two surfaces don't drift.
+    def claim_folders(self, path):
+        return self._aw().claim_folders(path)
+    def get_claim_number(self, client):
+        return self._aw().get_claim_number(client)
+    # Multi-unit umbrella ➕ create-missing-child + loose-file flag —
+    # single-sourced through audit_web so Snapshot's property-structure
+    # modal creates units the same way Audit does.
+    def create_and_route_unit(self, parent_path, unit_name, import_paths=None):
+        return self._aw().create_and_route_unit(
+            parent_path, unit_name, import_paths)
+    def count_loose_parent_photos(self, parent_path):
+        return self._aw().count_loose_parent_photos(parent_path)
+    # Usage analytics — Snapshot's button clicks flow to the same local log.
+    def track_events(self, events):
+        try:
+            import usage_tracker as _ut
+            return _ut.record(events or [])
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+    # Request-items dialog (shared audit_detail.js action).
+    def request_item_options(self):
+        return self._aw().request_item_options()
+    def request_items_send(self, card_id, canon, keys, other="",
+                           handle="", client=""):
+        return self._aw().request_items_send(
+            card_id, canon, keys, other, handle, client)
+    def xa_prep_resolve(self, client):
+        return self._aw().xa_prep_resolve(client)
+    def xa_set_pricelist(self, carrier, pricelist):
+        return self._aw().xa_set_pricelist(carrier, pricelist)
+    # Shared audit-detail sections (web_shared/audit_detail.js) — the
+    # snapshot audit card renders the SAME Trello-info / Initial /
+    # In-Progress checklist sections + per-issue resolved boxes as the
+    # Audit tool, so these all proxy to the single-sourced audit_web
+    # logic. Add a proxy here whenever audit_detail.js gains an api call.
+    def trello_enrichment(self, client, card_id=""):
+        return self._aw().trello_enrichment(client, card_id)
+    def get_initial_checklists(self, client):
+        return self._aw().get_initial_checklists(client)
+    def get_inprogress_checklist(self, client):
+        return self._aw().get_inprogress_checklist(client)
+    def toggle_checklist_item(self, card_id, item_id, want):
+        return self._aw().toggle_checklist_item(card_id, item_id, want)
+    def post_canned(self, card_id, kind):
+        return self._aw().post_canned(card_id, kind)
+    def get_initial_cat_class(self, client, card_id=""):
+        return self._aw().get_initial_cat_class(client, card_id)
+    def import_initial_notes(self, client, card_id=""):
+        return self._aw().import_initial_notes(client, card_id)
+    def get_job_log(self, client, card_id=""):
+        return self._aw().get_job_log(client, card_id)
+    def get_resolved_map(self, client):
+        return self._aw().get_resolved_map(client)
+    def toggle_resolved(self, client, text, resolved):
+        return self._aw().toggle_resolved(client, text, resolved)
+    def open_rundoc_for_sp_match(self, path):
+        return self._aw().open_rundoc_for_sp_match(path)
+    def get_paperwork_chat_url(self):
+        return self._aw().get_paperwork_chat_url()
+    def set_paperwork_chat_url(self, url):
+        return self._aw().set_paperwork_chat_url(url)
+    def send_paperwork_request(self, client, tech, msg):
+        return self._aw().send_paperwork_request(client, tech, msg)
+
+    # ── Tech roster (canonical persistence.user_techs → TECH_PATTERN) ──
+    # The snapshot recognizes techs in Trello comments via
+    # audit_logic.TECH_PATTERN. ensure_roster_seeded() migrates the old
+    # built-in names into the editable user_techs store on first access, so
+    # EVERY tech is user-managed — removable and adjustable, none locked.
+    # Managing techs HERE (not the settings tech_roster.json, which doesn't
+    # feed recognition) means a change is picked up in comment parsing
+    # everywhere immediately + shows in the field autocomplete.
+    def _seed_roster(self):
+        try:
+            import audit_logic
+            audit_logic.ensure_roster_seeded()
+        except Exception:
+            pass
+
+    def snapshot_techs(self):
+        """The full editable roster for the snapshot tech fields. Returns:
+          all  — flat, sorted tokens for the <datalist> (names + initials)
+          user — [{name, initials}] EVERY tech (all removable/adjustable)
+        """
+        self._seed_roster()
+        try:
+            ut = persistence.get_user_techs() or {}
+            user_names = list(ut.get("names") or [])
+            abbrev = dict(ut.get("abbrev") or {})
+            name_to_init = {}
+            for k, v in abbrev.items():
+                name_to_init.setdefault(v, k)
+            user = [{"name": n, "initials": name_to_init.get(n, "")}
+                    for n in user_names]
+            tokens = user_names + list(abbrev.keys())
+            seen, allout = set(), []
+            for t in tokens:
+                t = (t or "").strip()
+                k = t.lower()
+                if t and k not in seen:
+                    seen.add(k)
+                    allout.append(t)
+            allout.sort(key=str.lower)
+            return {"ok": True, "all": allout, "user": user}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "all": [], "user": []}
+
+    def add_snapshot_tech(self, name, initials=""):
+        """Add a tech to the roster + rebuild the live regex so it's
+        recognized immediately. `initials` is optional (only needed when
+        dispatch lines write the tech as a code, e.g. UL → Uli)."""
+        name = (name or "").strip()
+        if not name:
+            return {"ok": False, "error": "Type a name first."}
+        ini = (initials or "").strip().upper()
+        if ini and not ini.isalpha():
+            return {"ok": False, "error": "Initials should be letters only."}
+        self._seed_roster()
+        try:
+            import audit_logic
+            ut = persistence.get_user_techs() or {}
+            names = list(ut.get("names") or [])
+            abbrev = dict(ut.get("abbrev") or {})
+            if name.lower() in {n.lower() for n in names}:
+                return {"ok": False, "error": f"'{name}' is already on the list."}
+            names.append(name)
+            if ini:
+                abbrev[ini] = name
+            persistence.set_user_techs(names, abbrev)
+            audit_logic.rebuild_tech_pattern()
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        res = self.snapshot_techs()
+        res["added"] = name
+        return res
+
+    def remove_snapshot_tech(self, name):
+        """Remove ANY tech from the roster (all techs are user-managed)."""
+        name = (name or "").strip()
+        if not name:
+            return {"ok": False, "error": "no name"}
+        self._seed_roster()
+        try:
+            import audit_logic
+            ut = persistence.get_user_techs() or {}
+            names = [n for n in (ut.get("names") or [])
+                     if n.lower() != name.lower()]
+            abbrev = {k: v for k, v in (ut.get("abbrev") or {}).items()
+                      if (v or "").lower() != name.lower()}
+            persistence.set_user_techs(names, abbrev)
+            audit_logic.rebuild_tech_pattern()
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        return self.snapshot_techs()
     # Workcenter / DocuSign Downloads scanner (extracts zips into
     # the OD job folder split by extension — same flow IUQ uses).
     def scan_downloads_for_card(self, client):
         return self._aw().scan_downloads(client)
-    def do_import(self, client, kind, zip_paths, dest_subfolder=""):
-        return self._aw().do_import(client, kind, zip_paths, dest_subfolder)
+    def do_import(self, client, kind, zip_paths, dest_subfolder="",
+                  tech="", side="ems"):
+        return self._aw().do_import(client, kind, zip_paths,
+                                    dest_subfolder, tech, side)
     def stamp_photo_dates(self, folder, date_iso):
         return self._aw().stamp_photo_dates(folder, date_iso)
-    def pick_and_import_file(self, client, dest_subfolder=""):
+    def pick_and_import_file(self, client, dest_subfolder="", side="ems",
+                             tech=""):
         # Native file picker → import any loose docs/photos the scanner
         # missed. Same handler the audit panel uses (file dialog parents
-        # to the snapshot window via the shared _aw singleton).
-        return self._aw().pick_and_import_file(client, dest_subfolder)
+        # to the snapshot window via the shared _aw singleton). `tech`
+        # attributes photo imports (required for PICS stages, ignored for
+        # DOCS) — same tech guard the Daily Run / IUQ import surfaces use.
+        return self._aw().pick_and_import_file(client, dest_subfolder,
+                                               side, tech)
+    def list_techs(self):
+        # Tech roster for the import tech-picker (photo imports must be
+        # attributed). Mirrors the audit panel's list_techs bridge.
+        return self._aw().list_techs()
     # SP enrich passthroughs needed by the full SP modal
     def sp_cloud_only_count(self, sp_path):
         return self._aw().sp_cloud_only_count(sp_path)
@@ -581,14 +748,16 @@ class Api:
         return self._aw().list_day_units(client)
     def set_day_units(self, client, paths):
         return self._aw().set_day_units(client, paths)
-    def sp_copy_to_pics(self, client, sp_path, target_pics, job_path):
-        return self._aw().sp_copy_to_pics(client, sp_path, target_pics, job_path)
+    def sp_copy_to_pics(self, client, sp_path, target_pics, job_path,
+                        side="ems", tech=""):
+        return self._aw().sp_copy_to_pics(
+            client, sp_path, target_pics, job_path, side, tech)
     def sp_pin_folder(self, client, sp_path):
         return self._aw().sp_pin_folder(client, sp_path)
     def sp_force_pull(self, sp_path):
         return self._aw().sp_force_pull(sp_path)
-    def sp_cloud_only_count(self, sp_path):
-        return self._aw().sp_cloud_only_count(sp_path)
+    # (sp_cloud_only_count is defined once above with the other SP-enrich
+    #  passthroughs — a second copy here used to silently shadow it.)
     def sp_mark_in_od(self, client, sp_path):
         return self._aw().sp_mark_in_od(client, sp_path)
     # Trello hover popover (60s cache lives on audit_web)
@@ -676,136 +845,20 @@ class Api:
     # current state so the snapshot UI can render toggleable rows.
     # Sources the canonical name/order from initial_upload_queue so
     # the two surfaces never drift.
-    def load_closeout_checklist(self, client: str,
-                                card_id: str = "") -> dict:
-        # Single resolution chain shared with every other Trello
-        # flow (Docusketch, attachments, post comment) — see
-        # card_resolver.resolve for the chain definition.
-        import card_resolver as _cr
-        cid, err = _cr.resolve(client, card_id)
-        if not cid:
-            return {"ok": False, "error": err}
-        try:
-            import trello_client as tc
-            from initial_upload_queue import (
-                CLOSE_OUT_CHECKLIST_NAME, CLOSE_OUT_ITEMS_ORDER)
-            card = tc.get_card(cid, actions_limit=0)
-            if not card:
-                return {"ok": False,
-                        "error": f"Trello card {cid} not found (archived?)"}
-            all_checklists = list(card.get("checklists") or [])
-            # All checklist names — surfaced in the response so the
-            # frontend can show "card has these checklists: …" when
-            # nothing matches, helping the user spot a naming quirk.
-            other_names = [(c.get("name") or "") for c in all_checklists]
-            # Find the first checklist whose name matches a close-out
-            # alias (case + punctuation insensitive). Accepts "Close
-            # Out", "CLOSE-OUT", "Closeout", "CLOSE OUT - ADMIN",
-            # "Close Out Checklist", etc.
-            import re as _re
-            def _norm(s):
-                return _re.sub(r"[^a-z]", "", (s or "").lower())
-            target_norms = [_norm(a) for a in CLOSE_OUT_CHECKLIST_NAME]
-            cl = None
-            for cand in all_checklists:
-                cn = _norm(cand.get("name") or "")
-                if not cn: continue
-                # Match if the candidate's normalized name STARTS WITH
-                # or CONTAINS the close-out alias — catches "closeout",
-                # "closeoutadmin", "closeoutchecklist", etc.
-                if any(t in cn for t in target_norms):
-                    cl = cand
-                    break
-            if cl is None:
-                return {"ok": True, "card_id": cid,
-                        "card_name": card.get("name") or "",
-                        "checklist_id": "",
-                        "items": [],
-                        "missing_checklist": True,
-                        "card_checklists": other_names}
-            # Render items in canonical order. Add any items on the
-            # checklist that AREN'T in the canonical list at the end
-            # so the user can see them (and delete them via right-
-            # click). Same map for both passes.
-            check_items = list(cl.get("checkItems") or [])
-            by_norm = {}
-            for it in check_items:
-                by_norm[_norm(it.get("name") or "")] = it
-            items = []
-            used_ids = set()
-            for name in CLOSE_OUT_ITEMS_ORDER:
-                it = by_norm.get(_norm(name))
-                if it:
-                    used_ids.add(it.get("id"))
-                    items.append({
-                        "id":       it.get("id") or "",
-                        "name":     it.get("name") or name,
-                        "complete": (it.get("state") or "").lower() == "complete",
-                        "missing":  False,
-                        "extra":    False,
-                    })
-                else:
-                    items.append({
-                        "id":       "",
-                        "name":     name,
-                        "complete": False,
-                        "missing":  True,
-                        "extra":    False,
-                    })
-            # Append any extra items on the checklist that aren't in
-            # the canonical set — keeps the UI honest with what's
-            # actually on the card.
-            for it in check_items:
-                if it.get("id") in used_ids: continue
-                items.append({
-                    "id":       it.get("id") or "",
-                    "name":     it.get("name") or "",
-                    "complete": (it.get("state") or "").lower() == "complete",
-                    "missing":  False,
-                    "extra":    True,
-                })
-            return {"ok": True, "card_id": cid,
-                    "card_name": card.get("name") or "",
-                    "checklist_id":   cl.get("id") or "",
-                    "checklist_name": cl.get("name") or "",
-                    "items": items,
-                    "missing_checklist": False,
-                    "card_checklists": other_names}
-        except Exception as ex:
-            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+    def load_closeout_checklist(self, client, card_id=""):
+        return self._aw().load_closeout_checklist(client, card_id)
+    def toggle_closeout_item(self, card_id, item_id, complete):
+        return self._aw().toggle_closeout_item(card_id, item_id, complete)
+    def delete_closeout_item(self, checklist_id, item_id):
+        return self._aw().delete_closeout_item(checklist_id, item_id)
+    # Pin proxies (Audit's real pin) — used by the shared pin modal.
+    def search_trello(self, text):
+        return self._aw().search_trello(text)
+    def pin_trello(self, client, card_id):
+        return self._aw().pin_trello(client, card_id)
+    def unpin_trello(self, client):
+        return self._aw().unpin_trello(client)
 
-    def toggle_closeout_item(self, card_id: str, item_id: str,
-                             complete: bool) -> dict:
-        """Round-trip a CLOSE OUT checklist item toggle to Trello."""
-        if not card_id or not item_id:
-            return {"ok": False, "error": "card_id + item_id required"}
-        try:
-            import trello_client as tc
-            state = "complete" if complete else "incomplete"
-            tc.set_check_item_state(card_id, item_id, state)
-            return {"ok": True, "state": state}
-        except Exception as ex:
-            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
-
-    def delete_closeout_item(self, checklist_id: str,
-                             item_id: str) -> dict:
-        """Delete a checklist item from Trello entirely. Used by the
-        right-click 'Remove' option in the CLOSE OUT modal — for when
-        an item is no longer relevant for this job."""
-        if not checklist_id or not item_id:
-            return {"ok": False, "error": "checklist_id + item_id required"}
-        try:
-            import trello_client as tc
-            tc.delete_check_item(checklist_id, item_id)
-            return {"ok": True}
-        except Exception as ex:
-            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
-
-    # ── Tracked snapshots (Snapshots workbook view) ─────────────────
-    # Reads the Snapshots <YY>.xlsx (snapshots_excel.read_jobs) and
-    # surfaces every row across NEW LOSS / Completed / Incomplete so
-    # the snapshot panel can show a "📋 Tracked" tab styled like the
-    # disputes table — cleaner than the raw Excel viewer.
     def tracked_snapshots(self, year: int = 0) -> dict:
         try:
             import snapshots_excel as sx
@@ -828,9 +881,14 @@ class Api:
                 "claim":         str(r.get("Claim#") or "").strip(),
                 "carrier":       str(r.get("Carrier") or "").strip(),
                 "folder":        str(r.get("Folder") or "").strip(),
+                "scheduled_ins": str(r.get("Scheduled Ins.") or "").strip(),
+                "lead":          str(r.get("Lead") or "").strip(),
                 "inspection":    str(r.get("Inspection") or "").strip(),
                 "initial_photos":str(r.get("Initial Photos") or "").strip(),
+                "sketch":        str(r.get("Sketch") or "").strip(),
+                "docusketch":    str(r.get("Docusketch ordered?") or "").strip(),
                 "demo_start":    str(r.get("Demo Start") or "").strip(),
+                "demo_photos":   str(r.get("Demo Photos") or "").strip(),
                 "scope":         str(r.get("Scope") or "").strip(),
                 "final_photos":  str(r.get("Final Photos") or "").strip(),
                 "atp":           str(r.get("ATP") or "").strip(),
@@ -1167,6 +1225,29 @@ class Api:
             except Exception:
                 pass
 
+            # Auto-fill Category + Class into the "Cause / category / class"
+            # field from the initial-inspection field template in the
+            # comments — the card desc rarely carries them, so "Water"
+            # becomes "Water · Cat 2 · Class 3" without hand-typing.
+            try:
+                import initial_notes_parser as _inp
+                _blocks = _inp.parse_initial_inspection_notes(comments_text) or []
+                _f = _blocks[0] if _blocks else {}
+                _cat = str(_f.get("Category") or "").strip()
+                _cls = str(_f.get("Class") or "").strip()
+                _extra = []
+                if _cat and "cat" not in cause.lower():
+                    _extra.append(_cat if _cat.lower().startswith("cat")
+                                  else "Cat " + _cat)
+                if _cls and "class" not in cause.lower():
+                    _extra.append(_cls if _cls.lower().startswith("class")
+                                  else "Class " + _cls)
+                if _extra:
+                    cause = (" · ".join([cause] + _extra) if cause
+                             else " · ".join(_extra))
+            except Exception:
+                pass
+
             out.update({
                 "insured":     insured or customer_name or card_title or client_fallback,
                 "carrier":     carrier_line,
@@ -1213,6 +1294,29 @@ class Api:
             for (d_, w_, a_, t_) in (parsed_logs or []):
                 out["logs"].append({"date": d_ or "", "weekday": w_ or "",
                                     "activity": a_ or "", "techs": t_ or ""})
+
+            # Also mine the email-aware, comment-DATED job log. parse_comments
+            # needs a date on each line, but a card that's mostly quoted email
+            # threads (estimate negotiations) has none — extract_job_log dates
+            # each field event by its COMMENT timestamp and strips the quoted
+            # chains, so events like an EQ pickup or a bare "Air scrubber
+            # picked up" note still land on the log. Status-only events (lost /
+            # on-hold / cancelled) aren't daily-log activity, so skip them.
+            # The dedupe sweeps below collapse any overlap with the rows above.
+            _skip_status = {"Cancelled", "On hold", "Resumed",
+                            "Job lost — went with another firm"}
+            try:
+                for e in (sg.extract_job_log(comment_actions) or []):
+                    if e.get("activity") in _skip_status:
+                        continue
+                    out["logs"].append({
+                        "date":     e.get("date") or "",
+                        "weekday":  e.get("weekday") or "",
+                        "activity": e.get("activity") or "",
+                        "techs":    e.get("who") or "",
+                    })
+            except Exception:
+                pass
         except Exception as ex:
             out["error"] = f"{type(ex).__name__}: {ex}"
 
@@ -1338,38 +1442,102 @@ class Api:
         return out
 
     def check_multi_unit(self, insured: str) -> dict:
-        """Mirrors snapshot_gui._multi_unit_gate. When `insured`
-        resolves to a multi-unit umbrella (≥2 sibling units in
-        ems_db), return the unit list so the frontend can show a
-        picker. Returns `{multi_unit: false}` for normal jobs so
-        the caller proceeds straight to generate.
+        """When `insured` resolves to a multi-unit umbrella, return the unit
+        list so the frontend can show a picker.
+
+        Source of truth is the umbrella FOLDER on disk — its `Unit …`
+        subfolders — NOT ems_db (which drifts: it kept stale units like 226
+        that no longer exist while missing new ones like 526/524). Each unit
+        carries its real `path` so picking one can pin that exact folder and
+        the audit/snapshot resolve correctly. Falls back to ems_db only when
+        no umbrella folder resolves. `{multi_unit: false}` for normal jobs.
         """
         if not insured:
             return {"multi_unit": False}
+        import os as _os, re as _re
+
+        # 1) Resolve the umbrella FOLDER for the typed name. If they typed a
+        #    specific unit, strip to the property first.
+        umbrella_path = ""
+        property_name = insured
+        came_in_as = "umbrella"
+        prop_guess = insured
+        try:
+            import ems_db
+            _p, _u = ems_db.detect_property_and_unit(insured)
+            if _p:
+                prop_guess = _p
+                came_in_as = insured
+        except Exception:
+            pass
+        try:
+            import audit_logic, config as _cfg
+            base = (_cfg.load() or {}).get("audit_base") or ""
+            path, base_name, _yr = audit_logic.try_resolve_folder_by_terms(
+                base, [prop_guess, insured])
+            if path and _os.path.isdir(path):
+                umbrella_path = path
+                # Clean label: drop a trailing 4-digit year folder suffix.
+                property_name = (_re.sub(r"\s*20\d\d\s*$", "", base_name).strip()
+                                 or base_name)
+        except Exception:
+            umbrella_path = ""
+
+        # 2) Build units from the umbrella folder's Unit subfolders (disk).
+        if umbrella_path:
+            try:
+                import multi_unit_gui as _mu
+                disk_units = _mu.list_unit_subfolders(umbrella_path) or []
+            except Exception:
+                disk_units = []
+            if len(disk_units) >= 2:
+                units = []
+                for u in disk_units:
+                    num = "" if u.get("num", 10**9) >= 10**9 else str(u["num"])
+                    label = u.get("name", "")
+                    units.append({
+                        "unit_number":  num,
+                        # Full folder label keeps duplicate unit numbers
+                        # (Unit 1611 3-23 vs 6-15) distinct and readable.
+                        "display_name": f"{property_name} — {label}",
+                        "folder_label": label,
+                        "path":         u.get("path", ""),
+                        "canon_key":    "",
+                    })
+                return {
+                    "multi_unit":    True,
+                    "property_name": property_name,
+                    "umbrella_path": umbrella_path,
+                    "came_in_as":    came_in_as,
+                    "units":         units,
+                }
+            # A folder resolved but holds <2 units — this is a single-unit job
+            # for THIS year. Do NOT fall through to the cross-year ems_db
+            # lookup: a fresh 2026 "Robles Lilia" job shares a name with a 2025
+            # "Robles Lilia Apartment" multi-unit, and the DB would resurrect
+            # the 2025 apartment's units (213/214) over the real 2026 folder.
+            return {"multi_unit": False}
+
+        # 3) Fallback: ems_db (legacy — ONLY when no folder resolved at all).
         try:
             import ems_db
         except Exception:
             return {"multi_unit": False}
         units = []
-        property_name = ""
+        property_name = insured
         came_in_as = "umbrella"
         try:
-            # Path 1: typed the umbrella ("Avila Apartments")
-            umbrella_units = ems_db.find_units_of(
-                ems_db.canon_key(insured)) or []
+            umbrella_units = ems_db.find_units_of(ems_db.canon_key(insured)) or []
             if len(umbrella_units) >= 2:
                 units = umbrella_units
                 property_name = insured
-                came_in_as = "umbrella"
         except Exception:
             umbrella_units = []
         if not units:
             try:
-                # Path 2: typed a unit — find siblings via parent
                 prop_name, _unum = ems_db.detect_property_and_unit(insured)
                 if prop_name:
-                    parent_canon = ems_db.canon_key(prop_name)
-                    sibs = ems_db.find_units_of(parent_canon) or []
+                    sibs = ems_db.find_units_of(ems_db.canon_key(prop_name)) or []
                     if len(sibs) >= 2:
                         units = sibs
                         property_name = prop_name
@@ -1379,14 +1547,17 @@ class Api:
         if not units:
             return {"multi_unit": False}
         return {
-            "multi_unit":     True,
-            "property_name":  property_name,
-            "came_in_as":     came_in_as,
+            "multi_unit":    True,
+            "property_name": property_name,
+            "umbrella_path": "",
+            "came_in_as":    came_in_as,
             "units": [
                 {"unit_number":  (u.get("unit_number") if isinstance(u, dict)
                                   else getattr(u, "unit_number", "")) or "",
                  "display_name": (u.get("display_name") if isinstance(u, dict)
                                   else getattr(u, "display_name", "")) or "",
+                 "folder_label": "",
+                 "path":         "",
                  "canon_key":    (u.get("canon_key") if isinstance(u, dict)
                                   else getattr(u, "canon_key", "")) or ""}
                 for u in units],
@@ -1415,27 +1586,6 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"snapshot_logic import failed: {ex}"}
 
-        data = {
-            "insured_job":          insured,
-            "carrier_claim":        carrier,
-            "date_of_loss":         dol,
-            "first_site_visit":     first,
-            "cause_category_class": cause,
-            "subs_used":            "Y" if subs else "N",
-        }
-        sub_cap = getattr(sg, "SNAPSHOT_TEMPLATE_SUBS_MAX", 8)
-        log_cap = getattr(sg, "SNAPSHOT_TEMPLATE_LOGS_MAX", 53)
-        for i, r in enumerate(subs[:sub_cap], 1):
-            data[f"sub_date_{i}"]     = (r.get("date") or "").strip()
-            data[f"sub_weekday_{i}"]  = (r.get("weekday") or "").strip()
-            data[f"sub_activity_{i}"] = (r.get("activity") or "").strip()
-            data[f"sub_techs_{i}"]    = (r.get("techs") or "").strip()
-        for i, r in enumerate(logs[:log_cap], 1):
-            data[f"log_date_{i}"]     = (r.get("date") or "").strip()
-            data[f"log_weekday_{i}"]  = (r.get("weekday") or "").strip()
-            data[f"log_activity_{i}"] = (r.get("activity") or "").strip()
-            data[f"log_techs_{i}"]    = (r.get("techs") or "").strip()
-
         # Sanitize filename — same Windows-illegal-char strip the Tk
         # version applies.
         import re as _re
@@ -1455,23 +1605,13 @@ class Api:
         output_path = os.path.join(out_dir, f"{safe}.pdf")
 
         try:
-            sg.fill_pdf(data, output_path)
-            # Overflow continuation pages if there were >cap rows
-            sub_overflow = subs[sub_cap:]
-            log_overflow = logs[log_cap:]
-            if sub_overflow or log_overflow:
-                try:
-                    sg.append_overflow_pages(
-                        output_path,
-                        [(r.get("date") or "", r.get("weekday") or "",
-                          r.get("activity") or "", r.get("techs") or "")
-                         for r in sub_overflow],
-                        [(r.get("date") or "", r.get("weekday") or "",
-                          r.get("activity") or "", r.get("techs") or "")
-                         for r in log_overflow],
-                        insured=insured)
-                except Exception:
-                    pass  # main PDF still produced
+            # Fully rendered handoff: header + Sub/Daily-log tables that WRAP
+            # and grow (replaces the fixed fillable template so long Activity
+            # text no longer clips). Paginates the logs naturally.
+            sg.render_snapshot(
+                output_path,
+                insured=insured, carrier=carrier, dol=dol,
+                first_visit=first, cause=cause, subs=subs, logs=logs)
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
         # Auto-mark the Trello card as "snapshot drafted" so the

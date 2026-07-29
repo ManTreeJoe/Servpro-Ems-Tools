@@ -70,6 +70,20 @@
       }
     };
     window.pywebview = { api: new Proxy({}, handler) };
+
+    // WebView2 focus fix: clicking into a field can leave the top-level OS
+    // window un-activated (the caret blinks but the window isn't focused),
+    // so keystrokes feel dead until you click the title bar. Nudge the app
+    // to the foreground on interaction — throttled to skip a round-trip on
+    // every click, and idempotent on the Python side.
+    let _focusNudgeAt = 0;
+    document.addEventListener("pointerdown", () => {
+      const now = Date.now();
+      if (now - _focusNudgeAt < 400) return;
+      _focusNudgeAt = now;
+      try { if (parentApi.focus_window) parentApi.focus_window(); } catch (_) { /* ignore */ }
+    }, true);
+
     dispatchWhenReady();
   }
   tryWire();

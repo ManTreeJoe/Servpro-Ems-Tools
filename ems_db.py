@@ -353,6 +353,36 @@ def _row_to_dict(row) -> dict:
     return d
 
 
+# ── Canonical strong-identifier link types ──────────────────────────────
+# A "strong" link is an external reference that PROVES two spellings are the
+# same job: the same OD folder, the same Trello card, or the same CompanyCam
+# project can only belong to one job. resolve_and_link() treats these as
+# ground truth and auto-teaches name aliases, so tools stop re-guessing a job
+# by its (differently spelled) name.
+LINK_FOLDER = "folder_path"
+LINK_TRELLO = "trello_card"
+LINK_COMPANYCAM = "companycam_project"
+_STRONG_LINK_TYPES = (LINK_FOLDER, LINK_TRELLO, LINK_COMPANYCAM)
+
+
+def _norm_link(link_type: str, value: str) -> str:
+    """Normalize a link value so reverse lookup is stable no matter how the
+    caller spelled it. Folder paths → normcase(normpath) (case/slash-
+    insensitive on Windows); Trello → the card id/shortlink pulled out of a
+    full URL, lowercased; everything else → stripped."""
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if link_type == LINK_FOLDER:
+        return os.path.normcase(os.path.normpath(v))
+    if link_type == LINK_TRELLO:
+        m = re.search(r"/c/([A-Za-z0-9]+)", v)      # full card URL
+        if m:
+            return m.group(1).lower()
+        return v.rsplit("/", 1)[-1].strip().lower()  # bare id / shortlink
+    return v
+
+
 # ── Write API ───────────────────────────────────────────────────────────
 
 def upsert_job(*, display_name: str,
@@ -462,6 +492,10 @@ def set_link(canon_key_value: str, link_type: str, link_value: str, *,
     """Add a link from a job into an external system. Idempotent —
     repeat calls with the same (job, type, value) update `metadata`
     + `added_at` without duplicating. Pass `remove_link()` to drop."""
+    # Normalize strong-identifier values so a folder path or Trello URL
+    # written by one tool matches a lookup done by another.
+    if link_type in _STRONG_LINK_TYPES:
+        link_value = _norm_link(link_type, link_value)
     if not (canon_key_value and link_type and link_value):
         return
     md_json = json.dumps(metadata) if metadata else None
@@ -497,6 +531,55 @@ def remove_link(canon_key_value: str, link_type: str,
                 WHERE canon_key=? AND link_type=?
             """, (canon_key_value, link_type))
         c.commit()
+
+
+def merge_jobs(into_key: str, from_keys) -> dict:
+    """Fold each job in `from_keys` INTO `into_key`: move their aliases +
+    links onto `into_key`, record their display name as an alias, then
+    delete the redundant job rows. Used by the pin→card reconciliation to
+    collapse many differently-spelled duplicates of one job into a single
+    canonical (Trello-card-named) job. `into_key` MUST already exist in
+    `jobs` (caller upserts the canonical job first). Idempotent: a
+    from_key that equals into_key or no longer exists is skipped."""
+    into_key = (into_key or "").strip()
+    if not into_key:
+        return {"merged": 0}
+    merged = 0
+    with _LOCK, _connect() as c:
+        for fk in from_keys or ():
+            fk = (fk or "").strip()
+            if not fk or fk == into_key:
+                continue
+            row = c.execute(
+                "SELECT display_name FROM jobs WHERE canon_key = ?",
+                (fk,)).fetchone()
+            # Move aliases (skip PK collisions), then drop leftovers.
+            c.execute("UPDATE OR IGNORE job_aliases SET canon_key=? "
+                      "WHERE canon_key=?", (into_key, fk))
+            c.execute("DELETE FROM job_aliases WHERE canon_key=?", (fk,))
+            # Move links the same way.
+            c.execute("UPDATE OR IGNORE job_links SET canon_key=? "
+                      "WHERE canon_key=?", (into_key, fk))
+            c.execute("DELETE FROM job_links WHERE canon_key=?", (fk,))
+            c.execute("DELETE FROM job_events WHERE canon_key=?", (fk,))
+            # Preserve the old spelling as a searchable alias of the winner.
+            if row and row["display_name"]:
+                ac = canon_key(row["display_name"])
+                if ac and ac != into_key:
+                    c.execute(
+                        "INSERT OR IGNORE INTO job_aliases "
+                        "(canon_key, alias, alias_canon, source, added_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (into_key, row["display_name"], ac, "merge",
+                         _now_iso()))
+            c.execute("DELETE FROM jobs WHERE canon_key=?", (fk,))
+            if row is not None:
+                merged += 1
+        # Drop any self-alias that snuck in (alias canonicalizes to itself).
+        c.execute("DELETE FROM job_aliases WHERE canon_key=? "
+                  "AND alias_canon=?", (into_key, into_key))
+        c.commit()
+    return {"merged": merged}
 
 
 def log_event(canon_key_value: str, event_type: str, *,
@@ -542,6 +625,103 @@ def find_job_by_name(name: str) -> dict | None:
         return _row_to_dict(row)
 
 
+def get_job(canon_key_value: str) -> dict | None:
+    """Fetch a job row by its canon_key. None when absent."""
+    if not canon_key_value:
+        return None
+    with _LOCK, _connect() as c:
+        row = c.execute(
+            "SELECT * FROM jobs WHERE canon_key=?", (canon_key_value,)).fetchone()
+    return _row_to_dict(row)
+
+
+def _is_primary_job_key(key: str) -> bool:
+    """True when `key` is the canon_key of a real job row (not just a bare
+    spelling). Guards resolve_and_link from cross-wiring two distinct jobs."""
+    if not key:
+        return False
+    with _LOCK, _connect() as c:
+        return c.execute(
+            "SELECT 1 FROM jobs WHERE canon_key=? LIMIT 1", (key,)
+        ).fetchone() is not None
+
+
+def find_job_by_link(link_type: str, link_value: str) -> dict | None:
+    """Reverse lookup: the job that owns a given external reference (OD
+    folder / Trello card / CompanyCam project). This is what proves two
+    different name spellings are the same job. Returns the job dict or None."""
+    nv = _norm_link(link_type, link_value)
+    if not (link_type and nv):
+        return None
+    with _LOCK, _connect() as c:
+        row = c.execute("""
+            SELECT j.* FROM jobs j
+            JOIN job_links l ON l.canon_key = j.canon_key
+            WHERE l.link_type=? AND l.link_value=?
+            ORDER BY l.added_at ASC
+            LIMIT 1
+        """, (link_type, nv)).fetchone()
+    return _row_to_dict(row)
+
+
+def resolve_and_link(name: str = "", *, folder_path: str = "",
+                     trello_card: str = "", companycam_project: str = "",
+                     create: bool = False, source: str = "auto",
+                     display_name: str = "") -> dict | None:
+    """Resolve a job to ONE canonical identity and auto-teach aliases so
+    every tool converges on the same job instead of re-guessing by name.
+
+    Strong identifiers (folder_path / trello_card / companycam_project) are
+    ground truth. If any of them already belongs to a job, THAT job wins and
+    the incoming `name` spelling is recorded as an alias — so the next tool
+    that passes this spelling resolves to the same job via find_job_by_name().
+    When only the name resolves, any supplied strong links get attached to it,
+    tying the systems together for the next lookup.
+
+    `create=True` upserts a new job (from `display_name` or `name`) when
+    nothing matches. Never cross-wires two REAL jobs — if the incoming name is
+    itself a distinct job, it's left alone (that's a merge, handled elsewhere).
+
+    Returns the resolved job dict, or None when unresolved and create=False.
+    """
+    name = (name or "").strip()
+    strong = [(LINK_FOLDER, folder_path),
+              (LINK_TRELLO, trello_card),
+              (LINK_COMPANYCAM, companycam_project)]
+
+    job = None
+    for lt, lv in strong:            # strong links prove identity first
+        if lv:
+            job = find_job_by_link(lt, lv)
+            if job:
+                break
+    if job is None and name:         # fall back to name / existing alias
+        job = find_job_by_name(name)
+    if job is None:                  # nothing matched
+        if not create:
+            return None
+        dn = (display_name or name).strip()
+        if not dn:
+            return None
+        key = upsert_job(display_name=dn)
+        job = get_job(key)
+        if job is None:
+            return None
+
+    key = job["canon_key"]
+    # Teach the incoming spelling as an alias of this job — unless it's
+    # itself a distinct real job (don't merge silently).
+    if name:
+        nk = canon_key(name)
+        if nk and nk != key and not _is_primary_job_key(nk):
+            add_alias(key, name, source=source)
+    # Tie the supplied strong links to this job (idempotent + normalized).
+    for lt, lv in strong:
+        if lv:
+            set_link(key, lt, lv, added_by=source)
+    return get_job(key)
+
+
 def get_link(canon_key_value: str, link_type: str) -> str | None:
     """First (oldest) link of `link_type` for the job, or None."""
     if not (canon_key_value and link_type):
@@ -574,6 +754,22 @@ def get_links(canon_key_value: str, link_type: str = "") -> list[dict]:
                 ORDER BY added_at DESC
             """, (canon_key_value,)).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def job_identity(name: str) -> dict | None:
+    """Everything tied to the job that `name` resolves to: the canonical
+    row, its learned aliases (list of spelling strings), and all external
+    links (folder / Trello / CompanyCam). None when the name resolves to no
+    known job. Read-only — the single 'what's tied together?' view."""
+    job = find_job_by_name(name)
+    if not job:
+        return None
+    key = job["canon_key"]
+    return {
+        "job": job,
+        "aliases": get_aliases(key),   # -> list[str]
+        "links": get_links(key),
+    }
 
 
 def find_jobs_by_status(status: str) -> list[dict]:

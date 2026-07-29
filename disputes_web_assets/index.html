@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>Inquiries &amp; Disputes — EMS Tools</title>
 <link rel="stylesheet" href="theme.css" />
-<script src="iframe_shim.js"></script>
+<script src="../web_shared/iframe_shim.js"></script>
 <script src="../web_shared/util.js"></script>
 <script src="../web_shared/ctx_menu.js"></script>
 <script src="../web_shared/trello_hover.js"></script>
@@ -22,6 +22,7 @@
   <div class="topbar-actions">
     <input id="search-box" class="search" type="search" placeholder="🔎 Search…" />
     <button id="new-btn" class="btn btn-primary">➕ New entry</button>
+    <button id="paste-btn" class="btn" title="Paste a carrier billing-dispute email — auto-parses line adjustments + totals into a dispute">📋 Paste dispute email</button>
     <button id="sync-trello-btn" class="btn" title="Pull every Audit Dispute lane card on the Trello board into the workbook">🔄 Sync Trello</button>
     <button id="export-pdf-btn" class="btn" title="Export disputes to PDF">📄 Export PDF</button>
     <button id="refresh-btn" class="btn">↻ Refresh</button>

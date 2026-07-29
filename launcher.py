@@ -183,7 +183,6 @@ TOOLS = {
     "job_notes_web":  "job_notes_web",
     "cheat_sheet_web": "cheat_sheet_web",
     "hygiene_web":    "hygiene_web",
-    "iuq_web":        "iuq_web",
     "snapshot_web":   "snapshot_web",
     "wc_audit_web":   "wc_audit_web",
     "multi_unit_web": "multi_unit_web",
@@ -206,6 +205,12 @@ def _dispatch():
     sys.argv = [sys.argv[0]] + extra
     if tool == "launcher" or tool not in TOOLS:
         return False
+    # Record which tools get opened (usage analytics — tool name only).
+    try:
+        import usage_tracker as _ut
+        _ut.record_event("launcher", "launch", tool)
+    except Exception:
+        pass
     mod = __import__(TOOLS[tool])
     mod.main()
     return True
@@ -245,7 +250,7 @@ LANDING_KEY = "apa_monitor"
 NAV_TOOLS = [
     # Daily routine — the morning workflow.
     {"key": "run_audit",    "group": NAV_GROUP_DAILY,
-        "label": "Audit",            "icon": "🔎", "desc": "Daily Run · Initial Upload · Backlog · SP Recent", "mode": "embed",
+        "label": "Audit",            "icon": "🔎", "desc": "Daily Run · Backlog · SP Recent", "mode": "embed",
         "module": "run_audit_gui",   "class": "RunAuditApp"},
     # Pywebview spike — biggest block yet. Card-grid triage view of
     # today's run-doc audit. Read-only in Phase 1: shows flagged /
@@ -257,10 +262,6 @@ NAV_TOOLS = [
         "desc": "Card-grid audit triage — filter chips, search, per-job actions; READ-ONLY in phase 1, opens Tk for editing",
         "mode": "spawn",
         "module": "audit_web",       "class": None},
-    {"key": "iuq_web",      "group": NAV_GROUP_DAILY,
-        "label": "Initial Uploads (web)", "icon": "🌐",
-        "desc": "Initial Upload Queue — two-pane card list with checklist progress per card",
-        "mode": "spawn", "module": "iuq_web", "class": None},
     {"key": "daily_photos", "group": NAV_GROUP_DAILY,
         "label": "Photo Folders",    "icon": "📷", "desc": "Create SharePoint photo folders",  "mode": "embed",
         "module": "daily_photos_gui","class": "App"},

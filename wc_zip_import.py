@@ -255,30 +255,37 @@ def prompt_for_wc_zip(parent, *, workcenter_url: str = "",
 
 
 def convert_heic_in_dir(folder: str, progress_cb=None) -> int:
-    """Convert every .heic file in `folder` and all subfolders to JPEG
-    in-place.  Returns the number of files converted.  Silently skips
-    files that fail (e.g. corrupt HEIC) so one bad frame doesn't block
-    the rest.
+    """Convert HEIC/HEIF, JFIF **and WEBP** images in `folder` (recursive) to
+    JPEG in-place. Returns the number converted. Silently skips files that
+    fail (e.g. a corrupt frame) so one bad file doesn't block the rest.
 
-    `progress_cb`, when given, is called as `progress_cb(done, total)` —
-    once with (0, total) before the first conversion, then after each
-    file is processed (whether it converted or failed, so the count
-    always reaches `total`). Conversion can take 0.1-0.5s per photo, so
-    a big WC dump runs 10-30s; the callback lets the web UI show a live
-    "Converting N/M…" indicator instead of a silent freeze. A callback
-    that raises is swallowed — progress reporting never blocks the
-    conversion itself."""
+    HEIC/HEIF need `pillow_heif`; JFIF (JPEG data under an odd extension) and
+    WEBP (what CompanyCam / browsers often save) convert with plain Pillow —
+    so both are normalized even when pillow_heif is missing. Downstream (audit
+    photo checks, viewers, snapshot PDFs) then sees a real .jpg instead of a
+    file it may not render.
+
+    `progress_cb(done, total)`, when given, is called once with (0, total)
+    then after each file (whether it converted or failed, so the count always
+    reaches `total`) — lets the web UI show a live "Converting N/M…"
+    indicator. A callback that raises is swallowed."""
     try:
-        import pillow_heif
         from PIL import Image as _Image
-        pillow_heif.register_heif_opener()
     except ImportError:
         return 0
+    # JFIF + WEBP work with plain Pillow; HEIC/HEIF only when pillow_heif is here.
+    exts = {".jfif", ".webp"}
+    try:
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+        exts |= {".heic", ".heif"}
+    except ImportError:
+        pass
     # Collect first so `total` is known up front for progress reporting.
     targets = []
     for root, _dirs, files in os.walk(folder):
         for name in files:
-            if name.lower().endswith(".heic"):
+            if os.path.splitext(name)[1].lower() in exts:
                 targets.append(os.path.join(root, name))
     total = len(targets)
     if progress_cb and total:
@@ -288,10 +295,21 @@ def convert_heic_in_dir(folder: str, progress_cb=None) -> int:
             pass
     converted = 0
     for i, src in enumerate(targets, start=1):
-        jpg_path = os.path.splitext(src)[0] + ".jpg"
+        stem = os.path.splitext(src)[0]
+        jpg_path = stem + ".jpg"
+        k = 2
+        while os.path.exists(jpg_path):        # don't clobber an existing jpg
+            jpg_path = f"{stem} ({k}).jpg"
+            k += 1
         try:
             with _Image.open(src) as img:
                 img.convert("RGB").save(jpg_path, "JPEG", quality=92)
+            # Keep the original capture time on the new file.
+            try:
+                st = os.stat(src)
+                os.utime(jpg_path, (st.st_atime, st.st_mtime))
+            except OSError:
+                pass
             os.remove(src)
             converted += 1
         except Exception:

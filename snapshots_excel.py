@@ -28,6 +28,7 @@ locked file just means the row gets applied next time.
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -164,6 +165,27 @@ def pending_count(year=None):
 
 
 # ── Workbook plumbing ────────────────────────────────────────────────────
+
+def _atomic_save(wb, path):
+    """Save the workbook atomically: write to a temp file in the SAME
+    directory, then os.replace onto the target. A crash / share hiccup mid-
+    flush truncates only the throwaway temp, never the live workbook — which
+    is what let an interrupted save wipe a whole year's rows (the file then
+    reopened empty and got backed up to .corrupt). os.replace preserves the
+    same Excel-locked PermissionError behavior callers already handle."""
+    d = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(suffix=".xlsx", dir=d)
+    os.close(fd)
+    try:
+        wb.save(tmp)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
 
 def _ensure_workbook(year):
     """Open the year's workbook, creating it (with the three tabs and
@@ -341,6 +363,26 @@ def _refresh_index_for_sheet(wb, year, base, index):
             index[key] = (title, r)
 
 
+def _delete_row_everywhere(wb, year, name):
+    """Delete every row for `name` across all sheets. Returns the count
+    removed. Used to evict jobs that don't belong on the sheet (e.g.
+    recon-only)."""
+    removed = 0
+    for base in _ALL_SHEETS:
+        title = _sheet_name(base, year)
+        if title not in wb.sheetnames:
+            continue
+        ws = wb[title]
+        # delete_rows shifts indices, so re-find until no match remains.
+        while True:
+            r = _find_row_by_name(ws, name)
+            if r is None:
+                break
+            ws.delete_rows(r, 1)
+            removed += 1
+    return removed
+
+
 def _move_row_between_sheets(wb, year, name, target_base):
     """If `name` exists in any sheet OTHER than the target, copy its
     cells into the target sheet (preserving any free-text comments the
@@ -434,6 +476,58 @@ _PHOTO_PRESENCE_PATTERNS = {
 # didn't flag them, they're genuinely present → "yes".
 _AUDIT_VERIFIED_COLS = ("Sketch", "Scope", "ATP", "CIF", "CER", "COS")
 
+# Spreadsheet column → Trello checklist item names that, when checked
+# complete, CONFIRM that column. Item strings mirror
+# trello_autotick.INITIAL_CHECKLIST_MAP — the source of truth for the real
+# on-card labels (kept inline here to avoid an import cycle). A checked item
+# is a POSITIVE-ONLY signal: it can upgrade an unknown cell to "yes" but
+# never overrides file/audit evidence (see _evidence_cell — "files win").
+#
+# ATP / CIF / CER / COS are deliberately absent: they're not individual
+# checklist items (only the bundled "INITIAL PAPERWORK" / "FINAL PAPERWORK"
+# exist), so they stay file-evidence driven.
+_CHECKLIST_CONFIRM_ITEMS = {
+    "Initial Photos": ("INITIAL PHOTOS", "INITIAL PHOTOS/PHOTO REPORT"),
+    "Demo Photos":    ("DEMO PHOTOS",),
+    "Final Photos":   ("FINAL PHOTOS",),
+    "Sketch":         ("PHYSICAL SKETCH", "PRELIMINARY SKETCH", "FINAL SKETCH"),
+    "Scope":          ("PRELIMINARY SCOPE", "FINAL SCOPE"),
+}
+
+
+def _warn(msg):
+    """Log a best-effort warning via ems_log when available. Used so the
+    enrichment / reconcile paths stop SILENTLY swallowing parse failures —
+    a blank Carrier/Claim# now leaves a breadcrumb instead of a mystery."""
+    try:
+        import ems_log
+        ems_log.warn("snapshots_excel", msg, exc_info=True)
+    except Exception:
+        pass
+
+
+def _checklist_confirms(card):
+    """Return the set of tracked columns a card's checklists affirmatively
+    confirm — any item in `_CHECKLIST_CONFIRM_ITEMS` that's checked complete.
+    Flattens every checklist on the card (we don't care WHICH list holds the
+    item, only that it's ticked). Best-effort: empty set on any trouble."""
+    confirmed = set()
+    checklists = (card or {}).get("checklists") or []
+    if not checklists:
+        return confirmed
+    done = {}
+    for cl in checklists:
+        for it in (cl.get("checkItems") or []):
+            nm = (it.get("name") or "").strip().upper()
+            if not nm:
+                continue
+            is_done = (it.get("state") or "").strip().lower() == "complete"
+            done[nm] = done.get(nm, False) or is_done
+    for col, items in _CHECKLIST_CONFIRM_ITEMS.items():
+        if any(done.get(i) for i in items):
+            confirmed.add(col)
+    return confirmed
+
 
 def _flagged_missing(column, photo_issues, form_issues):
     """True when the audit flagged this column's asset as missing."""
@@ -502,12 +596,19 @@ def _photo_evidence(r):
     return present
 
 
-def _evidence_cell(column, r, existing, *, present, audited):
+def _evidence_cell(column, r, existing, *, present, audited, confirmed=()):
     """Decide one tracked yes/no cell from real evidence — never a default.
 
        - column proven on disk / audit-verified present → "yes"
        - audit flagged it required-but-missing           → "no"
+       - Trello checklist item checked complete          → "yes" (upgrade only)
        - no evidence either way → keep the user's existing cell, else "-"
+
+    "Checklist confirms, files win": file/audit evidence (present, or a
+    flagged-missing "no") always takes priority; a checked checklist item in
+    `confirmed` only upgrades an otherwise-unknown cell to "yes". This lets a
+    mid-job card show "yes" before the files land in OD, without ever
+    overriding what the file scan actually found.
 
     This replaces the old "absence of a flagged issue = yes" rule, which
     fabricated "yes" for stages a job never reached and for every column
@@ -520,10 +621,14 @@ def _evidence_cell(column, r, existing, *, present, audited):
             return "yes"
         if _flagged_missing(column, photo_issues, form_issues):
             return "no"
+        if column in confirmed:
+            return "yes"
     else:  # audit-verifiable column (Sketch / Scope / ATP / CIF / CER / COS)
         if _flagged_missing(column, photo_issues, form_issues):
             return "no"
         if audited:
+            return "yes"
+        if column in confirmed:
             return "yes"
     prev = existing.get(column)
     return prev if (isinstance(prev, str) and prev.strip()) else "-"
@@ -627,7 +732,11 @@ def _row_to_cells(r, *, existing=None):
                               or "")
     cells["Folder"]       = folder or existing.get("Folder", "")
     cells["Scheduled Ins."] = existing.get("Scheduled Ins.", "") or ""
-    cells["Lead"]         = existing.get("Lead", "") or ""
+    # Lead = the initial-inspection tech, parsed from the card comments
+    # by _build_trello_enrichment. Existing cell wins so manual edits stick.
+    cells["Lead"]         = (existing.get("Lead")
+                              or r.get("_lead")
+                              or "")
     # Inspection = the date we first visited / did the initial inspection.
     # Existing cell wins (manual edits stick); else the caller-provided
     # `_first_visit` (snapshot_logic.detect_first_visit — earliest
@@ -643,18 +752,35 @@ def _row_to_cells(r, *, existing=None):
     # fabricated. See _evidence_cell / _photo_evidence.
     audited = ("form_issues" in r) or ("photo_issues" in r) or bool(r.get("path"))
     present = _photo_evidence(r)
+    # Columns a linked Trello card's checklists affirmatively confirm
+    # (set by _build_trello_enrichment). A positive-only signal — see
+    # _evidence_cell ("checklist confirms, files win").
+    confirmed = set(r.get("_ck_confirms") or ())
     cells["Initial Photos"]      = _evidence_cell("Initial Photos", r, existing,
-                                                  present=present, audited=audited)
+                                                  present=present, audited=audited,
+                                                  confirmed=confirmed)
     cells["Sketch"]              = _evidence_cell("Sketch", r, existing,
-                                                  present=present, audited=audited)
-    cells["Docusketch ordered?"] = existing.get("Docusketch ordered?", "") or ""
-    cells["Demo Start"]          = existing.get("Demo Start", "") or ""
+                                                  present=present, audited=audited,
+                                                  confirmed=confirmed)
+    # Docusketch ordered? / Demo Start now accept caller-provided fallbacks
+    # parsed from Trello (the docusketch request tracker / the "Demo"
+    # activity date in the card comments). Existing cell wins so manual
+    # edits stick.
+    cells["Docusketch ordered?"] = (existing.get("Docusketch ordered?")
+                                     or r.get("_docusketch_ordered")
+                                     or "")
+    cells["Demo Start"]          = (existing.get("Demo Start")
+                                     or r.get("_demo_start")
+                                     or "")
     cells["Demo Photos"]         = _evidence_cell("Demo Photos", r, existing,
-                                                  present=present, audited=audited)
+                                                  present=present, audited=audited,
+                                                  confirmed=confirmed)
     cells["Scope"]               = _evidence_cell("Scope", r, existing,
-                                                  present=present, audited=audited)
+                                                  present=present, audited=audited,
+                                                  confirmed=confirmed)
     cells["Final Photos"]        = _evidence_cell("Final Photos", r, existing,
-                                                  present=present, audited=audited)
+                                                  present=present, audited=audited,
+                                                  confirmed=confirmed)
     cells["ATP"] = _evidence_cell("ATP", r, existing, present=present, audited=audited)
     cells["CIF"] = _evidence_cell("CIF", r, existing, present=present, audited=audited)
     cells["CER"] = _evidence_cell("CER", r, existing, present=present, audited=audited)
@@ -699,7 +825,7 @@ def _row_for_persist(r):
     """Compact subset of the audit row needed to replay a sync. We
     don't need the full dict — just the fields `_row_to_cells` and
     `_route_for` consult."""
-    return {
+    out = {
         "client":       r.get("client"),
         "folder":       r.get("folder"),
         "path":         r.get("path"),
@@ -709,6 +835,18 @@ def _row_for_persist(r):
         "photo_issues": list(r.get("photo_issues") or []),
         "last_active":  r.get("last_active"),
     }
+    # Preserve the caller's routing/enrichment hints (`_route_override`,
+    # `_claim`, `_carrier`, `_type_of_loss`, …) so a row deferred while the
+    # workbook was open in Excel replays to the SAME sheet with the SAME
+    # data. Without this, a mark_completed / mark_new_loss row lost its
+    # forced sheet and routed by fallback rules on drain (landed on the
+    # wrong tab). JSON-safe scalars/lists only — datetime hints are dropped
+    # (the existing-cell fallback in _row_to_cells covers them).
+    for k, v in r.items():
+        if (k.startswith("_")
+                and (v is None or isinstance(v, (str, int, float, bool, list)))):
+            out[k] = v
+    return out
 
 
 def _drain_pending(year):
@@ -740,6 +878,63 @@ def _drain_pending(year):
         except OSError:
             pass
     return drained
+
+
+# ── Recon-only jobs (not EMS's business) ─────────────────────────────────
+
+def _is_recon_only(path):
+    """True when a job's OD folder's ONLY subfolder(s) are RECON — a pure
+    reconstruction job with no EMS work, so it isn't EMS's business and must
+    not sit on the Snapshots sheet.
+
+    Checking "no EMS folder" is NOT enough: EMS work often lives in root-level
+    PICS / DOCS / CONTENTS (or claim / unit subfolders), with no literal "EMS"
+    folder. So we require RECON to be the SOLE subfolder — the presence of ANY
+    other subfolder means EMS has (or had) work here. Fail-open on a read
+    error (keep the row rather than drop a real job)."""
+    if not path or not os.path.isdir(path):
+        return False
+    try:
+        with os.scandir(path) as it:
+            dirs = [e.name for e in it if e.is_dir()]
+    except OSError:
+        return False
+    if not dirs:
+        return False
+    recon = [d for d in dirs if d.upper().startswith("RECON")]
+    return bool(recon) and len(recon) == len(dirs)
+
+
+def _resolve_od_path(r):
+    """Best-effort OD job-folder path for a row: the audit row's own resolved
+    `path`, else the pinned folder for its client/name."""
+    p = (r.get("path") or "").strip()
+    if p:
+        return p
+    name = (r.get("client") or r.get("Name") or "").strip()
+    if not name:
+        return ""
+    try:
+        import persistence
+        pinned = persistence.get_folder_path(name) or ""
+        if pinned:
+            return pinned
+    except Exception:
+        pass
+    # Not pinned — look for a job folder matching the name under audit_base
+    # (e.g. "X:\IE_Public\2026 Jobs\Parris, David") so orphaned rows can
+    # still be classified for the recon-only sweep.
+    try:
+        import config
+        import glob as _glob
+        base = (config.load() or {}).get("audit_base") or ""
+        if base:
+            for cand in _glob.glob(os.path.join(base, "*", name)):
+                if os.path.isdir(cand):
+                    return cand
+    except Exception:
+        pass
+    return ""
 
 
 # ── Public API ───────────────────────────────────────────────────────────
@@ -823,7 +1018,7 @@ def _apply_sync(year, audit_rows):
             # Skip the bad row — don't abort the whole batch.
             continue
     try:
-        wb.save(path)
+        _atomic_save(wb, path)
     except PermissionError:
         # Race: file got opened in Excel between our probe and save.
         # Re-queue the FULL queue (drained + new) — the save was never
@@ -833,12 +1028,58 @@ def _apply_sync(year, audit_rows):
     return (applied, 0)
 
 
+# Per-client enrichment cache so a sync batch (and back-to-back syncs)
+# don't re-page a card's comments every time. Keyed by canonical name;
+# short TTL because a card's claim#/labels can change during the day.
+_ENRICH_CACHE = {}
+_ENRICH_TTL = 300  # seconds
+
+
+def _enrich_for(name):
+    """Cached `_build_trello_enrichment`. Returns the enrichment dict for
+    `name`, reusing a recent fetch when available."""
+    key = _canon_name_key(name)
+    now = time.time()
+    hit = _ENRICH_CACHE.get(key)
+    if hit and (now - hit[0]) < _ENRICH_TTL:
+        return hit[1]
+    enrich = _build_trello_enrichment(name)
+    _ENRICH_CACHE[key] = (now, enrich)
+    return enrich
+
+
+# Columns whose value the linked Trello card can supply. When a row is
+# missing ANY of these, the routine sync pulls enrichment; when they're all
+# already filled we skip the (paged) Trello fetch entirely.
+_ENRICHABLE_COLS = ("Carrier", "Claim#", "Type of Loss", "Date Received",
+                    "Inspection", "Demo Start", "Docusketch ordered?", "Lead")
+
+
+def _needs_enrichment(existing, r):
+    """True when the routine sync should fetch Trello enrichment for this
+    row. Skips rows the caller already enriched (mark_completed / reconcile
+    attach `_`-prefixed keys) and rows whose Trello-derivable cells are all
+    already populated."""
+    if any(k in r for k in ("_carrier", "_claim", "_type_of_loss",
+                            "_date_received", "_first_visit", "_demo_start",
+                            "_docusketch_ordered", "_ck_confirms", "_lead")):
+        return False
+    return any(not str(existing.get(c) or "").strip() for c in _ENRICHABLE_COLS)
+
+
 def _apply_one(wb, year, r):
     """Upsert a single row into the right sheet, moving from another
     sheet if the routing changed. Read-then-write so user free-text
     is preserved."""
     name = (r.get("client") or "").strip()
     if not name:
+        return
+
+    # Recon-only jobs (RECON folder, no EMS) aren't EMS's business — never
+    # write them to the sheet, and evict any stale row already there (e.g.
+    # a job that was EMS earlier but is now reconstruction-only).
+    if _is_recon_only(_resolve_od_path(r)):
+        _delete_row_everywhere(wb, year, name)
         return
 
     # First, learn what the spreadsheet already knows about this name —
@@ -863,6 +1104,19 @@ def _apply_one(wb, year, r):
     # Surface the workbook's Claim# to _route_for so the missing-claim
     # demotion to Incomplete can fire without us re-reading the workbook.
     r["_existing_claim"]   = existing.get("Claim#", "") or ""
+
+    # Enrich from the linked Trello card (Carrier/Claim#/Type of Loss/dates/
+    # Inspection/Demo Start/Docusketch/checklist confirms) so the ROUTINE
+    # sync fills these — not just mark_completed/reconcile. Gated to rows
+    # that still need it and cached per client. setdefault so a caller's
+    # explicit value always wins. Runs before _route_for so a Trello-pulled
+    # Claim# feeds the missing-claim routing.
+    if _needs_enrichment(existing, r):
+        try:
+            for k, v in _enrich_for(name).items():
+                r.setdefault(k, v)
+        except Exception:
+            _warn(f"sync: enrichment failed for {name!r}")
 
     target_base = _route_for(r)
     target_title = _sheet_name(target_base, year)
@@ -983,6 +1237,10 @@ def reconcile_with_trello(year, *, progress_cb=None):
 
     summary = {"moved": 0, "loss_type_set": 0,
                "skipped_no_match": 0, "errors": [],
+               # Cards whose description/dates couldn't be parsed — the
+               # silent cause of blank Carrier/Claim#/date cells. Surfaced
+               # so the user can fix the offending cards.
+               "parse_failures": [],
                # Diagnostic breakdown so the user can SEE the routing
                # outcome — e.g. "12 stayed NEW LOSS because their card
                # is still open / on a non-LOGS board".
@@ -1214,8 +1472,10 @@ def reconcile_with_trello(year, *, progress_cb=None):
                 ins = fields.get("INSURANCE INFORMATION") or {}
                 trello_carrier = (ins.get("INSURANCE COMPANY") or "").strip()
                 trello_claim   = (ins.get("CLAIM NUMBER") or "").strip()
-            except Exception:
+            except Exception as ex:
                 trello_carrier = trello_claim = ""
+                _warn(f"reconcile: desc parse failed for {name!r}")
+                summary["parse_failures"].append(f"{name}: desc parse ({ex})")
             # Date Received: PROPERTY DETAILS > DATE RECEIVED in the
             # card desc is the source of truth (the user typed it when
             # the job came in) — always overwrite the cell with it,
@@ -1227,14 +1487,56 @@ def reconcile_with_trello(year, *, progress_cb=None):
                 received_from_desc = _tc.card_received_date(card)
             except Exception:
                 received_from_desc = None
+                _warn(f"reconcile: received-date(desc) failed for {name!r}")
             try:
                 received_from_creation = _tc.card_creation_date(card_id)
             except Exception:
                 received_from_creation = None
+                _warn(f"reconcile: created-date failed for {name!r}")
             try:
                 trello_closing = _tc.card_closing_date(card_id)
             except Exception:
                 trello_closing = None
+                _warn(f"reconcile: closing-date failed for {name!r}")
+
+            # Inspection (earliest "Initial Inspection" date) + Demo Start
+            # (first "Demo" activity) from the card comments — reuses the
+            # comments/card already fetched above, so no extra Trello calls.
+            trello_first_visit = ""
+            trello_demo_start = ""
+            trello_lead = ""
+            try:
+                import snapshot_logic as _sg2
+                trello_first_visit = _sg2.detect_first_visit(comments) or ""
+                _subs2, _logs2 = _sg2.parse_comments(comments)
+                for _d, _w, _act, _t in (_logs2 or []):
+                    if _d and re.search(r'\bdemo\b', str(_act or ""), re.IGNORECASE):
+                        trello_demo_start = _d
+                        break
+                # Lead = initial-inspection tech (techs on the earliest
+                # "Initial Inspection" row), else the initial note's author.
+                for _d, _w, _act, _t in (_logs2 or []):
+                    if (str(_act or "").lower().startswith("initial inspection")
+                            and str(_t or "").strip()):
+                        trello_lead = str(_t).strip()
+                        break
+                if not trello_lead:
+                    for a in reversed(all_comments or []):  # oldest-first
+                        _txt = (a.get("data") or {}).get("text", "") or ""
+                        if re.search(r'initial\s+inspection', _txt, re.IGNORECASE):
+                            trello_lead = ((a.get("memberCreator") or {})
+                                           .get("fullName") or "").strip()
+                            if trello_lead:
+                                break
+            except Exception:
+                _warn(f"reconcile: inspection/demo/lead parse failed for {name!r}")
+            ck_confirms = _checklist_confirms(card)
+            try:
+                import docusketch_requests as _dsr2
+                ds_ordered = bool(_dsr2.is_pending(card_id))
+            except Exception:
+                ds_ordered = False
+                _warn(f"reconcile: docusketch is_pending failed for {name!r}")
 
             if rr is not None:
                 def _fill_if_empty(col_name, value):
@@ -1268,9 +1570,28 @@ def reconcile_with_trello(year, *, progress_cb=None):
                 else:
                     _fill_if_empty("Date Received", received_from_creation)
                 _overwrite_if_different("Closing Date", trello_closing)
+                # Inspection + Demo Start + Lead from comments (fill-only —
+                # manual edits stick).
+                _fill_if_empty("Inspection", trello_first_visit)
+                _fill_if_empty("Demo Start", trello_demo_start)
+                _fill_if_empty("Lead", trello_lead)
+                # Docusketch ordered? — pending request OR sketch checklist
+                # confirmed (keeps "yes" after the request clears on import).
+                if ds_ordered or ("Sketch" in ck_confirms):
+                    _fill_if_empty("Docusketch ordered?", "yes")
+                # Checklist confirms upgrade an unknown evidence cell to
+                # "yes" — only when the cell is "-" / blank, never over a
+                # file-derived "yes"/"no" (files win).
+                for _col in ck_confirms:
+                    col = _COL_INDEX[_col]
+                    cur = ws.cell(rr, col).value
+                    cur_s = (cur or "").strip() if isinstance(cur, str) else (
+                        "" if cur is None else str(cur).strip())
+                    if cur_s in ("", "-"):
+                        ws.cell(rr, col, "yes")
 
         try:
-            wb.save(path)
+            _atomic_save(wb, path)
         except PermissionError:
             summary["errors"].append(
                 "Workbook locked at save time — partial updates lost.")
@@ -1324,7 +1645,7 @@ def _build_trello_enrichment(client):
         if claim:
             enrich["_claim"] = claim
     except Exception:
-        pass
+        _warn(f"enrichment: desc parse failed for {client!r}")
 
     # Type of Loss from the card's labels (multi-cause aware).
     try:
@@ -1332,7 +1653,7 @@ def _build_trello_enrichment(client):
         if loss:
             enrich["_type_of_loss"] = loss
     except Exception:
-        pass
+        _warn(f"enrichment: loss-type failed for {client!r}")
 
     # Date Received: PROPERTY DETAILS > DATE RECEIVED on the card desc
     # is what the user typed when intake happened — that's the truth.
@@ -1344,7 +1665,7 @@ def _build_trello_enrichment(client):
         if received is not None:
             enrich["_date_received"] = received
     except Exception:
-        pass
+        _warn(f"enrichment: date-received failed for {client!r}")
 
     # Closing Date = most recent move into LOGS - EMS board. Only set
     # when the card actually moved there; otherwise leave the cell to
@@ -1354,13 +1675,14 @@ def _build_trello_enrichment(client):
         if closed is not None:
             enrich["_closing_date"] = closed
     except Exception:
-        pass
+        _warn(f"enrichment: closing-date failed for {client!r}")
 
-    # Inspection = the first-visit / initial-inspection date, parsed from
-    # the card's comments (the admin posts a dispatch note "Initial
-    # Inspection <date>"). detect_first_visit returns the EARLIEST.
-    # Pulls ALL comments (paginated) so an old card's early inspection
-    # note isn't missed — this is what makes the reconcile sweep slower.
+    # Inspection + Demo Start from the card's comments. The admin posts
+    # dispatch notes ("Initial Inspection <date>", "Demo <date> ...");
+    # detect_first_visit returns the EARLIEST inspection date, and
+    # parse_comments yields dated activity rows we mine for the first
+    # Demo. Pulls ALL comments (paginated) so an old card's early notes
+    # aren't missed — this is what makes the reconcile sweep slower.
     try:
         import snapshot_logic as _sg
         _comments = _tc.get_all_comments(card_id)
@@ -1369,8 +1691,63 @@ def _build_trello_enrichment(client):
         _fv = _sg.detect_first_visit(_ctext)
         if _fv:
             enrich["_first_visit"] = _fv
+        # parse_comments returns (sub_rows, log_rows) sorted ascending by
+        # date; each row is (date, weekday, activity, techs). The first
+        # log row whose activity mentions "demo" is the demo start.
+        try:
+            _subs, _logs = _sg.parse_comments(_ctext)
+            for _d, _w, _act, _t in (_logs or []):
+                if re.search(r'\bdemo\b', str(_act or ""), re.IGNORECASE):
+                    if _d:
+                        enrich["_demo_start"] = _d
+                    break
+            # Lead = whoever did the initial inspection — the techs on the
+            # earliest "Initial Inspection" activity row (the person named
+            # in/after the initial note). Falls back to the AUTHOR of the
+            # initial-inspection comment when the line names no tech.
+            _lead = ""
+            for _d, _w, _act, _t in (_logs or []):
+                if (str(_act or "").lower().startswith("initial inspection")
+                        and str(_t or "").strip()):
+                    _lead = str(_t).strip()
+                    break
+            if not _lead:
+                for a in reversed(_comments or []):  # oldest-first
+                    _txt = (a.get("data") or {}).get("text", "") or ""
+                    if re.search(r'initial\s+inspection', _txt, re.IGNORECASE):
+                        _lead = ((a.get("memberCreator") or {})
+                                 .get("fullName") or "").strip()
+                        if _lead:
+                            break
+            if _lead:
+                enrich["_lead"] = _lead
+        except Exception:
+            _warn(f"enrichment: demo-start/lead parse failed for {client!r}")
     except Exception:
-        pass
+        _warn(f"enrichment: comment fetch/parse failed for {client!r}")
+
+    # Checklist confirmations (Initial/Demo/Final Photos, Sketch, Scope).
+    # Positive-only — fed to _evidence_cell where file/audit evidence wins.
+    try:
+        _conf = _checklist_confirms(card)
+        if _conf:
+            enrich["_ck_confirms"] = sorted(_conf)
+    except Exception:
+        _warn(f"enrichment: checklist read failed for {client!r}")
+
+    # Docusketch ordered? — true when a request is still pending OR the
+    # sketch checklist item is checked. The request tracker auto-clears
+    # when the zip imports (`resolve`), so `is_pending` alone would flip
+    # the cell back to blank once the sketch arrives; the checklist
+    # confirm keeps it "yes" after receipt.
+    try:
+        import docusketch_requests as _dsr
+        _ordered = bool(_dsr.is_pending(card_id))
+    except Exception:
+        _ordered = False
+        _warn(f"enrichment: docusketch is_pending failed for {client!r}")
+    if _ordered or ("Sketch" in (enrich.get("_ck_confirms") or ())):
+        enrich["_docusketch_ordered"] = "yes"
 
     return enrich
 
@@ -1438,7 +1815,7 @@ def set_comment(client, comment, *, year=None):
                 pass
             return False
         try:
-            wb.save(path)
+            _atomic_save(wb, path)
         except Exception:
             return False
     return True
@@ -1472,7 +1849,7 @@ def move_existing_row(client, target_sheet_base, *, year=None):
                 pass
             return False
         try:
-            wb.save(path)
+            _atomic_save(wb, path)
         except Exception:
             return False
     return True
@@ -1544,7 +1921,7 @@ def update_row_fields(client, fields, *, year=None):
             except Exception: pass
             return {"ok": False, "error": "no editable fields given"}
         try:
-            wb.save(path)
+            _atomic_save(wb, path)
         except Exception as ex:
             return {"ok": False, "error": f"Save failed: {ex}"}
     return {"ok": True, "updated": updated}
@@ -1570,6 +1947,56 @@ def mark_new_loss(client, *, year=None, type_of_loss=None):
     if type_of_loss:
         row["_type_of_loss"] = type_of_loss
     sync_one(row, year=year)
+
+
+def remove_recon_only(year=None, *, dry_run=False):
+    """Remove rows whose OD job folder is reconstruction-only (a RECON
+    folder, no EMS) — those aren't EMS's business. Resolves each row's
+    folder via its pin, else an audit_base search. Returns
+    {ok, removed: [(sheet, name), ...], errors: [...]}. `dry_run` reports
+    without saving."""
+    out = {"ok": True, "removed": [], "errors": []}
+    yr = year or datetime.today().year
+    path = workbook_path(yr)
+    if _is_locked(path):
+        out["ok"] = False
+        out["errors"].append("Workbook is open in Excel — close it and retry.")
+        return out
+    with _LOCK:
+        try:
+            wb = openpyxl.load_workbook(path)
+        except Exception as ex:
+            return {"ok": False, "removed": [], "errors": [f"Open failed: {ex}"]}
+        name_col = _COL_INDEX["Name"]
+        deletions: dict[str, list[int]] = {}
+        for base in _ALL_SHEETS:
+            title = _sheet_name(base, yr)
+            if title not in wb.sheetnames:
+                continue
+            ws = wb[title]
+            for r in range(2, (ws.max_row or 1) + 1):
+                v = ws.cell(r, name_col).value
+                name = str(v).strip() if v is not None else ""
+                if not name:
+                    continue
+                if _is_recon_only(_resolve_od_path({"Name": name})):
+                    deletions.setdefault(title, []).append(r)
+                    out["removed"].append((base, name))
+        if not dry_run and deletions:
+            for title, rows in deletions.items():
+                ws = wb[title]
+                for r in sorted(rows, reverse=True):   # high→low keeps indices
+                    ws.delete_rows(r, 1)
+            try:
+                _atomic_save(wb, path)
+            except Exception as ex:
+                out["ok"] = False
+                out["errors"].append(f"Save failed: {ex}")
+        try:
+            wb.close()
+        except Exception:
+            pass
+    return out
 
 
 def dedupe_workbook(year, *, dry_run=False):
@@ -1721,7 +2148,7 @@ def dedupe_workbook(year, *, dry_run=False):
                         f"{title} row {r} delete failed: {ex}")
 
         try:
-            wb.save(path)
+            _atomic_save(wb, path)
         except PermissionError:
             summary["errors"].append(
                 "Workbook locked at save time — dedupe rolled back.")

@@ -65,6 +65,7 @@ NAV_GROUPS = [
         ("pipeline",    "🛤", "Pipeline"),
     ]),
     ("Monitoring", [
+        ("notifications", "🔔", "Notifications"),
         ("hygiene",     "⚠", "Hygiene"),
         ("kpi",         "📈", "KPI"),
         ("disputes",    "⚖", "Disputes"),
@@ -122,6 +123,7 @@ SUB_MODULES = {
     "pipeline":    "pipeline_web",
     "kpi":         "kpi_web",
     "photo_folders": "photo_folders_web",
+    "notifications": "notifications_web",
 }
 
 
@@ -139,6 +141,7 @@ class HomeApi:
         # survive across iframe navigations (e.g. audit's last-run
         # results aren't wiped when the user clicks APA Monitor then
         # back to Audit).
+        self._failed_subs = {}   # key → error string, for the sidebar badge
         for key, mod_name in SUB_MODULES.items():
             try:
                 mod = __import__(mod_name)
@@ -146,10 +149,20 @@ class HomeApi:
                 self._subs[key] = api
                 self._bind_methods(key, api)
             except Exception as ex:
-                # Skip tools that fail to import — sidebar still
-                # works, the broken one is just unavailable.
+                # Skip tools that fail to import — sidebar still works, the
+                # broken one is just unavailable. Record + LOG it (stderr is
+                # invisible in a windowed build, so a broken panel used to
+                # be a silent dead tab); nav() flags it so the user sees ⚠.
+                self._failed_subs[key] = f"{type(ex).__name__}: {ex}"
                 print(f"[home_web] failed to load {mod_name}: {ex}",
                       file=sys.stderr)
+                try:
+                    import ems_log
+                    ems_log.error("home_web",
+                                  f"panel '{key}' ({mod_name}) failed to load: {ex}",
+                                  exc_info=True)
+                except Exception:
+                    pass
 
     def _bind_methods(self, key: str, api):
         """Bind every public method on `api` to self with a
@@ -178,6 +191,92 @@ class HomeApi:
                 sub.attach(w)
             except Exception:
                 pass
+
+    # ── First-run welcome ────────────────────────────────────────────
+    def first_run(self):
+        """Tell the shell whether to show the one-time welcome modal.
+
+        `show` is True until the user dismisses the welcome (drops the
+        `.configured` marker) on this machine. `trello_ready` lets the
+        modal tailor its copy when creds are already in place."""
+        try:
+            import paths as _p, config as _c
+            cfg = _c.load() or {}
+            return {
+                "show": bool(_p.is_first_run()),
+                "trello_ready": bool((cfg.get("trello_api_key") or "").strip()
+                                     and (cfg.get("trello_token") or "").strip()),
+            }
+        except Exception:
+            return {"show": False, "trello_ready": True}
+
+    def dismiss_first_run(self):
+        """Drop the `.configured` marker so the welcome doesn't reappear."""
+        try:
+            import paths as _p
+            _p.mark_configured()
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def focus_window(self):
+        """Bring the app window to the foreground. Works around a WebView2
+        quirk where clicking into a text field shows the caret but leaves the
+        top-level OS window un-activated (no accent border), so keystrokes
+        feel 'dead' until you click the title bar. Idempotent — no-op when
+        already foreground.
+
+        The click that triggers this lands on the WebView2 *child process*,
+        so our process never "received the last input" and Windows blocks a
+        naive SetForegroundWindow. Two things unblock it: (1) attach the
+        current foreground thread's input queue to OUR WINDOW's GUI thread
+        (not the pywebview worker thread this method runs on), and (2) zero
+        the foreground-lock timeout for the duration of the call."""
+        if sys.platform != "win32":
+            return {"ok": True}
+        try:
+            import ctypes
+            from ctypes import wintypes
+            u = ctypes.windll.user32
+            hwnd = u.FindWindowW(None, "EMS Tools")
+            if not hwnd:
+                return {"ok": False, "error": "window not found"}
+            fg = u.GetForegroundWindow()
+            if fg == hwnd:
+                return {"ok": True}  # already active — nothing to do
+
+            SW_RESTORE = 9
+            if u.IsIconic(hwnd):
+                u.ShowWindow(hwnd, SW_RESTORE)
+
+            # Drop the foreground-lock timeout so the activation is honored.
+            SPI_GET = 0x2000  # SPI_GETFOREGROUNDLOCKTIMEOUT
+            SPI_SET = 0x2001  # SPI_SETFOREGROUNDLOCKTIMEOUT
+            SPIF_SENDCHANGE = 0x2
+            saved = wintypes.DWORD(0)
+            u.SystemParametersInfoW(SPI_GET, 0, ctypes.byref(saved), 0)
+            u.SystemParametersInfoW(SPI_SET, 0, ctypes.c_void_p(0),
+                                    SPIF_SENDCHANGE)
+
+            fg_thread = u.GetWindowThreadProcessId(fg, None) if fg else 0
+            tgt_thread = u.GetWindowThreadProcessId(hwnd, None)
+            attached = False
+            if fg_thread and tgt_thread and fg_thread != tgt_thread:
+                attached = bool(u.AttachThreadInput(fg_thread, tgt_thread, True))
+
+            u.BringWindowToTop(hwnd)
+            u.SetForegroundWindow(hwnd)
+            u.SetActiveWindow(hwnd)
+
+            if attached:
+                u.AttachThreadInput(fg_thread, tgt_thread, False)
+            # Restore the user's original lock timeout.
+            u.SystemParametersInfoW(SPI_SET, 0,
+                                    ctypes.c_void_p(saved.value),
+                                    SPIF_SENDCHANGE)
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     # ── Top-level methods used by the shell itself ───────────────────
     def header(self):
@@ -211,6 +310,9 @@ class HomeApi:
                     "icon":  ic,
                     "name":  n,
                     "src":   _asset_folder_for(k),
+                    # True when the tool's Api failed to import — the panel
+                    # is a dead tab; the sidebar shows ⚠ instead of silence.
+                    "error": k in getattr(self, "_failed_subs", {}),
                 })
             if visible:
                 out.append({"label": label, "items": visible})
@@ -464,8 +566,79 @@ class HomeApi:
         except Exception:
             return False
 
+    # ── Department (multi-account) switcher ──────────────────────────
+    def department_state(self):
+        """State for the launcher's department pill: whether multi-dept
+        is on, which department is active, and the full list. Returns
+        `enabled: False` when the feature is off (pill stays hidden)."""
+        try:
+            import config
+            if not config.is_multi_dept():
+                return {"ok": True, "enabled": False}
+            return {
+                "ok": True,
+                "enabled": True,
+                "active": config.active_department(),
+                "departments": config.list_departments(),
+            }
+        except Exception as ex:
+            return {"ok": False, "enabled": False, "error": str(ex)}
+
+    def switch_department(self, key: str):
+        """Switch the active department IN-PROCESS. All scoped values are
+        now read lazily (config.load() is mtime-cached and re-reads after
+        the write below; the logic modules resolve their roots per-call),
+        so we persist the choice, drop the few workspace-scoped in-memory
+        caches, and tell the web layer to reload — no relaunch needed.
+        Returns {reload: True} so the JS shell does location.reload()."""
+        try:
+            import config
+            key = (key or "").strip()
+            cur = config.active_department()
+            if not key or key == cur:
+                return {"ok": True, "unchanged": True}
+            if not config.set_active_department(key):
+                return {"ok": False, "error": f"unknown department '{key}'"}
+            _invalidate_scoped_caches()
+            return {"ok": True, "switched_to": key, "reload": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+
+def _invalidate_scoped_caches():
+    """Drop the process-lifetime caches that are scoped to the active
+    department, so an in-process switch doesn't serve the previous
+    department's data. config.load() and the logic-module roots are
+    already lazy (mtime-cached); this clears the two workspace-scoped
+    caches those don't cover. Best-effort — a missing module never
+    blocks the switch."""
+    try:
+        import trello_client
+        trello_client.invalidate_caches()
+    except Exception:
+        pass
+    try:
+        import weekly_checkins            # own Estimating-board id cache
+        weekly_checkins.invalidate_caches()
+    except Exception:
+        pass
+    try:
+        from state_hub import hub as _hub
+        _hub._cache.clear()          # parse_run_doc etc. — re-fetch fresh
+    except Exception:
+        pass
+
 
 def main(argv=None):
+    # Quick Import — the stripped-down tool for general office users opens
+    # from the SAME exe via a `--quickimport` shortcut, so simple users get a
+    # dedicated launcher and never see the full suite.
+    import sys as _sys
+    _argv = argv if argv is not None else _sys.argv[1:]
+    if "--quickimport" in _argv:
+        import quickimport_web
+        quickimport_web.main()
+        return
     _ensure_root_index()
     api = HomeApi()
     win = webview.create_window(

@@ -14,5 +14,29 @@
   "trello_boards_exclude": [],
   "trello_snapshot_list_id": "<list-id>",
   "graph_client_id": "<azure-app-client-id>",
-  "graph_tenant_id": "<azure-tenant-id>"
+  "graph_tenant_id": "<azure-tenant-id>",
+  "franchise_name": "L&P Group, Inc. d/b/a SERVPRO of Woodcrest / El Cerrito / Lake Mathews",
+  "office_phone": "951-398-3240",
+
+  "_comment_departments": "Multi-department (OC vs IE) scoping. When multi_department_enabled is true, the ACTIVE department's non-empty overrides merge over the base keys above. A blank/omitted override inherits the base. CompanyCam token, Downloads output, Graph and feature flags stay global.",
+  "multi_department_enabled": false,
+  "active_department": "IE",
+  "departments": {
+    "IE": { "label": "Inland Empire" },
+    "OC": {
+      "label": "Orange County",
+      "audit_base": "",
+      "snapshot_template": "",
+      "photos_root": "",
+      "runs_dir": "",
+      "apa_monitor_root": "",
+      "trello_api_key": "",
+      "trello_token": "",
+      "trello_workspace_id": "",
+      "trello_boards_exclude": [],
+      "trello_snapshot_list_id": "",
+      "franchise_name": "",
+      "office_phone": ""
+    }
+  }
 }

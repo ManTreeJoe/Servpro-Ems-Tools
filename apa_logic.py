@@ -26,7 +26,18 @@ from docx.shared import RGBColor, Pt, Inches
 import config
 import paths
 
-APA_ROOT = config.load().get("apa_monitor_root") or r"X:\IE_Public\APA Monitor"
+# APA Monitor docs root. Resolved lazily from config each access
+# (config.load() is mtime-cached) so a Settings change or department (OC/IE)
+# switch takes effect without a restart. `apa_logic.APA_ROOT` (and
+# `from apa_logic import APA_ROOT`) still resolve via the module __getattr__.
+def _apa_root():
+    return config.load().get("apa_monitor_root") or r"X:\IE_Public\APA Monitor"
+
+
+def __getattr__(name):
+    if name == "APA_ROOT":
+        return _apa_root()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 _ITEM_FONT_SIZE = Pt(9)
 _EXTENDED_RED   = RGBColor(0xC0, 0x39, 0x2B)
@@ -178,7 +189,7 @@ def doc_path_for_today(dt=None):
     year  = dt.strftime("%Y")
     month = dt.strftime("%B")
     wd    = WEEKDAY_SPELLING[dt.weekday()]
-    folder = os.path.join(APA_ROOT, year, month)
+    folder = os.path.join(_apa_root(), year, month)
     # File naming switched 2026-05-04 from "5-4-Monday .docx" (trailing
     # space before .docx) to plain "5-4-Monday.docx". The legacy April
     # archive uses the spaced form, so when the no-space file is missing

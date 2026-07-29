@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="../web_shared/iframe_shim.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trello Notifications — EMS Tools</title>
+<link rel="stylesheet" href="theme.css" />
+<style>
+  .topbar-actions { display: flex; align-items: center; gap: 8px; }
+  .unread-pill {
+    background: var(--red); color: #fff; font-weight: 700; font-size: 11px;
+    padding: 2px 9px; border-radius: 999px; min-width: 18px; text-align: center;
+  }
+  .unread-pill.zero { background: var(--surface-3); color: var(--text-muted); }
+  .content { flex: 1; overflow-y: auto; padding: 14px 18px 40px; }
+  .board-group { margin-bottom: 18px; }
+  .board-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 4px; cursor: pointer; user-select: none;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg); z-index: 1;
+  }
+  .board-head .caret { color: var(--text-dim); width: 12px; transition: transform 120ms ease; }
+  .board-group.collapsed .caret { transform: rotate(-90deg); }
+  .board-name { font-weight: 700; font-size: 14px; }
+  .board-count { font-size: 11px; color: var(--text-muted); }
+  .board-group.collapsed .notif-list { display: none; }
+  .notif-list { list-style: none; margin: 0; padding: 0; }
+  .notif {
+    display: grid; grid-template-columns: auto 1fr auto;
+    gap: 12px; align-items: start;
+    padding: 11px 10px; border-bottom: 1px solid var(--border);
+    cursor: pointer; transition: background 90ms ease;
+  }
+  .notif:hover { background: var(--row-hover); }
+  .notif.unread { background: var(--row-active); }
+  .notif.read { opacity: 0.72; }
+  .notif-icon { font-size: 16px; line-height: 1.4; position: relative; }
+  .notif.unread .notif-icon::after {
+    content: ""; position: absolute; top: -1px; right: -5px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--red);
+  }
+  .notif-body { min-width: 0; }
+  .notif-card { font-weight: 600; font-size: 13px; }
+  .notif-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .notif-snippet {
+    font-size: 12px; color: var(--text); margin-top: 4px;
+    background: var(--surface-2); border-radius: 5px; padding: 6px 9px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .notif-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .notif-date { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+  .mark-btn {
+    background: var(--surface-2); color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 3px 9px; font-size: 11px; cursor: pointer; white-space: nowrap;
+  }
+  .mark-btn:hover { background: var(--green); color: #fff; border-color: var(--green); }
+  .empty { text-align: center; color: var(--text-muted); padding: 60px 20px; }
+  .empty .big { font-size: 34px; display: block; margin-bottom: 10px; }
+  .toggle {
+    display: flex; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--text-muted); cursor: pointer; user-select: none;
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">🔔 Trello Notifications</span>
+    <span id="unread-pill" class="unread-pill zero">0</span>
+  </div>
+  <div class="topbar-actions">
+    <label class="toggle"><input type="checkbox" id="unread-only" /> Unread only</label>
+    <button id="mark-all-btn" class="btn">✓ Mark all read</button>
+    <button id="refresh-btn" class="btn">↻ Refresh</button>
+  </div>
+</header>
+<div class="status-bar" style="padding:6px 18px;font-size:12px;color:var(--text-muted);border-bottom:1px solid var(--border);">
+  <span id="status-msg"></span>
+</div>
+<main class="content" id="feed">
+  <div class="empty"><span class="big">🔔</span>Loading notifications…</div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

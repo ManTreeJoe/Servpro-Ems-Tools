@@ -82,9 +82,18 @@ Reorganized from handwritten training notes. Grouped by workflow area so each ta
 
 ### Carrier-specific rules
 - **State Farm** — currently the only carrier with daily uploads in CR Requirements. Create the **Initial estimate** as a **Service Call at $0** before uploading. Just click *Acknowledge* on the prelim estimate.
+  - **State Farm needs the Equipment line on the estimate.** On the Service Call, add the **`EQ` — Equipment setup, take down, and monitoring (hourly charge)** line item (cat `WTR`, sel `EQ`, unit `HR`, coverage Dwelling). State Farm requires this line for the estimate.
+  - **Override the EQ quantity per State Farm's SLA → `1.5`.** The line defaults to `1.75 HR` (Calc 1.75) — for State Farm, change the **Quantity/Calc to `1.5`** on the Service Call. Only do this override for State Farm.
 - **Farmers** — Service Call estimate at **$300**. Sketch is required even if empty — add a **random room** to the sketch so it isn't blank. All other normal initial-upload steps still apply.
 - **Travelers / Lemonade** — extra forms required (ATP, ATR, warranty) on top of ATP / CIF / CER / COS.
 - **AAA** — Contents work flows through Pablo. See §10 (AAA Contents).
+- **Allstate** (program spec **B.8 — Uploads**) — **Initial upload due within 72 calendar hours of dispatch** (this is a Performance Weighted Distribution ranking category — it affects our ranking, so don't miss it). Required documents for the initial upload:
+  - **ClaimXperience Pre-Mitigation Video** — also a Performance Weighted Distribution ranking category.
+  - **Sketch**
+  - **Photos**
+  - **SERVPRO® DryBook Dry Report**
+  - **Authorization to Perform (form 28000)**
+  - **Preliminary Estimate** — due within **72 calendar hours of receiving the assignment**; must include **each affected room with dimensions and the type of equipment set**; generally **50–70% complete**; **zero-dollar estimates are not acceptable**.
 
 ### Dry Report — Edit Initial Inspection defaults
 
@@ -150,6 +159,19 @@ When a job closes and you need to push the final estimate:
 - Scroll and select condition (ALL) and select **Questionable** + **Total Loss**.
 - Hit *Create Report* once loaded.
 - Make sure Job Details has Insured, Claim #, Insurance Company, and Adjuster filled before creating the report.
+
+### Estimate request — holding response
+When someone asks where their estimates are, paste this (📋 copy):
+
+> Good morning, [Name],
+>
+> Our estimating team is diligently working on these estimates.
+>
+> We will send them to you as soon as they are finalized.
+>
+> Thank you for your patience.
+>
+> Kind regards,
 
 ---
 

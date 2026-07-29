@@ -65,7 +65,9 @@ def classify_pdf(name):
         if tag:
             return tag
     # Fallback — regex by name fragment (mirrors audit_logic.REQUIRED_FORMS)
-    if re.search(r'cert.*satisf', low):
+    # `\bcos\b` catches a hand-named "CoS.pdf" / "CoS - Smith.pdf" without
+    # matching client names that merely contain the letters (Costales, cost).
+    if re.search(r'cert.*satisf', low) or re.search(r'\bcos\b', low):
         return "CoS"
     if re.search(r'customer.*info', low):
         return "CIF"

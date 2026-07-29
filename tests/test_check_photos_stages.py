@@ -44,6 +44,88 @@ def test_missing_pics_folder_flags_initial(tmp_path):
     assert check_photos(nope) == ["Initial pics"]
 
 
+# ── FOH (front of house/structure) + EQ (equipment) sub-folder checks ──
+# These live INSIDE the Initial folder: PICS\Initial\FOH and PICS\Initial\EQ.
+# FOH is required on the initial visit; EQ once a Monitor visit happens.
+def _initial_with(tmp_path, *, subs_filled=(), subs_empty=()):
+    """PICS with a filled Initial folder + optional FOH/EQ subfolders."""
+    pics = tmp_path / "PICS"
+    init = pics / "Initial"
+    init.mkdir(parents=True)
+    (init / "img.jpg").write_bytes(b"x")
+    for name in subs_filled:
+        d = init / name
+        d.mkdir()
+        (d / "p.jpg").write_bytes(b"x")
+    for name in subs_empty:
+        (init / name).mkdir()
+    return str(pics)
+
+
+def test_foh_flagged_on_initial_when_missing(tmp_path):
+    pics = _initial_with(tmp_path)  # Initial filled, no FOH subfolder
+    assert "FOH pics" in check_photos(pics, raw_text="Initial Inspection")
+
+
+def test_foh_satisfied_by_any_name(tmp_path):
+    for name in ("FOH", "Front of House", "Front of Structure", "FOS"):
+        pics = _initial_with(tmp_path / name, subs_filled=[name])
+        assert "FOH pics" not in check_photos(
+            pics, raw_text="Initial Inspection"), name
+
+
+def test_eq_flagged_on_monitor_when_missing(tmp_path):
+    pics = _initial_with(tmp_path)  # Initial exists, no EQ
+    missing = check_photos(pics, raw_text="Monitor")
+    assert "EQ pics" in missing
+
+
+def test_eq_satisfied_by_folder(tmp_path):
+    pics = _initial_with(tmp_path, subs_filled=["EQ"])
+    assert "EQ pics" not in check_photos(pics, raw_text="Monitor")
+
+
+def test_no_foh_eq_nag_on_demo_day(tmp_path):
+    """Demo day is neither an initial nor a monitor visit — no FOH/EQ nag."""
+    pics = _initial_with(tmp_path)
+    (tmp_path / "PICS" / "Demo").mkdir()
+    (tmp_path / "PICS" / "Demo" / "d.jpg").write_bytes(b"x")
+    missing = check_photos(pics, raw_text="Demo")
+    assert "FOH pics" not in missing and "EQ pics" not in missing
+
+
+def test_foh_nested_under_tech_box(tmp_path):
+    """FOH nested under a '<Tech> <date>' box counts — real layout is
+    PICS\\Initial\\FB 07-01-2026\\Front of Structure."""
+    pics = tmp_path / "PICS"
+    init = pics / "Initial"
+    box = init / "FB 07-01-2026" / "Front of Structure"
+    box.mkdir(parents=True)
+    (box / "p.jpg").write_bytes(b"x")
+    (init / "a.jpg").write_bytes(b"x")
+    assert "FOH pics" not in check_photos(str(pics), raw_text="Initial Inspection")
+
+
+def test_eq_nested_under_tech_box(tmp_path):
+    pics = tmp_path / "PICS"
+    init = pics / "Initial"
+    box = init / "FB 07-01-2026" / "EQ"
+    box.mkdir(parents=True)
+    (box / "p.jpg").write_bytes(b"x")
+    (init / "a.jpg").write_bytes(b"x")
+    assert "EQ pics" not in check_photos(str(pics), raw_text="Monitor")
+
+
+def test_foh_still_flagged_when_truly_absent(tmp_path):
+    """A nested tech box with NO FOH still flags."""
+    pics = tmp_path / "PICS"
+    box = pics / "Initial" / "FB 07-01-2026" / "Demo Photos"
+    box.mkdir(parents=True)
+    (box / "p.jpg").write_bytes(b"x")
+    (pics / "Initial" / "a.jpg").write_bytes(b"x")
+    assert "FOH pics" in check_photos(str(pics), raw_text="Initial Inspection")
+
+
 def test_missing_pics_folder_with_demo_activity_flags_both(tmp_path):
     """Stage detection still fires when the folder is missing — Demo +
     Initial both end up on the row."""

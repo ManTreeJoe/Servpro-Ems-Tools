@@ -107,7 +107,21 @@ def find_disagreements(year=None, *, progress_cb=None,
             continue
 
         try:
-            trello_route = tc.card_route_status(card)
+            # Resolve the card's lane name so a job closed by moving its
+            # card to a terminal lane ("Closed out" / "Logs" / "Paid") is
+            # recognized as closed. Without list_name, card_route_status
+            # can't run its terminal-lane check and reports such a job as
+            # new_loss — the reconciler then "disagrees" with a correctly
+            # filed Completed/Incomplete row and offers to un-close it.
+            list_name = ""
+            lid = card.get("idList")
+            if lid:
+                try:
+                    _l = tc.get_list(lid)
+                    list_name = (_l or {}).get("name", "")
+                except Exception:
+                    list_name = ""
+            trello_route = tc.card_route_status(card, list_name=list_name)
         except Exception:
             continue
 

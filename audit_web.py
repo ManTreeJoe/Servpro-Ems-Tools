@@ -197,8 +197,14 @@ def _parse_simple_scope(raw: str) -> list:
         # "• ", "·  ", numbered "1. " / "1) ", or leading tab/4-space
         # indentation. Treat ANY of these as an item line.
         is_bullet = bool(stripped) and stripped[0] in "-*•·"
-        is_numbered = (len(stripped) >= 2 and stripped[0].isdigit()
-                       and stripped[1] in ".)")
+        # Numbered "1. " / "12) " — count ALL leading digits so 10+ don't
+        # fall through and get mis-read as room headers (was: stripped[1]
+        # only, which broke on any two-digit number).
+        ndig = 0
+        while ndig < len(stripped) and stripped[ndig].isdigit():
+            ndig += 1
+        is_numbered = (ndig > 0 and ndig < len(stripped)
+                       and stripped[ndig] in ".)")
         is_indented = line.startswith(("\t", "    ")) and len(stripped) > 0
         if is_bullet or is_numbered or is_indented:
             # Strip the leading bullet character + following whitespace.
@@ -206,8 +212,8 @@ def _parse_simple_scope(raw: str) -> list:
             if is_bullet:
                 item = stripped[1:].lstrip()
             elif is_numbered:
-                # "1. text" / "1) text" — drop the number + delimiter.
-                item = stripped[2:].lstrip()
+                # "1. text" / "12) text" — drop the number + delimiter.
+                item = stripped[ndig + 1:].lstrip()
             if not item:
                 continue
             if current is None:
@@ -461,8 +467,24 @@ def _shape_job(j, audit_result, pin_id):
     client_name_for_key = j.get("client") or ""
     row_key = (f"{client_name_for_key}::{unit_val}"
                if unit_val else client_name_for_key)
+    # Display name = the pinned Trello card's name — the job's canonical
+    # identity per the 2026-07-22 rule ("jobs represented by the name on
+    # the Trello card"). Only overrides when a card is actually pinned;
+    # the run-doc / folder spelling stays as `client`, the matching key,
+    # so folder + pin lookups are unaffected.
+    display_name = ""
+    if pin_id:
+        try:
+            import ems_db as _emsdb
+            _j = _emsdb.find_job_by_name(j.get("client") or "")
+            if (_j and _j.get("display_name") and _emsdb.get_link(
+                    _j.get("canon_key") or "", _emsdb.LINK_TRELLO)):
+                display_name = _j["display_name"]
+        except Exception:
+            display_name = ""
     return {
         "client":           j.get("client") or "",
+        "display_name":     display_name,
         "row_key":          row_key,
         "section":          section,
         "activity":         activity_labels,
@@ -536,6 +558,95 @@ def _unpack_arg_bundle(*args):
         bundle.extend([None] * max(0, len(args) - len(bundle)))
         return tuple(bundle[:len(args)])
     return tuple(args)
+
+
+# Carrier tokens dropped when grouping audit-picker candidates, so
+# "Ensign, Michael - Mercury" folds into "Ensign, Michael". Kept to
+# distinctive carrier words (no ambiguous surname-like tokens such as
+# "state"/"farm"/"national" — the superset-fold catches those cases).
+_CANDIDATE_CARRIER_TOKENS = {
+    "mercury", "allstate", "geico", "progressive", "nationwide",
+    "farmers", "travelers", "lemonade", "usaa", "safeco", "statefarm",
+    "hartford", "chubb", "erie", "amica", "csaa", "wawanesa", "kemper",
+    "hippo", "encompass", "foremost", "metlife", "esurance", "aaa",
+}
+
+
+def _candidate_group_key(name):
+    """Order-independent token-set for `name`, carrier tokens dropped, so
+    'Kathy Ensign'/'Ensign Kathy'/'Ensign, Kathy' share a key and
+    'Ensign, Michael - Mercury' folds toward 'Ensign, Michael'."""
+    from web_helpers import norm_tokens as _nt
+    toks = _nt(name) - _CANDIDATE_CARRIER_TOKENS
+    return frozenset(toks) if toks else frozenset(_nt(name))
+
+
+def _group_audit_candidates(raw):
+    """Collapse the flat source hits (`raw`: list of dicts with name /
+    source / detail / path / score / has_card) into ONE combined candidate
+    per job. Groups by token-set (carrier-stripped) with a superset-fold,
+    picks the most-complete variant as the winner, and aggregates sources
+    + the mergeable variant list. Returns the sorted candidate list.
+
+    Pulled out of Api.list_audit_candidates so it's unit-testable without
+    run-doc / persistence / Trello wiring."""
+    buckets = {}
+    for r in raw:
+        buckets.setdefault(_candidate_group_key(r["name"]), []).append(r)
+
+    # Superset-fold — smaller token-sets first so a base name becomes the
+    # bucket, then any strict-superset bucket ("…-Mercury") folds in.
+    folded = {}
+    for k in sorted(buckets.keys(), key=len):
+        target = next((fk for fk in folded if fk and fk < k), None)
+        if target is not None:
+            folded[target].extend(buckets[k])
+        else:
+            folded[k] = list(buckets[k])
+
+    def _rank(m):
+        # folder+card > folder > card > score.
+        return (1 if (m["has_card"] and m["path"]) else 0,
+                1 if m["path"] else 0,
+                1 if m["has_card"] else 0,
+                m["score"])
+
+    cands = []
+    for members in folded.values():
+        winner = max(members, key=_rank)
+        label = winner["name"]
+        if winner["has_card"]:
+            try:
+                import ems_db as _db
+                _j = _db.find_job_by_name(winner["name"])
+                if _j and _j.get("display_name"):
+                    label = _j["display_name"]
+            except Exception:
+                pass
+        sources = [s for s in ("run", "pin", "folder")
+                   if any(m["source"] == s for m in members)]
+        path = winner["path"] or next(
+            (m["path"] for m in members if m["path"]), "")
+        variants = sorted({m["name"] for m in members})
+        cands.append({
+            "name":      winner["name"],
+            "label":     label,
+            "source":    winner["source"],
+            "sources":   sources,
+            "detail":    winner["detail"],
+            "path":      path,
+            "score":     max(m["score"] for m in members),
+            "variants":  variants,
+            "mergeable": len(variants) >= 2,
+            "has_card":  any(m["has_card"] for m in members),
+        })
+
+    # Best score first; at a tie prefer the "Last, First" comma form, then
+    # alphabetical for stability.
+    cands.sort(key=lambda c: (-c["score"],
+                              0 if "," in c["name"] else 1,
+                              c["name"].lower()))
+    return cands
 
 
 class Api:
@@ -770,14 +881,21 @@ class Api:
                 rows = []
                 for j, r in _pair_results_to_jobs(jobs, results):
                     r = r or {}
-                    if r.get("subjob"):
-                        # Fanned-out commercial sub-job → show ITS own name +
-                        # folder, but inherit the parent run-doc line's raw /
-                        # section / techs for activity chips.
-                        j = {**(j or {}),
-                             "client": r.get("client") or (j or {}).get("client") or "",
-                             "subjob": True}
-                    client = (r.get("client") or j.get("client") or "")
+                    _rc = r.get("client") or ""
+                    if _rc and _rc != (j or {}).get("client"):
+                        # Expanded row — a commercial sub-job OR a multi-claim
+                        # "Nth Claim" folder — carries its OWN per-row client.
+                        # Adopt it so the row's client / row_key / pin / folder
+                        # are distinct from the base run-doc line AND sibling
+                        # claims. Multi-claim rows are NOT flagged `subjob`, so
+                        # the old subjob-only check collapsed both Mansolino
+                        # claims onto one row (same row_key → select/pin/folder
+                        # on one hit both). (2026-06-23) Inherit the parent
+                        # line's raw / section / techs for activity chips.
+                        j = {**(j or {}), "client": _rc}
+                        if r.get("subjob"):
+                            j["subjob"] = True
+                    client = (_rc or j.get("client") or "")
                     try:
                         pin = persistence.get_trello_card_id(client) or ""
                     except Exception:
@@ -879,11 +997,15 @@ class Api:
                     "pics_count":         int(r.get("pics_count") or 0),
                 }
                 # Mirror onto the in-memory _last_rows so subsequent
-                # reads (last_audit / reaudit_one) carry the SP data.
+                # reads (last_audit / reaudit_one) carry the SP data. SP is
+                # per-CLIENT (folder-keyed), so update EVERY row with this
+                # client — not just the first. The `break` here dropped SP
+                # data for all but one row on multi-unit properties (both
+                # Avila Apartments units share the client); the frontend
+                # onSpUpdate already updates them all, so this matches it.
                 for row in self._last_rows:
                     if row.get("client") == client:
                         row.update(payload)
-                        break
                 try:
                     self._emit(
                         "window.dispatchEvent(new CustomEvent("
@@ -928,6 +1050,84 @@ class Api:
             return {"ok": True, "folders": _al.list_claim_folders(path)}
         except Exception as ex:
             return {"ok": False, "error": str(ex), "folders": []}
+
+    def od_contents(self, path: str) -> dict:
+        """List the folders + files directly inside a job's OD folder so
+        the audit row can SHOW what's actually there — 📁 folders (drillable
+        by the frontend) and 📄 files with size. Each file also reports
+        whether it's a OneDrive *cloud-only placeholder* (not yet downloaded)
+        vs. physically present, since audit reads fail on un-hydrated
+        placeholders. `os.scandir` + the cached `stat()` avoid hydrating the
+        files just to list them. Skips the hidden desktop.ini marker.
+        Returns {ok, path, name, folders:[{name,path}], files:[{name,path,
+        size,cloud_only}]}."""
+        if not path or not os.path.isdir(path):
+            return {"ok": False, "error": "folder not found",
+                    "folders": [], "files": []}
+        OFFLINE = 0x1000        # FILE_ATTRIBUTE_OFFLINE
+        RECALL = 0x00400000     # FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+        folders, files = [], []
+        try:
+            with os.scandir(path) as it:
+                for e in it:
+                    try:
+                        if e.name.lower() == "desktop.ini":
+                            continue
+                        if e.is_dir(follow_symlinks=False):
+                            folders.append({"name": e.name, "path": e.path})
+                        elif e.is_file(follow_symlinks=False):
+                            try:
+                                st = e.stat()
+                                attrs = getattr(st, "st_file_attributes", 0)
+                                size = st.st_size
+                            except OSError:
+                                attrs, size = 0, 0
+                            files.append({
+                                "name": e.name, "path": e.path, "size": size,
+                                "cloud_only": bool(attrs & (OFFLINE | RECALL))})
+                    except OSError:
+                        continue
+        except OSError as ex:
+            return {"ok": False, "error": str(ex),
+                    "folders": [], "files": []}
+        folders.sort(key=lambda d: d["name"].lower())
+        files.sort(key=lambda d: d["name"].lower())
+        return {"ok": True, "path": path,
+                "name": os.path.basename(path.rstrip(os.sep)),
+                "folders": folders, "files": files}
+
+    def job_work_log(self, client: str) -> dict:
+        """Full job tracker for a client — the run-doc activity (with the
+        crew each day) AND the Trello upload history (who uploaded which
+        form/photo) woven into one newest-first timeline. Backed by
+        `job_history.job_tracker`. The run-doc corpus is cached by mtime;
+        the Trello leg is a couple of card calls (skipped when no card is
+        pinned). Returns {ok, client, timeline:[{kind, date_str, ...}],
+        activity_count, upload_count, saved_path}."""
+        if not client:
+            return {"ok": False, "error": "no client", "timeline": []}
+        try:
+            import job_history as _jh
+            tr = _jh.job_tracker(client)
+            saved = _jh.running_doc_path(client)
+            return {"ok": True, "client": client,
+                    "timeline": tr["timeline"],
+                    "activity_count": len(tr["activity"]),
+                    "upload_count": len(tr["uploads"]),
+                    "saved_path": saved if os.path.isfile(saved) else ""}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "timeline": []}
+
+    def save_job_work_log(self, client: str) -> dict:
+        """Generate/refresh the per-job work-log .md from the latest runs
+        and return its path so the frontend can open it in Explorer."""
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            import job_history as _jh
+            return {"ok": True, "path": _jh.save_running_doc(client)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def open_od_for_client(self, client: str,
                              hint_path: str = "") -> dict:
@@ -1145,10 +1345,15 @@ class Api:
                 rows = []
                 for j, r in _pair_results_to_jobs(filtered, results):
                     r = r or {}
-                    if r.get("subjob"):
-                        j = {**(j or {}),
-                             "client": r.get("client") or (j or {}).get("client") or "",
-                             "subjob": True}
+                    _rc = r.get("client") or ""
+                    if _rc and _rc != (j or {}).get("client"):
+                        # Expanded row (commercial sub-job OR multi-claim) →
+                        # adopt its own per-row client so row_key/pin/folder
+                        # stay distinct per claim. See the matching note in
+                        # run_audit. (2026-06-23)
+                        j = {**(j or {}), "client": _rc}
+                        if r.get("subjob"):
+                            j["subjob"] = True
                     pin = ""
                     try:
                         pin = persistence.get_trello_card_id(
@@ -1204,6 +1409,28 @@ class Api:
         typed_tokens = _norm_tokens(typed)
 
         candidates = []
+
+        # 0. One-off rows already audited THIS session. A client's name is a
+        #    set of tokens regardless of order, so "Smith John" and "John
+        #    Smith" share the same token set — reuse the existing row instead
+        #    of spawning a duplicate one-off when the user re-types the name
+        #    last-first vs first-last. (Same-token-set scores highest so it
+        #    beats an unrelated substring folder hit.)
+        try:
+            for r in (self._oneoff_rows or []):
+                name = r.get("client") or ""
+                if not name:
+                    continue
+                n = _norm(name)
+                if n == typed_n:
+                    return name
+                n_tokens = {t for t in n.split() if len(t) >= 2}
+                if typed_tokens and typed_tokens == n_tokens:
+                    candidates.append((12, name))   # same name, any order
+                elif typed_tokens & n_tokens:
+                    candidates.append((6, name))
+        except Exception:
+            pass
 
         # 1. Daily run-doc clients
         try:
@@ -1261,21 +1488,36 @@ class Api:
                                         x[1].lower()))
         return candidates[0][1] if candidates else typed
 
-    def audit_one_job(self, client_name: str) -> dict:
+    def audit_one_job(self, client_name: str, folder_path: str = "",
+                      skip_canon: bool = False) -> dict:
         """Audit a single named job (one-off, not from the run-doc).
 
         Resolution order:
           1. Canonicalize the typed name — "Munson" → "Munson, Marta"
-             via run-doc / Trello-pin / folder lookups.
+             via run-doc / Trello-pin / folder lookups. SKIPPED when
+             `skip_canon` is set (the caller already picked the exact
+             canonical name from the candidate picker, so don't re-fuzz).
           2. Run audit_logic against the canonical name.
           3. Cache the result in `_oneoff_rows` (separate list from
              the Daily Run results). Re-typing the same name updates
              the same row instead of creating a duplicate.
+
+        `folder_path` (optional): when the user picked a specific folder
+        from the candidate list, pin it FIRST so audit_logic resolves to
+        exactly that folder instead of a re-fuzzed guess.
         """
         if not client_name or not client_name.strip():
             return {"ok": False, "error": "name required"}
         typed = client_name.strip()
-        canonical = self._canonicalize_client_name(typed)
+        canonical = typed if skip_canon else self._canonicalize_client_name(typed)
+        # Honor an explicit folder pick from the picker — pin it before
+        # auditing so the resolved folder is the one the user confirmed.
+        if folder_path:
+            try:
+                if os.path.isdir(folder_path):
+                    persistence.set_folder_path(canonical, folder_path)
+            except Exception:
+                pass
         try:
             # `run_date` must be a "MM-DD-YYYY" STRING downstream —
             # audit_logic._audit_one strptime()s it and sharepoint
@@ -1325,6 +1567,230 @@ class Api:
                     "typed": typed, "resolved": typed != canonical}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def list_audit_candidates(self, typed: str, scope: str = "") -> dict:
+        """Return ranked job candidates for a typed name so the Audit-one
+        dialog can show the matches and let the user CONFIRM the right
+        job — instead of audit_one_job silently grabbing the single
+        top fuzzy pick (_canonicalize_client_name's old behavior).
+
+        Combines three sources:
+          • today's run-doc job list   (source="run")
+          • pinned Trello cards         (source="pin")
+          • year-folder names           (source="folder"; `scope` passes
+            straight through to list_folder_candidates — "" = current
+            year, "all" = every year + fire jobs)
+
+        Each candidate: {name, label, source, detail, path, score}.
+        `name` is what you pass back to audit_one_job(skip_canon=True).
+        De-duped by normalized name (best score wins; a name found in
+        more than one source keeps the highest score and any known
+        folder path). `exact` flags a perfect name hit in run-doc/pins.
+        """
+        typed = (typed or "").strip()
+        if not typed:
+            return {"ok": False, "error": "name required"}
+        from web_helpers import norm_name as _norm, norm_tokens as _norm_tokens
+        typed_n = _norm(typed)
+        typed_tokens = _norm_tokens(typed)
+
+        # Collect EVERY source hit flat; variants of one job are grouped
+        # afterward (token-set, carrier-stripped) so a misspelling / name-
+        # order / carrier-suffix no longer splits one job into many rows.
+        raw: list = []
+        try:
+            _pins_map = persistence._load().get("trello_card_ids") or {}
+        except Exception:
+            _pins_map = {}
+        if not isinstance(_pins_map, dict):
+            _pins_map = {}
+
+        def _has_card(nm):
+            try:
+                import ems_db as _db
+                return bool(_pins_map.get(_db.canon_key(nm)))
+            except Exception:
+                return bool(_pins_map.get(_norm(nm)))
+
+        def _add(name, source, detail, path, score):
+            if not name:
+                return
+            raw.append({"name": name, "source": source, "detail": detail,
+                        "path": path or "", "score": score,
+                        "has_card": (source == "pin") or _has_card(name)})
+
+        exact = False
+
+        # 1. Today's run-doc jobs — most authoritative for "audit one".
+        try:
+            doc = _find_run_doc_for_date(_dt.date.today())
+            if doc:
+                jobs, _ = _state_hub.parse_run_doc(doc)
+                for j in jobs:
+                    name = j.get("client") or ""
+                    if not name:
+                        continue
+                    n = _norm(name)
+                    if n == typed_n:
+                        exact = True; score = 100
+                    elif typed_n in n or (len(n) >= 4 and n in typed_n):
+                        score = 30
+                    elif typed_tokens & set(t for t in n.split() if len(t) >= 2):
+                        score = 15
+                    else:
+                        continue
+                    try:
+                        pin_path = persistence.get_folder_path(name) or ""
+                    except Exception:
+                        pin_path = ""
+                    _add(name, "run", "On today's run-doc", pin_path, score)
+        except Exception:
+            pass
+
+        # 2. Pinned Trello cards.
+        try:
+            pins = persistence._load().get("trello_card_ids") or {}
+            if isinstance(pins, dict):
+                for client_key in pins.keys():
+                    n = _norm(client_key)
+                    if n == typed_n:
+                        exact = True; score = 90
+                    elif typed_n in n or (len(n) >= 4 and n in typed_n):
+                        score = 25
+                    elif typed_tokens & set(t for t in n.split() if len(t) >= 2):
+                        score = 12
+                    else:
+                        continue
+                    try:
+                        pin_path = persistence.get_folder_path(client_key) or ""
+                    except Exception:
+                        pin_path = ""
+                    _add(client_key, "pin", "Pinned Trello card",
+                         pin_path, score)
+        except Exception:
+            pass
+
+        # 3. Year-folder candidates (scope-aware).
+        try:
+            res = self.list_folder_candidates(typed, scope)
+            for c in (res.get("candidates") or [])[:40]:
+                sc = c.get("score", 0)
+                if sc <= 0:
+                    continue
+                detail = c.get("year_folder") or c.get("year") or "folder"
+                if c.get("is_fire"):
+                    detail = "🔥 " + detail
+                _add(c.get("name") or "", "folder", detail,
+                     c.get("path") or "", sc)
+        except Exception:
+            pass
+
+        cands = _group_audit_candidates(raw)
+        return {"ok": True, "candidates": cands, "exact": exact,
+                "scope": scope or "current", "typed": typed}
+
+    def merge_candidates(self, winner_name: str, variant_names: list) -> dict:
+        """Permanently fold duplicate spellings of ONE job into `winner`.
+
+        Powers the picker's 🔗 Merge button: consolidates the persisted
+        pins (every variant's Trello card + the first real folder) onto the
+        winner, drops the dupe spellings' pins, and merges the shared jobs-
+        graph identities (ems_db.merge_jobs). After this the misspelled /
+        reordered / carrier-suffixed variants stop existing as their own
+        thing everywhere, not just in this picker."""
+        winner = (winner_name or "").strip()
+        variants = [v.strip() for v in (variant_names or []) if v and v.strip()]
+        if not winner:
+            return {"ok": False, "error": "no winner"}
+        try:
+            import ems_db as _db
+            wkey = _db.canon_key(winner)
+            # Real dupes only — a variant whose canon key differs from the
+            # winner. Without this an empty/no-op merge would still upsert a
+            # bogus job for `winner` via resolve_and_link(create=True).
+            from_keys = [_db.canon_key(v) for v in variants
+                         if _db.canon_key(v) != wkey]
+            if not from_keys:
+                return {"ok": False, "error": "nothing to merge"}
+            group = [winner] + variants
+            # Union every pinned card across the group (winner's first).
+            cards: list = []
+            for nm in group:
+                try:
+                    for cid in (persistence.get_trello_card_ids(nm) or []):
+                        if cid and cid not in cards:
+                            cards.append(cid)
+                except Exception:
+                    pass
+            # First real folder across the group.
+            folder = ""
+            for nm in group:
+                try:
+                    fp = persistence.get_folder_path(nm) or ""
+                except Exception:
+                    fp = ""
+                if fp:
+                    folder = fp
+                    break
+            # Consolidate onto the winner.
+            try:
+                if cards:
+                    persistence.set_trello_card_ids(winner, cards)
+                if folder:
+                    persistence.set_folder_path(winner, folder)
+            except Exception:
+                pass
+            # Drop each dupe spelling's pins — but NEVER one that canon-
+            # collapses to the winner (that's the winner's own entry).
+            dropped = 0
+            for v in variants:
+                if _db.canon_key(v) == wkey:
+                    continue
+                try:
+                    persistence.set_trello_card_ids(v, [])
+                except Exception:
+                    pass
+                try:
+                    persistence.set_folder_path(v, "")
+                except Exception:
+                    pass
+                dropped += 1
+            # Merge the shared jobs-graph identities (upsert winner first).
+            try:
+                _db.resolve_and_link(
+                    winner, folder_path=folder,
+                    trello_card=(cards[0] if cards else ""),
+                    create=True, display_name=winner)
+                _db.merge_jobs(wkey, from_keys)
+            except Exception:
+                pass
+            return {"ok": True, "winner": winner, "dropped": dropped,
+                    "cards": len(cards), "folder": folder}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def suggest_card_for(self, client_name: str) -> dict:
+        """Return the best-matching open Trello card(s) for a cardless job
+        so the picker can offer Attach/Skip at pick/merge time. One clear
+        match, a short list, or none."""
+        name = (client_name or "").strip()
+        if not name:
+            return {"ok": False, "error": "name required", "cards": []}
+        try:
+            import trello_client as _tc
+            found = _tc.find_cards_by_name(name, max_results=8) or []
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "cards": []}
+        out = []
+        for c in found:
+            cid = c.get("card_id") or c.get("id") or ""
+            if not cid:
+                continue
+            out.append({"card_id": cid,
+                        "name":      c.get("name") or "",
+                        "board":     c.get("board") or "",
+                        "list_name": c.get("list_name") or ""})
+        return {"ok": True, "cards": out, "count": len(out)}
 
     def list_oneoff(self) -> dict:
         """Return the one-off audits run today (separate from
@@ -1406,9 +1872,13 @@ class Api:
                     "error": f"no OD folder pinned for {client} — "
                              "pin one via Find Folder before saving"}
         try:
-            from audit_logic import find_docs_dir
+            from audit_logic import find_docs_dir, active_job_base
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+        # Multi-claim jobs hold the current claim in a "Nth Claim" subfolder;
+        # descend into it deterministically so the scope doesn't land in the
+        # shared job root / a stale claim's DOCS.
+        target_path = active_job_base(target_path)
         ems = os.path.join(target_path, "EMS")
         base = ems if os.path.isdir(ems) else target_path
         docs = find_docs_dir(base) or os.path.join(base, "DOCS")
@@ -1459,7 +1929,7 @@ class Api:
             return {"ok": False, "error": "no rooms provided"}
         try:
             import snapshot_logic as sg
-            from audit_logic import find_docs_dir
+            from audit_logic import find_docs_dir, active_job_base
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
         # Build the default destination first so the override logic
@@ -1471,6 +1941,9 @@ class Api:
             if not target_path:
                 return {"ok": False,
                         "error": f"no folder found for {client}"}
+            # Descend into the active "Nth Claim" subfolder for multi-claim
+            # jobs so the scope lands under the current claim, deterministically.
+            target_path = active_job_base(target_path)
             ems = os.path.join(target_path, "EMS")
             base = ems if os.path.isdir(ems) else target_path
             docs = find_docs_dir(base) or os.path.join(base, "DOCS")
@@ -1512,17 +1985,61 @@ class Api:
                     "error": f"build returned but file missing: {out_path}"}
         return {"ok": True, "path": out_path}
 
+    # ── New Loss from carrier assignment email ───────────────────────
+    def parse_new_loss(self, text: str) -> dict:
+        """Parse a pasted carrier assignment email into editable fields."""
+        try:
+            import new_loss_intake as nli
+            fields = nli.parse_assignment_email(text or "")
+            fields["loss_type"] = nli.loss_type_from(fields.get("type_of_loss"))
+            fields["card_name"] = nli.suggest_card_name(fields)
+            return {"ok": True, "fields": fields}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def new_loss_templates(self) -> dict:
+        """Which loss templates (water/fire/property) exist on the active
+        department's WIP board — so the dialog can show/grey the options."""
+        try:
+            import new_loss_intake as nli
+            t = nli.list_templates()
+            return {
+                "ok":      bool(t),
+                "water":   "water" in t,
+                "fire":    "fire" in t,
+                "property": "property" in t,
+                "board":   (t.get("_board") or {}).get("name", ""),
+                "intake":  (t.get("_intake") or {}).get("name", ""),
+            }
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def create_new_loss(self, fields: dict) -> dict:
+        """Clone the matching template into the intake list and fill it."""
+        try:
+            import new_loss_intake as nli
+            fields = dict(fields or {})
+            return nli.create_new_loss(fields, fields.get("loss_type"))
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     # ── P0: XactAnalysis quick link from right-click menu ────────────
-    def open_xa_link(self, client: str) -> bool:
-        """Open the client's XactAnalysis card link via Trello card
-        attachment or canned XA URL pattern."""
-        if not client:
+    def open_xa_link(self, client: str, card_id: str = "") -> bool:
+        """Open the client's XactAnalysis link from the pinned Trello card.
+
+        Prefer the `card_id` the row already carries (what the Trello button
+        uses) — re-looking it up by name via get_trello_card_id is fragile
+        (a display-name / pin-key drift makes it silently miss). Fall back to
+        the name lookup only when the caller didn't pass an id."""
+        card_id = (card_id or "").strip()
+        if not card_id:
+            if not client:
+                return False
+            card_id = persistence.get_trello_card_id(client) or ""
+        if not card_id:
             return False
         try:
             import trello_client as tc
-            card_id = persistence.get_trello_card_id(client) or ""
-            if not card_id:
-                return False
             # card_xa_link needs the card DICT (it parses .desc) — fetch it,
             # don't pass the bare id (that silently returned "" before).
             card = tc.get_card(card_id) or {}
@@ -1577,6 +2094,124 @@ class Api:
             return {"ok": True, "claim": claim}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+
+    def get_initial_cat_class(self, client: str, card_id: str = "") -> dict:
+        """Pull the water Category + Class out of the initial-inspection
+        notes the tech posts in the card's Trello COMMENTS (not the card
+        desc). Backs the audit Initial-section '🔢 Cat / Class' button.
+        Returns {ok, text, cat, klass} where text reads "Cat 2 · Class 3"
+        (whichever parts the notes actually carried)."""
+        import re as _re
+        try:
+            import trello_client as tc
+            import initial_notes_parser as inp
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        cid = (card_id or "").strip() or (
+            persistence.get_trello_card_id(client) or "")
+        if not cid:
+            return {"ok": False, "error": "no pinned Trello card"}
+        try:
+            comments = tc.get_all_comments(cid) or []
+        except Exception as ex:
+            return {"ok": False, "error": f"comment fetch failed: {ex}"}
+        text = "\n".join((a.get("data") or {}).get("text", "")
+                         for a in comments)
+        blocks = inp.parse_initial_inspection_notes(text) or []
+        # Prefer the earliest block that names a Category/Class; merge so a
+        # block with only one of the two still contributes.
+        cat = klass = ""
+        for b in blocks:
+            cat = cat or str(b.get("Category") or "").strip()
+            klass = klass or str(b.get("Class") or "").strip()
+            if cat and klass:
+                break
+        if not (cat or klass):
+            return {"ok": False,
+                    "error": "no Category/Class in the card's initial notes"}
+
+        def _fmt(label, val):
+            v = (val or "").strip()
+            if not v:
+                return ""
+            # Don't double the label when the value already spells it out
+            # ("Cat 2" / "Category 2" / "Class 3").
+            if _re.search(r'categor|\bcat\b|class', v, _re.I):
+                return v
+            return f"{label} {v}"
+
+        parts = [p for p in (_fmt("Cat", cat), _fmt("Class", klass)) if p]
+        return {"ok": True, "text": " · ".join(parts),
+                "cat": cat, "klass": klass}
+
+    def import_initial_notes(self, client: str, card_id: str = "") -> dict:
+        """Parse the FULL initial-inspection field template out of the card's
+        Trello comments and return a clean summary. Backs the audit Initial-
+        section '📋 Import notes' button (the whole-template sibling of the
+        Cat/Class grab). Returns {ok, summary, fields} where `summary` is a
+        formatted multi-line block ready to paste into the snapshot / job
+        notes, and `fields` is the structured dict of the first block."""
+        try:
+            import trello_client as tc
+            import initial_notes_parser as inp
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        cid = (card_id or "").strip() or (
+            persistence.get_trello_card_id(client) or "")
+        if not cid:
+            return {"ok": False, "error": "no pinned Trello card"}
+        try:
+            comments = tc.get_all_comments(cid) or []
+        except Exception as ex:
+            return {"ok": False, "error": f"comment fetch failed: {ex}"}
+        text = "\n".join((a.get("data") or {}).get("text", "")
+                         for a in comments)
+        blocks = inp.parse_initial_inspection_notes(text) or []
+        if not blocks:
+            return {"ok": False,
+                    "error": "no initial-inspection notes found on the card"}
+        summary = inp.format_initial_notes(blocks) or ""
+        if not summary.strip():
+            return {"ok": False, "error": "initial notes parsed empty"}
+        return {"ok": True, "summary": summary, "fields": blocks[0]}
+
+    def get_job_log(self, client: str, card_id: str = "") -> dict:
+        """Email-aware job log from the card's Trello comments, plus EQ-on-
+        site status. Strips quoted email/proposal noise and stamps each field
+        event with its comment date (so a bare 'Air scrubber picked up' note
+        is still dated). Backs the audit Initial-section '🗒 Job log' button.
+        Returns {ok, text, rows, eq, eq_warn, count}."""
+        try:
+            import trello_client as tc
+            import snapshot_logic as sg
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        cid = (card_id or "").strip() or (
+            persistence.get_trello_card_id(client) or "")
+        if not cid:
+            return {"ok": False, "error": "no pinned Trello card"}
+        try:
+            comments = tc.get_all_comments(cid) or []
+        except Exception as ex:
+            return {"ok": False, "error": f"comment fetch failed: {ex}"}
+        log = sg.extract_job_log(comments)
+        eq = sg.eq_lifecycle(comments)
+        lines = [
+            f"{r['date']} {r['weekday']} — {r['activity']}"
+            + (f" ({r['who']})" if r['who'] else "")
+            for r in log
+        ]
+        eq_warn = ""
+        if eq.get("outstanding"):
+            d = eq.get("days_out")
+            eq_warn = ("⚠ Equipment still on site"
+                       + (f" ({d}d)" if d else "")
+                       + f" — placed {', '.join(eq.get('placed') or [])}, "
+                       "no pickup logged")
+        if not log and not eq_warn:
+            return {"ok": False, "error": "no datable field events in comments"}
+        return {"ok": True, "text": "\n".join(lines), "rows": log,
+                "eq": eq, "eq_warn": eq_warn, "count": len(log)}
 
     # ── P1: Escalation dialog (Teams to role + mark escalated) ──────
     def get_escalation_roles(self):
@@ -2034,6 +2669,105 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    def trello_enrichment(self, client: str, card_id: str = "") -> dict:
+        """Rich Trello read for the audit detail pane — everything the
+        row itself doesn't carry, from ONE get_card call: lane/status +
+        last activity, loss type + labels, due date, checklist progress,
+        assigned members, adjuster/customer email, and the latest few
+        comments (pulled from the card's inlined actions — no extra
+        call). Cached 60s per card. Returns {ok, has_card, ...};
+        has_card=False when nothing is pinned so the frontend renders
+        nothing."""
+        if not card_id and client:
+            try:
+                card_id = persistence.get_trello_card_id(client) or ""
+            except Exception:
+                card_id = ""
+        if not card_id:
+            return {"ok": True, "has_card": False}
+        try:
+            cache = getattr(self, "_card_enrich_cache", None)
+            if cache is None:
+                cache = {}
+                self._card_enrich_cache = cache
+            import time as _time
+            now = _time.time()
+            hit = cache.get(card_id)
+            if hit and (now - hit[0]) < 60:
+                return hit[1]
+            import trello_client as tc
+            card = tc.get_card(card_id) or {}
+            try:
+                lane = tc.get_lane_name(card.get("idBoard") or "",
+                                        card.get("idList") or "") or ""
+            except Exception:
+                lane = ""
+            try:
+                loss = tc.card_loss_type(card) or ""
+            except Exception:
+                loss = ""
+            try:
+                done, total = tc.checklist_progress(card)
+            except Exception:
+                done, total = 0, 0
+            members = [m.get("fullName") or m.get("username") or ""
+                       for m in (card.get("members") or []) if m]
+            members = [m for m in members if m]
+            try:
+                fields = tc.parse_card_desc(card.get("desc") or "") or {}
+            except Exception:
+                fields = {}
+            ins = fields.get("INSURANCE INFORMATION") or {}
+            cust = fields.get("CUSTOMER INFORMATION") or {}
+            adjuster_email = (ins.get("ADJUSTER EMAIL") or "").strip()
+            customer_email = (cust.get("EMAIL")
+                              or cust.get("EMAIL ADDRESS") or "").strip()
+            # These template fields sometimes hold a website/URL, not an
+            # address — only keep a real-looking email so "Copy email"
+            # never hands back "https://…".
+            if "@" not in adjuster_email:
+                adjuster_email = ""
+            if "@" not in customer_email:
+                customer_email = ""
+            # Latest comments ride along in the card's inlined actions —
+            # no separate paged fetch needed.
+            comments = []
+            for a in (card.get("actions") or []):
+                if a.get("type") != "commentCard":
+                    continue
+                txt = ((a.get("data") or {}).get("text") or "").strip()
+                if not txt:
+                    continue
+                comments.append({
+                    "author": (a.get("memberCreator") or {}).get("fullName") or "",
+                    "date": (a.get("date") or "")[:10],
+                    "text": txt})
+                if len(comments) >= 5:
+                    break
+            due = card.get("due") or ""
+            payload = {
+                "ok": True, "has_card": True,
+                "name": card.get("name") or "",
+                "lane": lane,
+                "labels": [l.get("name") or "" for l in (card.get("labels") or [])
+                           if l and (l.get("name") or "")],
+                "loss_type": loss,
+                "due": due[:10] if isinstance(due, str) else "",
+                "due_complete": bool(card.get("dueComplete")),
+                "last_activity": (card.get("dateLastActivity") or "")[:10],
+                "checklist_done": done, "checklist_total": total,
+                "members": members,
+                "adjuster_email": adjuster_email,
+                "customer_email": customer_email,
+                "comments": comments,
+                "url": card.get("shortUrl")
+                or (f"https://trello.com/c/{card_id}" if card_id else ""),
+            }
+            cache[card_id] = (now, payload)
+            return payload
+        except Exception as ex:
+            return {"ok": False, "has_card": True, "error": str(ex)}
+
     def get_inprogress_checklist(self, client: str) -> dict:
         """Return the IN PROGRESS - ADMIN checklist for a client's pinned
         Trello card so the audit card can render it inline with a checkbox
@@ -2456,7 +3190,8 @@ class Api:
 
     def sp_copy_to_pics(self, client: str, sp_path: str,
                          target_pics: str = "",
-                         job_path: str = "", side: str = "ems") -> dict:
+                         job_path: str = "", side: str = "ems",
+                         tech: str = "") -> dict:
         """Copy NEW images from `sp_path` into the job's PICS tree.
 
         Resolution order for the destination PICS root:
@@ -2583,7 +3318,14 @@ class Api:
         # are still available — re-enable by toggling.
         import re as _re
         from sharepoint import _infer_tech
-        tech = _infer_tech(sp_path) or "Unknown"
+        # Image imports must attribute a tech. SP folders are usually named
+        # by the tech, so infer first; require the caller to supply one only
+        # when it can't be determined (frontend then prompts, pre-filled).
+        tech = (tech or "").strip() or (_infer_tech(sp_path) or "")
+        if not tech or tech.strip().lower() == "unknown":
+            return {"ok": False, "need_tech": True,
+                    "error": ("Couldn't tell which tech shot this SharePoint "
+                              "folder — pick one before importing.")}
         sp_name = os.path.basename(sp_path.rstrip(os.sep)) or "SharePoint"
 
         def _safe(s):
@@ -2609,18 +3351,24 @@ class Api:
         except Exception:
             stage_match = ""
         # When the SP folder name itself doesn't name a stage, fall back
-        # to TODAY's run-doc activity for this job — so a run-doc "Demo"
+        # to the run-doc activity for this job — so a run-doc "Demo"
         # routes the SP pics into PICS/<Demo pics> instead of dumping at
-        # the PICS root. Only fires when the job is actually on today's
-        # run-doc with a single clear activity: no run-doc match (empty
-        # labels) or an ambiguous multi-activity day leaves it at the
-        # PICS root, exactly as before. The tech's own SP folder-name
-        # label still wins when present ("unless specified"). (2026-06-17)
+        # the PICS root. The run-doc is the one for the DATE embedded in
+        # the SP folder name ("Melvin 6-10-26" → 6-10-26), so photos route
+        # by the activity on the DAY THEY WERE TAKEN — not today. Falls
+        # back to today's run-doc only when the folder name carries no
+        # parseable date. Only fires when the job is on that day's run-doc
+        # with a single clear activity: no match (empty labels) or an
+        # ambiguous multi-activity day leaves it at the PICS root, exactly
+        # as before. The tech's own SP folder-name stage label still wins
+        # when present ("unless specified"). (2026-06-17, dated 2026-06-19)
         if not stage_match:
             try:
                 from audit_logic import resolve_pics_subfolder
-                _labels = _activity_labels_from_run_doc(
-                    _dt.date.today().strftime("%m-%d-%Y"), client)
+                _fdate = _extract_date_from_folder_name(sp_name)
+                _date_str = (_fdate.strftime("%m-%d-%Y") if _fdate
+                             else _dt.date.today().strftime("%m-%d-%Y"))
+                _labels = _activity_labels_from_run_doc(_date_str, client)
                 if _labels:
                     _sub2, _needs2 = resolve_pics_subfolder(_labels)
                     if _sub2 and not _needs2:
@@ -2630,27 +3378,33 @@ class Api:
         if stage_match:
             stage_dest = os.path.join(pics_root, stage_match)
 
-        # Reserve the target folder with collision-suffixing — Tk
-        # adds "(2)", "(3)", … when the same folder_name already
-        # exists. Mirrors run_audit_gui.py:4028-4034.
+        # Reuse the existing same-name folder and MERGE into it — add the
+        # new items rather than spawning "<name> (2)" / "(3)" every re-import.
+        # Per-file dedup (existing basenames, below) skips photos already in
+        # OD, and the per-file " (2)" suffix handles a genuine same-name/
+        # different-file clash — so merging can't lose or duplicate. (2026-07-01)
         target_dir = os.path.join(stage_dest, folder_name)
-        n = 2
-        while os.path.exists(target_dir):
-            target_dir = os.path.join(stage_dest, f"{folder_name} ({n})")
-            n += 1
         try:
-            os.makedirs(target_dir, exist_ok=False)
+            os.makedirs(target_dir, exist_ok=True)
         except Exception as ex:
             return {"ok": False, "error": f"mkdir dest: {ex}"}
 
         # Existing image basenames (under PICS, recursively) so the
         # diff matches Tk's behavior — basename-only, case-insensitive.
-        IMG_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif",
+        IMG_EXTS = {".jpg", ".jpeg", ".jfif", ".png", ".heic", ".heif",
                     ".bmp", ".tif", ".tiff", ".webp"}
+        # Videos ride along with SP imports; they stay in the same target
+        # folder but tucked into a "Videos" subfolder (user rule 2026-07-01)
+        # so they don't clutter the photo set. Broad extension set so phone /
+        # bodycam / drone clips aren't silently dropped.
+        VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm",
+                      ".3gp", ".3g2", ".mts", ".m2ts", ".wmv", ".mpg",
+                      ".mpeg", ".hevc", ".flv"}
+        MEDIA_EXTS = IMG_EXTS | VIDEO_EXTS
         existing = set()
         for root, _dirs, files in os.walk(pics_root):
             for f in files:
-                if os.path.splitext(f)[1].lower() in IMG_EXTS:
+                if os.path.splitext(f)[1].lower() in MEDIA_EXTS:
                     existing.add(f.lower())
 
         # Walk source recursively — preserve subfolder structure
@@ -2673,8 +3427,10 @@ class Api:
         for root, _dirs, files in os.walk(sp_path):
             rel_dir = os.path.relpath(root, sp_path)
             for f in files:
-                if os.path.splitext(f)[1].lower() not in IMG_EXTS:
+                ext = os.path.splitext(f)[1].lower()
+                if ext not in MEDIA_EXTS:
                     continue
+                is_video = ext in VIDEO_EXTS
                 if f.lower() in existing:
                     skipped += 1
                     continue
@@ -2693,8 +3449,12 @@ class Api:
                         # (copy2's read might hydrate anyway, or the
                         # error will surface there with a real msg).
                         pass
-                dest_sub = (target_dir if rel_dir in (".", "")
-                            else os.path.join(target_dir, rel_dir))
+                if is_video:
+                    # Same target folder, videos nested in a Videos subfolder.
+                    dest_sub = os.path.join(target_dir, "Videos")
+                else:
+                    dest_sub = (target_dir if rel_dir in (".", "")
+                                else os.path.join(target_dir, rel_dir))
                 try:
                     os.makedirs(dest_sub, exist_ok=True)
                     # File-level collision: preserve the original name
@@ -3646,7 +4406,7 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex), "attachments": []}
         out = []
-        _IMG_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp",
+        _IMG_EXTS = {".jpg", ".jpeg", ".jfif", ".png", ".heic", ".heif", ".webp",
                      ".bmp", ".tif", ".tiff", ".gif",
                      ".mp4", ".mov", ".m4v", ".avi"}
         for a in (raw or []):
@@ -4054,7 +4814,7 @@ class Api:
         # Per-unit summary: count photos in EMS/PICS, last activity,
         # whether the standard subfolders exist. Bounded scan so a
         # property with 200 units doesn't time out.
-        IMG_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif",
+        IMG_EXTS = {".jpg", ".jpeg", ".jfif", ".png", ".heic", ".heif",
                     ".webp", ".bmp", ".tif", ".tiff", ".gif"}
         unit_rows = []
         for u in units[:200]:
@@ -4196,6 +4956,77 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    def create_and_route_unit(self, parent_path: str, unit_name: str,
+                              import_paths=None) -> dict:
+        """Create a missing referenced unit folder under `parent_path`,
+        scaffold it (mirroring an existing sibling's skeleton), and move
+        any `import_paths` (the in-progress import's files) into its
+        EMS/PICS. The ➕ create-missing-child action.
+
+        The caller (JS confirm dialog) supplies the editable `unit_name`
+        and the file list, so this does NOT prompt. Returns
+        {ok, path, created, moved, failed, error}."""
+        if not parent_path or not os.path.isdir(parent_path):
+            return {"ok": False, "error": "parent folder not found"}
+        name = (unit_name or "").strip()
+        if not name:
+            return {"ok": False, "error": "no unit name"}
+        try:
+            import child_folder_ops as _cfops
+            import audit_logic as _al
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        # Pick an existing sibling unit to copy the subfolder skeleton
+        # from; None → create_and_route falls back to EMS/PICS+DOCS.
+        sibling = ""
+        try:
+            sibs = _al.list_unit_subfolders(parent_path) or []
+            for s in sibs:
+                if s.get("num") is not None and s.get("path"):
+                    sibling = s["path"]
+                    break
+            if not sibling and sibs:
+                sibling = sibs[0].get("path") or ""
+        except Exception:
+            sibling = ""
+        files = [p for p in (import_paths or []) if p and os.path.isfile(p)]
+        try:
+            return _cfops.create_and_route_unit(
+                parent_path, name, import_files=files,
+                sibling_path=sibling or None)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def count_loose_parent_photos(self, parent_path: str) -> dict:
+        """Count media files sitting loose in a multi-unit parent's root
+        (top-level, and root-level PICS/Photos) — i.e. photos that never
+        made it into a unit subfolder. Flag-only signal for the ⚠ chip;
+        does NOT move anything. Returns {count, sample:[names]}."""
+        exts = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".gif",
+                ".bmp", ".tif", ".tiff", ".webp", ".mp4", ".mov"}
+        if not parent_path or not os.path.isdir(parent_path):
+            return {"count": 0, "sample": []}
+        names = []
+        scan_dirs = [parent_path,
+                     os.path.join(parent_path, "PICS"),
+                     os.path.join(parent_path, "Photos")]
+        for d in scan_dirs:
+            if not os.path.isdir(d):
+                continue
+            try:
+                with os.scandir(d) as it:
+                    for e in it:
+                        try:
+                            if not e.is_file(follow_symlinks=False):
+                                continue
+                        except OSError:
+                            continue
+                        if os.path.splitext(e.name)[1].lower() in exts:
+                            names.append(e.name)
+            except OSError:
+                continue
+        return {"count": len(names), "sample": names[:8]}
+
     # ── Reset all per-client memory (Tk's right-click bottom item) ──
     def reset_client_memory(self, client: str) -> dict:
         """Wipe every sticky per-client pin + flag. Mirrors Tk
@@ -4248,11 +5079,13 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
         resolved_count = 0
-        if on:
-            try:
-                from audit_logic import is_commercial_form, persist_key
-                run_date = (self._last_meta.get("date_iso") or
-                            _dt.date.today().strftime("%Y-%m-%d"))
+        try:
+            from audit_logic import (is_commercial_form, persist_key,
+                                     REQUIRED_FORMS)
+            run_date = (self._last_meta.get("date_iso") or
+                        _dt.date.today().strftime("%Y-%m-%d"))
+            if on:
+                # Auto-resolve the commercial forms currently flagged missing.
                 row = next((r for r in self._last_rows
                             if r.get("client") == client), None)
                 if row is not None:
@@ -4264,11 +5097,83 @@ class Api:
                                 resolved_count += 1
                             except Exception:
                                 pass
-            except Exception:
-                pass
+            else:
+                # Turning commercial OFF must UN-hide the forms it resolved,
+                # else they stay filtered out forever (the toggle was one-way).
+                # The row's form_issues are empty by now (they were resolved),
+                # so clear the known commercial forms by name.
+                for name, _pat in REQUIRED_FORMS:
+                    if is_commercial_form(name):
+                        try:
+                            persistence.set_resolved(
+                                run_date, client, persist_key(name), False)
+                            resolved_count += 1
+                        except Exception:
+                            pass
+        except Exception:
+            pass
         return {"ok": True, "on": bool(on), "resolved_count": resolved_count}
 
     # ── Single-card re-audit ─────────────────────────────────────────
+    def _auto_pin_unit_folder(self, client: str) -> bool:
+        """When `client` names a specific unit of a multi-unit property but
+        has no folder pin yet, resolve the umbrella folder and pin the
+        matching `Unit …` subfolder — so the audit resolves the RIGHT unit
+        instead of landing on the umbrella (or 'folder not found').
+
+        Deliberately conservative: no-op when a pin already exists, when the
+        name carries no unit token, or when the umbrella holds 0 OR >1 folders
+        for that unit number (ambiguous — e.g. two dated 'Unit 1611' folders).
+        In the ambiguous case the user still gets the picker. Returns True
+        only when it actually pinned a folder."""
+        if not client:
+            return False
+        try:
+            import multi_unit_gui as _mu
+            import persistence as _ps
+            import audit_logic as _al
+            import config as _cfg
+        except Exception:
+            return False
+        try:
+            if (_ps.get_folder_path(client) or "").strip():
+                return False   # respect an existing pin (incl. picker pins)
+        except Exception:
+            pass
+        try:
+            num = _mu.parse_unit_token(client)
+        except Exception:
+            num = None
+        if num is None:
+            return False
+        prop = client
+        try:
+            import ems_db as _db
+            p, _u = _db.detect_property_and_unit(client)
+            if p:
+                prop = p
+        except Exception:
+            pass
+        try:
+            base = (_cfg.load() or {}).get("audit_base") or ""
+            path, _bn, _yr = _al.try_resolve_folder_by_terms(base, [prop])
+        except Exception:
+            path = None
+        if not path:
+            return False
+        try:
+            units = _mu.list_unit_subfolders(path) or []
+        except Exception:
+            return False
+        matches = [u for u in units if u.get("num") == num]
+        if len(matches) != 1:
+            return False   # 0 or ambiguous → let the picker decide
+        try:
+            _ps.set_folder_path(client, matches[0]["path"])
+            return True
+        except Exception:
+            return False
+
     def reaudit_one(self, client: str) -> dict:
         """Re-audit just one client and update the cached row in
         place. Returns the updated row dict so the JS can splice it
@@ -4313,24 +5218,75 @@ class Api:
                     "techs":    (cached.get("techs") if cached else []) or [],
                     "new_loss": bool(cached.get("new_loss") if cached else False),
                 }
+            # ── Multi-claim: resolve the RIGHT claim folder ──────────
+            # A claim-suffixed client ("Mansolino Sayra 1st Claim") audited
+            # directly makes the folder lookup descend to the LATEST claim
+            # (2nd) — the snapshot/single-card audit then showed the WRONG
+            # claim's folder + files. The Daily Run avoids this by expanding
+            # the BASE name into per-claim rows (each with a folder_override).
+            # Mirror that here: when the name carries a claim label, expand
+            # the base + pick the row for THIS claim. (2026-06-24, parity
+            # with the Daily Run multi-claim fix.)
+            target_client = match.get("client") or client
+            claim_lbl = ""
+            try:
+                claim_lbl = audit_logic.claim_label_from_folder(target_client)
+            except Exception:
+                claim_lbl = ""
+            audit_name = target_client
+            if claim_lbl:
+                _idx = target_client.lower().rfind(claim_lbl.lower())
+                if _idx > 0:
+                    audit_name = target_client[:_idx].strip() or target_client
+            # Multi-unit: auto-pin the matching Unit subfolder when this name
+            # unambiguously points to one unit of an umbrella (and isn't
+            # already pinned) so the resolver finds the unit, not the parent.
+            try:
+                self._auto_pin_unit_folder(audit_name)
+            except Exception:
+                pass
             results, err = audit_jobs(
-                [match.get("client")],
+                [audit_name],
                 run_date=run_date,
-                use_cache=False)  # force fresh check
+                use_cache=False,                 # force fresh check
+                expand_subjobs=bool(claim_lbl))
             if err or not results:
                 return {"ok": False, "error": err or "no result"}
+            # Pick the result for THIS client. For a claim-suffixed name,
+            # match the expanded per-claim row (exact, then by claim label);
+            # otherwise the single result.
+            def _cn(s):
+                return " ".join((s or "").strip().lower().split())
+            chosen = None
+            if claim_lbl:
+                chosen = next(
+                    (r for r in results
+                     if _cn(r.get("client")) == _cn(target_client)), None)
+                if chosen is None:
+                    _cl = claim_lbl.lower()
+                    chosen = next(
+                        (r for r in results
+                         if _cl in _cn(r.get("client"))), None)
+            chosen = chosen or results[0]
+            # Adopt the resolved per-claim/result client so the row's
+            # client / row_key / pin / folder are correct + distinct
+            # (mirrors the Daily Run _shape_job client-adoption fix).
+            _rc = chosen.get("client") or ""
+            if _rc and _rc != match.get("client"):
+                match = {**match, "client": _rc}
             # SP enrichment so the row's 📥 +N chip + match dialog
             # stay in sync after a re-audit. Single-row call so we
             # skip the (expensive) folder_index build.
             try:
-                enrich_with_sharepoint(results[0], run_date)
+                enrich_with_sharepoint(chosen, run_date)
             except Exception:
                 pass
             try:
-                pin = persistence.get_trello_card_id(client) or ""
+                pin = persistence.get_trello_card_id(
+                    match.get("client") or client) or ""
             except Exception:
                 pin = ""
-            new_row = _shape_job(match, results[0], pin)
+            new_row = _shape_job(match, chosen, pin)
             # Splice into whichever cache the client lives in. One-off
             # audits stay in _oneoff_rows; daily-run rows stay in
             # _last_rows. Falling through to _last_rows append would
@@ -4371,6 +5327,19 @@ class Api:
             _dsi = None
 
         downloads = DOWNLOADS
+
+        # Repair extensionless downloads FIRST, so the extension-based
+        # scans below (scope/document PDFs, zips) can see them and so the
+        # files open normally in Windows. CompanyCam's web export drops
+        # PDFs/photos with no extension (e.g. `Servpro Authorization`);
+        # this sniffs the real type and appends the right suffix. Only
+        # touches files that have no extension — safe + reversible.
+        try:
+            import file_signature as _fsig
+            repaired = _fsig.repair_directory(downloads)
+        except Exception:
+            repaired = []
+
         candidates = []
 
         # WC attachments (mixed photos+forms, IUQ style)
@@ -4552,11 +5521,12 @@ class Api:
             "downloads": downloads,
             "client":    client,
             "candidates": candidates,
+            "repaired":  repaired,
         }
 
     def do_import(self, client: str, kind: str,
                    zip_paths: list[str], dest_subfolder: str = "",
-                   tech: str = "") -> dict:
+                   tech: str = "", side: str = "ems") -> dict:
         """Extract one zip group into the target job's EMS folder.
 
         `dest_subfolder` (optional) is the PICS stage folder the user
@@ -4587,12 +5557,19 @@ class Api:
         if not zip_paths:
             return {"ok": False, "error": "no zip paths given"}
 
-        ems_dir   = os.path.join(target_path, "EMS")
-        pics_root = os.path.join(ems_dir, "PICS")
-        docs_root = os.path.join(ems_dir, "DOCS")
+        # Contents-side routing: when side="contents" the whole import
+        # targets the CONTENTS sibling of EMS (CONTENTS/PICS, CONTENTS/
+        # DOCS) — a separate tree OUTSIDE EMS. Mirrors the SP import's
+        # 📦 Contents-side toggle. Creates CONTENTS/ if the job doesn't
+        # have one yet. (2026-06-22)
+        _is_contents = (side or "").strip().lower() == "contents"
+        base_dir  = os.path.join(target_path,
+                                 "CONTENTS" if _is_contents else "EMS")
+        pics_root = os.path.join(base_dir, "PICS")
+        docs_root = os.path.join(base_dir, "DOCS")
 
         try:
-            os.makedirs(ems_dir,   exist_ok=True)
+            os.makedirs(base_dir,  exist_ok=True)
             os.makedirs(pics_root, exist_ok=True)
             os.makedirs(docs_root, exist_ok=True)
         except OSError as ex:
@@ -4646,6 +5623,15 @@ class Api:
         elif _user_dest and _user_dest.upper() != "AUTO":
             sub = _user_dest
 
+        # Every IMAGE import must attribute a tech (companycam has no
+        # photographer in the export; wc_attachments are field photos).
+        # A DOCS-forced pick is paperwork, so it's exempt. Frontend prompts
+        # for the tech (pre-filled from the run-doc); this is the guarantee.
+        if (kind in ("companycam", "wc_attachments")
+                and _docs_dest is None and not (tech or "").strip()):
+            return {"ok": False, "need_tech": True,
+                    "error": "Pick a tech before importing photos."}
+
         # Resolve the PICS target but DON'T create it yet. The per-file
         # placement loop below makes it lazily — and only when an image
         # actually lands there. Creating it up front left empty
@@ -4656,6 +5642,15 @@ class Api:
 
         pics_count, docs_count = 0, 0
         sketches_count = 0
+        # Basenames of every file that lands in DOCS this import — used to
+        # decide whether a COS (Certificate of Satisfaction) was added, so
+        # the CLOSE OUT "FINAL PAPERWORK" checklist item only auto-ticks
+        # when the COS itself arrives (not on any docusign/WC doc). (2026-06-22)
+        _docs_landed_names: list[str] = []
+        # Basenames of files whose move+copy fallback BOTH failed — they
+        # never landed, so they must NOT be counted as imported (audit
+        # bug #6: silent `except OSError: pass` reported them as success).
+        _import_failed: list[str] = []
         try:
             if kind == "document":
                 # Loose client-named doc (invoice / statement / report) →
@@ -4678,6 +5673,7 @@ class Api:
                         try: os.remove(src)
                         except OSError: pass
                     docs_count += 1
+                    _docs_landed_names.append(os.path.basename(dst))
             elif kind == "scope":
                 # Written scope PDF — drop into <EMS>/DOCS/Scope.pdf
                 # (the canonical filename audit_logic.check_forms
@@ -4729,16 +5725,28 @@ class Api:
                 docs_count = 1
             elif kind == "docusign":
                 import docusign_import as _dsi
-                # DS packets go to DOCS; one zip per call.
+                # DS packets go to DOCS; one zip per call. `landed` is
+                # {form_kind: [filenames]} — flatten the names so the COS
+                # check below can see exactly what came in.
                 landed = _dsi.import_zip(zip_paths[0], docs_root)
                 docs_count = len(landed) if hasattr(landed, "__len__") else 0
+                try:
+                    for _v in (landed or {}).values():
+                        _docs_landed_names.extend(_v or [])
+                except Exception:
+                    pass
             elif kind == "companycam":
                 # CompanyCam export — route photos into PICS/<stage> by
                 # their tag (Post/Demo/Mold/…); room-only photos land in a
                 # dated "CompanyCam <date>" folder. Bypasses the run-doc
                 # `sub` resolution above (each photo self-routes).
                 import companycam_import as _ccz
-                _raw = _ccz.date_from_zip_name(os.path.basename(zip_paths[0]))
+                # Use the photo CAPTURE date (from the filename stamps), not
+                # the zip name — CompanyCam names the zip with the EXPORT/
+                # download date (today), which was landing every import in a
+                # "today" folder regardless of when the photos were shot.
+                _raw = (_ccz.date_from_photos(zip_paths[0])
+                        or _ccz.date_from_zip_name(os.path.basename(zip_paths[0])))
                 try:
                     _date_lbl = _dt.datetime.strptime(
                         _raw, "%Y-%m-%d").strftime("%m-%d-%Y")
@@ -4752,10 +5760,19 @@ class Api:
                                 and _user_dest.upper() != "AUTO") else ""))
                 # CompanyCam exports carry no photographer — `tech`
                 # (picked in the UI, defaulting to the run-doc tech)
-                # attributes the batch via a "<Tech> <date>" folder.
+                # attributes the batch via a "<Tech> <date>" folder. Lead
+                # techs are filed by their roster initials (FB / ME / ML /
+                # RQ / PG / AP / JL); helpers keep their full first name.
+                # initials_for_name returns "" for non-leads → fall back to
+                # the raw name. (2026-06-19)
+                try:
+                    _tech_lbl = (audit_logic.initials_for_name(tech or "")
+                                 or (tech or ""))
+                except Exception:
+                    _tech_lbl = tech or ""
                 _landed = _ccz.import_zip(
                     zip_paths[0], pics_root, date_label=_date_lbl,
-                    force_subfolder=_force, tech=(tech or ""))
+                    force_subfolder=_force, tech=_tech_lbl)
                 pics_count = sum(_landed.values())
                 # Surface the real stage folder(s) in the toast.
                 sub = _force or _ccz.summarize_landed(_landed)
@@ -4780,6 +5797,7 @@ class Api:
                 from wc_zip_import import place_import_paths
                 with tempfile.TemporaryDirectory(prefix="aweb_") as staging:
                     place_import_paths(zip_paths, staging)
+                    import child_folder_ops as _cfops
                     for root, _dirs, files in os.walk(staging):
                         for fn in files:
                             src = os.path.join(root, fn)
@@ -4789,31 +5807,27 @@ class Api:
                                 # goes to DOCS (optionally a subfolder).
                                 dest_dir = (os.path.join(docs_root, _docs_dest)
                                             if _docs_dest else docs_root)
-                                docs_count += 1
+                                is_docs = True
                             elif ext in _img_exts:
                                 dest_dir = pics_target
-                                pics_count += 1
+                                is_docs = False
                             else:
                                 dest_dir = docs_root
+                                is_docs = True
+                            # Collision-safe, cloud-aware move; returns the
+                            # final path or None on total failure. Count ONLY
+                            # on a confirmed write (bug #6), and record the
+                            # ACTUAL landed name (bug #9 — collision-bumped).
+                            landed = _cfops.safe_move(src, dest_dir)
+                            if not landed:
+                                _import_failed.append(fn)
+                                continue
+                            if is_docs:
                                 docs_count += 1
-                            os.makedirs(dest_dir, exist_ok=True)
-                            dest = os.path.join(dest_dir, fn)
-                            # Suffix on collision to avoid clobber.
-                            if os.path.exists(dest):
-                                base, ext2 = os.path.splitext(fn)
-                                n = 1
-                                while os.path.exists(dest):
-                                    dest = os.path.join(
-                                        dest_dir, f"{base} ({n}){ext2}")
-                                    n += 1
-                            try:
-                                shutil.move(src, dest)
-                            except OSError:
-                                try:
-                                    shutil.copy2(src, dest)
-                                    os.remove(src)
-                                except OSError:
-                                    pass
+                                _docs_landed_names.append(
+                                    os.path.basename(landed))
+                            else:
+                                pics_count += 1
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
@@ -4837,7 +5851,11 @@ class Api:
                         "'import:progress', {detail: "
                         + _json.dumps(payload) + "}));")
 
-                convert_heic_in_dir(pics_target, progress_cb=_heic_progress)
+                # CompanyCam self-routes photos into several stage folders
+                # under PICS (not the single pics_target), so convert the
+                # whole PICS tree for it; other imports land in pics_target.
+                _convert_root = pics_root if kind == "companycam" else pics_target
+                convert_heic_in_dir(_convert_root, progress_cb=_heic_progress)
                 organize_by_room(pics_target)
             except Exception:
                 pass
@@ -4853,11 +5871,25 @@ class Api:
             import trello_autotick as _at
             _cid = _per.get_trello_card_id(client) or ""
             if _cid:
+                # Did a COS (Certificate of Satisfaction) land in DOCS this
+                # import? FINAL PAPERWORK auto-ticks ONLY then — not on any
+                # docusign packet / WC doc (user 2026-06-22). Works for any
+                # import path that drops the COS in OD (docusign packet, WC
+                # zip, loose doc, pick-a-file).
+                _cos_imported = False
+                try:
+                    from docusign_import import classify_pdf as _classify_pdf
+                    _cos_imported = any(
+                        _classify_pdf(n) == "CoS" for n in _docs_landed_names)
+                except Exception:
+                    _cos_imported = False
                 _ev = []
                 if kind == "docusketch":
                     _ev.append("docusketch_imported")
                 elif kind == "docusign":
-                    _ev.append("final_paperwork")
+                    # Final paperwork is gated on the COS below — a docusign
+                    # packet WITHOUT a COS (e.g. ATP/CIF only) ticks nothing.
+                    pass
                 elif kind == "companycam":
                     # Stage-tagged field photos — no canonical checklist
                     # item maps cleanly, so don't auto-tick anything.
@@ -4867,6 +5899,10 @@ class Api:
                         _ev.append("wc_photos_initial")
                     if docs_count:
                         _ev.append("wc_docs_imported")
+                # FINAL PAPERWORK — only when the COS itself was imported,
+                # regardless of which import kind delivered it.
+                if _cos_imported:
+                    _ev.append("final_paperwork")
                 if _ev:
                     _tick_ticked = _at.autotick(
                         _cid, events=tuple(_ev), client=client)
@@ -4907,7 +5943,249 @@ class Api:
             "ticked":         [it for _cl, it in _tick_ticked],
             "undated_photos": undated,
             "undated_dir":    undated_dir,
+            "side":           "contents" if _is_contents else "ems",
+            # Files that failed to land (never counted in pics/docs) so the
+            # UI can warn instead of falsely reporting a clean import.
+            "failed":         _import_failed,
         }
+
+    def detect_import_groups(self, zip_paths: list) -> dict:
+        """Peek the photo filenames in `zip_paths` (no extraction) and
+        split them into (day, stage) groups so the import review panel can
+        auto-route folders by stage and prompt one tech per day+stage.
+        Returns import_grouping.detect_groups(...) plus ok."""
+        import zipfile
+        try:
+            from sharepoint import _IMAGE_EXTS as _img_exts
+        except Exception:
+            _img_exts = {".jpg", ".jpeg", ".png", ".heic", ".heif"}
+        names = []
+        for p in (zip_paths or []):
+            try:
+                if zipfile.is_zipfile(p):
+                    with zipfile.ZipFile(p) as z:
+                        for n in z.namelist():
+                            if n.endswith("/"):
+                                continue
+                            if os.path.splitext(n)[1].lower() in _img_exts:
+                                names.append(os.path.basename(n))
+                elif os.path.splitext(p)[1].lower() in _img_exts:
+                    names.append(os.path.basename(p))
+            except Exception:
+                continue
+        try:
+            import import_grouping as _ig
+            res = _ig.detect_groups(names)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        return {"ok": True, **res}
+
+    def do_import_grouped(self, client: str, kind: str, zip_paths: list,
+                          assignments: list, side: str = "ems") -> dict:
+        """Multi-stage photo import: each file routes to the PICS stage
+        folder assigned to its (day,stage) group in `assignments` (list of
+        {date_key, stage, folder, tech}). Mirrors do_import's extraction +
+        HEIC convert + zip recycle, but fans out to several stage folders
+        in one pass. Files matching no assignment fall back to 'Initial'."""
+        try:
+            target_path = self._resolve_client_path(client)
+            if not target_path:
+                return {"ok": False,
+                        "error": f"Couldn't find OD folder for {client!r}"}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        if not zip_paths:
+            return {"ok": False, "error": "no zip paths given"}
+        if not assignments:
+            return {"ok": False, "error": "no group assignments given"}
+
+        _is_contents = (side or "").strip().lower() == "contents"
+        base_dir  = os.path.join(target_path,
+                                 "CONTENTS" if _is_contents else "EMS")
+        pics_root = os.path.join(base_dir, "PICS")
+        try:
+            os.makedirs(pics_root, exist_ok=True)
+        except OSError as ex:
+            return {"ok": False, "error": f"Folder error: {ex}"}
+
+        # (date_key, stage) → folder. A photo kind needs a tech per group.
+        route = {}
+        for a in assignments:
+            folder = (a.get("folder") or "").strip()
+            if not folder:
+                return {"ok": False,
+                        "error": f"No folder chosen for {a.get('stage') or a.get('date_key') or 'a group'}"}
+            if (kind in ("companycam", "wc_attachments")
+                    and not (a.get("tech") or "").strip()):
+                return {"ok": False, "need_tech": True,
+                        "error": f"Pick a tech for {folder} ({a.get('date_key') or '?'})."}
+            route[(a.get("date_key") or "", a.get("stage") or "")] = folder
+
+        import child_folder_ops as _cfops
+        import import_grouping as _ig
+        touched = {}          # folder -> count
+        failed = []
+        import tempfile
+        from wc_zip_import import place_import_paths
+        try:
+            with tempfile.TemporaryDirectory(prefix="grp_") as staging:
+                place_import_paths(zip_paths, staging)
+                for root, _dirs, files in os.walk(staging):
+                    for fn in files:
+                        src = os.path.join(root, fn)
+                        stage = _ig.detect_stage(fn)
+                        dkey, _ = _ig.detect_date(fn)
+                        folder = (route.get((dkey or "", stage or ""))
+                                  or route.get(("", stage or ""))
+                                  or (stage or "Initial"))
+                        dest_dir = os.path.join(pics_root, folder)
+                        landed = _cfops.safe_move(src, dest_dir)
+                        if landed:
+                            touched[folder] = touched.get(folder, 0) + 1
+                        else:
+                            failed.append(fn)
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+        # HEIC → JPEG + room-sort each folder that received photos.
+        try:
+            from wc_zip_import import convert_heic_in_dir, organize_by_room
+            for folder in touched:
+                d = os.path.join(pics_root, folder)
+                convert_heic_in_dir(d)
+                organize_by_room(d)
+        except Exception:
+            pass
+        # Recycle the source zips — same cleanup as do_import.
+        try:
+            from wc_zip_import import trash_imported_zips
+            trash_imported_zips(zip_paths)
+        except Exception:
+            pass
+
+        total = sum(touched.values())
+        return {"ok": True, "pics_count": total, "routed": touched,
+                "failed": failed,
+                "side": "contents" if _is_contents else "ems"}
+
+    def track_events(self, events: list) -> dict:
+        """Persist a batch of UI usage events (web_shared/usage_track.js).
+        Best-effort — never raises to the caller."""
+        try:
+            import usage_tracker as _ut
+            return _ut.record(events or [])
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def usage_report(self, days: int = 30) -> dict:
+        """Aggregated usage stats for the 📊 My Usage view."""
+        try:
+            import usage_tracker as _ut
+            return _ut.report(int(days or 30))
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def usage_reset(self) -> dict:
+        try:
+            import usage_tracker as _ut
+            return _ut.reset()
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    # ── Hygiene job board (shared with the Hygiene panel) ────────────
+    def hygiene_board_rows(self) -> dict:
+        """Active jobs + their four admin milestones (DocuSign / initial /
+        final paperwork / weekly check-in). Powers the audit Overview and
+        the simplified Hygiene page from ONE source."""
+        try:
+            import hygiene_board as _hb
+            return {"ok": True, "rows": _hb.board_rows()}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "rows": []}
+
+    def hygiene_mark(self, canon: str, milestone: str,
+                     card_id: str = "") -> dict:
+        try:
+            import hygiene_board as _hb
+            return _hb.mark_milestone(canon, milestone, card_id=card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    # ── Request items from the lead (shared dialog) ─────────────────
+    def request_item_options(self) -> dict:
+        try:
+            import request_items as _ri
+            return {"ok": True, "items": _ri.ITEMS,
+                    "handles": _ri.recent_handles()}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "items": [], "handles": []}
+
+    def request_items_send(self, card_id: str, canon: str, keys,
+                           other: str = "", handle: str = "",
+                           client: str = "") -> dict:
+        try:
+            import request_items as _ri
+            return _ri.send(card_id, canon, keys or [], other, handle, client)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    # ── Xactimate 'new estimate from scratch' prep ──────────────────
+    def xa_prep_resolve(self, client: str) -> dict:
+        try:
+            import xactimate_prep as _xp
+            return {"ok": True, "fields": _xp.resolve(client)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def xa_set_pricelist(self, carrier: str, pricelist: str) -> dict:
+        try:
+            import xactimate_prep as _xp
+            return _xp.set_pricelist(carrier, pricelist)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    # ── Tracked to-do notes (job-tied or loose) ─────────────────────
+    def notes_list(self, job: str = "", include_done: bool = False) -> dict:
+        try:
+            import notes_tracker as _nt
+            return {"ok": True, "notes": _nt.list_notes(job, include_done)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "notes": []}
+
+    def notes_add(self, text: str, job: str = "") -> dict:
+        try:
+            import notes_tracker as _nt
+            return _nt.add(text, job)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def notes_set_done(self, note_id, done: bool) -> dict:
+        try:
+            import notes_tracker as _nt
+            return _nt.set_done(note_id, done)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def notes_update(self, note_id, text: str) -> dict:
+        try:
+            import notes_tracker as _nt
+            return _nt.update(note_id, text)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def notes_delete(self, note_id) -> dict:
+        try:
+            import notes_tracker as _nt
+            return _nt.delete(note_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def notes_open_count(self, job: str = "") -> dict:
+        try:
+            import notes_tracker as _nt
+            return {"ok": True, "count": _nt.open_count(job)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "count": 0}
 
     def stamp_photo_dates(self, folder: str, date_iso: str) -> dict:
         """Stamp EXIF capture date = `date_iso` (YYYY-MM-DD) on every
@@ -4929,7 +6207,8 @@ class Api:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def pick_and_import_file(self, client: str,
-                             dest_subfolder: str = "") -> dict:
+                             dest_subfolder: str = "",
+                             side: str = "ems", tech: str = "") -> dict:
         """Open a native file picker rooted at Downloads so the user can
         hand-select ANY file(s) to import — regardless of whether the
         auto-scanner found anything. Zips are extracted + split-routed
@@ -4967,7 +6246,8 @@ class Api:
         # Route through do_import's WC branch (handles zip + loose,
         # split-routes by extension, converts HEIC, organizes rooms).
         # Photos honor the user-picked stage folder (dest_subfolder).
-        res = self.do_import(client, "wc_attachments", picked, dest_subfolder)
+        res = self.do_import(client, "wc_attachments", picked,
+                             dest_subfolder, tech=tech, side=side)
         if isinstance(res, dict):
             res["picked"] = picked
         return res
@@ -5044,6 +6324,113 @@ class Api:
             if r.get("client") == client:
                 r["trello_card_id"] = ""
         return {"ok": True}
+
+    # ── CLOSE OUT checklist (single-sourced; Snapshot proxies these) ──
+    def load_closeout_checklist(self, client: str,
+                                card_id: str = "") -> dict:
+        import card_resolver as _cr
+        cid, err = _cr.resolve(client, card_id)
+        if not cid:
+            return {"ok": False, "error": err}
+        try:
+            import trello_client as tc
+            from initial_upload_queue import (
+                CLOSE_OUT_CHECKLIST_NAME, CLOSE_OUT_ITEMS_ORDER)
+            card = tc.get_card(cid, actions_limit=0)
+            if not card:
+                return {"ok": False,
+                        "error": f"Trello card {cid} not found (archived?)"}
+            all_checklists = list(card.get("checklists") or [])
+            other_names = [(c.get("name") or "") for c in all_checklists]
+            import re as _re
+            def _norm(s):
+                return _re.sub(r"[^a-z]", "", (s or "").lower())
+            target_norms = [_norm(a) for a in CLOSE_OUT_CHECKLIST_NAME]
+            cl = None
+            for cand in all_checklists:
+                cn = _norm(cand.get("name") or "")
+                if not cn:
+                    continue
+                if any(t in cn for t in target_norms):
+                    cl = cand
+                    break
+            if cl is None:
+                return {"ok": True, "card_id": cid,
+                        "card_name": card.get("name") or "",
+                        "checklist_id": "",
+                        "items": [],
+                        "missing_checklist": True,
+                        "card_checklists": other_names}
+            check_items = list(cl.get("checkItems") or [])
+            by_norm = {}
+            for it in check_items:
+                by_norm[_norm(it.get("name") or "")] = it
+            items = []
+            used_ids = set()
+            for name in CLOSE_OUT_ITEMS_ORDER:
+                it = by_norm.get(_norm(name))
+                if it:
+                    used_ids.add(it.get("id"))
+                    items.append({
+                        "id":       it.get("id") or "",
+                        "name":     it.get("name") or name,
+                        "complete": (it.get("state") or "").lower() == "complete",
+                        "missing":  False,
+                        "extra":    False,
+                    })
+                else:
+                    items.append({
+                        "id":       "",
+                        "name":     name,
+                        "complete": False,
+                        "missing":  True,
+                        "extra":    False,
+                    })
+            for it in check_items:
+                if it.get("id") in used_ids:
+                    continue
+                items.append({
+                    "id":       it.get("id") or "",
+                    "name":     it.get("name") or "",
+                    "complete": (it.get("state") or "").lower() == "complete",
+                    "missing":  False,
+                    "extra":    True,
+                })
+            return {"ok": True, "card_id": cid,
+                    "card_name": card.get("name") or "",
+                    "checklist_id":   cl.get("id") or "",
+                    "checklist_name": cl.get("name") or "",
+                    "items": items,
+                    "missing_checklist": False,
+                    "card_checklists": other_names}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def toggle_closeout_item(self, card_id: str, item_id: str,
+                             complete: bool) -> dict:
+        """Round-trip a CLOSE OUT checklist item toggle to Trello."""
+        if not card_id or not item_id:
+            return {"ok": False, "error": "card_id + item_id required"}
+        try:
+            import trello_client as tc
+            state = "complete" if complete else "incomplete"
+            tc.set_check_item_state(card_id, item_id, state)
+            return {"ok": True, "state": state}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def delete_closeout_item(self, checklist_id: str,
+                             item_id: str) -> dict:
+        """Delete a checklist item from Trello entirely (right-click
+        'Remove' in the CLOSE OUT modal)."""
+        if not checklist_id or not item_id:
+            return {"ok": False, "error": "checklist_id + item_id required"}
+        try:
+            import trello_client as tc
+            tc.delete_check_item(checklist_id, item_id)
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     # ── Phase 2: Per-item resolved checkboxes ────────────────────────
     def get_resolved_map(self, client: str) -> dict:

@@ -43,8 +43,28 @@ window.addEventListener("pywebviewready", async () => {
   $("#mark-drafted-btn").addEventListener("click", markDrafted);
   $("#open-pdf-btn").addEventListener("click",
     () => state.lastPdfPath && pywebview.api.open_pdf(state.lastPdfPath));
-  document.querySelectorAll(".add-row-btn").forEach((b) =>
+  document.querySelectorAll(".add-row-btn[data-tbl]").forEach((b) =>
     b.addEventListener("click", () => addRow(b.dataset.tbl, {})));
+  // Tech roster: load the autocomplete options + wire the manage modal.
+  loadTechRoster();
+  $("#manage-techs-btn")?.addEventListener("click", openTechsModal);
+  $("#techs-close-btn")?.addEventListener("click", closeTechsModal);
+  $("#tech-add-btn")?.addEventListener("click", addTechFromModal);
+  $("#tech-add-name")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addTechFromModal(); }
+  });
+  $("#tech-add-initials")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addTechFromModal(); }
+  });
+  $("#techs-overlay")?.addEventListener("click", (e) => {
+    if (e.target.id === "techs-overlay") closeTechsModal();
+  });
+  // Auto-save the snapshot form on every edit (debounced) so switching
+  // panels / reloading this iframe no longer loses in-progress work.
+  $("#view-gen")?.addEventListener("input", () => {
+    clearTimeout(_draftTimer);
+    _draftTimer = setTimeout(saveSnapshotDraft, 400);
+  });
   // Snapshot list-view tabs (Today vs Tracked)
   document.querySelectorAll("#snap-tabs .tab-btn").forEach((b) =>
     b.addEventListener("click", () => snapshotShowTab(b.dataset.tab)));
@@ -87,6 +107,11 @@ window.addEventListener("pywebviewready", async () => {
     if (tb) tb.value = _focus;
     trackedState.search = _focus;
     renderTracked();
+  } else {
+    // No deep-link — if there's an unsaved snapshot draft from before a
+    // panel switch / reload, restore it into the form so nothing is lost.
+    const _draft = loadSnapshotDraft();
+    if (_draft) restoreSnapshotDraft(_draft);
   }
 });
 
@@ -175,7 +200,7 @@ async function loadList() {
     ? cands.map((r) => `
         <div class="closeout-row snap-cand" data-client="${esc(r.client)}" data-card="${esc(r.card_id || "")}" style="cursor:pointer;">
           <div>
-            <div class="name">${esc(r.client)}</div>
+            <div class="name">${esc(titleCase(r.client))}</div>
             <div class="sub">
               <span class="candidate-pill ${r.source === "estimating" ? "rundoc" : (r.source === "run-doc" ? "rundoc" : "closeout")}">${esc(r.lane || r.source)}</span>
               ${r.board ? `<span class="muted" style="font-size:10px;">${esc(r.board)}</span>` : ""}
@@ -316,7 +341,10 @@ function renderTracked() {
       <td>${cell(r.carrier)}</td>
       <td style="font-family:monospace;font-size:11px;">${cell(r.claim)}</td>
       <td>${cell(r.type_of_loss)}</td>
-      <td>${yesNo(r.inspection)}</td>
+      <td>${cell(r.lead)}</td>
+      <td>${fmtDate(r.inspection)}</td>
+      <td>${fmtDate(r.demo_start)}</td>
+      <td>${yesNo(r.docusketch)}</td>
       <td>${yesNo(r.scope)}</td>
       <td>${yesNo(r.final_photos)}</td>
       <td>${fmtDate(r.closing)}</td>
@@ -369,11 +397,16 @@ const TRACKED_EDIT_FIELDS = [
   { key: "claim",          col: "Claim#",         label: "Claim #" },
   { key: "type_of_loss",   col: "Type of Loss",   label: "Type of Loss" },
   { key: "closing",        col: "Closing Date",   label: "Closing Date" },
+  { key: "scheduled_ins",  col: "Scheduled Ins.", label: "Scheduled Ins." },
+  { key: "lead",           col: "Lead",           label: "Lead" },
   { key: "inspection",     col: "Inspection",     label: "Inspection" },
+  { key: "sketch",         col: "Sketch",         label: "Sketch" },
+  { key: "docusketch",     col: "Docusketch ordered?", label: "Docusketch ordered?" },
   { key: "scope",          col: "Scope",          label: "Scope" },
   { key: "final_photos",   col: "Final Photos",   label: "Final Photos" },
   { key: "initial_photos", col: "Initial Photos", label: "Initial Photos" },
   { key: "demo_start",     col: "Demo Start",     label: "Demo Start" },
+  { key: "demo_photos",    col: "Demo Photos",    label: "Demo Photos" },
   { key: "atp",            col: "ATP",            label: "ATP" },
   { key: "cif",            col: "CIF",            label: "CIF" },
   { key: "cer",            col: "CER",            label: "CER" },
@@ -485,7 +518,108 @@ async function copyToClipboard(text) {
   }
 }
 
+// ── Draft auto-save ────────────────────────────────────────────────
+// Snapshot forms hold a lot of hand-entered work. Switching to another
+// tool reloads this iframe and wiped it. Auto-save the in-progress form to
+// localStorage on every edit; restore it when the panel re-loads so a
+// "jump off and come back" no longer loses everything. Cleared when the
+// snapshot is generated or the user discards it.
+const _DRAFT_KEY = "snapshot_draft_v1";
+let _draftTimer = null;
+
+function _draftHasContent(d) {
+  if (!d) return false;
+  if ((d.insured || d.cause || d.comments || d.dol || d.first || d.carrier || "").trim()) {
+    return true;
+  }
+  return [...(d.subs || []), ...(d.logs || [])]
+    .some((r) => (r.date || r.activity || r.techs || "").trim());
+}
+
+function serializeSnapshotDraft() {
+  return {
+    insured:  $("#f-insured")?.value || "",
+    carrier:  $("#f-carrier")?.value || "",
+    dol:      $("#f-dol")?.value || "",
+    first:    $("#f-first")?.value || "",
+    cause:    $("#f-cause")?.value || "",
+    comments: $("#f-comments")?.value || "",
+    subs:     collectRows("subs"),
+    logs:     collectRows("logs"),
+    cardId:   state.cardId || "",
+    ts:       Date.now(),
+  };
+}
+
+function saveSnapshotDraft() {
+  try {
+    const d = serializeSnapshotDraft();
+    if (_draftHasContent(d)) localStorage.setItem(_DRAFT_KEY, JSON.stringify(d));
+    else localStorage.removeItem(_DRAFT_KEY);
+  } catch (_) { /* storage unavailable — degrade silently */ }
+}
+
+function clearSnapshotDraft() {
+  try { localStorage.removeItem(_DRAFT_KEY); } catch (_) { /* ignore */ }
+  hideDraftBanner();
+}
+
+function loadSnapshotDraft() {
+  try {
+    const raw = localStorage.getItem(_DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (d.ts && (Date.now() - d.ts) > 7 * 864e5) {   // expire after 7 days
+      localStorage.removeItem(_DRAFT_KEY);
+      return null;
+    }
+    return _draftHasContent(d) ? d : null;
+  } catch (_) { return null; }
+}
+
+function restoreSnapshotDraft(d) {
+  switchTo("gen");
+  $("#f-insured").value = d.insured || "";
+  $("#f-carrier").value = d.carrier || "";
+  $("#f-dol").value     = d.dol || "";
+  $("#f-first").value   = d.first || "";
+  $("#f-cause").value   = d.cause || "";
+  if ($("#f-comments")) $("#f-comments").value = d.comments || "";
+  $("#subs-body").innerHTML = "";
+  $("#logs-body").innerHTML = "";
+  (d.subs || []).forEach((r) => addRow("subs", r));
+  (d.logs || []).forEach((r) => addRow("logs", r));
+  if (!$("#subs-body").children.length) addRow("subs", {});
+  if (!$("#logs-body").children.length) addRow("logs", {});
+  state.cardId = d.cardId || "";
+  showDraftBanner();
+}
+
+function showDraftBanner() {
+  if (document.getElementById("draft-banner")) return;
+  const sec = document.querySelector("#view-gen .col");
+  if (!sec) return;
+  const b = document.createElement("div");
+  b.id = "draft-banner";
+  b.style.cssText = "display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--accent,#3b82f6);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:13px;";
+  b.innerHTML = `<span>↩ Restored your unsaved snapshot draft.</span>
+    <span style="flex:1;"></span>
+    <button class="btn" id="draft-discard">🗑 Discard</button>
+    <button class="btn" id="draft-keep">Keep editing</button>`;
+  sec.insertBefore(b, sec.firstChild);
+  b.querySelector("#draft-discard").addEventListener("click", () => {
+    clearSnapshotDraft();
+    startNew();
+  });
+  b.querySelector("#draft-keep").addEventListener("click", hideDraftBanner);
+}
+
+function hideDraftBanner() {
+  document.getElementById("draft-banner")?.remove();
+}
+
 async function startNew(client = "", cardId = "") {
+  hideDraftBanner();
   switchTo("gen");
   // Reset form + hide post-actions panel
   ["insured", "carrier", "dol", "first", "cause"].forEach((id) =>
@@ -541,6 +675,111 @@ async function startNew(client = "", cardId = "") {
   // Ensure at least one empty row in each table so the user can start typing
   if (!$("#subs-body").children.length) addRow("subs", {});
   if (!$("#logs-body").children.length) addRow("logs", {});
+  // Capture the (pre-filled) starting state so a switch-away before the
+  // first keystroke still restores it. Blank forms save nothing.
+  saveSnapshotDraft();
+}
+
+// ── Tech roster ──────────────────────────────────────────────────
+// The snapshot recognizes techs in Trello comments via the canonical
+// roster (persistence.user_techs). We surface it here as (a) an
+// autocomplete datalist on every Techs field and (b) a manage modal so
+// new techs like "Uli" can be added without leaving the snapshot.
+let _techRoster = { all: [], user: [] };
+
+async function loadTechRoster() {
+  try {
+    const r = await pywebview.api.snapshot_techs();
+    if (r && r.ok) {
+      _techRoster = { all: r.all || [], user: r.user || [] };
+      renderTechDatalist();
+    }
+  } catch { /* optional — fields still work as free text */ }
+}
+
+function renderTechDatalist() {
+  const dl = $("#tech-options");
+  if (!dl) return;
+  dl.innerHTML = _techRoster.all
+    .map((t) => `<option value="${esc(t)}"></option>`).join("");
+}
+
+function openTechsModal() {
+  renderTechsList();
+  $("#techs-modal-status").textContent = "";
+  $("#techs-overlay").classList.remove("hidden");
+  setTimeout(() => $("#tech-add-name")?.focus(), 30);
+}
+
+function closeTechsModal() {
+  $("#techs-overlay").classList.add("hidden");
+}
+
+function renderTechsList() {
+  const box = $("#techs-list");
+  if (!box) return;
+  const user = _techRoster.user || [];
+  if (!user.length) {
+    box.innerHTML = `<div class="muted" style="font-size:12px;padding:4px 0;">No techs on the list. Add one below.</div>`;
+    return;
+  }
+  box.innerHTML = user.map((t) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--surface-2);border-radius:6px;">
+      <span style="flex:1;">${esc(t.name)}${t.initials ? ` <span class="muted" style="font-size:11px;">(${esc(t.initials)})</span>` : ""}</span>
+      <button class="btn" data-tech="${esc(t.name)}" title="Remove ${esc(t.name)}"
+              style="padding:2px 8px;">✕</button>
+    </div>`).join("");
+  box.querySelectorAll("button[data-tech]").forEach((b) =>
+    b.addEventListener("click", () => removeTech(b.dataset.tech)));
+}
+
+async function addTechFromModal() {
+  const nameEl = $("#tech-add-name");
+  const iniEl  = $("#tech-add-initials");
+  const name = (nameEl.value || "").trim();
+  const ini  = (iniEl.value || "").trim();
+  if (!name) { setTechStatus("Type a name first.", true); return; }
+  setTechStatus("Adding…", false);
+  try {
+    const r = await pywebview.api.add_snapshot_tech(name, ini);
+    if (!r || !r.ok) {
+      setTechStatus((r && r.error) || "Couldn't add tech.", true);
+      return;
+    }
+    _techRoster = { all: r.all || [], user: r.user || [] };
+    renderTechDatalist();
+    renderTechsList();
+    nameEl.value = "";
+    iniEl.value = "";
+    nameEl.focus();
+    setTechStatus(`Added ${r.added}. Now recognized in Trello comments everywhere.`, false);
+  } catch (ex) {
+    setTechStatus("Couldn't add tech: " + ex, true);
+  }
+}
+
+async function removeTech(name) {
+  setTechStatus("Removing…", false);
+  try {
+    const r = await pywebview.api.remove_snapshot_tech(name);
+    if (!r || !r.ok) {
+      setTechStatus((r && r.error) || "Couldn't remove tech.", true);
+      return;
+    }
+    _techRoster = { all: r.all || [], user: r.user || [] };
+    renderTechDatalist();
+    renderTechsList();
+    setTechStatus(`Removed ${name}.`, false);
+  } catch (ex) {
+    setTechStatus("Couldn't remove tech: " + ex, true);
+  }
+}
+
+function setTechStatus(msg, isErr) {
+  const el = $("#techs-modal-status");
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isErr ? "var(--danger, #e5534b)" : "var(--muted, #8a94a6)";
 }
 
 function addRow(tableKey, prefill) {
@@ -554,7 +793,7 @@ function addRow(tableKey, prefill) {
     <td><input type="text" data-k="date"     value="${esc(prefill.date || "")}"     placeholder="5/22/26" /></td>
     <td><input type="text" data-k="weekday"  value="${esc(prefill.weekday || "")}"  placeholder="Fri" /></td>
     <td><input type="text" data-k="activity" value="${esc(prefill.activity || "")}" placeholder="Demo / Monitor / etc." /></td>
-    <td><input type="text" data-k="techs"    value="${esc(prefill.techs || "")}"    placeholder="ME, JG" /></td>
+    <td><input type="text" data-k="techs"    value="${esc(prefill.techs || "")}"    placeholder="ME, JG" list="tech-options" autocomplete="off" /></td>
     <td class="col-rm"><button class="rm-btn" title="Remove row">✕</button></td>`;
   $(`#${tableKey}-body`).appendChild(tr);
   tr.querySelector(".rm-btn").addEventListener("click", () => tr.remove());
@@ -691,9 +930,15 @@ async function generate() {
     if (mu?.multi_unit) {
       const picked = await openMultiUnitPicker(mu);
       if (picked === null) return;           // user cancelled
-      if (picked && picked !== insured) {
-        insured = picked;
-        $("#f-insured").value = picked;      // rewrite for clarity
+      if (picked && picked.insured) {
+        insured = picked.insured;
+        $("#f-insured").value = picked.insured;   // rewrite for clarity
+        // Pin the chosen unit's (or umbrella's) folder so the audit +
+        // snapshot resolve THIS exact folder, not a stale/parent one.
+        if (picked.path) {
+          try { await pywebview.api.pin_folder(picked.insured, picked.path); }
+          catch (_) { /* non-fatal — generate can still proceed */ }
+        }
       }
     }
   } catch (_) { /* fall through — degrade to single-unit generate */ }
@@ -722,6 +967,8 @@ async function generate() {
     $("#gen-status").className = "ok";
     state.lastPdfPath = res.path;
     state.lastClient = insured;
+    // Snapshot generated — the draft is no longer "unsaved work".
+    clearSnapshotDraft();
     // Open the PDF immediately so the user can review
     pywebview.api.open_pdf(res.path);
     // Refresh the list view's recent PDFs so it'll be there
@@ -801,6 +1048,33 @@ async function runSnapshotAudit() {
   renderSnapshotAuditRow(res.row);
 }
 
+// Context injected into the shared web_shared/audit_detail.js renderer so
+// the Snapshot audit card renders from the SAME source as the Audit tool
+// (can't drift). Maps to snapshot's own modals + re-audit + helpers.
+function snapshotAuditCtx() {
+  return {
+    helpers: { escapeHtml: esc, escapeAttr: esc, titleCase, copyText, setStatus },
+    modals: {
+      openFindFolder: openSnapshotFindFolder,
+      openSpImport: openSnapshotSpImport,
+      openJobImport: openSnapshotWcImport,
+      openScope: openScopeModal,
+      openDayUnits: openSnapDayUnits,
+      openPin: openSnapshotPinCard,
+      openComment: openSnapshotCommentModal,
+      openMatchDiag: openSnapshotMatchDiag,
+      openCloseout: openCloseoutModal,
+      showClaimFolders: showSnapClaimFolders,
+    },
+    rerender: (r) => renderSnapshotAuditRow(r || state.auditRow),
+    reauditAndRerender: () => runSnapshotAudit(),
+    attachTrelloHover: (btn, cardId) => {
+      if (window.attachTrelloHover) window.attachTrelloHover(btn, cardId);
+    },
+    showCtxMenu: (ev, r) => showSnapshotAuditCtxMenu(ev, r),
+  };
+}
+
 function renderSnapshotAuditRow(row) {
   const summary = $("#audit-summary");
   const result = $("#audit-result");
@@ -815,145 +1089,36 @@ function renderSnapshotAuditRow(row) {
     summary.textContent = "✓ All clean";
     summary.style.color = "var(--green)";
   }
-  const chips = [];
-  if (row.flagged) chips.push(`<span class="detail-chip missing">${row.total_missing} missing</span>`);
-  else chips.push(`<span class="detail-chip ok">✓ clean</span>`);
-  if (row.aging_days >= 3) {
-    const hot = row.aging_days >= 7 ? "hot" : "";
-    chips.push(`<span class="detail-chip aging ${hot}">⏰ ${row.aging_days}d aging</span>`);
-  }
-  if (!row.found) chips.push(`<span class="detail-chip not-found">⚠ Folder not found</span>`);
-  if (row.new_loss) chips.push(`<span class="detail-chip new-loss">🆕 New loss</span>`);
-  if ((row.sharepoint_new || 0) > 0) {
-    chips.push(`<span class="detail-chip sp-new" data-act="sp-import"
-                title="Click to import — ${row.sharepoint_new} files on SharePoint">📥 SP +${row.sharepoint_new} new</span>`);
-  }
-  chips.push(`<span class="detail-chip commercial-chip ${row.is_commercial ? "on" : ""}" data-act="commercial">
-              🏢 ${row.is_commercial ? "Commercial" : "Mark commercial"}
-            </span>`);
-  for (const a of row.activity || []) {
-    chips.push(`<span class="detail-chip activity" data-act-name="${esc(a)}">${esc(a)}</span>`);
-  }
-
-  const forms = row.form_issues?.length ? `
-    <div class="audit-issue-group">
-      <div class="audit-issue-lbl">📋 Missing forms (${row.form_issues.length})</div>
-      <ul class="audit-issue-list">
-        ${row.form_issues.map((x) => `<li>${esc(x)}</li>`).join("")}
-      </ul>
-    </div>` : "";
-  const photos = row.photo_issues?.length ? `
-    <div class="audit-issue-group">
-      <div class="audit-issue-lbl">📷 Missing photos (${row.photo_issues.length})</div>
-      <ul class="audit-issue-list photos">
-        ${row.photo_issues.map((x) => `<li>${esc(x)}</li>`).join("")}
-      </ul>
-    </div>` : "";
-  // Misfiled — present elsewhere in the parent tree (wrong folder), not
-  // missing. The campus folder is checked first; these only show when a
-  // sibling/parent folder had the item. Fix is to MOVE it here.
-  const misItems = [
-    ...(row.misplaced_forms  || []).map((m) => ({ ...m, icon: "📋" })),
-    ...(row.misplaced_photos || []).map((m) => ({ ...m, icon: "📷" })),
-  ];
-  const misplaced = misItems.length ? `
-    <div class="audit-issue-group">
-      <div class="audit-issue-lbl">⚠ Misfiled — wrong folder (${misItems.length})</div>
-      <ul class="audit-issue-list misplaced">
-        ${misItems.map((m) => `<li>${m.icon} ${esc(m.label)} — <span class="muted">in <code>${esc(m.where || "parent")}</code></span></li>`).join("")}
-      </ul>
-    </div>` : "";
-  const meta = `
-    <div class="audit-meta">
-      <span class="label">Folder</span>
-      <span class="value">${esc(row.folder || "—")}</span>
-      <span class="label">Path</span>
-      <span class="value">${esc(row.path || "—")}</span>
-      ${row.last_seen ? `
-        <span class="label">Last activity</span>
-        <span class="value">${esc(row.last_seen)}</span>` : ""}
-      ${row.trello_card_id ? `
-        <span class="label">Trello card</span>
-        <span class="value">${esc(row.trello_card_id)}</span>` : ""}
-    </div>`;
-  const hasPath = !!row.path;
-  const hasPin  = !!row.trello_card_id;
-  const hasSP   = (row.sharepoint_new || 0) > 0;
-  const actions = `
-    <footer class="detail-actions">
-      <button class="action-btn primary" data-act="open-folder" ${hasPath ? "" : "disabled"}>📁 OD folder</button>
-      <button class="action-btn" data-act="open-trello" ${hasPin ? "" : "disabled"}>
-        <img src="../web_shared/trello.png" alt=""/>Trello</button>
-      <button class="action-btn" data-act="open-xa" ${hasPin ? "" : "disabled"}>
-        <img src="../web_shared/xactanalysis.png" alt="" onerror="this.remove()"/>XA</button>
-      <button class="action-btn" data-act="open-companycam" ${hasPin ? "" : "disabled"}
-              title="Open this job's CompanyCam project (reads the CompanyCam link from the Trello card)">
-        <img src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>CompanyCam</button>
-      <button class="action-btn" data-act="attachments" ${hasPin ? "" : "disabled"} title="Browse + download the Trello card's photos/files">📎 Attachments</button>
-      <button class="action-btn" data-act="sp-import">📥 Import SP${hasSP ? ` +${row.sharepoint_new}` : ""}</button>
-      <button class="action-btn" data-act="wc-import" title="Import from Downloads — WorkCenter, DocuSign, DocuSketch, or pick any file (outside SharePoint)">🗂 Import</button>
-      <button class="action-btn" data-act="find-folder">${row.found ? "🔀 Change folder" : "🔎 Find folder"}</button>
-      <button class="action-btn" data-act="pin-card">📌 Pin Trello</button>
-      <button class="action-btn" data-act="comment" ${hasPin ? "" : "disabled"}>💬 Comment</button>
-      <button class="action-btn" data-act="docusketch" ${hasPin ? "" : "disabled"}>📐 Docusketch</button>
-      <button class="action-btn" data-act="match-diag">🔎 Match diagnostic</button>
-      <button class="action-btn" data-act="reaudit">↻ Re-audit</button>
-      <button class="action-btn" data-act="closeout"
-              title="Open the CLOSE OUT checklist for this client's Trello card — toggle items inline, syncs to Trello"
-              style="background:var(--amber);color:#FFF;border-color:var(--amber);">📋 CLOSE OUT</button>
-    </footer>`;
-  const cleanBlock = (row.found && !row.flagged && !misItems.length) ?
-    `<div class="audit-clean">✓ All required forms + photos present.</div>` : "";
-
-  result.innerHTML =
-    `<div class="detail-chip-row">${chips.join(" ")}</div>` +
-    meta + forms + photos + misplaced + cleanBlock + actions;
-
-  // Wire chips + buttons
-  result.querySelectorAll("[data-act]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.preventDefault(); e.stopPropagation();
-      onAuditAction(el.dataset.act, row);
-    });
-  });
-  // Right-click anywhere in the audit result → full context menu
-  result.addEventListener("contextmenu", (e) => showSnapshotAuditCtxMenu(e, row));
-  // Hover the Trello button → shared popover (same 60s cache as audit)
-  const trelloBtn = result.querySelector('[data-act="open-trello"]');
-  if (trelloBtn && row.trello_card_id && window.attachTrelloHover) {
-    window.attachTrelloHover(trelloBtn, row.trello_card_id);
-  }
-  // Right-click the Trello button → 📌 Pin/Change pinned card.
-  // Mirrors the OD-folder right-click pattern. Works even when the
-  // button is disabled (no card pinned yet) — that's exactly when
-  // "Pin Trello card" is the most useful action.
-  if (trelloBtn) {
-    trelloBtn.addEventListener("contextmenu", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      onAuditAction("pin-card", row);
-    });
-  }
-  // Mirror the same pattern on the OD folder button — "Find folder"
-  // when not resolved, "Change folder" when resolved.
-  const folderBtn = result.querySelector('[data-act="open-folder"]');
-  if (folderBtn) {
-    folderBtn.addEventListener("contextmenu", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      onAuditAction("find-folder", row);
-    });
-  }
+  // Render + wire through the shared module — identical to the Audit tool.
+  const ctx = snapshotAuditCtx();
+  result.innerHTML = window.AuditDetail.buildDetailBodyHTML(row, ctx);
+  window.AuditDetail.wireDetail(result, row, ctx);
 }
 
 async function onAuditAction(act, row) {
   switch (act) {
     case "open-folder":
       if (row.path) pywebview.api.open_folder(row.path); break;
+    case "copy-name": {
+      const ok = await copyText(row.client || "");
+      setStatus(ok ? `📋 Copied: ${row.client}` : "Couldn't copy",
+                ok ? "ok" : "error");
+      break;
+    }
+    case "copy-path": {
+      if (!row.path) { setStatus("No folder path for this job", "warn"); break; }
+      const ok = await copyText(row.path);
+      setStatus(ok ? `📋 Copied path: ${row.path}` : "Couldn't copy",
+                ok ? "ok" : "error");
+      break;
+    }
     case "open-trello":
       if (row.trello_card_id) pywebview.api.open_trello_card(row.trello_card_id); break;
-    case "open-xa":
-      pywebview.api.open_xa_link(row.client); break;
+    case "open-xa": {
+      const ok = await pywebview.api.open_xa_link(row.client, row.trello_card_id || "");
+      if (!ok) setStatus("No XactAnalysis link on this card yet — add an 'EMS Xactanalysis Link' to the Trello card.", "warn");
+      break;
+    }
     case "open-companycam": {
       const ok = await pywebview.api.open_companycam_link(row.client);
       if (!ok) setStatus("No CompanyCam link on this card yet — add a 'CompanyCam Link' to the Trello card.", "warn");
@@ -963,6 +1128,8 @@ async function onAuditAction(act, row) {
       openSnapshotSpImport(row); break;
     case "wc-import":
       openSnapshotWcImport(row); break;
+    case "scope":
+      openScopeModal(); break;
     case "attachments":
       window.openTrelloAttachmentsModal({
         cardId: row.trello_card_id, client: row.client
@@ -1013,6 +1180,39 @@ async function onAuditAction(act, row) {
       if (r?.ok) await runSnapshotAudit();
       break;
     }
+    case "claim-folders": {
+      const r = await pywebview.api.claim_folders(row.path || "");
+      const folders = (r && r.folders) || [];
+      if (!folders.length) {
+        setStatus("No past claim / date folders in this job's directory", "warn");
+        break;
+      }
+      showSnapClaimFolders(row, folders);
+      break;
+    }
+    case "copy-claim": {
+      const res = await pywebview.api.get_claim_number(row.client);
+      if (res?.ok && res.claim) {
+        const ok = await copyText(res.claim);
+        setStatus(ok ? `📋 Copied claim #: ${res.claim}` : "Couldn't copy",
+                  ok ? "ok" : "error");
+      } else { setStatus(res?.error || "No claim # found", "warn"); }
+      break;
+    }
+    case "copy-issues": {
+      const items = [...(row.form_issues || []), ...(row.photo_issues || [])];
+      if (!items.length) { setStatus("No missing items — job is clean", "ok"); break; }
+      const ok = await copyText(items.map((x) => `• ${x}`).join("\n"));
+      setStatus(ok ? `📋 Copied ${items.length} issue${items.length !== 1 ? "s" : ""}`
+                   : "Couldn't copy", ok ? "ok" : "error");
+      break;
+    }
+    case "day-units":
+      openSnapDayUnits(row); break;
+    case "property-structure":
+      openSnapPropertyStructure(row); break;
+    case "paperwork":
+      openSnapPaperwork(row); break;
     case "closeout":
       openCloseoutModal(row); break;
     case "reset-memory": {
@@ -1111,6 +1311,245 @@ async function openSnapshotAddToProperty(row) {
   wrap.querySelector("#pg-new")?.focus();
 }
 
+// ── Ported from Audit for parity: Past claims / Day-units /
+//    Property structure / Paperwork-via-Teams. Same backend logic
+//    (audit_web via the _aw() proxies), adapted to snapshot's
+//    mkSnapModal + esc idiom + runSnapshotAudit refresh. ──────────
+function showSnapClaimFolders(row, folders) {
+  const rowsHtml = folders.map((f) => `
+    <button class="claim-row" data-path="${esc(f.path)}"
+      style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;font:inherit;color:var(--text);margin-bottom:6px;">
+      <span style="font-size:15px;">${f.kind === "date" ? "📅" : "🗂"}</span>
+      <span style="flex:1;">${esc(f.name)}</span>
+      ${f.is_current ? '<span style="font-size:10px;color:var(--green);font-weight:700;letter-spacing:.04em;">CURRENT</span>' : ""}
+      <span class="muted" style="font-size:11px;">Open ↗</span>
+    </button>`).join("");
+  const wrap = mkSnapModal({
+    title: `🗂 Past claims · ${row.client}`,
+    body: `
+      <div class="muted" style="font-size:11px;margin-bottom:10px;">${folders.length} claim/date folder${folders.length === 1 ? "" : "s"} in this job's directory</div>
+      <div style="max-height:60vh;overflow-y:auto;">${rowsHtml}</div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;margin-top:10px;">
+        <button class="btn modal-close">Close</button>
+      </div>`,
+  });
+  wrap.querySelectorAll(".claim-row").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const ok = await pywebview.api.open_folder(b.dataset.path);
+      setStatus(ok ? `📁 Opened ${b.dataset.path}` : "Couldn't open folder", ok ? "ok" : "warn");
+    }));
+}
+
+async function openSnapDayUnits(row) {
+  const res = await pywebview.api.list_day_units(row.client);
+  if (!res?.ok) { setStatus(`Day-units unavailable: ${res?.error || "?"}`, "warn"); return; }
+  const units = res.units || [];
+  if (!units.length) { setStatus(`No unit subfolders under ${row.folder || "this folder"} — single-unit job`, "warn"); return; }
+  const wrap = mkSnapModal({
+    title: "🏠 Pick units for " + row.client,
+    body: `
+      <div class="muted" style="font-size:11px;margin-bottom:8px;">Check every unit this row covers today. Multi-pin replicates the row — one card per unit.</div>
+      <div class="muted" style="font-size:11px;margin-bottom:8px;">Umbrella: <code style="background:var(--surface-2);padding:1px 6px;border-radius:3px;">${esc(res.umbrella || "")}</code></div>
+      <div style="display:flex;flex-direction:column;gap:4px;max-height:340px;overflow-y:auto;">
+        ${units.map((u) => `
+          <label class="du-row" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;">
+            <input type="checkbox" class="du-cb" data-path="${esc(u.path)}" ${u.pinned ? "checked" : ""} />
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:13px;">${esc(u.name)}</div>
+              <div class="muted" style="font-size:10px;font-family:monospace;word-break:break-all;">${esc(u.path)}</div>
+            </div>
+          </label>`).join("")}
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;align-items:center;margin-top:12px;">
+        <button class="btn" id="du-clear">✕ Clear all</button>
+        <span style="flex:1;"></span>
+        <button class="btn modal-close">Cancel</button>
+        <button class="btn btn-primary" id="du-save">💾 Apply</button>
+      </div>`,
+  });
+  async function applyAndReaudit(paths) {
+    const save = await pywebview.api.set_day_units(row.client, paths);
+    if (!save?.ok) { setStatus(`Save failed: ${save?.error || "?"}`, "error"); return; }
+    closeSnapModal();
+    setStatus(paths.length ? `🏠 Pinned ${paths.length} unit${paths.length !== 1 ? "s" : ""} for today` : `🏠 Cleared day-pins for ${row.client}`, "ok");
+    await runSnapshotAudit();
+  }
+  wrap.querySelector("#du-save").addEventListener("click", async () => {
+    const picked = [...wrap.querySelectorAll(".du-cb:checked")].map((cb) => cb.dataset.path);
+    await applyAndReaudit(picked);
+  });
+  wrap.querySelector("#du-clear").addEventListener("click", async () => {
+    if (!confirm(`Clear all day-pins for ${row.client}?`)) return;
+    await applyAndReaudit([]);
+  });
+}
+
+async function openSnapPropertyStructure(row) {
+  const res = await pywebview.api.property_structure(row.client);
+  if (!res?.ok) {
+    setStatus(`Property structure unavailable: ${res?.error || "?"} — pin the umbrella folder first via 🔎 Find folder`, "warn");
+    return;
+  }
+  const s = res.settings || {};
+  let units = res.units || [];
+  const wrap = mkSnapModal({ title: "🏢 Property structure — " + row.client, width: 720, body: `<div id="ps-body"></div>` });
+  const bodyEl = wrap.querySelector("#ps-body");
+  const renderTree = () => `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Umbrella folder</div>
+      <div style="font-family:monospace;font-size:12px;word-break:break-all;color:var(--text);margin-top:2px;">${esc(res.umbrella)}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${res.unit_count} unit subfolder${res.unit_count === 1 ? "" : "s"} detected</div>
+      <button class="btn" id="ps-open-umbrella" style="margin-top:6px;font-size:11px;padding:4px 8px;">📁 Open umbrella</button>
+      <button class="btn" id="ps-add-unit" style="margin-top:6px;margin-left:4px;font-size:11px;padding:4px 8px;">➕ Create unit</button>
+    </div>
+    <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);">
+      ${units.length === 0 ? `<div class="muted" style="padding:14px;">No unit subfolders found — this property may not be multi-unit.</div>`
+        : units.map((u) => `
+          <div class="ps-unit-row" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);">
+            <div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <span style="font-weight:600;color:var(--text);">${esc(u.name)}</span>
+                ${u.pinned_today ? `<span style="background:var(--green);color:#FFF;font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;">PINNED TODAY</span>` : ""}
+                ${!u.pics_exists ? `<span style="background:rgba(245,166,35,.15);color:var(--amber);font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;">NO PICS</span>` : ""}
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">📷 ${u.photo_count} photo${u.photo_count === 1 ? "" : "s"}${u.last_modified ? ` · Last activity ${u.last_modified}` : ""}</div>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button class="btn ps-pin" data-path="${esc(u.path)}" data-pinned="${u.pinned_today}" style="font-size:11px;padding:4px 8px;">${u.pinned_today ? "✕ Unpin today" : "📌 Pin today"}</button>
+              <button class="btn ps-open" data-path="${esc(u.path)}" style="font-size:11px;padding:4px 8px;">📁 Open</button>
+            </div>
+          </div>`).join("")}
+    </div>
+    <details style="margin-top:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;">
+      <summary style="cursor:pointer;font-weight:600;font-size:12px;color:var(--text);">⚙ Property settings</summary>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px;">
+        <label style="display:flex;gap:8px;align-items:center;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="ps-commercial" ${s.is_commercial ? "checked" : ""} />
+          <span>Mark as commercial property</span>
+        </label>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Search aliases</div>
+          <textarea id="ps-aliases" rows="4" style="width:100%;font-family:monospace;font-size:12px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px;resize:vertical;">${esc((s.aliases || []).join("\n"))}</textarea>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn btn-primary" id="ps-save-settings">💾 Save settings</button>
+        </div>
+      </div>
+    </details>
+    <div class="modal-footer" style="display:flex;justify-content:flex-end;margin-top:12px;">
+      <button class="btn modal-close">Close</button>
+    </div>`;
+  function wire() {
+    bodyEl.querySelector(".modal-close")?.addEventListener("click", closeSnapModal);
+    bodyEl.querySelector("#ps-open-umbrella")?.addEventListener("click", () => pywebview.api.open_folder(res.umbrella));
+    // ➕ Create unit — infer the sibling naming style, scaffold, no files
+    // (Snapshot has no import staged here). Refresh the modal after.
+    bodyEl.querySelector("#ps-add-unit")?.addEventListener("click", () => {
+      if (!window.UmbrellaGroup) return;
+      const nextNum = (units || []).reduce(
+        (m, u) => Math.max(m, parseInt((u.name.match(/\d+/) || [0])[0], 10) || 0), 0) + 1;
+      const sample = (units || []).find((u) => /\d/.test(u.name || ""));
+      const prefixMatch = sample && (sample.name.match(/^\s*(unit|apt|apartment|suite|ste)/i));
+      const suggested = prefixMatch ? `${prefixMatch[1]} ${nextNum}` : `Unit ${nextNum}`;
+      window.UmbrellaGroup.openCreateChildModal({
+        api: pywebview.api,
+        parentPath: res.umbrella,
+        parentName: row.client,
+        suggestedName: suggested,
+        files: [],
+        onDone: (r) => {
+          if (r && r.ok) {
+            setStatus(`✓ Created ${r.path.split(/[\\/]/).pop()}`, "ok");
+            closeSnapModal();
+            openSnapPropertyStructure(row);   // reopen with the new unit
+          } else {
+            setStatus(`Create failed: ${(r && r.error) || "?"}`, "error");
+          }
+        },
+      });
+    });
+    bodyEl.querySelectorAll(".ps-open").forEach((b) => b.addEventListener("click", () => pywebview.api.open_folder(b.dataset.path)));
+    bodyEl.querySelectorAll(".ps-pin").forEach((b) => b.addEventListener("click", async () => {
+      const cur = await pywebview.api.list_day_units(row.client);
+      const pinnedSet = new Set((cur?.units || []).filter((u) => u.pinned).map((u) => u.path));
+      const path = b.dataset.path;
+      if (b.dataset.pinned === "true") pinnedSet.delete(path); else pinnedSet.add(path);
+      await pywebview.api.set_day_units(row.client, Array.from(pinnedSet));
+      const fresh = await pywebview.api.property_structure(row.client);
+      if (fresh?.ok) { units = fresh.units || []; bodyEl.innerHTML = renderTree(); wire(); }
+      setStatus(`📌 ${row.client} unit pins updated`, "ok");
+    }));
+    const saveBtn = bodyEl.querySelector("#ps-save-settings");
+    saveBtn?.addEventListener("click", async () => {
+      saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+      const isCommercial = bodyEl.querySelector("#ps-commercial")?.checked;
+      const aliases = (bodyEl.querySelector("#ps-aliases")?.value || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+      const r = await pywebview.api.set_property_settings(row.client, !!isCommercial, aliases);
+      saveBtn.disabled = false; saveBtn.textContent = "💾 Save settings";
+      setStatus(r?.ok ? `💾 Saved settings for ${row.client}` : `Save failed: ${r?.error || "?"}`, r?.ok ? "ok" : "error");
+    });
+  }
+  bodyEl.innerHTML = renderTree();
+  wire();
+}
+
+async function openSnapPaperwork(row) {
+  const techs = Array.isArray(row.techs) ? row.techs.filter(Boolean) : [];
+  if (!techs.length) { setStatus(`No tech listed for ${row.client} — can't send paperwork request`, "warn"); return; }
+  const defaultTech = techs[0];
+  const defaultMsg = (t) => `${t} Please collect paperwork for ${row.client}, thank you`;
+  const wrap = mkSnapModal({
+    title: "📨 Request paperwork — " + row.client,
+    body: `
+      <div class="muted" style="font-size:11px;margin-bottom:10px;">Opens the Paperwork-collection group chat with the message pre-filled. Just hit Send.</div>
+      <div id="pr-chat-row" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--text-muted);margin-bottom:10px;">Loading chat URL…</div>
+      <label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Tech</label>
+      <select id="pr-tech" class="search" style="width:100%;margin:4px 0 12px;">
+        ${techs.map((t) => `<option value="${esc(t)}" ${t === defaultTech ? "selected" : ""}>${esc(t)}</option>`).join("")}
+      </select>
+      <label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Message</label>
+      <textarea id="pr-msg" rows="3" style="width:100%;margin-top:4px;font:inherit;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;">${esc(defaultMsg(defaultTech))}</textarea>
+      <div class="modal-footer" style="margin-top:14px;display:flex;gap:8px;align-items:center;">
+        <button class="btn" id="pr-edit-chat">🔗 Edit chat URL…</button>
+        <span style="flex:1;"></span>
+        <button class="btn modal-close">Cancel</button>
+        <button class="btn btn-primary" id="pr-send">📨 Open Teams</button>
+      </div>`,
+  });
+  const refreshChatRow = async () => {
+    const r = await pywebview.api.get_paperwork_chat_url();
+    const el = wrap.querySelector("#pr-chat-row");
+    if (!el) return;
+    const tag = r?.is_default ? '<span style="color:var(--green);">✓ default</span>' : '<span style="color:var(--amber);">⚙ custom</span>';
+    const shortUrl = (r?.url || "").length > 70 ? r.url.slice(0, 67) + "…" : (r?.url || "");
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;">${tag}<span style="flex:1;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r?.url || "")}">${esc(shortUrl)}</span></div>`;
+  };
+  refreshChatRow();
+  wrap.querySelector("#pr-tech").addEventListener("change", (ev) => {
+    const t = ev.target.value;
+    const msgEl = wrap.querySelector("#pr-msg");
+    for (const prevTech of techs) { if (msgEl.value === defaultMsg(prevTech)) { msgEl.value = defaultMsg(t); break; } }
+  });
+  wrap.querySelector("#pr-edit-chat").addEventListener("click", async () => {
+    const cur = await pywebview.api.get_paperwork_chat_url();
+    const next = prompt(`Teams chat URL for paperwork requests:\n(paste the full https://teams.microsoft.com/l/chat/... link — or empty to reset to default)`, cur?.url || "");
+    if (next === null) return;
+    const r = await pywebview.api.set_paperwork_chat_url(next.trim());
+    if (!r?.ok) { setStatus(`Save failed: ${r?.error || "?"}`, "error"); return; }
+    setStatus(next.trim() ? `🔗 Saved paperwork chat URL` : `Reset to default chat URL`, "ok");
+    refreshChatRow();
+  });
+  wrap.querySelector("#pr-send").addEventListener("click", async () => {
+    const tech = wrap.querySelector("#pr-tech").value;
+    const msg = wrap.querySelector("#pr-msg").value.trim();
+    if (!msg) { setStatus("Message can't be empty", "warn"); return; }
+    const res = await pywebview.api.send_paperwork_request(row.client, tech, msg);
+    if (!res?.ok) { setStatus(`Send failed: ${res?.error || "?"}`, "error"); return; }
+    closeSnapModal();
+    setStatus(`📨 Teams opened (${res.chat || "group"} chat) — ${tech} for ${row.client}`, "ok");
+  });
+}
+
 function showSnapshotAuditCtxMenu(ev, row) {
   ev.preventDefault(); ev.stopPropagation();
   document.getElementById("snap-audit-ctx")?.remove();
@@ -1123,6 +1562,7 @@ function showSnapshotAuditCtxMenu(ev, row) {
   const items = [
     { lbl: "📁 Open OD folder", act: "open-folder", off: !row.path },
     { lbl: row.found ? "🔀 Change folder…" : "🔎 Find folder…", act: "find-folder" },
+    { lbl: "🗂 Past claims…", act: "claim-folders", off: !row.path },
     { lbl: "Pin Trello card", act: "pin-card",
       iconImg: "../web_shared/trello.png" },
     { lbl: "Open Trello card", act: "open-trello",
@@ -1145,11 +1585,17 @@ function showSnapshotAuditCtxMenu(ev, row) {
     { lbl: "📋 CLOSE OUT checklist…", act: "closeout" },
     { lbl: "🔎 Match diagnostic", act: "match-diag" },
     { lbl: "↻ Re-audit this job", act: "reaudit" },
+    { lbl: "📨 Request paperwork via Teams…", act: "paperwork" },
+    { lbl: "📋 Copy claim #", act: "copy-claim", off: !row.trello_card_id },
+    { lbl: "📋 Copy issue list", act: "copy-issues" },
     { sep: true },
     // Per-client memory items — mirror audit panel's right-click
     { lbl: "🏷 Edit search aliases…", act: "aliases" },
     { lbl: "🏢 Add to property…", act: "property",
       off: !row.folder },
+    { lbl: "🏠 Pick day-units…", act: "day-units", off: !row.path },
+    { lbl: "🏢 Property structure & settings…", act: "property-structure",
+      off: !row.path },
     { lbl: "🧹 Clear saved folder path", act: "clear-folder",
       off: !row.path },
     { lbl: "🏢 Clear Commercial flag", act: "clear-commercial",
@@ -1219,6 +1665,7 @@ function openSnapshotPinCard(row) {
       });
     });
   };
+  bindTitleCaseInput(wrap.querySelector("#pin-q"));
   wrap.querySelector("#pin-q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
   doSearch();
 }
@@ -1253,34 +1700,127 @@ async function openSnapshotFindFolder(row) {
         <label class="muted" style="font-size:11px;white-space:nowrap;">Search in:</label>
         <select id="ff-scope" class="search" style="flex:1;">${scopeOpts.join("")}</select>
       </div>
-      <div id="ff-hits" class="muted">Loading candidates…</div>
+      <input id="ff-search" class="search" placeholder="Filter by name…" autocomplete="off" style="width:100%;margin-bottom:8px;" />
+      <div id="ff-crumb" style="display:none;align-items:center;gap:8px;margin-bottom:8px;"></div>
+      <div id="ff-status" class="muted" style="font-size:11px;margin-bottom:6px;"></div>
+      <div id="ff-hits" style="max-height:320px;overflow-y:auto;">Loading candidates…</div>
       <div class="modal-footer" style="display:flex;justify-content:flex-end;margin-top:10px;">
         <button class="btn modal-close">Close</button>
       </div>`,
   });
 
+  // Candidate list + drill-in browse state (mirrors the Audit modal so you
+  // can descend into a multi-unit umbrella and pin a specific Unit folder).
+  let allCandidates = [];
+  let browseStack = [];   // [{name, path}] deepest = current folder
+  let browseSubs = [];
+  let searchTerm = "";
+
+  // The term used to find the PARENT ("Avil") never matches its children
+  // ("Unit 526…"), so clear it whenever we drill / navigate.
+  const clearSearch = () => {
+    searchTerm = "";
+    const el = wrap.querySelector("#ff-search");
+    if (el) el.value = "";
+  };
+
+  const pin = async (path, label) => {
+    const res = await pywebview.api.pin_folder(row.client, path);
+    if (!res?.ok) { setStatus(`Pin failed: ${res?.error || "?"}`, "error"); return; }
+    wrap.remove();
+    setStatus(`📁 Pinned ${row.client} → ${label || path}`, "ok");
+    await runSnapshotAudit();
+  };
+
+  const drillInto = async (folder) => {
+    const res = await pywebview.api.list_subfolders(folder.path);
+    if (!res?.ok) { setStatus(`Couldn't open: ${res?.error || "?"}`, "error"); return; }
+    browseStack.push({ name: folder.name, path: folder.path });
+    browseSubs = res.subfolders || [];
+    clearSearch();
+    render();
+  };
+
+  const goToDepth = async (depth) => {
+    clearSearch();
+    if (depth <= 0) { browseStack = []; browseSubs = []; render(); return; }
+    browseStack = browseStack.slice(0, depth);
+    const cur = browseStack[browseStack.length - 1];
+    const res = await pywebview.api.list_subfolders(cur.path);
+    browseSubs = res?.ok ? (res.subfolders || []) : [];
+    render();
+  };
+
+  const renderCrumb = () => {
+    const crumb = wrap.querySelector("#ff-crumb");
+    if (!browseStack.length) { crumb.style.display = "none"; return; }
+    crumb.style.display = "flex";
+    const cur = browseStack[browseStack.length - 1];
+    const segs = [`<a href="#" data-depth="0" style="color:var(--link,#4A9EFF);text-decoration:none;font-size:12px;">Candidates</a>`];
+    browseStack.forEach((s, i) => {
+      segs.push(`<span style="color:var(--text-muted);">›</span>`);
+      segs.push(`<a href="#" data-depth="${i + 1}" style="font-size:12px;color:${i === browseStack.length - 1 ? "var(--text)" : "var(--link,#4A9EFF)"};text-decoration:none;font-weight:${i === browseStack.length - 1 ? 700 : 400};">${esc(s.name)}</a>`);
+    });
+    crumb.innerHTML =
+      `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;">${segs.join("")}</div>` +
+      `<button class="btn btn-primary" id="ff-use" title="Pin this exact folder">✓ Use “${esc(cur.name)}”</button>`;
+    crumb.querySelectorAll("a[data-depth]").forEach((a) =>
+      a.addEventListener("click", (e) => { e.preventDefault(); goToDepth(parseInt(a.dataset.depth, 10)); }));
+    crumb.querySelector("#ff-use").addEventListener("click", () => pin(cur.path, cur.name));
+  };
+
+  const render = () => {
+    renderCrumb();
+    const hits = wrap.querySelector("#ff-hits");
+    const status = wrap.querySelector("#ff-status");
+    const browsing = browseStack.length > 0;
+    const q = searchTerm.toLowerCase();
+    const items = browsing
+      ? (q ? browseSubs.filter((c) => c.name.toLowerCase().includes(q)) : browseSubs)
+      : (q ? allCandidates.filter((c) => c.name.toLowerCase().includes(q)) : allCandidates);
+    if (browsing) {
+      const cur = browseStack[browseStack.length - 1];
+      status.textContent = items.length
+        ? `${items.length} subfolder${items.length !== 1 ? "s" : ""} in ${cur.name}`
+        : `No subfolders in ${cur.name} — use “✓ Use” above to pin it.`;
+    } else {
+      status.textContent = `${items.length} folder${items.length !== 1 ? "s" : ""}`;
+    }
+    if (!items.length) {
+      hits.innerHTML = `<div class="muted" style="padding:14px;text-align:center;">${browsing ? "No subfolders." : "No matches."}</div>`;
+      return;
+    }
+    hits.innerHTML = items.slice(0, 300).map((c) => `
+      <div class="pdf-row ff-row" data-path="${esc(c.path)}" data-name="${esc(c.name)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;">
+        <div style="flex:1;min-width:0;">
+          <div class="pdf-name">${c.is_fire ? "🔥 " : "📁 "}${esc(c.name)}</div>
+          ${!browsing ? `<div class="pdf-meta">${esc(c.year_folder || "")} · ${esc(c.path)}</div>` : ""}
+        </div>
+        <button class="btn ff-open" title="Open — pick a subfolder inside" style="padding:2px 10px;font-size:13px;">›</button>
+      </div>`).join("");
+    hits.querySelectorAll(".ff-row").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".ff-open")) return;
+        pin(el.dataset.path, el.dataset.name);
+      });
+      el.querySelector(".ff-open")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        drillInto({ name: el.dataset.name, path: el.dataset.path });
+      });
+    });
+  };
+
   async function loadAt(scope) {
+    browseStack = []; browseSubs = [];
     wrap.querySelector("#ff-hits").innerHTML = `<div class="muted">Loading…</div>`;
     const r = await pywebview.api.list_folder_candidates(row.client, scope || "");
-    const cands = r?.candidates || [];
-    wrap.querySelector("#ff-hits").innerHTML = cands.length
-      ? cands.map((c) => `
-          <div class="pdf-row" data-path="${esc(c.path)}" style="cursor:pointer;">
-            <div class="pdf-name">${c.is_fire ? "🔥 " : ""}${esc(c.name)}</div>
-            <div class="pdf-meta">${esc(c.year_folder || "")} · ${esc(c.path)}</div>
-          </div>`).join("")
-      : `<div class="muted">No candidates found.</div>`;
-    wrap.querySelectorAll("[data-path]").forEach((el) =>
-      el.addEventListener("click", async () => {
-        const res = await pywebview.api.pin_folder(row.client, el.dataset.path);
-        if (!res?.ok) { setStatus(`Pin failed: ${res?.error || "?"}`, "error"); return; }
-        wrap.remove();
-        setStatus(`📁 Pinned ${row.client} → ${el.dataset.path}`, "ok");
-        await runSnapshotAudit();
-      }));
+    allCandidates = r?.candidates || [];
+    render();
   }
   wrap.querySelector("#ff-scope").addEventListener("change",
     (e) => loadAt(e.target.value));
+  wrap.querySelector("#ff-search").addEventListener("input",
+    (e) => { searchTerm = e.target.value.trim(); render(); });
   loadAt("");
 }
 
@@ -1487,7 +2027,11 @@ async function openSnapshotSpImport(row) {
     width: 960,
     body: `<div id="sp-status" class="muted">🔎 Scanning SharePoint…</div>
       <div id="sp-list" style="margin-top:10px;max-height:540px;overflow-y:auto;"></div>
-      <div class="modal-footer" style="display:flex;gap:8px;margin-top:10px;">
+      <div class="modal-footer" style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+        <label id="sp-side-toggle" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none;"
+               title="Route this import into the CONTENTS side (CONTENTS/PICS) instead of EMS/PICS">
+          <input type="checkbox" id="sp-contents" style="cursor:pointer;" /> 📦 Contents side
+        </label>
         <button class="btn" id="sp-pin">📎 Pin SP folder…</button>
         <button class="btn" id="sp-rescan">↻ Re-scan</button>
         <span style="flex:1;"></span>
@@ -1548,7 +2092,19 @@ async function openSnapshotSpImport(row) {
             setStatus(`✓ ${r2.marked} marked already-in-OD`, "ok");
           } else if (act === "copy") {
             b.disabled = true; b.textContent = "Copying…";
-            const r2 = await pywebview.api.sp_copy_to_pics(row.client, m.path, "", row.path || "");
+            // `side` routes to EMS/PICS or CONTENTS/PICS (Contents toggle).
+            const side = wrap.querySelector("#sp-contents")?.checked
+              ? "contents" : "ems";
+            let r2 = await pywebview.api.sp_copy_to_pics(
+              row.client, m.path, "", row.path || "", side, "");
+            // SP folders are usually named by the tech; only prompt when
+            // the backend couldn't determine one, then retry with the pick.
+            if (r2?.need_tech) {
+              const t = await window.pickImportTech({ client: row.client, techs: row.techs });
+              if (!t) { b.disabled = false; b.textContent = "📥 Copy"; return; }
+              r2 = await pywebview.api.sp_copy_to_pics(
+                row.client, m.path, "", row.path || "", side, t);
+            }
             if (!r2?.ok) {
               const err = r2?.error || "?";
               const needsFolder = /PICS folder|Pin the OD folder/i.test(err);
@@ -1625,7 +2181,11 @@ async function openSnapshotWcImport(row) {
             <span style="font-size:11px;">Save a WorkCenter / DocuSign / DocuSketch download to your Downloads folder and ↻ Re-scan — or use 📁 Pick a file for anything else.</span>
           </div>`}
       </div>
-      <div class="modal-footer" style="display:flex;gap:8px;margin-top:14px;">
+      <div class="modal-footer" style="display:flex;gap:8px;margin-top:14px;align-items:center;">
+        <label id="wc-side-toggle" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none;"
+               title="Route this import into the CONTENTS side (CONTENTS/PICS, CONTENTS/DOCS) instead of EMS — a separate tree outside EMS">
+          <input type="checkbox" id="wc-contents" style="cursor:pointer;" /> 📦 Contents side
+        </label>
         <button class="btn" id="wc-rescan">↻ Re-scan</button>
         <button class="btn" id="wc-pick" title="Hand-pick any file(s) to import — zips, PDFs, or photos">📁 Pick a file…</button>
         <span style="flex:1;"></span>
@@ -1641,10 +2201,19 @@ async function openSnapshotWcImport(row) {
     const choice = await window.pickPicsStage({ client: row.client, allowAuto: true, allowDocs: true });
     if (choice === null) return;                     // cancelled
     const dest = choice === "AUTO" ? "" : choice;
+    // A PICS stage (or AUTO) means photos → require a tech, same as the
+    // other photo-import paths. A DOCS destination is paperwork → skip.
+    let tech = "";
+    if (!/^DOCS/i.test(String(choice))) {
+      tech = await window.pickImportTech({ client: row.client, techs: row.techs });
+      if (!tech) return;                             // cancelled / no tech
+    }
     btn.disabled = true; btn.textContent = "Picking…";
     state.importBtn = btn;
+    const side = wrap.querySelector("#wc-contents")?.checked
+      ? "contents" : "ems";
     try {
-      const res = await pywebview.api.pick_and_import_file(row.client, dest);
+      const res = await pywebview.api.pick_and_import_file(row.client, dest, side, tech);
       if (res?.cancelled) {
         // user closed the picker — no-op
       } else if (!res?.ok) {
@@ -1670,15 +2239,22 @@ async function openSnapshotWcImport(row) {
       const c = cands[+b.dataset.i];
       // Photo imports → ask which PICS stage folder first.
       let dest = "";
+      let tech = "";
       if (c.kind === "companycam" || c.kind === "wc_attachments") {
         const choice = await window.pickPicsStage({ client: row.client, allowAuto: true });
         if (choice === null) return;                 // cancelled
         dest = choice === "AUTO" ? "" : choice;
+        // Every photo import must be attributed to a tech (same guard the
+        // Daily Run + IUQ import surfaces enforce). Cancel/empty aborts.
+        tech = await window.pickImportTech({ client: row.client, techs: row.techs });
+        if (!tech) return;                           // cancelled / no tech
       }
       b.disabled = true; b.textContent = "Extracting…";
       state.importBtn = b;
+      const side = wrap.querySelector("#wc-contents")?.checked
+        ? "contents" : "ems";
       try {
-        const res = await pywebview.api.do_import(row.client, c.kind, c.paths, dest);
+        const res = await pywebview.api.do_import(row.client, c.kind, c.paths, dest, tech, side);
         if (!res?.ok) { setStatus(`Import failed: ${res?.error || "?"}`, "error"); b.textContent = "Failed"; return; }
         b.textContent = "✓ Done";
         const bits = [];
@@ -1884,6 +2460,7 @@ function openFindCardModal() {
     $("#fc-lane-load").textContent = "↻ Load SNAPSHOT-lane cards";
     renderResults(rows);
   });
+  bindTitleCaseInput($("#fc-q"));
   $("#fc-q").focus();
 }
 
@@ -1898,6 +2475,52 @@ function setStatus(msg, kind = "") {
 function esc(s) {
   return String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+// Display-only Title Case: uppercase the first letter of every word,
+// leaving the rest untouched so acronyms (LLC, IPR) and internal caps
+// (McDonald) survive. NEVER mutate the stored/identity value.
+function titleCase(s) {
+  return String(s == null ? "" : s).replace(
+    /(^|[\s\-\/,.'"“”‘’([])([a-zà-ÿ])/g,
+    (_m, sep, ch) => sep + ch.toUpperCase());
+}
+// Live auto-capitalize for a search <input>, preserving caret position.
+function bindTitleCaseInput(el) {
+  if (!el) return;
+  el.addEventListener("input", () => {
+    const pos = el.selectionStart;
+    const next = titleCase(el.value);
+    if (next !== el.value) {
+      el.value = next;
+      try { el.setSelectionRange(pos, pos); } catch (_e) {}
+    }
+  });
+}
+
+// Browser-native clipboard with a hidden-textarea fallback — identical
+// to the audit + IUQ panels so every audit surface copies the same way.
+async function copyText(text) {
+  if (!text) return false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(String(text));
+      return true;
+    }
+  } catch (_) { /* fall through */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = String(text);
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    ta.style.pointerEvents = "none";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 // ── Topbar Trello search (always-visible, any view) ──────────────
@@ -1961,8 +2584,9 @@ function attachTopbarTrelloSearch() {
 
 // ── Multi-unit picker (Tk parity) ───────────────────────────────
 // Returns a Promise resolving to:
-//   • a string (new insured to use) when user picks a unit
-//   • the original insured when user picks "roll up the property"
+//   • {insured, path} when user picks a unit (path = that unit's folder,
+//     pinned by the caller so the audit/snapshot resolve the RIGHT unit)
+//   • {insured: property, path: umbrella} when user picks "roll up"
 //   • null when user cancels (abort the generate)
 function openMultiUnitPicker(mu) {
   return new Promise((resolve) => {
@@ -1999,10 +2623,11 @@ function openMultiUnitPicker(mu) {
     document.getElementById("mu-cancel").addEventListener("click", () => close(null));
     w.addEventListener("click", (e) => { if (e.target === w) close(null); });
     document.getElementById("mu-rollup").addEventListener("click",
-      () => close(mu.property_name));
+      () => close({ insured: mu.property_name, path: mu.umbrella_path || "" }));
     document.getElementById("mu-units").innerHTML = (mu.units || []).map((u) => `
       <button class="btn mu-unit"
               data-display="${esc(u.display_name || "")}"
+              data-path="${esc(u.path || "")}"
               style="text-align:left;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;">
         <span>${esc(u.display_name || ("Unit " + u.unit_number))}</span>
         <span style="font-size:10px;color:var(--text-muted);font-variant-numeric:tabular-nums;">
@@ -2010,7 +2635,8 @@ function openMultiUnitPicker(mu) {
         </span>
       </button>`).join("");
     document.querySelectorAll(".mu-unit").forEach((b) =>
-      b.addEventListener("click", () => close(b.dataset.display)));
+      b.addEventListener("click", () =>
+        close({ insured: b.dataset.display, path: b.dataset.path || "" })));
   });
 }
 

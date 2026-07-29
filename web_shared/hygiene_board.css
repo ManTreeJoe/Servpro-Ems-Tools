@@ -1,0 +1,98 @@
+/* Shared Hygiene job-board styles (web_shared/hygiene_board.js). Uses the
+ * host panel's theme vars so it themes in Audit + Hygiene alike.
+ * Card-grid layout: fills the width and gives each job room to breathe. */
+
+.hb-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 6px 4px 14px; font-size: 13px; color: var(--text-muted, #9aa4b2);
+}
+.hb-overdue-count { color: var(--amber, #f59e0b); font-weight: 600; }
+
+/* Responsive card grid — as many columns as fit, so the board fills the
+ * space instead of a thin list on a wide page. */
+.hb-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  padding: 2px 2px 24px;
+}
+
+.hb-card {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 12px;
+  background: var(--surface, #171b22);
+  transition: border-color .12s ease;
+}
+.hb-card:hover { border-color: var(--border-strong, #3a4150); }
+
+.hb-card-head { display: flex; align-items: center; gap: 8px; min-height: 20px; }
+.hb-card-name {
+  font-weight: 600; font-size: 15px; color: var(--text, #e6e9ef);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+}
+.hb-flag {
+  font-size: 10px; font-weight: 700; white-space: nowrap;
+  color: var(--amber, #f59e0b);
+  background: var(--amber-bg, rgba(245, 158, 11, 0.15));
+  border-radius: 8px; padding: 2px 7px;
+}
+
+.hb-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.hb-chip {
+  font: inherit; font-size: 12px;
+  padding: 7px 12px; border-radius: 9px;
+  border: 1px solid var(--border, #2a2f3a);
+  background: var(--surface-2, #1e232c);
+  color: var(--text, #e6e9ef);
+  cursor: pointer; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hb-chip[disabled] { cursor: default; }
+.hb-chip.hb-done {
+  background: var(--green-bg, rgba(63, 185, 80, 0.13));
+  border-color: var(--green, #3FB950);
+  color: var(--green, #3FB950);
+}
+.hb-chip.hb-empty { color: var(--text-muted, #9aa4b2); border-style: dashed; }
+.hb-chip.hb-empty:hover {
+  border-style: solid;
+  border-color: var(--accent, #3b82f6); color: var(--accent, #3b82f6);
+}
+.hb-chip.hb-overdue {
+  background: var(--amber-bg, rgba(245, 158, 11, 0.15));
+  border-color: var(--amber, #f59e0b);
+  color: var(--amber, #f59e0b);
+  font-weight: 600;
+}
+
+/* Card footer: 📨 Requested chip + Request button */
+.hb-card-foot {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 2px; padding-top: 10px;
+  border-top: 1px solid var(--border, #2a2f3a);
+}
+.hb-req-btn {
+  font: inherit; font-size: 11px; font-weight: 600;
+  padding: 5px 12px; border-radius: 9px;
+  border: 1px solid var(--accent, #3b82f6);
+  background: transparent; color: var(--accent, #3b82f6);
+  cursor: pointer; white-space: nowrap;
+}
+.hb-req-btn:hover { background: var(--accent, #3b82f6); color: #fff; }
+
+.hb-reqchip {
+  font-size: 11px; padding: 3px 9px; border-radius: 9px;
+  background: var(--surface-2, #1e232c); color: var(--text-muted, #9aa4b2);
+  border: 1px solid var(--border, #2a2f3a); white-space: nowrap;
+}
+.hb-reqchip.hb-req-amber {
+  background: var(--amber-bg, rgba(245, 158, 11, 0.15));
+  border-color: var(--amber, #f59e0b); color: var(--amber, #f59e0b); font-weight: 600;
+}
+.hb-reqchip.hb-req-red {
+  background: var(--red-bg, rgba(229, 83, 75, 0.15));
+  border-color: var(--red, #E5534B); color: var(--red, #E5534B); font-weight: 600;
+}

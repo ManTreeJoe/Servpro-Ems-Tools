@@ -718,9 +718,10 @@ class SpreadsheetApp(ToolPanel):
                 "This walks every row in the workbook, looks up the "
                 "linked Trello card, and moves the row to the right "
                 "sheet (NEW LOSS / Completed / Incomplete). Type of "
-                "Loss + Carrier + Claim# + dates fill from the card "
-                "when the cells are empty. Excel must be CLOSED. "
-                "Continue?",
+                "Loss + Carrier + Claim# + dates + Demo Start + "
+                "Docusketch + checklist-confirmed photos/scope fill "
+                "from the card when the cells are empty. Excel must be "
+                "CLOSED. Continue?",
                 parent=self):
             return
         self._reconcile_btn.config(state="disabled", text="Reconciling…")
@@ -749,6 +750,9 @@ class SpreadsheetApp(ToolPanel):
                     msg = (f"Moved {summary['moved']}, "
                            f"set Type-of-Loss on {summary['loss_type_set']}, "
                            f"skipped {summary['skipped_no_match']} (no Trello match)")
+                    pf = summary.get("parse_failures") or []
+                    if pf:
+                        msg += f"  ·  {len(pf)} cards unparseable (see log)"
                     if summary["errors"]:
                         msg += f"  ·  {len(summary['errors'])} errors"
                     self._status_lbl.config(text=msg)

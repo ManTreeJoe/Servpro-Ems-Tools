@@ -252,7 +252,10 @@ _HARDCODED_ABBREV = {
 # "John" → JL: the JL code self-maps above (to keep routing correct), so a
 # bare "John" upload name has no reverse path without this. Lowercase keys.
 _FIRST_NAME_INITIALS = {
-    "john": "JL",   # John Lingurar
+    "john": "JL",    # John Lingurar
+    "johnny": "JL",  # same person
+    "rudy": "RQ",    # Rudy Q — only one Rudy on the roster
+    "aaron": "AP",   # Aaron P — only one Aaron on the roster
 }
 
 
@@ -266,17 +269,98 @@ def _escape_name_for_regex(name):
     return r'\s*'.join(re.escape(p) for p in parts)
 
 
-def _build_tech_pattern():
-    """Combine the hardcoded roster with whatever the user added through
-    the roster dialog. Falls back to the hardcoded list alone if
-    persistence isn't reachable (e.g. during tests)."""
-    user_names = []
+# The pure-initials tokens baked into _HARDCODED_NAMES (recognized on their
+# own in run-doc dispatch lines). Once the roster is seeded these live in the
+# abbrev map and the pattern picks them up from abbrev KEYS, so we don't seed
+# them as standalone "names" (which would show as ugly "FB"-named techs).
+_HARDCODED_INITIALS_TOKENS = set(_HARDCODED_ABBREV.keys())
+
+
+def _clean_builtin_name(raw):
+    """Strip the regex bits from a hardcoded roster entry so it reads as a
+    plain name ('Mark\\s*E' → 'Mark E', 'Pris?cilla' → 'Priscilla')."""
+    return (raw or "").replace(r'\s*', ' ').replace('?', '').strip()
+
+
+def builtin_seed_names():
+    """The hardcoded roster as clean display names, EXCLUDING the pure-
+    initials tokens (those seed into the abbrev map instead). Used by the
+    one-time migration into the editable user_techs store."""
+    out = []
+    for raw in _HARDCODED_NAMES:
+        if raw in _HARDCODED_INITIALS_TOKENS:
+            continue
+        cleaned = _clean_builtin_name(raw)
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
+def ensure_roster_seeded():
+    """One-time migration: copy the built-in names + abbreviations into the
+    editable user_techs store, so from then on EVERY tech is user-managed
+    (removable/adjustable) and TECH_PATTERN builds from user_techs alone.
+    Merges into any existing user entries (keeps additions like 'Uli').
+    Idempotent — guarded by persistence.user_techs_seeded(). Returns True if
+    it seeded on this call."""
     try:
         import persistence
-        user_names = (persistence.get_user_techs() or {}).get("names", [])
+        if persistence.user_techs_seeded():
+            return False
+        cur = persistence.get_user_techs() or {}
+        names = list(cur.get("names") or [])
+        abbrev = dict(cur.get("abbrev") or {})
+        have = {n.lower() for n in names}
+        for n in builtin_seed_names():
+            if n.lower() not in have:
+                names.append(n)
+                have.add(n.lower())
+        for k, v in _HARDCODED_ABBREV.items():
+            abbrev.setdefault(k.upper(), v)
+        persistence.set_user_techs(names, abbrev)
+        persistence.mark_user_techs_seeded()
+    except Exception:
+        return False
+    rebuild_tech_pattern()
+    return True
+
+
+_NEVER_MATCH = re.compile(r'(?!)')   # compiles fine, matches nothing
+
+
+def _build_tech_pattern():
+    """Build the recognized-tech regex.
+
+    Once the roster is seeded (see ensure_roster_seeded), it's built from the
+    user_techs store ALONE — names + abbrev-key initials — so a tech the user
+    removed truly disappears from recognition. Before seeding (fresh install,
+    tests), it falls back to the hardcoded list plus any user additions, so
+    behavior is unchanged until the migration runs."""
+    seeded = False
+    user_names, abbrev_keys = [], []
+    try:
+        import persistence
+        seeded = persistence.user_techs_seeded()
+        ut = persistence.get_user_techs() or {}
+        user_names = list(ut.get("names") or [])
+        abbrev_keys = list((ut.get("abbrev") or {}).keys())
     except Exception:
         pass
 
+    if seeded:
+        alts, seen = [], set()
+        for name in user_names + abbrev_keys:
+            if not name:
+                continue
+            esc = _escape_name_for_regex(name)
+            if esc and esc.lower() not in seen:
+                alts.append(esc)
+                seen.add(esc.lower())
+        if not alts:
+            return _NEVER_MATCH        # empty roster → recognize nothing
+        return re.compile(r'\b(' + '|'.join(alts) + r')\b', re.IGNORECASE)
+
+    # Pre-seed (legacy): hardcoded + user additions.
     alts = list(_HARDCODED_NAMES)
     seen = {a.lower() for a in alts}
     for name in user_names:
@@ -290,17 +374,22 @@ def _build_tech_pattern():
 
 
 def _build_abbrev():
-    """Hardcoded abbreviations + any the user added. User entries can
-    override the hardcoded mapping (the user knows their own roster)."""
-    out = dict(_HARDCODED_ABBREV)
+    """Initials→name map. Once seeded, it's the user_techs abbrev alone;
+    before seeding, the hardcoded map plus any user overrides."""
+    seeded = False
+    user_abbrev = {}
     try:
         import persistence
-        user_abbrev = (persistence.get_user_techs() or {}).get("abbrev", {})
-        for k, v in user_abbrev.items():
-            if k and v:
-                out[k.upper()] = v
+        seeded = persistence.user_techs_seeded()
+        user_abbrev = (persistence.get_user_techs() or {}).get("abbrev", {}) or {}
     except Exception:
         pass
+    if seeded:
+        return {k.upper(): v for k, v in user_abbrev.items() if k and v}
+    out = dict(_HARDCODED_ABBREV)
+    for k, v in user_abbrev.items():
+        if k and v:
+            out[k.upper()] = v
     return out
 
 
@@ -576,6 +665,23 @@ def find_latest_claim_subfolder(path):
     return best[1] if best else None
 
 
+def active_job_base(path):
+    """For a MULTI-CLAIM job folder, return the active (highest-numbered)
+    claim subfolder path so paperwork lands under the current claim instead
+    of the shared job root. Returns `path` unchanged when the job isn't
+    multi-claim. Deterministic — mirrors the descent audit_jobs already does,
+    so a save/import can't nondeterministically pick the job root, a stale
+    claim, or a top-level DOCS the way a bare find_docs_dir(job_root) did."""
+    if not path or not os.path.isdir(path):
+        return path
+    sub = find_latest_claim_subfolder(path)
+    if sub:
+        cand = os.path.join(path, sub)
+        if os.path.isdir(cand):
+            return cand
+    return path
+
+
 # A job folder may hold PAST claims as dated sibling folders ("9-20-25",
 # "09.20.2025", "2025-09-20") in addition to the ordinal "Nth Claim" form.
 # This matches a folder NAME that is (or starts with) a date so the audit
@@ -785,28 +891,49 @@ def try_resolve_folder_by_terms(audit_base, terms, *, year=None):
 
 _UNIT_SUBFOLDER_RE = re.compile(
     r"^(unit|apt|apartment|suite|ste|#)\b", re.IGNORECASE)
-# Also catches bare-number folders ("1416", "2413") and folders starting
-# with "# " — common conventions for unit subfolders.
-_BARE_UNIT_RE = re.compile(r"^#?\s*\d{2,4}\b")
+# Leading unit number (for sorting / routing): "Unit 1416", "1416",
+# "1416B", "#527". Tolerates a trailing letter ("1416B") the old
+# 2-4 digit `\b` anchor rejected.
+_UNIT_NUM_RE = re.compile(r"^\s*#?\s*(?:unit|apt|apartment|suite|ste)?"
+                          r"[\s#:_-]*(\d{1,5})", re.IGNORECASE)
+
+# Standard non-unit children of a multi-unit job folder + common junk
+# folders. Anything NOT in this set is surfaced as a child so real units
+# with off-convention names (1416B, tenant-named "Smith", "Building A")
+# stop silently vanishing (audit finding: "exists but not listed").
+_NON_UNIT_CHILDREN = {
+    "ems", "recon", "contents", "docs", "pics", "photos",
+    "sp invoices", "receipts", "field docs", "videos", "from sharepoint",
+    "old", "backup", "archive", "signed docs", "misc", "temp",
+}
+
+
+def _unit_num_of(name):
+    """Leading unit number in a folder name, or None for named folders."""
+    m = _UNIT_NUM_RE.match(name or "")
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
 
 
 def list_unit_subfolders(parent_path):
-    """Return the immediate subfolders of `parent_path` that look like
-    unit identifiers (Unit 1416, UNIT #216, Apt 2413, #527, etc.).
+    """Return the immediate child subfolders of `parent_path`, EXCLUDING
+    only the standard non-unit children / junk (see `_NON_UNIT_CHILDREN`).
 
-    Sorted alphabetically by name. Returns [] when the parent doesn't
-    exist or has no unit-like children. Used by Run Audit's 🏠 Unit
-    picker — the user picks which unit subfolder THIS daily-run row
-    should audit against.
+    Each item: {"path", "name", "num"} where `num` is the leading unit
+    number (int) or None for named children. Numeric units sort first (by
+    number), then named folders alphabetically. Returns [] when the parent
+    doesn't exist or has no such children.
 
-    Folders excluded from the unit list (case-insensitive name match):
-    EMS, RECON, CONTENTS, DOCS, PICS, PHOTOS, SP INVOICES, RECEIPTS —
-    these are the standard non-unit children of a multi-unit job
-    folder."""
+    Used by Run Audit's 🏠 Unit picker and the umbrella child grouping —
+    the exclusion-list approach (vs the old unit/#/digits pattern gate)
+    keeps off-convention real units (1416B, "Smith", "Building A") from
+    disappearing."""
     if not parent_path or not os.path.isdir(parent_path):
         return []
-    _EXCLUDED = {"ems", "recon", "contents", "docs", "pics",
-                 "photos", "sp invoices", "receipts"}
     out = []
     try:
         with os.scandir(parent_path) as it:
@@ -817,14 +944,14 @@ def list_unit_subfolders(parent_path):
                 except OSError:
                     continue
                 name = e.name.strip()
-                if not name or name.lower() in _EXCLUDED:
+                if not name or name.lower() in _NON_UNIT_CHILDREN:
                     continue
-                if (_UNIT_SUBFOLDER_RE.match(name)
-                        or _BARE_UNIT_RE.match(name)):
-                    out.append({"path": e.path, "name": name})
+                out.append({"path": e.path, "name": name,
+                            "num": _unit_num_of(name)})
     except OSError:
         return []
-    out.sort(key=lambda d: d["name"].lower())
+    out.sort(key=lambda d: (d["num"] is None, d["num"] or 0,
+                            d["name"].lower()))
     return out
 
 
@@ -1105,7 +1232,7 @@ def check_photos(pics_path, log_rows=None, raw_text=None):
     #     never had an initial visit happen but show a mid-mitigation
     #     activity (e.g. Janan Nichols with "Demo" on the run doc but
     #     no photos at all in OD) silently pass the photo check.
-    _img_exts = {".jpg", ".jpeg", ".png", ".heic", ".heif",
+    _img_exts = {".jpg", ".jpeg", ".jfif", ".png", ".heic", ".heif",
                  ".webp", ".bmp", ".gif", ".tif", ".tiff"}
     # Budgeted walk: OneDrive/SharePoint enumeration can stall on
     # cold-cache hits or sync hiccups. Cap at 5s and fall back to "no
@@ -1132,6 +1259,45 @@ def check_photos(pics_path, log_rows=None, raw_text=None):
             return False
         return False
     pics_has_any = _pics_has_any(pics_path, _img_exts)
+
+    # FOH (front-of-house) and EQ (equipment) photos live in their OWN
+    # subfolders inside the Initial folder: PICS\Initial\FOH and
+    # PICS\Initial\EQ. Resolve the Initial folder once so the FOH/EQ
+    # checks below can peek inside it.
+    def _initial_dir():
+        for e in entries:
+            if re.search(r'\b(initial|inspection)\b', e, re.IGNORECASE):
+                p = os.path.join(pics_path, e)
+                if os.path.isdir(p):
+                    return p
+        return None
+
+    def _sub_filled(d, pattern):
+        """True when the Initial folder `d` contains — at ANY depth — a
+        non-empty subfolder matching `pattern` (FOH / EQ). Recursive because
+        techs nest these under a "<Tech> <date>" box, e.g.
+        PICS\\Initial\\FB 07-01-2026\\Front of Structure — a direct-children
+        check missed those. Also still matches a loose file at the top level."""
+        if not d or not os.path.isdir(d):
+            return False
+        try:
+            # Recurse: any subfolder (at any level) whose name matches AND
+            # holds files satisfies the check.
+            for _root, _subdirs, _files in os.walk(d):
+                for _sd in _subdirs:
+                    if re.search(pattern, _sd, re.IGNORECASE):
+                        if _has_files(os.path.join(_root, _sd)):
+                            return True
+            # Fallback: a loose file at the top level named for the item.
+            for s in os.listdir(d):
+                if re.search(pattern, s, re.IGNORECASE) and os.path.isfile(
+                        os.path.join(d, s)):
+                    return True
+        except OSError:
+            pass
+        return False
+
+    _init_dir = _initial_dir()
     needs_initial = (
         not activity_blob
         or 'initial' in activity_blob
@@ -1141,6 +1307,15 @@ def check_photos(pics_path, log_rows=None, raw_text=None):
     )
     if needs_initial and not cat_filled(r'\b(initial|inspection)\b'):
         missing.append("Initial pics")
+
+    # FOH (front-of-house) pics are required on the initial visit, at a
+    # minimum. Only flagged when the Initial folder itself exists — a
+    # missing Initial folder is already reported as "Initial pics", so
+    # we don't double-flag the same gap.
+    if needs_initial and _init_dir and not _sub_filled(
+            _init_dir,
+            r'\bfoh\b|\bfos\b|front\s*of\s*(?:house|structure)'):
+        missing.append("FOH pics")
 
     if activity_blob:
         needs_reinspect = 'reinspect' in activity_blob
@@ -1178,6 +1353,11 @@ def check_photos(pics_path, log_rows=None, raw_text=None):
         needs_post = (
             'post' in activity_blob
             and not needs_mold_after)
+        # EQ (equipment) pics are first needed at the Monitor visit —
+        # that's when gear is on site and has to be tracked. They live in
+        # PICS\Initial\EQ. Any monitor activity requires the folder to be
+        # filled; once it is, later monitors stop flagging.
+        needs_eq = 'monitor' in activity_blob
 
         if needs_reinspect and not cat_filled(r'\breinspect'):
             missing.append("Reinspection pics")
@@ -1204,6 +1384,11 @@ def check_photos(pics_path, log_rows=None, raw_text=None):
             missing.append("Abatement pics")
         if needs_post and not cat_filled(r'\bpost\b'):
             missing.append("Post pics")
+        # EQ folder lives inside Initial (PICS\Initial\EQ). Skip when the
+        # Initial folder is absent — "Initial pics" already covers that.
+        if needs_eq and _init_dir and not _sub_filled(
+                _init_dir, r'\beq\b|equipment'):
+            missing.append("EQ pics")
     return missing
 
 
@@ -1268,12 +1453,21 @@ def photos_found_in_siblings(parent_root, campus_path,
         return {}
     campus_norm = (os.path.normcase(os.path.abspath(campus_path))
                    if campus_path else None)
-    candidates = [parent_root]
+    # Candidates are the SIBLING sub-job folders only — NOT the parent
+    # container itself. The container (e.g. "Avila Apartments 2026") has
+    # no EMS/DOCS, so check_docusketch/check_photos there return empty
+    # ("nothing to check"), which the "satisfied = not missing" test below
+    # would mis-read as "found here" and flag EVERY unit's docusketch as
+    # misfiled at where='.'. Only real sub-job folders (with their own
+    # EMS/CONTENTS/RECON) can legitimately HOLD a misfiled artifact.
+    # (Bug fix 2026-06-22 — misfiled tag flagging every commercial unit.)
+    candidates = []
     try:
         with os.scandir(parent_root) as it:
             for e in it:
                 try:
-                    if e.is_dir(follow_symlinks=False):
+                    if (e.is_dir(follow_symlinks=False)
+                            and _folder_has_job_structure(e.path)):
                         candidates.append(e.path)
                 except OSError:
                     continue
@@ -1290,14 +1484,26 @@ def photos_found_in_siblings(parent_root, campus_path,
         contents = os.path.join(base_dir, "CONTENTS")
         b = (ems if os.path.isdir(ems)
              else contents if os.path.isdir(contents) else base_dir)
+        # A label is "found here" only with POSITIVE evidence — the
+        # sibling genuinely HAS the artifact. We get that from the
+        # sibling's OWN missing-set: a label it does NOT report missing
+        # is present there. But guard the docusketch case: check_docusketch
+        # returns [] BOTH when a valid .esx exists AND when the folder has
+        # no DOCS at all — only the former is real evidence, so require a
+        # DOCS folder before crediting a docusketch label as found.
         try:
-            missing_here = (set(check_docusketch(b))
-                            | set(check_photos(resolve_pics_dir(b),
-                                                raw_text=raw_text)))
+            dk_missing = set(check_docusketch(b))
+            ph_missing = set(check_photos(resolve_pics_dir(b),
+                                          raw_text=raw_text))
         except Exception:
             continue
+        has_docs = os.path.isdir(os.path.join(b, "DOCS"))
+        missing_here = dk_missing | ph_missing
         for label in list(want):
-            if label not in missing_here:   # satisfied in this sibling
+            is_docusketch = "docusketch" in label.lower()
+            if is_docusketch and not has_docs:
+                continue  # no DOCS folder → not real evidence, skip
+            if label not in missing_here:   # present in this sibling
                 try:
                     found[label] = os.path.relpath(base_dir, parent_root)
                 except ValueError:
@@ -1748,6 +1954,13 @@ def audit_jobs(client_names, audit_base, year=None, folder_path_lookup=None,
                 continue
             if len(subs) >= 2:
                 return parent, subs
+            # Unique match THIS year but <2 sub-jobs → it's a single job for
+            # this year. Stop here; do NOT fall through to an older year's
+            # same-named but DIFFERENT job (e.g. the 2026 "Lilia Robles"
+            # single job vs. the 2025 "Robles Lilia Apartment" multi-unit —
+            # the older one's Apartment 213/214/Hank Greer/Taboo sub-jobs were
+            # wrongly grafted onto the current-year parent).
+            return None, []
         return None, []
 
     _expanded = []
@@ -2170,6 +2383,10 @@ def audit_jobs(client_names, audit_base, year=None, folder_path_lookup=None,
                         "new_loss":     new_loss,
                         "tenant":       tenant,
                         "unit":         unit,
+                        # Cache-hit path previously dropped unit_folder, so a
+                        # clean multi-unit job lost its unit chip on same-day
+                        # re-runs. It's already resolved above — carry it.
+                        "unit_folder":  unit_folder,
                         "time_slot":    time_slot,
                         "requirements": _cached_reqs,
                         "claim_origin": (job.get("claim_origin")
@@ -2227,7 +2444,26 @@ def audit_jobs(client_names, audit_base, year=None, folder_path_lookup=None,
                     _is_sub = True
             except Exception:
                 pass
-        if (_is_sub and (fi or pi)):
+        # Multi-unit guard: a "Unit 561-J" / "Apt 1017" sub-job is an
+        # INDEPENDENT job — each unit has its own paperwork + photos. The
+        # cross-sibling misfiled scan only makes sense for shared-paperwork
+        # commercial parents (a school district where a tech dumps every
+        # campus's photos into one folder). For apartment units, "the
+        # sibling unit has its own Scope/docusketch" is normal, not a
+        # misfile — scanning siblings there flags every unit as misfiled
+        # (the user's "flags everything"). Skip the scan for unit sub-jobs.
+        # (2026-06-22)
+        #
+        # Same logic for multi-CLAIM jobs (Mansolino Sayra 1st Claim / 2nd
+        # Claim) — two independent claims filed as sibling folders under one
+        # name. Each claim owns its OWN paperwork/photos, so a sibling claim
+        # having its own Scope is NOT a misfile. The user: claims "shouldnt
+        # be combined in any way". Skip the cross-sibling scan for claim
+        # folders too. (2026-06-24)
+        _base = os.path.basename(cp)
+        _is_unit = bool(re.search(r'(?i)\b(unit|apt|apartment|ste|suite)\b',
+                                  _base)) or has_claim_suffix(_base)
+        if (_is_sub and not _is_unit and (fi or pi)):
             _parent_root = os.path.dirname(
                 job_override or cp)
             try:
@@ -2366,12 +2602,26 @@ def audit_jobs(client_names, audit_base, year=None, folder_path_lookup=None,
                 ij = indexed_jobs[i]
                 try:
                     out[i] = _audit_one(ij)
-                except Exception:
-                    # Mirror ex.map: a worker exception would normally
-                    # propagate to the caller; here we record None so
-                    # the slot still aligns with submission order.
-                    # Surfaces as a missing row rather than a hang.
-                    out[i] = None
+                except Exception as ex:
+                    # A per-job crash must NOT make the client vanish from
+                    # the audit (silent N-1 rows the admin can't notice).
+                    # Emit a flagged error placeholder so the row still
+                    # shows, with the failure surfaced as a note.
+                    _, _jobitem = ij
+                    _cli = ((_jobitem.get("client")
+                             if isinstance(_jobitem, dict) else str(_jobitem))
+                            or "?")
+                    out[i] = {
+                        "client": _cli, "folder": "", "path": "",
+                        "found": False, "form_issues": [], "photo_issues": [],
+                        "note_issues": [f"Audit error: {type(ex).__name__}: {ex}"],
+                        "misplaced_forms": [], "misplaced_photos": [],
+                        "aging": 0, "last": None, "flagged": True, "techs": [],
+                        "new_loss": False, "tenant": "", "unit": "",
+                        "unit_folder": "", "time_slot": "", "requirements": [],
+                        "claim_origin": "", "subjob": False,
+                        "audit_error": f"{type(ex).__name__}: {ex}",
+                    }
 
         workers = [
             threading.Thread(target=_worker, daemon=True,
