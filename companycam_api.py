@@ -319,6 +319,7 @@ def _shape_photo(photo):
         "original_url":      _original_uri(photo),
         "coordinates":       photo.get("coordinates"),
         "photo_url":         photo.get("photo_url") or "",
+        "creator_name":      photo.get("creator_name") or "",
     }
 
 
@@ -410,10 +411,10 @@ def _download(url, dest_path, _max_retries=3):
     return dest_path
 
 
-def _photo_filename(photo):
-    """A stable, sortable filename carrying the capture time + a short id
-    token (so re-runs dedup by name, like the zip importer). e.g.
-    'CC 2026-06-30 13-04-11 a1b2c3d4.jpg'."""
+def _photo_filename(photo, tech=""):
+    """A stable, sortable filename carrying the tech + capture time + a short
+    id token (so re-runs dedup by name, like the zip importer). e.g.
+    'CC FB 2026-06-30 13-04-11 a1b2c3d4.jpg'."""
     import datetime as _dt
     cap = photo.get("captured_at")
     stamp = ""
@@ -428,8 +429,9 @@ def _photo_filename(photo):
     if ext not in (".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif"):
         ext = ".jpg"
     idtok = (photo.get("id") or "")[:8]
-    label = ("CC " + (stamp + " " if stamp else "") + idtok).strip()
-    return label + ext
+    t = (tech or "").strip()
+    parts = ["CC"] + ([t] if t else []) + ([stamp] if stamp else []) + [idtok]
+    return " ".join(p for p in parts if p).strip() + ext
 
 
 def count_new_photos(project_id, since_epoch=None):
@@ -438,8 +440,30 @@ def count_new_photos(project_id, since_epoch=None):
     return len(new_photos(project_id, since_epoch=since_epoch))
 
 
+def probe_new(project_id, since_epoch="auto"):
+    """Count new photos + the distinct uploaders (creator_name) WITHOUT
+    downloading — so the UI can pre-fill the tech picker."""
+    import persistence
+    pid = str(project_id or "").strip()
+    if not pid:
+        return {"count": 0, "uploaders": []}
+    since = (persistence.get_companycam_seen(pid).get("last_captured_at")
+             if since_epoch == "auto" else since_epoch)
+    try:
+        photos = new_photos(pid, since_epoch=since)
+    except Exception:
+        return {"count": 0, "uploaders": []}
+    ups, seen = [], set()
+    for p in photos:
+        nm = (p.get("creator_name") or "").strip()
+        if nm and nm.lower() not in seen:
+            seen.add(nm.lower())
+            ups.append(nm)
+    return {"count": len(photos), "uploaders": ups}
+
+
 def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
-                    subfolder="", advance_watermark=True):
+                    subfolder="", advance_watermark=True, tech=""):
     """Download NEW project photos into `dest_dir` and advance the per-
     project high-water mark.
 
@@ -482,7 +506,7 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
 
     downloaded, skipped, files, latest = 0, 0, [], since
     for p in photos:
-        fname = _photo_filename(p)
+        fname = _photo_filename(p, tech)
         if fname.lower() in existing:
             skipped += 1
         else:

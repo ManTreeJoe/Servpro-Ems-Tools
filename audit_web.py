@@ -2074,9 +2074,35 @@ class Api:
             pass
         return False
 
-    def companycam_pull_one(self, client: str, card_id: str = "") -> dict:
-        """Pull NEW CompanyCam photos for ONE job into its PICS folder. Only
-        new photos (per-project water-mark), so it's safe to re-run."""
+    def companycam_probe(self, client: str) -> dict:
+        """New-photo count + the uploaders (creator_name) for a job, without
+        downloading — so the UI can show the count + pre-fill the tech picker."""
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        if not cc.is_configured():
+            return {"ok": False, "error": "CompanyCam token not set"}
+        try:
+            pid = cc.find_project_id(client, use_graph=False) or ""
+        except Exception:
+            pid = ""
+        if not pid:
+            return {"ok": True, "matched": False, "count": 0, "uploaders": []}
+        try:
+            pr = cc.probe_new(pid)
+            return {"ok": True, "matched": True, "count": pr.get("count", 0),
+                    "uploaders": pr.get("uploaders", [])}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def companycam_pull_one(self, client: str, dest_subfolder: str = "",
+                            tech: str = "", card_id: str = "") -> dict:
+        """Pull NEW CompanyCam photos for ONE job into its PICS folder (into
+        `dest_subfolder` stage if given), named with `tech`. Only new photos
+        (per-project water-mark), so it's safe to re-run."""
         if not client:
             return {"ok": False, "error": "no client"}
         try:
@@ -2117,10 +2143,14 @@ class Api:
         if not pid:
             return {"ok": False,
                     "error": f"No CompanyCam project matched '{client}'"}
+        stage = (dest_subfolder or "").strip()
+        if stage.upper() == "AUTO":
+            stage = ""
         try:
-            r = cc.pull_new_photos(pid, pics) or {}
+            r = cc.pull_new_photos(pid, pics, subfolder=stage, tech=(tech or "")) or {}
             return {"ok": True, "pulled": r.get("downloaded", 0),
-                    "skipped": r.get("skipped", 0), "pics": pics}
+                    "skipped": r.get("skipped", 0), "pics": pics,
+                    "stage": stage}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 

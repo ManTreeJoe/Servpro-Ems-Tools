@@ -516,14 +516,31 @@
     } else if (action === "sp-import") {
       if (M.openSpImport) M.openSpImport(row);
     } else if (action === "cc-pull") {
-      setStatus(ctx, "📷 Pulling CompanyCam photos…", "");
+      setStatus(ctx, "📷 Checking CompanyCam…", "");
+      let pr;
+      try { pr = await pywebview.api.companycam_probe(row.client); }
+      catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
+      if (!pr || !pr.ok) { setStatus(ctx, "CompanyCam: " + ((pr && pr.error) || "?"), "warn"); return; }
+      if (!pr.matched) { setStatus(ctx, "No CompanyCam project matched this job", "warn"); return; }
+      if (!pr.count) { setStatus(ctx, "📷 No new CompanyCam photos for this job", ""); return; }
+      const who = _firstLast(row.display_name || tc(ctx, row.client));
+      // Pick the destination stage folder.
+      if (typeof window.pickPicsStage !== "function") { setStatus(ctx, "Stage picker didn't load — reopen the tool", "warn"); return; }
+      const dest = await window.pickPicsStage({ client: who, count: pr.count, allowAuto: false });
+      if (dest === null) return;
+      // Confirm the tech — pre-filled with the CompanyCam uploader(s).
+      let tech = "";
+      if (typeof window.pickImportTech === "function") {
+        tech = await window.pickImportTech({ client: who, techs: pr.uploaders || [] });
+        if (tech === null) return;
+      }
+      setStatus(ctx, `📷 Pulling ${pr.count} photo${pr.count === 1 ? "" : "s"}…`, "");
       let res;
-      try { res = await pywebview.api.companycam_pull_one(row.client, row.trello_card_id || ""); }
+      try { res = await pywebview.api.companycam_pull_one(row.client, dest === "AUTO" ? "" : dest, tech || "", row.trello_card_id || ""); }
       catch (e) { setStatus(ctx, "CompanyCam pull failed: " + e, "error"); return; }
       if (!res || !res.ok) { setStatus(ctx, "CompanyCam: " + ((res && res.error) || "?"), "warn"); return; }
       const p = res.pulled || 0;
-      setStatus(ctx, p ? `✓ Pulled ${p} new CompanyCam photo${p === 1 ? "" : "s"} into PICS`
-                       : "📷 No new CompanyCam photos for this job", p ? "ok" : "");
+      setStatus(ctx, p ? `✓ Pulled ${p} CompanyCam photo${p === 1 ? "" : "s"}${res.stage ? " → " + res.stage : ""}` : "📷 No new photos", p ? "ok" : "");
       if (ctx.reauditAndRerender) ctx.reauditAndRerender(row.client);
     } else if (action === "copy-client") {
       // Always copy as "First Last" when it's a Last,First personal name.

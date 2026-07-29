@@ -18,7 +18,7 @@ import sys
 import glob
 import shutil
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 
 # ── Stdout/stderr encoding ─────────────────────────────────────────────────
