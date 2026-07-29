@@ -1,5 +1,6 @@
 {
   "version": "1.1.1",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "notes": "CompanyCam pull now organizes like the regular import: it picks the destination stage folder and names each photo with the confirmed tech (pre-filled from the CompanyCam uploader)."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.1.1/EMS-Tools-Setup-1.1.1.exe",
+  "notes": "CompanyCam pull now organizes like the regular import (stage folder + tech from the uploader), and updates now install with one click."
 }

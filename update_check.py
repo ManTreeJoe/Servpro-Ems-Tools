@@ -40,6 +40,7 @@ def check(timeout: float = 6.0) -> dict:
             "current": current,
             "latest": latest,
             "url": data.get("url") or "",
+            "installer": data.get("installer") or "",
             "notes": data.get("notes") or "",
         }
     except Exception as ex:

@@ -155,11 +155,27 @@ async function maybeCheckUpdate() {
   bar.innerHTML =
     `<span>⬆️ Update available — <b>v${r.latest}</b> (you have v${r.current})${r.notes ? " · " + r.notes : ""}</span>
      <span style="flex:1;"></span>
-     <button id="update-dl" style="background:#fff;color:#2E8B57;border:none;border-radius:5px;padding:5px 12px;font-weight:700;cursor:pointer;">Download</button>
+     <button id="update-dl" style="background:#fff;color:#2E8B57;border:none;border-radius:5px;padding:5px 12px;font-weight:700;cursor:pointer;">Update now</button>
      <button id="update-x" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:5px;padding:5px 10px;cursor:pointer;">✕</button>`;
   document.body.appendChild(bar);
-  document.getElementById("update-dl").addEventListener("click", () => {
-    try { pywebview.api.open_url(r.url || ""); } catch (e) { if (r.url) window.open(r.url); }
+  const msg = bar.querySelector("span");
+  const dl = document.getElementById("update-dl");
+  dl.addEventListener("click", async () => {
+    dl.disabled = true; dl.style.cursor = "default"; dl.textContent = "Downloading…";
+    let res;
+    try { res = await pywebview.api.install_update(r.installer || r.url || ""); }
+    catch (e) { res = { ok: false, error: String(e) }; }
+    if (res && res.ok && res.launched) {
+      dl.textContent = "Installer opened ✓";
+      if (msg) msg.innerHTML = "⬇️ Installer downloaded — follow the setup prompts. EMS Tools will close and reopen on the new version.";
+    } else if (res && res.opened_page) {
+      dl.textContent = "Opened page";
+      if (msg) msg.innerHTML = "🌐 Opened the download page in your browser — run the setup from there.";
+    } else {
+      dl.disabled = false; dl.style.cursor = "pointer"; dl.textContent = "Retry";
+      if (msg) msg.innerHTML = "⚠️ Update failed: " + ((res && res.error) || "unknown") + " — try again or open the release page.";
+      try { pywebview.api.open_url(r.url || ""); } catch (_) {}
+    }
   });
   document.getElementById("update-x").addEventListener("click", () => bar.remove());
 }

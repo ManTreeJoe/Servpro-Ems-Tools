@@ -381,6 +381,41 @@ class HomeApi:
         except Exception:
             return False
 
+    def install_update(self, url: str = "") -> dict:
+        """Download the installer and launch it. The setup closes this app,
+        upgrades in place, and relaunches it. Falls back to opening the release
+        page in the browser if there's no direct installer link or download
+        fails."""
+        info = {}
+        try:
+            import update_check
+            info = update_check.check() or {}
+        except Exception:
+            info = {}
+        dl = (url or info.get("installer") or "").strip()
+        page = info.get("url") or ""
+        if not dl:
+            if page:
+                self.open_url(page)
+                return {"ok": True, "launched": False, "opened_page": True}
+            return {"ok": False, "error": "No installer link configured"}
+        try:
+            import os
+            import shutil
+            import tempfile
+            import urllib.request
+            name = dl.rsplit("/", 1)[-1] or "EMS-Tools-Setup.exe"
+            dest = os.path.join(tempfile.gettempdir(), name)
+            req = urllib.request.Request(dl, headers={"User-Agent": "EMS-Tools"})
+            with urllib.request.urlopen(req, timeout=180) as r, open(dest, "wb") as f:
+                shutil.copyfileobj(r, f)
+            os.startfile(dest)  # noqa: launches setup detached; it closes+relaunches us
+            return {"ok": True, "launched": True, "path": dest}
+        except Exception as ex:
+            if page:
+                self.open_url(page)
+            return {"ok": False, "error": str(ex), "opened_page": bool(page)}
+
     def counts(self):
         """Live counts per sidebar item — best-effort, cheap reads."""
         out = {}
