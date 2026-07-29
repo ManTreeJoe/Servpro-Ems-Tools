@@ -59,6 +59,7 @@ web_modules = sorted(
 hiddenimports = web_modules + [
     'openpyxl', 'send2trash', 'PIL._tkinter_finder',
     'msg_reader', 'olefile', 'new_loss_intake',
+    'companycam_api', 'companycam_import', 'dept_browser',
 ]
 hiddenimports += collect_submodules('openpyxl')
 hiddenimports += ['bottle', 'proxy_tools',

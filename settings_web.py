@@ -83,6 +83,38 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    # ── Per-department browser routing ───────────────────────────────
+    def get_dept_browsers(self) -> dict:
+        """Current per-department browser commands + the department list."""
+        try:
+            base = config.load_base() or {}
+            depts = list((base.get("departments") or {}).keys()) or ["IE", "OC"]
+            return {"ok": True,
+                    "browsers": base.get("dept_browsers") or {},
+                    "departments": depts,
+                    "active": (base.get("active_department") or "").strip()}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def set_dept_browser(self, dept: str, command: str) -> dict:
+        """Set (or clear) the browser command for one department. `command`
+        is a browser .exe path, or a template containing {url}."""
+        dept = (dept or "").strip().upper()
+        if not dept:
+            return {"ok": False, "error": "dept required"}
+        try:
+            cfg = dict(config.load_base() or {})
+            browsers = dict(cfg.get("dept_browsers") or {})
+            if (command or "").strip():
+                browsers[dept] = command.strip()
+            else:
+                browsers.pop(dept, None)
+            cfg["dept_browsers"] = browsers
+            config.save(cfg)
+            return {"ok": True, "dept": dept}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     # ── Multiple-department (OC / IE) config ─────────────────────────
     def dept_config(self):
         """State for the Departments settings section: whether it's on,

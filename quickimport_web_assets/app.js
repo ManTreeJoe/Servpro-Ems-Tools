@@ -53,7 +53,8 @@
     if (!job || !job.name) return;
     try {
       let r = getRecents().filter((x) => (x.name || "").toLowerCase() !== job.name.toLowerCase());
-      r.unshift({ name: job.name, display: job.display || job.name, path: job.path || "" });
+      r.unshift({ name: job.name, display: job.display || job.name, path: job.path || "",
+                  parent: job.parent || "", is_unit: !!job.is_unit });
       localStorage.setItem("qi_recents", JSON.stringify(r.slice(0, 10)));
     } catch (e) {}
   }
@@ -70,12 +71,17 @@
     if (!r.length) { box.innerHTML = ""; return; }
     box.innerHTML = `<div class="grp" style="margin:14px 2px 6px;">Recent</div>` +
       r.map((j) => `
-        <div class="job recent" data-name="${esc(j.name)}">
+        <div class="job recent" data-name="${esc(j.name)}" data-unit="${j.is_unit ? "1" : ""}"
+             data-path="${esc(j.path || "")}" data-parent="${esc(j.parent || "")}" data-display="${esc(j.display || j.name)}">
           <span>🕘</span><span class="nm">${esc(j.display || j.name)}</span>
           <button class="btn rec-x" title="Remove from recent" style="padding:2px 9px;">✕</button>
         </div>`).join("");
     box.querySelectorAll(".job.recent").forEach((el) => {
-      el.addEventListener("click", (e) => { if (e.target.closest(".rec-x")) return; selectJob(el.dataset.name); });
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".rec-x")) return;
+        if (el.dataset.unit) selectUnit({ name: el.dataset.name, path: el.dataset.path, parent: el.dataset.parent, display: el.dataset.display });
+        else selectJob(el.dataset.name);
+      });
       el.querySelector(".rec-x").addEventListener("click", (e) => { e.stopPropagation(); removeRecent(el.dataset.name); });
     });
   }
@@ -102,12 +108,21 @@
     const items = res.results || [];
     if (res.mode === "folders" && items.length) {
       box.innerHTML = items.map((j) => `
-        <div class="job" data-name="${esc(j.name)}">
-          <span>📁</span><span class="nm">${esc(j.display)}</span>
-          ${j.year_folder ? `<span class="tag">${esc(j.year_folder)}</span>` : ""}
+        <div class="job${j.is_unit ? " unit" : ""}" data-name="${esc(j.name)}"
+             data-unit="${j.is_unit ? "1" : ""}" data-path="${esc(j.folder_path || "")}"
+             data-parent="${esc(j.parent || "")}" data-display="${esc(j.display)}"
+             ${j.is_unit ? 'style="margin-left:22px;"' : ""}>
+          <span>${j.is_unit ? "🏠" : "📁"}</span><span class="nm">${esc(j.display)}</span>
+          ${j.year_folder && !j.is_unit ? `<span class="tag">${esc(j.year_folder)}</span>` : ""}
         </div>`).join("");
       box.querySelectorAll(".job").forEach((el) =>
-        el.addEventListener("click", () => selectJob(el.dataset.name)));
+        el.addEventListener("click", () => {
+          if (el.dataset.unit) selectUnit({
+            name: el.dataset.name, path: el.dataset.path,
+            parent: el.dataset.parent, display: el.dataset.display,
+          });
+          else selectJob(el.dataset.name);
+        }));
     } else {
       renderNoFolder(items, q);
     }
@@ -169,12 +184,29 @@
     resolveCard();  // auto-pin the Trello card (or prompt to pick)
   }
 
+  // Select a specific UNIT subfolder (e.g. "Lilia Robles › Unit 1016"). Pin
+  // its folder so import/open target the unit; resolve the card off the PARENT
+  // property (units share the property's Trello card).
+  async function selectUnit(d) {
+    setStatus("Loading unit…");
+    try { await pywebview.api.pin_folder(d.name, d.path); } catch (e) {}
+    selected = {
+      client: d.name, cardName: d.parent || d.name,
+      display_name: d.display, path: d.path, trello_card_id: "",
+    };
+    pushRecent({ name: d.name, display: d.display, path: d.path,
+                 parent: d.parent || "", is_unit: true });
+    renderPanel();
+    setStatus("");
+    resolveCard();
+  }
+
   // Auto-pin the job's Trello card; if several match, open a picker.
   async function resolveCard() {
     const r = selected;
     if (!r || r.trello_card_id) return;
     let res;
-    try { res = await pywebview.api.resolve_card(r.client); }
+    try { res = await pywebview.api.resolve_card(r.cardName || r.client); }
     catch (e) { return; }
     if (!res || !res.ok || selected !== r) return;   // job changed meanwhile
     if (res.card_id) {
@@ -208,7 +240,7 @@
       el.addEventListener("click", async () => {
         const cid = el.dataset.card;
         try { window.closeModal("modal-overlay"); } catch (e) { overlay.remove(); }
-        const res = await pywebview.api.pin_card(selected.client, cid);
+        const res = await pywebview.api.pin_card(selected.cardName || selected.client, cid);
         if (res && res.ok === false) { setStatus("Pin failed: " + (res.error || "?"), "warn"); return; }
         selected.trello_card_id = cid;
         setStatus("📌 Trello card pinned", "ok");
@@ -279,12 +311,12 @@
         else setStatus("No Trello card pinned for this job", "warn");
         break;
       case "xa": {
-        const ok = await pywebview.api.open_xa_link(r.client, r.trello_card_id || "");
+        const ok = await pywebview.api.open_xa_link(r.cardName || r.client, r.trello_card_id || "");
         if (!ok) setStatus("No XactAnalysis link on this card yet", "warn");
         break;
       }
       case "cc": {
-        const ok = await pywebview.api.open_companycam_link(r.client);
+        const ok = await pywebview.api.open_companycam_link(r.cardName || r.client);
         if (!ok) setStatus("No CompanyCam link on this card yet", "warn");
         break;
       }
@@ -295,13 +327,13 @@
         break;
       case "cname": await copy(firstLast(r.display_name || r.client), "name"); break;
       case "cclaim": {
-        const res = await pywebview.api.get_claim_number(r.client);
+        const res = await pywebview.api.get_claim_number(r.cardName || r.client);
         if (res && res.ok && res.claim) await copy(res.claim, "claim #");
         else setStatus("No claim # on this card yet", "warn");
         break;
       }
       case "cemail": {
-        const res = await pywebview.api.get_job_email(r.client);
+        const res = await pywebview.api.get_job_email(r.cardName || r.client);
         if (res && res.ok && res.email) await copy(res.email, "email");
         else setStatus("No email on this card yet", "warn");
         break;
@@ -325,23 +357,28 @@
   // ── Import — confirm destination, then native multi-file pick ───
   async function doImport(r) {
     if (!r.path) { setStatus("This job has no folder to import into — use Find folder first", "warn"); return; }
-    // Choose the destination folder FIRST — a specific stage (Initial/Demo/
-    // Monitor/…), a custom folder name, or Auto-detect. This confirms the
-    // destination and lets you override when auto picks wrong.
-    const dest = await window.pickPicsStage({
-      client: firstLast(r.display_name || r.client),
-      allowAuto: true,
-    });
+    if (typeof window.pickPicsStage !== "function" || typeof window.pickImportTech !== "function") {
+      setStatus("Import dialogs didn't load — close and reopen Quick Import.", "err");
+      return;
+    }
+    const who = firstLast(r.display_name || r.client);
+    // 1) Choose the destination folder (stage / custom / Auto).
+    const dest = await window.pickPicsStage({ client: who, allowAuto: true });
     if (dest === null) return;   // cancelled
+    // 2) Who took the photos (required — every import is filed under a tech).
+    const tech = await window.pickImportTech({ client: who });
+    if (tech === null) return;   // cancelled
     setStatus("Opening file picker…");
     let res;
-    try { res = await pywebview.api.pick_and_import_file(r.client, dest === "AUTO" ? "" : dest); }
-    catch (e) { setStatus("Import failed", "err"); return; }
+    try {
+      res = await pywebview.api.pick_and_import_file(
+        r.client, dest === "AUTO" ? "" : dest, "ems", tech || "");
+    } catch (e) { setStatus("Import failed: " + ((e && e.message) || e), "err"); return; }
     if (!res || !res.ok) { setStatus((res && res.error) || "Import cancelled", "warn"); return; }
     const p = res.pics_count || 0, d = res.docs_count || 0;
     if (!p && !d) { setStatus("No files imported", "warn"); return; }
     const where = (dest && dest !== "AUTO") ? ` → ${dest}` : "";
-    setStatus(`✓ Imported ${p} photo${p === 1 ? "" : "s"}${d ? ` + ${d} document${d === 1 ? "" : "s"}` : ""} into ${firstLast(r.display_name || r.client)}${where}`, "ok");
+    setStatus(`✓ Imported ${p} photo${p === 1 ? "" : "s"}${d ? ` + ${d} document${d === 1 ? "" : "s"}` : ""} into ${who}${where}`, "ok");
   }
 
   function confirmModal(title, bodyHtml, okLabel) {

@@ -95,17 +95,39 @@ class Api:
                 if k in seen:
                     continue
                 seen.add(k)
+                fpath = c.get("path") or ""
                 folders.append({
                     "name": name, "display": name,
-                    "folder_path": c.get("path") or "",
-                    "has_folder": True, "card_id": "",
-                    "year_folder": c.get("year_folder") or "",
+                    "folder_path": fpath,
+                    "has_folder": True, "is_unit": False, "parent": "",
+                    "card_id": "", "year_folder": c.get("year_folder") or "",
                 })
+                # Also surface each Unit/room subfolder as its own pickable row
+                # so you can import straight into a specific unit (e.g. Lilia
+                # Robles › Unit 1016).
+                try:
+                    import multi_unit_gui as _mu
+                    for u in (_mu.list_unit_subfolders(fpath) or []):
+                        uk = _canon(name + " " + (u.get("name") or ""))
+                        if uk in seen:
+                            continue
+                        seen.add(uk)
+                        folders.append({
+                            "name":        name + " :: " + (u.get("name") or ""),
+                            "display":     name + " › " + (u.get("name") or ""),
+                            "folder_path": u.get("path") or "",
+                            "has_folder":  True, "is_unit": True, "parent": name,
+                            "card_id": "", "year_folder": c.get("year_folder") or "",
+                        })
+                except Exception:
+                    pass
         except Exception:
             pass
         if folders:
-            folders.sort(key=lambda r: r["name"].lower())
-            return {"ok": True, "results": folders[:40], "mode": "folders"}
+            # Keep each property's units grouped right under it.
+            folders.sort(key=lambda r: ((r.get("parent") or r["name"]).lower(),
+                                        r.get("is_unit", False), r["name"].lower()))
+            return {"ok": True, "results": folders[:60], "mode": "folders"}
 
         # No folder → Trello cards as "no folder yet" candidates.
         cards = []
@@ -237,6 +259,8 @@ class Api:
     def pick_and_import_file(self, *a, **k):
         return self._aw().pick_and_import_file(*a, **k)
     # Stage-for-XA modal (shared audit_detail.js) backend.
+    def list_techs(self):
+        return self._aw().list_techs()
     def list_pics_stages(self, client):
         return self._aw().list_pics_stages(client)
     def copy_pics_to_clipboard(self, client, stage=""):
@@ -259,10 +283,9 @@ class Api:
 
     def open_url(self, url):
         try:
-            import webbrowser
+            import dept_browser
             if url:
-                webbrowser.open(url)
-                return True
+                return dept_browser.open_url(url)
         except Exception:
             pass
         return False

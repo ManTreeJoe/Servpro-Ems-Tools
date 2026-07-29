@@ -327,7 +327,8 @@ body { display: flex; flex-direction: column; }
 .list-row:hover { background: var(--row-hover); }
 .list-row.active {
   background: var(--row-active);
-  border-left-color: var(--green);
+  /* Green status bar removed (2026-07 streamline) — selection shows via the
+     row background; red/amber flag bars stay. */
 }
 .list-row.flagged { border-left-color: var(--red); }
 .list-row.flagged.active { border-left-color: #FF6E5C; }

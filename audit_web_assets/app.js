@@ -78,20 +78,19 @@ window.addEventListener("pywebviewready", async () => {
   $("#incoming-btn")?.addEventListener("click", () => openIncomingPanel());
   $("#usage-btn")?.addEventListener("click", () => openUsagePanel());
   $("#overview-btn")?.addEventListener("click", () => openOverviewPanel());
+  $("#cc-sync-btn")?.addEventListener("click", () => runCompanyCamSync());
   $("#notes-btn")?.addEventListener("click", () => openNotesPanel());
   $("#sec-work").addEventListener("change", () => refreshDayLabel());
   $("#sec-monitor").addEventListener("change", () => refreshDayLabel());
   // Right-click context menu (close on outside click)
   document.addEventListener("click", () => $("#ctx-menu")?.remove());
   state.dayOffset = 0;
-  state.mode = "daily";
+  state.mode = "search";
   refreshDayLabel();
   updateNotesBadge();          // show the open-notes count on the 📝 button
-  // Mode switcher
-  $("#mode-daily").addEventListener("click",   () => switchMode("daily"));
-  $("#mode-backlog").addEventListener("click", () => switchMode("backlog"));
-  $("#mode-sp").addEventListener("click",      () => switchMode("sp"));
-  $("#mode-oneoff").addEventListener("click",  () => switchMode("oneoff"));
+  // Mode switcher (streamlined 2026-07: Search default, Daily Run, Starred)
+  $("#mode-search")?.addEventListener("click",  () => switchMode("search"));
+  $("#mode-daily")?.addEventListener("click",   () => switchMode("daily"));
   $("#mode-starred")?.addEventListener("click", () => switchMode("starred"));
   // Bulk action buttons
   $("#push-new-losses-btn").addEventListener("click", pushNewLosses);
@@ -220,6 +219,9 @@ window.addEventListener("pywebviewready", async () => {
   // today's run-doc, so filtering matched nothing.
   if (_focus) {
     await openFocusJob(_focus);
+  } else {
+    // Search is the default landing tab now (not the daily board).
+    await switchMode("search");
   }
 });
 
@@ -243,7 +245,7 @@ async function openFocusJob(name) {
               "error");
     return;
   }
-  await switchMode("oneoff");
+  await switchMode("search");
   state.selected_client = rowKey(res.row);
   renderAll();
   // Bring the selected row into view.
@@ -257,42 +259,32 @@ async function openFocusJob(name) {
 // ── Mode switcher (Daily / Backlog / SP Recent / One-off — P1) ──
 async function switchMode(mode) {
   state.mode = mode;
-  ["daily", "backlog", "sp", "oneoff", "starred"].forEach((m) => {
+  ["search", "daily", "starred"].forEach((m) => {
     document.getElementById("mode-" + m)?.classList.toggle("active", m === mode);
   });
   // Only Daily Run uses the day-walker + section toggles
   $("#daily-toolbar").style.display = mode === "daily" ? "" : "none";
-  // A daily-run load keeps running in the background when you leave the tab.
-  // Its loading overlay is only meaningful on Daily Run, so show/hide it to
-  // match the current tab — never cover One-off / SP / Backlog with it.
+  // A daily-run load keeps running in the background when you leave the tab;
+  // its loading overlay is only meaningful on the Daily Run tab.
   if (state.loading) {
     $("#loading-state").classList.toggle("hidden", mode !== "daily");
   }
-  // Run-button text varies by mode
-  $("#run-btn").textContent = mode === "daily"   ? "↻ Run Audit"
-    : mode === "backlog" ? "↻ Reload backlog"
-    : mode === "sp"      ? "↻ Reload SP Recent"
+  $("#run-btn").textContent = mode === "daily" ? "↻ Run Audit"
     : mode === "starred" ? "↻ Reload starred"
-    :                      "↻ Reload one-offs";
-  // Full re-scan + bulk actions live in ⋯ More dropdown — visible
-  // always; only relevant for Daily mode but always-discoverable is
-  // better than mode-dependent hidden buttons.
+    :                      "↻ Reload";
 
-  if (mode === "oneoff") {
+  // Search tab (default) — start from previously-audited jobs; the search box
+  // auto-audits any typed name not already in the list (type-to-find).
+  if (mode === "search") {
     const res = await pywebview.api.list_oneoff();
     if (res?.ok) {
       state.rows = res.rows || [];
-      state.meta = { date_iso: "(one-off)", ran_at: "",
-                     total: res.total,
-                     flagged: state.rows.filter((r) => r.flagged).length,
-                     ok: state.rows.filter((r) => !r.flagged).length };
+      state.meta = { date_iso: "(search)", ran_at: "", total: res.total,
+                     flagged: 0, ok: 0 };
       renderAll();
-      setStatus(
-        res.total
-          ? `🔍 ${res.total} one-off audits today`
-          : "No one-off audits yet — click 🔍 Audit one to add some",
-        res.total ? "ok" : "");
     }
+    setStatus("🔍 Type a job name in the search box to find and audit it", "");
+    $("#search-box")?.focus();
     return;
   }
 
@@ -538,7 +530,7 @@ function openAuditOneDialog() {
     closeOverlay();
     // One-off results live in their own mode/list — switch over so the
     // user lands on the freshly-audited row.
-    await switchMode("oneoff");
+    await switchMode("search");
     state.selected_client = rowKey(res.row);
     renderAll();
     if ((res.count || 1) > 1) {
@@ -1808,36 +1800,8 @@ function renderAll() {
 }
 
 function renderStats() {
-  const m = state.meta || {};
-  const rows = state.rows || [];
-  const total   = m.total ?? rows.length;
-  const flagged = m.flagged ?? rows.filter((r) => r.flagged).length;
-  const ok      = m.ok ?? rows.filter((r) => !r.flagged).length;
-  const aging   = rows.filter((r) => r.aging_days >= 3).length;
-  const missing = rows.reduce((sum, r) => sum + r.total_missing, 0);
-  // Sum across rows for the SP stat tile — total NEW SP files
-  // waiting to import + count of jobs that have any.
-  const spFiles  = rows.reduce((sum, r) => sum + (r.sharepoint_new || 0), 0);
-  const spJobs   = rows.filter((r) => (r.sharepoint_new || 0) > 0).length;
-  $("#stat-total .stat-num").textContent   = total;
-  $("#stat-flagged .stat-num").textContent = flagged;
-  $("#stat-ok .stat-num").textContent      = ok;
-  $("#stat-aging .stat-num").textContent   = aging;
-  $("#stat-missing .stat-num").textContent = missing;
-  // SP tile — green pulse when there are files available so it
-  // grabs attention. Label shows "files · N jobs" via title attr.
-  const spTile = document.getElementById("stat-sp");
-  if (spTile) {
-    spTile.querySelector(".stat-num").textContent = spFiles;
-    spTile.classList.toggle("has-files", spFiles > 0);
-    spTile.title = spFiles > 0
-      ? `${spFiles} files across ${spJobs} job${spJobs !== 1 ? "s" : ""} — click to filter`
-      : "No SharePoint photos waiting to import";
-  }
-  const ranLabel = m.ran_at && m.ran_at !== "—"
-    ? `Last run: ${m.ran_at}${m.use_cache === false ? " (full re-scan)" : ""}`
-    : "Not yet run";
-  $("#stats-meta").textContent = ranLabel;
+  // Stats bar (Total / Flagged / OK / SP tiles) removed in the 2026-07
+  // streamline — no-op kept so existing renderAll() call sites don't break.
 }
 
 function renderList() {
@@ -2288,7 +2252,9 @@ function renderListRow(r, opts = {}) {
   const misplacedCount = (r.total_misplaced != null)
     ? r.total_misplaced
     : ((r.misplaced_forms || []).length + (r.misplaced_photos || []).length);
-  if (misplacedCount > 0) {
+  // Suppressed on multi-unit parents/units — a file under a unit subfolder
+  // isn't actually misfiled.
+  if (misplacedCount > 0 && !r.subjob && !r.is_parent) {
     subChips.push(`<span class="mini-chip misplaced" title="${misplacedCount} item(s) found in the wrong folder — see detail">⚠ ${misplacedCount} misfiled</span>`);
   }
 
@@ -2884,10 +2850,13 @@ function onSearchInput(ev) {
     // of the typed name (resolves the folder + audits it), so the search
     // still surfaces the job. Debounced + guarded so it fires once per
     // distinct term, not on every keystroke.
+    // Auto-audit the typed job. On the Search tab we ALWAYS pull it (even if
+    // partial matches exist) so the exact job surfaces at the top; elsewhere
+    // only when nothing local matches.
     const q = state.search.trim();
     if (q.length >= 3 && !state.oneoffRunning
         && q.toLowerCase() !== (state.oneoffTried || "").toLowerCase()
-        && filterRows().length === 0) {
+        && (state.mode === "search" || filterRows().length === 0)) {
       await runOneoffFromSearch(q);
     }
   }, 300);
@@ -4613,6 +4582,31 @@ const NL_FIELD_GROUPS = [
   ]},
 ];
 const NL_TEXTAREA_KEYS = new Set(["field_notes", "office_notes", "address"]);
+
+// 📷 Bulk CompanyCam sync — dry-run to count, confirm, then pull.
+async function runCompanyCamSync() {
+  const menu = document.getElementById("more-menu");
+  if (menu) menu.style.display = "none";
+  setStatus("📷 Checking CompanyCam for new photos…", "");
+  let dry;
+  try { dry = await pywebview.api.companycam_sync(true); }
+  catch (e) { setStatus("CompanyCam sync failed: " + e, "error"); return; }
+  if (!dry || !dry.ok) { setStatus("CompanyCam: " + ((dry && dry.error) || "?"), "error"); return; }
+  const matched = (dry.results || []).filter((r) => r.matched);
+  const n = dry.total || 0;
+  if (!n) { setStatus(dry.note || "📷 CompanyCam: no new photos across active jobs", "ok"); return; }
+  if (!confirm(`Pull ${n} new CompanyCam photo${n === 1 ? "" : "s"} into ${matched.length} active job${matched.length === 1 ? "" : "s"}?\n\nDownloads into each job's PICS folder — may take a few minutes.`)) {
+    setStatus("", ""); return;
+  }
+  setStatus(`📷 Syncing ${n} photos… this can take a few minutes, please wait`, "");
+  let res;
+  try { res = await pywebview.api.companycam_sync(false); }
+  catch (e) { setStatus("Sync failed: " + e, "error"); return; }
+  if (!res || !res.ok) { setStatus("Sync failed: " + ((res && res.error) || "?"), "error"); return; }
+  const pulled = res.total || 0;
+  const jobs = (res.results || []).filter((r) => r.matched && (r.pulled || 0) > 0).length;
+  setStatus(`✓ CompanyCam sync complete — pulled ${pulled} photo${pulled === 1 ? "" : "s"} into ${jobs} job${jobs === 1 ? "" : "s"}`, "ok");
+}
 
 function openNewLossModal() {
   const inputStyle =

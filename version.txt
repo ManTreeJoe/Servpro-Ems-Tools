@@ -1,0 +1,5 @@
+{
+  "version": "1.1.0",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
+  "notes": "Quick Import tool, XA notes, per-job CompanyCam pull, audit streamline, per-department browsers, and auto-update checking."
+}

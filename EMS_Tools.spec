@@ -81,6 +81,8 @@ hiddenimports = web_modules + [
     # New-loss intake is a function-local import from audit_web; list it so
     # static analysis can't drop it from the build.
     'new_loss_intake',
+    # CompanyCam + dept-browser are reached via function-local imports too.
+    'companycam_api', 'companycam_import', 'dept_browser', 'update_check',
 ]
 hiddenimports += collect_submodules('openpyxl')
 # pywebview Windows backend + its http-server deps. pywebview 6.x ships a

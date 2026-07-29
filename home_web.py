@@ -323,6 +323,8 @@ class HomeApi:
     _PANELS_HIDDEN_BY_DEFAULT = {"job_notes"}
 
     def _is_panel_visible(self, key: str) -> bool:
+        if key == "settings":
+            return True   # Settings is pinned in the sidebar — never hideable.
         try:
             import persistence as _per
             val = _per.get(f"panel_hidden_{key}")
@@ -339,6 +341,8 @@ class HomeApi:
         rows = []
         for (label, items) in NAV_GROUPS:
             for (k, ic, n) in items:
+                if k == "settings":
+                    continue   # pinned — no visibility toggle
                 rows.append({
                     "key":     k,
                     "icon":    ic,
@@ -352,12 +356,30 @@ class HomeApi:
     def set_panel_visibility(self, key: str, visible: bool) -> dict:
         if not key:
             return {"ok": False, "error": "key required"}
+        if key == "settings":
+            return {"ok": False, "error": "Settings is pinned and can't be hidden"}
         try:
             import persistence as _per
             _per.set_value(f"panel_hidden_{key}", not bool(visible))
             return {"ok": True, "key": key, "visible": bool(visible)}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+
+    def check_update(self) -> dict:
+        """Best-effort update check against the repo's version.txt."""
+        try:
+            import update_check
+            return update_check.check()
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "update_available": False}
+
+    def open_url(self, url: str) -> bool:
+        """Open a URL (the update download link) in the browser."""
+        try:
+            import dept_browser
+            return dept_browser.open_url(url)
+        except Exception:
+            return False
 
     def counts(self):
         """Live counts per sidebar item — best-effort, cheap reads."""

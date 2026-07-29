@@ -144,6 +144,21 @@
     </div>
   </section>
 
+  <section style="margin-bottom: 22px; padding: 14px 18px;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px;">
+    <div style="font-size: 13px; font-weight: 600; margin-bottom:6px;">🌐 Per-department browser</div>
+    <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
+      Open Trello / XactAnalysis / CompanyCam links in a different browser per
+      department, so IE and OC logins stay separate. Point each side at a
+      browser <b>.exe</b> (e.g. two Helium installs), or a command with
+      <code>{url}</code> for a profile, e.g.
+      <code>helium.exe --profile-directory=OC {url}</code>. Blank = system default.
+    </div>
+    <div id="browsers-body"></div>
+    <span id="browsers-status" class="muted" style="font-size:12px;"></span>
+  </section>
+
   <div id="form-fields"></div>
 </main>
 <footer class="footer">
@@ -154,11 +169,47 @@
 <script>
 let SCHEMA = [];
 let VALUES = {};
+
+async function loadBrowsers() {
+  const body = document.getElementById("browsers-body");
+  if (!body) return;
+  let res;
+  try { res = await pywebview.api.get_dept_browsers(); } catch (e) { return; }
+  if (!res || !res.ok) { body.innerHTML = '<span class="muted">Unavailable</span>'; return; }
+  const depts = (res.departments && res.departments.length) ? res.departments : ["IE", "OC"];
+  const browsers = res.browsers || {};
+  const active = (res.active || "").toUpperCase();
+  body.innerHTML = depts.map((d) => {
+    const dk = String(d).toUpperCase();
+    const val = browsers[dk] || browsers[d] || "";
+    return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <label style="min-width:48px;font-weight:700;font-size:12px;">${dk}${dk === active ? " •" : ""}</label>
+      <input type="text" data-dept="${dk}" value="${(val + "").replace(/"/g, "&quot;")}"
+             placeholder="browser .exe or command with {url} — blank = system default"
+             style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font:inherit;font-size:12px;" />
+      <button class="btn br-browse" data-dept="${dk}">Browse…</button>
+      <button class="btn btn-primary br-save" data-dept="${dk}">Save</button>
+    </div>`;
+  }).join("");
+  body.querySelectorAll(".br-browse").forEach((b) => b.addEventListener("click", async () => {
+    const inp = body.querySelector(`input[data-dept="${b.dataset.dept}"]`);
+    const r = await pywebview.api.pick_file(inp ? inp.value : "");
+    if (r && r.ok && r.path && inp) inp.value = r.path;
+  }));
+  body.querySelectorAll(".br-save").forEach((b) => b.addEventListener("click", async () => {
+    const inp = body.querySelector(`input[data-dept="${b.dataset.dept}"]`);
+    const r = await pywebview.api.set_dept_browser(b.dataset.dept, inp ? inp.value : "");
+    const st = document.getElementById("browsers-status");
+    if (st) st.textContent = (r && r.ok) ? `Saved ${b.dataset.dept} browser ✓` : `Save failed: ${(r && r.error) || "?"}`;
+  }));
+}
+
 window.addEventListener("pywebviewready", async () => {
   SCHEMA = await pywebview.api.schema() || [];
   VALUES = await pywebview.api.load() || {};
   render();
   await renderFirstRunWizard();
+  await loadBrowsers();
   document.getElementById("save").addEventListener("click", save);
   document.getElementById("reload").addEventListener("click", async () => {
     VALUES = await pywebview.api.load() || {};

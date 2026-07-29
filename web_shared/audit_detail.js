@@ -92,7 +92,9 @@
     } else if (!r.flagged) {
       chips.push(`<span class="detail-chip ok">✓ clean</span>`);
     }
-    if (misplacedCount > 0) {
+    // Misfiled chip suppressed on multi-unit parents/units — files under a
+    // unit subfolder aren't actually misfiled (false positive).
+    if (misplacedCount > 0 && !r.subjob && !r.is_parent) {
       chips.push(`<span class="detail-chip misplaced" title="Found in the wrong folder under the parent — needs re-filing">⚠ ${misplacedCount} misfiled</span>`);
     }
     if (r.aging_days >= 3) {
@@ -163,25 +165,8 @@
         </div>
       </section>` : "";
 
-    const metaSection = `
-      <section class="detail-section">
-        <h3>Job details</h3>
-        <div class="detail-meta">
-          <span class="label">Folder</span>
-          <span class="value">${esc(ctx, r.folder || "—")}</span>
-          <span class="label">Path</span>
-          <span class="value">${esc(ctx, r.path || "—")}</span>
-          ${r.last_seen ? `
-            <span class="label">Last activity</span>
-            <span class="value">${esc(ctx, r.last_seen)}</span>
-          ` : ""}
-          ${r.trello_card_id ? `
-            <span class="label">Trello card</span>
-            <span class="value">${esc(ctx, r.trello_card_id)}</span>
-          ` : ""}
-        </div>
-      </section>
-    `;
+    // Job Details section removed in the 2026-07 streamline.
+    const metaSection = "";
 
     const hasPath = !!r.path;
     const hasPin = !!r.trello_card_id;
@@ -206,6 +191,9 @@
                   ${hasPin ? "" : "disabled"}><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello</button>
           <button class="action-btn" data-action="open-xa"
                   ${hasPin ? "" : "disabled"}><img class="btn-icon" src="../web_shared/xactanalysis.png" alt="" onerror="this.remove()"/>XA</button>
+          <button class="action-btn" data-action="xa-note"
+                  ${hasPin ? "" : "disabled"}
+                  title="Write a note → posts to Trello (dated + @tag), opens XactAnalysis, and copies the note so you can paste it in">🗒 XA note</button>
           <button class="action-btn" data-action="open-companycam"
                   title="Open this job's CompanyCam project (reads the CompanyCam link from the Trello card)"
                   ${hasPin ? "" : "disabled"}><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>CompanyCam</button>
@@ -215,9 +203,12 @@
                   title="Import photos/forms into this job's OD folder (WC zip, DocuSign packet, etc.)">📥 Import</button>
           <button class="action-btn" data-action="sp-import"
                   title="Import matching files from SharePoint into the OD job folder">📥 Import SP</button>
+          <button class="action-btn" data-action="cc-pull"
+                  ${hasPath ? "" : "disabled"}
+                  title="Pull this job's NEW CompanyCam photos into its PICS folder"><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Pull CompanyCam</button>
           <button class="action-btn" data-action="attachments"
                   ${hasPin ? "" : "disabled"}
-                  title="Browse + download the Trello card's photos/files">📎 Attachments</button>
+                  title="Browse + download the Trello card's photos/files"><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello Attachments</button>
         </div>
         <div class="action-row">
           <button class="action-btn" data-action="copy-client">📋 Copy name</button>
@@ -232,30 +223,34 @@
           <button class="action-btn" data-action="copy-pics"
                   title="Stage every image in a PICS subfolder into a TEMP folder + open it in Explorer — drag into XactAnalysis from there. Auto-deletes after 1 min."
                   ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
-          <button class="action-btn" data-action="scope"
-                  title="Paste a scope block → preview rooms → save Scope.pdf to the job's DOCS folder">📋 Scope</button>
         </div>
         <div class="action-row">
-          <button class="action-btn" data-action="find-folder">${r.found ? "🔀 Change folder" : "🔎 Find folder"}</button>
-          <button class="action-btn" data-action="pin-card">📌 ${hasPin ? "Re-pin" : "Pin"} Trello</button>
           <button class="action-btn" data-action="comment" ${hasPin ? "" : "disabled"}>💬 Comment</button>
           <button class="action-btn" data-action="docusketch" ${hasPin ? "" : "disabled"}>📐 Docusketch</button>
           <button class="action-btn" data-action="request-items">📨 Request items</button>
-          <button class="action-btn" data-action="xa-prep" title="Xactimate 'new estimate from scratch' prep — carrier price list + copy-paste fields">🧮 Xactimate prep</button>
           <button class="action-btn" data-action="add-note" title="Add a tracked to-do note for this job">📝 Note</button>
-          <button class="action-btn" data-action="match-diag">🔎 Match diagnostic</button>
-          <button class="action-btn" data-action="reaudit">↻ Re-audit</button>
           ${r.section === "sp_recent" ? `
             <button class="action-btn" data-action="sp-rundoc"
                     title="Open the run-doc for this SP folder's date (parsed from name, e.g. '3-19-26' → 3/19)">📄 Run-doc</button>` : ""}
+          <button class="action-btn" type="button" id="detail-more-btn"
+                  title="Less-used actions">⋯ More</button>
+        </div>
+        <div class="action-row detail-more" id="detail-more" style="display:none;">
+          <button class="action-btn" data-action="find-folder">${r.found ? "🔀 Change folder" : "🔎 Find folder"}</button>
+          <button class="action-btn" data-action="pin-card">📌 ${hasPin ? "Re-pin" : "Pin"} Trello</button>
+          <button class="action-btn" data-action="scope"
+                  title="Paste a scope block → preview rooms → save Scope.pdf to the job's DOCS folder">📋 Scope</button>
+          <button class="action-btn" data-action="xa-prep" title="Xactimate 'new estimate from scratch' prep — carrier price list + copy-paste fields">🧮 Xactimate prep</button>
+          <button class="action-btn" data-action="match-diag">🔎 Match diagnostic</button>
+          <button class="action-btn" data-action="reaudit">↻ Re-audit</button>
         </div>
       </footer>
       ${hasPin ? `<section class="detail-section" id="trello-info">
         <h3>🎴 Trello <span class="muted" id="trello-info-status">loading…</span></h3>
         <div id="trello-info-body"></div>
       </section>` : ""}
-      ${hasPin ? `<section class="detail-section initial-cl" id="initial-cl">
-        <h3>📥 Initial checklist <span class="muted" id="initial-cl-status">loading…</span>
+      ${hasPin ? `<section class="detail-section" id="all-cl">
+        <h3>✅ Checklists <span class="muted" id="all-cl-status">loading…</span>
           <button class="action-btn" data-action="grab-cat-class"
                   style="float:right;margin-top:-2px;"
                   title="Read the initial-inspection notes in the card's Trello comments and copy the Category + Class">🔢 Cat / Class</button>
@@ -266,15 +261,7 @@
                   style="float:right;margin:-2px 6px 0 0;"
                   title="Build a clean dated job log from the card's comments (strips email noise) + flag equipment left on site">🗒 Job log</button>
           <span id="cat-class-out" class="muted" style="float:right;margin:2px 8px 0 0;font-weight:600;"></span></h3>
-        <div id="initial-cl-body"></div>
-      </section>` : ""}
-      ${hasPin ? `<section class="detail-section inprog-cl" id="inprog-cl">
-        <h3>🗂 In Progress checklist <span class="muted" id="inprog-cl-status">loading…</span></h3>
-        <ul class="issue-list" id="inprog-cl-items"></ul>
-      </section>` : ""}
-      ${hasPin ? `<section class="detail-section closeout-cl" id="closeout-cl">
-        <h3>📋 CLOSE OUT checklist <span class="muted" id="closeout-cl-status">loading…</span></h3>
-        <ul class="issue-list" id="closeout-cl-items"></ul>
+        <div id="all-cl-body"></div>
       </section>` : ""}
     `;
   }
@@ -286,11 +273,63 @@
     container.querySelectorAll(".action-btn[data-action]").forEach((b) => {
       b.addEventListener("click", () => detailAction(b.dataset.action, r, ctx));
     });
+    // Inject the collapse styles once (checklists + ⋯ More).
+    if (!document.getElementById("detail-collapse-css")) {
+      const st = document.createElement("style");
+      st.id = "detail-collapse-css";
+      st.textContent =
+        ".cl-collapsible > h3{cursor:pointer;user-select:none;}" +
+        ".cl-collapsible > h3::before{content:'\\25B8 ';font-size:11px;opacity:.7;}" +
+        ".cl-collapsible:not(.cl-collapsed) > h3::before{content:'\\25BE ';}" +
+        ".cl-collapsible.cl-collapsed > *:not(h3){display:none !important;}" +
+        ".cl-group.cl-collapsed .cl-items{display:none;}" +
+        ".cl-group-name{font-weight:600;padding:4px 0;}" +
+        ".detail-more{display:flex;flex-direction:row;flex-wrap:wrap;gap:4px;}" +
+        ".detail-more .action-btn{flex:0 0 auto;}" +
+        // Sticky job-name header that shrinks as you scroll (Trello-style).
+        ".detail-head{position:sticky;top:0;z-index:6;background:var(--bg,#1b1b1b);" +
+        "border-bottom:1px solid transparent;transition:padding .12s ease,border-color .12s ease;}" +
+        ".detail-head.shrunk{padding-top:4px;padding-bottom:4px;border-bottom-color:var(--border);}" +
+        ".detail-head .detail-name{transition:font-size .12s ease;}" +
+        ".detail-head.shrunk .detail-name{font-size:15px;}" +
+        ".detail-head.shrunk .detail-techs{display:none;}";
+      document.head.appendChild(st);
+    }
+    // ⋯ More — reveal the less-used row of actions.
+    container.querySelector("#detail-more-btn")?.addEventListener("click", () => {
+      const m = container.querySelector("#detail-more");
+      if (m) m.style.display = (m.style.display === "none" ? "flex" : "none");
+    });
+    // Trello checklists — each section collapsible, collapsed by default.
+    // Trello info section collapsible (each checklist collapses individually
+    // inside #all-cl — handled in loadAllChecklists).
+    ["trello-info"].forEach((id) => {
+      const sec = container.querySelector("#" + id);
+      if (!sec) return;
+      sec.classList.add("cl-collapsible", "cl-collapsed");
+      const h = sec.querySelector("h3");
+      if (h) h.addEventListener("click", (e) => {
+        if (e.target.closest(".action-btn")) return;
+        sec.classList.toggle("cl-collapsed");
+      });
+    });
+    // Sticky job-name header shrinks once you scroll the detail pane.
+    const head = container.querySelector(".detail-head");
+    if (head) {
+      let scroller = container;
+      while (scroller && scroller !== document.body) {
+        const oy = getComputedStyle(scroller).overflowY;
+        if ((oy === "auto" || oy === "scroll") && scroller.scrollHeight > scroller.clientHeight) break;
+        scroller = scroller.parentElement;
+      }
+      scroller = scroller || container;
+      const onScroll = () => head.classList.toggle("shrunk", (scroller.scrollTop || 0) > 24);
+      scroller.addEventListener("scroll", onScroll);
+      onScroll();
+    }
     const hasPin = !!r.trello_card_id;
     if (hasPin) loadTrelloInfo(r, ctx);
-    if (hasPin) loadInProgressChecklist(r, ctx);
-    if (hasPin) loadInitialChecklists(r, ctx);
-    if (hasPin) loadCloseoutChecklist(r, ctx);
+    if (hasPin) loadAllChecklists(r, ctx);   // every checklist on the card
     decorateIssueListsWithCheckboxes(r, ctx);
 
     const trelloBtn = container.querySelector('.action-btn[data-action="open-trello"]');
@@ -345,6 +384,54 @@
   }
 
   // ── The action switch (verbatim port of onDetailAction) ────────────
+  // 🗒 XA note — one dialog that posts the note to Trello (dated + optional
+  // @tag), opens XactAnalysis, and copies the note so it can be pasted into XA.
+  async function openXaNoteModal(row, ctx) {
+    if (!window.openModal) { setStatus(ctx, "Note dialog unavailable", "warn"); return; }
+    let members = [];
+    try {
+      const mr = await pywebview.api.xa_note_members(row.client);
+      members = (mr && mr.members) || [];
+    } catch (e) {}
+    let lastTag = "";
+    try { lastTag = localStorage.getItem("xa_note_tag") || ""; } catch (e) {}
+    const overlay = window.openModal({
+      title: "🗒 XA note — " + _firstLast(row.display_name || tc(ctx, row.client)),
+      sub: "Posts to Trello (dated + tag) · opens XactAnalysis · copies the note to paste in",
+      body: `
+        <textarea id="xan-text" rows="5" placeholder="Type your XA note…"
+                  style="width:100%;box-sizing:border-box;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 11px;font:inherit;font-size:13px;"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+          <label style="font-size:11px;font-weight:700;color:var(--text-muted);">Tag</label>
+          <select id="xan-tag" style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 9px;font:inherit;font-size:12px;">
+            <option value="">— no tag —</option>
+            ${members.map((m) => `<option value="${escA(ctx, m.username)}" ${m.username === lastTag ? "selected" : ""}>${esc(ctx, m.name)} (@${esc(ctx, m.username)})</option>`).join("")}
+          </select>
+        </div>
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+          <button class="btn modal-close">Cancel</button>
+          <button class="btn btn-primary" id="xan-go">🗒 Post + open XA</button>
+        </div>`,
+    });
+    const ta = overlay.querySelector("#xan-text");
+    if (ta) ta.focus();
+    overlay.querySelector("#xan-go").addEventListener("click", async () => {
+      const note = (overlay.querySelector("#xan-text").value || "").trim();
+      if (!note) { setStatus(ctx, "Type a note first", "warn"); return; }
+      const tag = overlay.querySelector("#xan-tag").value || "";
+      try { localStorage.setItem("xa_note_tag", tag); } catch (e) {}
+      const btn = overlay.querySelector("#xan-go");
+      btn.disabled = true;
+      const res = await pywebview.api.post_xa_note(row.client, note, tag, row.trello_card_id || "");
+      if (!res || !res.ok) { btn.disabled = false; setStatus(ctx, "Post failed: " + ((res && res.error) || "?"), "error"); return; }
+      await copyText(ctx, note);                              // for pasting into XA
+      let xaOpened = false;
+      try { xaOpened = await pywebview.api.open_xa_link(row.client, row.trello_card_id || ""); } catch (e) {}
+      try { window.closeModal("modal-overlay"); } catch (e) { overlay.remove(); }
+      setStatus(ctx, `🗒 Posted to Trello + copied${xaOpened ? " · XA opened" : " · no XA link on card"}`, "ok");
+    });
+  }
+
   async function detailAction(action, row, ctx) {
     const M = (ctx && ctx.modals) || {};
     if (action === "request-items") {
@@ -421,11 +508,23 @@
     } else if (action === "open-companycam") {
       const ok = await pywebview.api.open_companycam_link(row.client);
       if (!ok) setStatus(ctx, "No CompanyCam link on this card yet — add a 'CompanyCam Link' line to the Trello card's LINKS section.", "warn");
+    } else if (action === "xa-note") {
+      openXaNoteModal(row, ctx);
     } else if (action === "attachments") {
       if (M.openAttachments) M.openAttachments(row);
       else window.openTrelloAttachmentsModal({ cardId: row.trello_card_id, client: row.client });
     } else if (action === "sp-import") {
       if (M.openSpImport) M.openSpImport(row);
+    } else if (action === "cc-pull") {
+      setStatus(ctx, "📷 Pulling CompanyCam photos…", "");
+      let res;
+      try { res = await pywebview.api.companycam_pull_one(row.client, row.trello_card_id || ""); }
+      catch (e) { setStatus(ctx, "CompanyCam pull failed: " + e, "error"); return; }
+      if (!res || !res.ok) { setStatus(ctx, "CompanyCam: " + ((res && res.error) || "?"), "warn"); return; }
+      const p = res.pulled || 0;
+      setStatus(ctx, p ? `✓ Pulled ${p} new CompanyCam photo${p === 1 ? "" : "s"} into PICS`
+                       : "📷 No new CompanyCam photos for this job", p ? "ok" : "");
+      if (ctx.reauditAndRerender) ctx.reauditAndRerender(row.client);
     } else if (action === "copy-client") {
       // Always copy as "First Last" when it's a Last,First personal name.
       const nm = _firstLast(row.client);
@@ -596,6 +695,85 @@
   }
 
   // ── Async section: 🗂 In Progress checklist (verbatim port) ────────
+  // Every checklist on the card, each collapsible (collapsed by default).
+  async function loadAllChecklists(row, ctx) {
+    const sec = document.getElementById("all-cl");
+    const statusEl = document.getElementById("all-cl-status");
+    const bodyEl = document.getElementById("all-cl-body");
+    if (!sec || !bodyEl) return;
+    let res;
+    try { res = await pywebview.api.get_all_checklists(row.client); }
+    catch (_) { if (statusEl) statusEl.textContent = "(load failed)"; return; }
+    if (document.getElementById("all-cl-body") !== bodyEl) return;
+    const cardId = res && res.card_id;
+    if (!cardId) { sec.remove(); return; }
+    const checklists = (res.ok && res.checklists) || [];
+    const total = checklists.reduce((n, cl) => n + (cl.items || []).length, 0);
+    const done = checklists.reduce((n, cl) =>
+      n + (cl.items || []).filter((i) => i.complete).length, 0);
+    if (statusEl) statusEl.textContent = checklists.length ? `(${done}/${total})` : "";
+
+    const clHtml = checklists.map((cl) => {
+      const items = cl.items || [];
+      const cdone = items.filter((i) => i.complete).length;
+      return `
+      <div class="cl-group cl-collapsed">
+        <div class="cl-group-name" style="cursor:pointer;">▸ ${esc(ctx, cl.name)} <span class="muted">(${cdone}/${items.length})</span></div>
+        <ul class="issue-list cl-items">
+          ${items.map((it) => `
+            <li class="cl-item"><label>
+              <input type="checkbox" data-id="${escA(ctx, it.id)}" ${it.complete ? "checked" : ""}/>
+              <span class="${it.complete ? "cl-done" : ""}">${esc(ctx, it.name)}</span>
+            </label></li>`).join("")}
+        </ul>
+      </div>`;
+    }).join("");
+    const cannedHtml = `
+      <div class="canned-comments">
+        <button class="action-btn" data-canned="ipr"
+                title="Post comment: Initial Photo Report Created and Uploaded to OD.">📷 IPR → comment</button>
+        <button class="action-btn" data-canned="upload"
+                title="Post comment: Initial Upload submitted To WC.">📤 Initial Upload → comment</button>
+      </div>`;
+    bodyEl.innerHTML =
+      (clHtml || `<div class="muted" style="padding:4px 0 2px;">No checklists on this card.</div>`)
+      + cannedHtml;
+
+    bodyEl.querySelectorAll(".cl-group").forEach((g) => {
+      const nm = g.querySelector(".cl-group-name");
+      if (nm) nm.addEventListener("click", () => {
+        g.classList.toggle("cl-collapsed");
+        nm.firstChild.nodeValue = g.classList.contains("cl-collapsed") ? "▸ " : "▾ ";
+      });
+    });
+    bodyEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.addEventListener("change", async () => {
+        const itemId = cb.dataset.id;
+        const want = cb.checked;
+        cb.disabled = true;
+        let ok = false;
+        try {
+          const r = await pywebview.api.toggle_checklist_item(cardId, itemId, want);
+          ok = !!(r && r.ok);
+        } catch (_) { ok = false; }
+        cb.disabled = false;
+        if (!ok) { cb.checked = !want; setStatus(ctx, "Trello update failed", "error"); return; }
+        const span = cb.parentElement.querySelector("span");
+        if (span) span.className = want ? "cl-done" : "";
+        setStatus(ctx, want ? "Ticked ✓" : "Un-ticked", "ok");
+      });
+    });
+    bodyEl.querySelectorAll("button[data-canned]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        b.disabled = true;
+        const r = await pywebview.api.post_canned(cardId, b.dataset.canned);
+        b.disabled = false;
+        setStatus(ctx, (r && r.ok) ? `💬 Posted: ${r.text}` : `Post failed: ${(r && r.error) || "?"}`,
+                  (r && r.ok) ? "ok" : "error");
+      });
+    });
+  }
+
   async function loadInProgressChecklist(row, ctx) {
     const statusEl = document.getElementById("inprog-cl-status");
     const listEl = document.getElementById("inprog-cl-items");

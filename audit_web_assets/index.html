@@ -43,8 +43,6 @@
     <button id="audit-one-btn" class="btn" title="Audit a single client by name — useful for one-off spot checks">🔍 Audit one</button>
     <button id="new-loss-btn" class="btn" title="Create a new-loss Trello card from a carrier assignment email — paste it in, review the fields, done">🆕 New Loss</button>
     <button id="incoming-btn" class="btn" title="Import new Workcenter / DocuSign downloads — pick the job, auto-splits photos by stage">📥 Incoming</button>
-    <button id="usage-btn" class="btn" title="See how you use the app — top tools, most-used buttons, activity by day">📊 Usage</button>
-    <button id="overview-btn" class="btn" title="Job admin overview — DocuSign, initial/final paperwork, weekly check-ins across active jobs">🩺 Overview</button>
     <button id="notes-btn" class="btn" title="Tracked to-do notes — tied to a job or loose">📝 Notes</button>
     <div id="more-wrap" style="position:relative;">
       <button id="more-btn" class="btn" title="More actions">⋯ More</button>
@@ -54,6 +52,8 @@
                   border-radius:6px;min-width:240px;
                   z-index:80;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4);
                   overflow:hidden;">
+        <button class="more-item" id="usage-btn">📊 Usage report</button>
+        <button class="more-item" id="overview-btn">🩺 Overview</button>
         <button class="more-item" id="rerun-btn">↺ Full re-scan (no cache)</button>
         <button class="more-item" id="push-new-losses-btn">📊 Push new losses → APA</button>
         <button class="more-item" id="post-daily-misses-btn">💬 Post daily misses → Trello</button>
@@ -79,10 +79,8 @@
 
 <!-- Mode switcher -->
 <div class="audit-toolbar" style="border-bottom:none;padding-bottom:4px;">
-  <button class="mode-btn active" id="mode-daily" title="Today's run-doc audit">📋 Daily Run</button>
-  <button class="mode-btn" id="mode-backlog" title="Flagged jobs that haven't been closed (cumulative across days)">🗓 Backlog</button>
-  <button class="mode-btn" id="mode-sp" title="Recently-modified SharePoint folders that may need a job pinned">📥 SP Recent</button>
-  <button class="mode-btn" id="mode-oneoff" title="Manually-audited jobs (one-offs from 🔍 Audit one)">🔍 One-off</button>
+  <button class="mode-btn active" id="mode-search" title="Search any job by name and audit it">🔍 Search</button>
+  <button class="mode-btn" id="mode-daily" title="Today's run-doc audit">📋 Daily Run</button>
   <button class="mode-btn" id="mode-starred" title="Clients you've starred — sticky across days, regardless of today's run-doc">⭐ Starred</button>
 </div>
 
@@ -102,32 +100,12 @@
   </label>
 </div>
 
-<section class="stats-bar">
-  <div class="stat" id="stat-total"><span class="stat-num">—</span><span class="stat-lbl">Total</span></div>
-  <div class="stat is-flagged" id="stat-flagged"><span class="stat-num">—</span><span class="stat-lbl">Flagged</span></div>
-  <div class="stat is-ok" id="stat-ok"><span class="stat-num">—</span><span class="stat-lbl">OK</span></div>
-  <div class="stat is-aging" id="stat-aging"><span class="stat-num">—</span><span class="stat-lbl">≥ 3 days</span></div>
-  <div class="stat is-missing" id="stat-missing"><span class="stat-num">—</span><span class="stat-lbl">Missing items</span></div>
-  <div class="stat is-sp" id="stat-sp" title="Click to filter jobs with SharePoint photos waiting to import"><span class="stat-num">—</span><span class="stat-lbl">📥 SP files</span></div>
-  <div class="stats-meta" id="stats-meta">—</div>
-</section>
-
+<!-- Stats bar + most filters removed in the 2026-07 streamline. -->
 <nav class="filter-bar" id="filter-bar" aria-label="Filters">
   <button class="filter active" data-filter="all">All</button>
-  <button class="filter" data-filter="needs_attention"
-          title="Combines flagged ≥3d + SP files waiting + missing forms — everything needing action right now"
-          style="background:var(--red);color:#FFF;font-weight:700;">🚨 Needs attention</button>
   <button class="filter" data-filter="starred"
           title="Only clients you've ⭐ starred">⭐ Starred</button>
-  <span style="width:1px;background:var(--border);margin:0 4px;"></span>
-  <button class="filter" data-filter="flagged">🚩 Flagged</button>
-  <button class="filter" data-filter="ok">✓ OK</button>
-  <button class="filter" data-filter="aging">⏰ ≥ 3 days</button>
-  <button class="filter" data-filter="forms">📋 Missing forms</button>
-  <button class="filter" data-filter="photos">📷 Missing photos</button>
-  <button class="filter" data-filter="not_found">⚠ Folder not found</button>
   <button class="filter" data-filter="new_loss">🆕 New loss</button>
-  <button class="filter" data-filter="has_sp">📥 Has SP</button>
 </nav>
 
 <main class="split">

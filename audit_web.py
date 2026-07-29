@@ -29,6 +29,7 @@ import os
 import sys
 import threading
 import webbrowser
+import dept_browser
 
 import webview
 
@@ -1271,7 +1272,7 @@ class Api:
         if not card_id:
             return False
         try:
-            webbrowser.open(f"https://trello.com/c/{card_id}")
+            dept_browser.open_url(f"https://trello.com/c/{card_id}")
             return True
         except Exception:
             return False
@@ -2045,7 +2046,7 @@ class Api:
             card = tc.get_card(card_id) or {}
             url = tc.card_xa_link(card) if hasattr(tc, "card_xa_link") else ""
             if url:
-                webbrowser.open(url)
+                dept_browser.open_url(url)
                 return True
         except Exception:
             pass
@@ -2067,11 +2068,143 @@ class Api:
             url = (tc.card_companycam_link(card)
                    if hasattr(tc, "card_companycam_link") else "")
             if url:
-                webbrowser.open(url)
+                dept_browser.open_url(url)
                 return True
         except Exception:
             pass
         return False
+
+    def companycam_pull_one(self, client: str, card_id: str = "") -> dict:
+        """Pull NEW CompanyCam photos for ONE job into its PICS folder. Only
+        new photos (per-project water-mark), so it's safe to re-run."""
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        if not cc.is_configured():
+            return {"ok": False,
+                    "error": "CompanyCam token not set (Settings → CompanyCam)"}
+        import config as _cfg
+        base = (_cfg.load() or {}).get("audit_base") or ""
+        path = ""
+        try:
+            path = persistence.get_folder_path(client) or ""
+        except Exception:
+            path = ""
+        if not path:
+            try:
+                p, _bn, _yr = audit_logic.try_resolve_folder_by_terms(base, [client])
+                path = p or ""
+            except Exception:
+                path = ""
+        if not path or not os.path.isdir(path):
+            return {"ok": False,
+                    "error": "No job folder — pin/find the folder first"}
+        pics = os.path.join(path, "EMS", "PICS")
+        if not os.path.isdir(pics):
+            alt = os.path.join(path, "PICS")
+            pics = alt if os.path.isdir(alt) else pics
+        try:
+            os.makedirs(pics, exist_ok=True)
+        except OSError:
+            pass
+        try:
+            pid = cc.find_project_id(client, use_graph=False) or ""
+        except Exception:
+            pid = ""
+        if not pid:
+            return {"ok": False,
+                    "error": f"No CompanyCam project matched '{client}'"}
+        try:
+            r = cc.pull_new_photos(pid, pics) or {}
+            return {"ok": True, "pulled": r.get("downloaded", 0),
+                    "skipped": r.get("skipped", 0), "pics": pics}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def companycam_sync(self, dry: bool = False) -> dict:
+        """Bulk-pull NEW CompanyCam photos into each ACTIVE job's PICS folder.
+        Active = today's run-doc jobs. On-demand; pulls only new photos (per-
+        project high-water mark), so re-running is safe. `dry` matches without
+        downloading — returns the new-photo count per job."""
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        if not cc.is_configured():
+            return {"ok": False,
+                    "error": "CompanyCam token not set (Settings → CompanyCam)"}
+        names = []
+        try:
+            doc = _find_run_doc_for_date(_dt.date.today())
+            if doc:
+                jobs, _rd = _state_hub.parse_run_doc(doc)
+                seen = set()
+                for j in jobs:
+                    n = (j.get("client") or "").strip()
+                    if n and n.lower() not in seen:
+                        seen.add(n.lower())
+                        names.append(n)
+        except Exception as ex:
+            return {"ok": False, "error": f"run-doc read failed: {ex}"}
+        if not names:
+            return {"ok": True, "total": 0, "results": [],
+                    "note": "No active jobs in today's run-doc"}
+        import config as _cfg
+        base = (_cfg.load() or {}).get("audit_base") or ""
+        results, total = [], 0
+        for name in names:
+            path = ""
+            try:
+                path = persistence.get_folder_path(name) or ""
+            except Exception:
+                path = ""
+            if not path:
+                try:
+                    p, _bn, _yr = audit_logic.try_resolve_folder_by_terms(base, [name])
+                    path = p or ""
+                except Exception:
+                    path = ""
+            if not path or not os.path.isdir(path):
+                results.append({"job": name, "matched": False, "reason": "no folder"})
+                continue
+            pics = os.path.join(path, "EMS", "PICS")
+            if not os.path.isdir(pics):
+                alt = os.path.join(path, "PICS")
+                pics = alt if os.path.isdir(alt) else pics
+            if not dry:
+                try:
+                    os.makedirs(pics, exist_ok=True)
+                except OSError:
+                    pass
+            pid = ""
+            try:
+                pid = cc.find_project_id(name, use_graph=False) or ""
+            except Exception:
+                pid = ""
+            if not pid:
+                results.append({"job": name, "matched": False,
+                                "reason": "no CompanyCam project"})
+                continue
+            if dry:
+                try:
+                    cnt = cc.count_new_photos(pid)
+                except Exception:
+                    cnt = 0
+                results.append({"job": name, "matched": True, "new": cnt})
+                total += cnt
+                continue
+            try:
+                r = cc.pull_new_photos(pid, pics) or {}
+                dl = r.get("downloaded", 0)
+                results.append({"job": name, "matched": True, "pulled": dl,
+                                "skipped": r.get("skipped", 0)})
+                total += dl
+            except Exception as ex:
+                results.append({"job": name, "matched": True, "error": str(ex)})
+        return {"ok": True, "total": total, "results": results}
 
     def get_claim_number(self, client: str) -> dict:
         """Pull the claim number from the client's pinned Trello card desc
@@ -2887,6 +3020,46 @@ class Api:
                         "complete": (it.get("state") or "").lower() == "complete",
                     } for it in (c.get("checkItems") or [])],
                 })
+            payload = {"ok": True, "card_id": card_id, "checklists": out}
+            cache[card_id] = (now, payload)
+            return payload
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def get_all_checklists(self, client: str) -> dict:
+        """Return EVERY Trello checklist on the client's pinned card, in board
+        order. Same shape as get_initial_checklists. 45s cache."""
+        if not client:
+            return {"ok": False}
+        try:
+            card_id = persistence.get_trello_card_id(client) or ""
+        except Exception:
+            card_id = ""
+        if not card_id:
+            return {"ok": False}
+        try:
+            cache = getattr(self, "_all_cl_cache", None)
+            if cache is None:
+                cache = {}
+                self._all_cl_cache = cache
+            import time as _time
+            now = _time.time()
+            cached = cache.get(card_id)
+            if cached and (now - cached[0]) < 45:
+                return cached[1]
+            import trello_client as tc
+            card = tc.get_card(card_id, actions_limit=0) or {}
+            cls = sorted((card.get("checklists") or []),
+                         key=lambda c: c.get("pos", 0))
+            out = [{
+                "name": c.get("name") or "Checklist",
+                "id":   c.get("id") or "",
+                "items": [{
+                    "id":       it.get("id") or "",
+                    "name":     it.get("name") or "?",
+                    "complete": (it.get("state") or "").lower() == "complete",
+                } for it in (c.get("checkItems") or [])],
+            } for c in cls]
             payload = {"ok": True, "card_id": card_id, "checklists": out}
             cache[card_id] = (now, payload)
             return payload
@@ -6501,6 +6674,68 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
         return {"ok": True, "card_id": card_id}
+
+    def xa_note_members(self, client: str) -> dict:
+        """Board members of the client's pinned card, for the XA-note
+        '@ tag someone' dropdown."""
+        try:
+            card_id = persistence.get_trello_card_id(client) or ""
+            if not card_id:
+                return {"ok": True, "members": []}
+            import trello_client as tc
+            card = tc.get_card(card_id, actions_limit=0) or {}
+            board_id = card.get("idBoard") or ""
+            members = []
+            if board_id:
+                raw = tc._call(f"/boards/{board_id}/members",
+                               params={"fields": "fullName,username"}) or []
+                members = [{"username": m.get("username") or "",
+                            "name": m.get("fullName") or m.get("username") or ""}
+                           for m in raw if m.get("username")]
+            return {"ok": True, "members": members}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "members": []}
+
+    def post_xa_note(self, client: str, note: str, tag: str = "",
+                     card_id: str = "") -> dict:
+        """XA-note workflow: post `note` to the job's Trello card (dated +
+        optional @tag) and return the note + the card's XA link, so the UI
+        can copy the note to the clipboard and open XactAnalysis. One button →
+        logged in Trello, copied for pasting into XA, and XA opened."""
+        note = (note or "").strip()
+        if not note:
+            return {"ok": False, "error": "Note is empty"}
+        cid = (card_id or "").strip()
+        if not cid:
+            try:
+                cid = persistence.get_trello_card_id(client) or ""
+            except Exception:
+                cid = ""
+        if not cid:
+            return {"ok": False,
+                    "error": f"{client} has no Trello pin — pin a card first."}
+        import datetime as _dt
+        now = _dt.datetime.now()
+        stamp = (f"{now.month}/{now.day}/{now.year} "
+                 f"{now.hour % 12 or 12}:{now.minute:02d} "
+                 f"{'AM' if now.hour < 12 else 'PM'}")
+        t = (tag or "").strip().lstrip("@")
+        header = f"🗒 XA note · {stamp}" + (f" @{t}" if t else "")
+        comment = f"{header}\n{note}"
+        try:
+            import trello_client as tc
+            tc.post_comment(cid, comment)
+        except Exception as ex:
+            return {"ok": False, "error": f"post failed: {ex}"}
+        xa_url = ""
+        try:
+            import trello_client as tc
+            card = tc.get_card(cid) or {}
+            if hasattr(tc, "card_xa_link"):
+                xa_url = tc.card_xa_link(card) or ""
+        except Exception:
+            xa_url = ""
+        return {"ok": True, "card_id": cid, "note": note, "xa_url": xa_url}
 
     # ── Phase 2: Flag missing dialog ─────────────────────────────────
     def flag_missing(self, client: str, item_text: str,

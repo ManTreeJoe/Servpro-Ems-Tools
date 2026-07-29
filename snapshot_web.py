@@ -7,6 +7,7 @@ docusketch / CLOSE OUT), Tracked tab (Snapshots <YY>.xlsx viewer),
 post-generate Trello attach + missing-items comment.
 """
 from __future__ import annotations
+import dept_browser
 import os, sys, datetime, re
 import webview
 
@@ -207,7 +208,7 @@ class Api:
     def open_url(self, url):
         if not url: return False
         import webbrowser
-        try: webbrowser.open(url); return True
+        try: dept_browser.open_url(url); return True
         except Exception: return False
 
     # ── Trello card picker for snapshot intake ───────────────────────
@@ -488,6 +489,8 @@ class Api:
         return self._aw().open_xa_link(client, card_id)
     def open_companycam_link(self, client):
         return self._aw().open_companycam_link(client)
+    def companycam_pull_one(self, client, card_id=""):
+        return self._aw().companycam_pull_one(client, card_id)
     def request_docusketch(self, client, card_id: str = ""):
         # Forward both args — the snapshot audit-subview JS calls
         # `request_docusketch(row.client, row.trello_card_id || "")`,
@@ -504,6 +507,10 @@ class Api:
         return self._aw().set_commercial(client, on)
     def post_comment(self, client, body):
         return self._aw().post_comment(client, body)
+    def xa_note_members(self, client):
+        return self._aw().xa_note_members(client)
+    def post_xa_note(self, client, note, tag="", card_id=""):
+        return self._aw().post_xa_note(client, note, tag, card_id)
     def escalate(self, client, role="", note=""):
         return self._aw().escalate(client, role, note)
     # Audit panel pins a folder via set_folder_path; expose with a
@@ -580,6 +587,8 @@ class Api:
         return self._aw().get_initial_checklists(client)
     def get_inprogress_checklist(self, client):
         return self._aw().get_inprogress_checklist(client)
+    def get_all_checklists(self, client):
+        return self._aw().get_all_checklists(client)
     def toggle_checklist_item(self, card_id, item_id, want):
         return self._aw().toggle_checklist_item(card_id, item_id, want)
     def post_canned(self, card_id, kind):
@@ -965,7 +974,7 @@ class Api:
                     "error": err or f"no Trello card found for '{name.strip()}'"}
         try:
             import webbrowser
-            webbrowser.open(f"https://trello.com/c/{card_id}")
+            dept_browser.open_url(f"https://trello.com/c/{card_id}")
             return {"ok": True, "card_id": card_id}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}

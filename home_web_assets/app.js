@@ -33,6 +33,7 @@ window.addEventListener("pywebviewready", async () => {
   await loadShell();
   refreshCounts();
   maybeShowFirstRun();
+  maybeCheckUpdate();
   // ── Hybrid live updates ────────────────────────────────────────
   // Sidebar badges auto-refresh every 30 seconds. Pauses when the
   // window is hidden (alt-tabbed away) so we don't burn CPU /
@@ -140,6 +141,27 @@ function renderSidebar() {
   `).join("");
   $$(".sb-item").forEach((el) =>
     el.addEventListener("click", () => navigate(el.dataset.key, el.dataset.src)));
+}
+
+// Update banner — polls the repo's version.txt; shows a bar when newer.
+async function maybeCheckUpdate() {
+  let r;
+  try { r = await pywebview.api.check_update(); } catch (e) { return; }
+  if (!r || !r.ok || !r.update_available) return;
+  if (document.getElementById("update-bar")) return;
+  const bar = document.createElement("div");
+  bar.id = "update-bar";
+  bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--accent,#2E8B57);color:#fff;padding:8px 14px;font-size:13px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.35);";
+  bar.innerHTML =
+    `<span>⬆️ Update available — <b>v${r.latest}</b> (you have v${r.current})${r.notes ? " · " + r.notes : ""}</span>
+     <span style="flex:1;"></span>
+     <button id="update-dl" style="background:#fff;color:#2E8B57;border:none;border-radius:5px;padding:5px 12px;font-weight:700;cursor:pointer;">Download</button>
+     <button id="update-x" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:5px;padding:5px 10px;cursor:pointer;">✕</button>`;
+  document.body.appendChild(bar);
+  document.getElementById("update-dl").addEventListener("click", () => {
+    try { pywebview.api.open_url(r.url || ""); } catch (e) { if (r.url) window.open(r.url); }
+  });
+  document.getElementById("update-x").addEventListener("click", () => bar.remove());
 }
 
 function renderNavItem(it) {
