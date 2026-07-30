@@ -489,10 +489,14 @@ class Api:
         return self._aw().open_xa_link(client, card_id)
     def open_companycam_link(self, client):
         return self._aw().open_companycam_link(client)
-    def companycam_probe(self, client):
-        return self._aw().companycam_probe(client)
+    def companycam_probe(self, client, card_id=""):
+        return self._aw().companycam_probe(client, card_id)
     def companycam_pull_one(self, client, dest_subfolder="", tech="", card_id=""):
         return self._aw().companycam_pull_one(client, dest_subfolder, tech, card_id)
+    def companycam_search(self, query):
+        return self._aw().companycam_search(query)
+    def companycam_pin(self, client, project_id, card_id=""):
+        return self._aw().companycam_pin(client, project_id, card_id)
     def request_docusketch(self, client, card_id: str = ""):
         # Forward both args — the snapshot audit-subview JS calls
         # `request_docusketch(row.client, row.trello_card_id || "")`,

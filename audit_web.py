@@ -2074,9 +2074,98 @@ class Api:
             pass
         return False
 
-    def companycam_probe(self, client: str) -> dict:
+    def _cc_card_terms(self, card_id: str):
+        """(insured_name, address_hint) from a Trello card. CompanyCam
+        projects are named by the INSURED — the card carries it as its
+        "Insured - Carrier" title and a "Customer Name:" line in the body;
+        the body value wins (it's the fuller spelling)."""
+        if not card_id:
+            return "", ""
+        try:
+            import trello_client as tc
+            card = tc.get_card(card_id) or {}
+        except Exception:
+            return "", ""
+        import re as _re
+        name = (card.get("name") or "").split(" - ")[0].strip()  # drop " - Carrier"
+        desc = card.get("desc") or ""
+        m = _re.search(r"Customer Name:\s*(.+)", desc)
+        if m and m.group(1).strip():
+            name = m.group(1).strip()
+        addr = ""
+        m = _re.search(r"Address:\s*(.+)", desc)
+        if m:
+            addr = m.group(1).strip()
+        return name, addr
+
+    def _cc_resolve(self, client: str, card_id: str = ""):
+        """Best CompanyCam project id for a job → (pid, matched_name). Tries
+        the job name (+ graph cache), then falls back to the Trello INSURED
+        name + address (projects are named by insured, and the run-doc name
+        is often junk like 'Lastname/POC'). Pins the winner so the next
+        lookup is a cache hit."""
+        import companycam_api as cc
+        try:
+            pid = cc.find_project_id(client, use_graph=True,
+                                     trello_card=card_id) or ""
+        except Exception:
+            pid = ""
+        if pid:
+            return pid, client
+        name, addr = self._cc_card_terms(card_id)
+        if name and name.lower() != (client or "").strip().lower():
+            try:
+                res = cc.find_project(name, address_hint=addr)
+                m = res.get("match") if res.get("ok") else None
+                if m:
+                    try:
+                        import ems_db
+                        ems_db.resolve_and_link(
+                            client, companycam_project=m["id"],
+                            trello_card=card_id, create=True,
+                            source="companycam")
+                    except Exception:
+                        pass
+                    return m["id"], m["name"]
+            except Exception:
+                pass
+        return "", ""
+
+    def companycam_search(self, query: str) -> dict:
+        """Manual project search for the pick-fallback — returns candidate
+        projects (name/address/score) so the user can connect a job whose
+        CompanyCam project is named differently than the run-doc name."""
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        if not cc.is_configured():
+            return {"ok": False, "error": "CompanyCam token not set"}
+        try:
+            res = cc.find_project(query or "")
+            return {"ok": True, "candidates": res.get("candidates", [])}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def companycam_pin(self, client: str, project_id: str,
+                       card_id: str = "") -> dict:
+        """Remember a manually-picked CompanyCam project for a job so every
+        future probe/pull is a cache hit."""
+        if not (client and project_id):
+            return {"ok": False, "error": "missing client / project"}
+        try:
+            import ems_db
+            ems_db.resolve_and_link(
+                client, companycam_project=str(project_id),
+                trello_card=card_id, create=True, source="companycam")
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def companycam_probe(self, client: str, card_id: str = "") -> dict:
         """New-photo count + the uploaders (creator_name) for a job, without
-        downloading — so the UI can show the count + pre-fill the tech picker."""
+        downloading — so the UI can show the count + pre-fill the tech picker.
+        Resolves the project by job name AND the Trello insured name."""
         if not client:
             return {"ok": False, "error": "no client"}
         try:
@@ -2085,15 +2174,13 @@ class Api:
             return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
         if not cc.is_configured():
             return {"ok": False, "error": "CompanyCam token not set"}
-        try:
-            pid = cc.find_project_id(client, use_graph=False) or ""
-        except Exception:
-            pid = ""
+        pid, mname = self._cc_resolve(client, card_id)
         if not pid:
             return {"ok": True, "matched": False, "count": 0, "uploaders": []}
         try:
             pr = cc.probe_new(pid)
-            return {"ok": True, "matched": True, "count": pr.get("count", 0),
+            return {"ok": True, "matched": True, "matched_name": mname,
+                    "count": pr.get("count", 0),
                     "uploaders": pr.get("uploaders", [])}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
@@ -2136,10 +2223,7 @@ class Api:
             os.makedirs(pics, exist_ok=True)
         except OSError:
             pass
-        try:
-            pid = cc.find_project_id(client, use_graph=False) or ""
-        except Exception:
-            pid = ""
+        pid, _mname = self._cc_resolve(client, card_id)
         if not pid:
             return {"ok": False,
                     "error": f"No CompanyCam project matched '{client}'"}

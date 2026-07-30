@@ -432,6 +432,66 @@
     });
   }
 
+  // Manual CompanyCam project picker — used when auto-match fails (the
+  // run-doc name is junk / the project is named by the insured). Resolves
+  // to the picked {id, name} (and pins it) or null if cancelled.
+  function ccManualPick(row, ctx, defaultQuery) {
+    return new Promise((resolve) => {
+      if (!window.openModal) { resolve(null); return; }
+      const who = _firstLast(row.display_name || tc(ctx, row.client));
+      const overlay = window.openModal({
+        title: "📷 Find CompanyCam project — " + who,
+        sub: "No auto-match. Search CompanyCam (projects are named by the insured) and pick the right one — it'll be remembered.",
+        body: `
+          <div style="display:flex;gap:8px;">
+            <input id="ccp-q" type="text" value="${escA(ctx, defaultQuery || "")}" placeholder="Search by insured name…"
+                   style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font:inherit;font-size:13px;" />
+            <button class="btn" id="ccp-go">Search</button>
+          </div>
+          <div id="ccp-list" style="margin-top:10px;max-height:280px;overflow:auto;"></div>
+          <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+            <button class="btn modal-close">Cancel</button>
+          </div>`,
+      });
+      let done = false;
+      const finish = (val) => { if (done) return; done = true; try { window.closeModal("modal-overlay"); } catch (e) { overlay.remove(); } resolve(val); };
+      overlay.querySelector(".modal-close")?.addEventListener("click", () => finish(null));
+      const listEl = overlay.querySelector("#ccp-list");
+      const qEl = overlay.querySelector("#ccp-q");
+      const run = async () => {
+        const q = (qEl.value || "").trim();
+        if (!q) { listEl.innerHTML = `<div class="muted" style="padding:8px;">Type a name to search.</div>`; return; }
+        listEl.innerHTML = `<div class="muted" style="padding:8px;">Searching…</div>`;
+        let r;
+        try { r = await pywebview.api.companycam_search(q); }
+        catch (e) { listEl.innerHTML = `<div style="padding:8px;color:var(--amber);">Search failed: ${esc(ctx, String(e))}</div>`; return; }
+        if (!r || !r.ok) { listEl.innerHTML = `<div style="padding:8px;color:var(--amber);">${esc(ctx, (r && r.error) || "search error")}</div>`; return; }
+        const cands = r.candidates || [];
+        if (!cands.length) { listEl.innerHTML = `<div class="muted" style="padding:8px;">No CompanyCam projects match “${esc(ctx, q)}”.</div>`; return; }
+        listEl.innerHTML = cands.map((c, i) => `
+          <div class="ccp-row" data-i="${i}" style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer;">
+            <div style="min-width:0;">
+              <div style="font-weight:600;">${esc(ctx, c.name || "(unnamed)")}</div>
+              <div style="font-size:11px;color:var(--text-muted);">${esc(ctx, c.address || "")}</div>
+            </div>
+            <span style="font-size:11px;color:var(--text-muted);">${c.score != null ? c.score + "%" : ""}</span>
+          </div>`).join("");
+        listEl.querySelectorAll(".ccp-row").forEach((el) => {
+          el.addEventListener("click", async () => {
+            const c = cands[+el.dataset.i];
+            if (!c || !c.id) return;
+            try { await pywebview.api.companycam_pin(row.client, c.id, row.trello_card_id || ""); } catch (e) {}
+            finish({ id: c.id, name: c.name });
+          });
+        });
+      };
+      overlay.querySelector("#ccp-go")?.addEventListener("click", run);
+      qEl?.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+      if (qEl) qEl.focus();
+      run();                                    // auto-search the default term
+    });
+  }
+
   async function detailAction(action, row, ctx) {
     const M = (ctx && ctx.modals) || {};
     if (action === "request-items") {
@@ -517,12 +577,21 @@
       if (M.openSpImport) M.openSpImport(row);
     } else if (action === "cc-pull") {
       setStatus(ctx, "📷 Checking CompanyCam…", "");
+      const cardId = row.trello_card_id || "";
       let pr;
-      try { pr = await pywebview.api.companycam_probe(row.client); }
+      try { pr = await pywebview.api.companycam_probe(row.client, cardId); }
       catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
       if (!pr || !pr.ok) { setStatus(ctx, "CompanyCam: " + ((pr && pr.error) || "?"), "warn"); return; }
-      if (!pr.matched) { setStatus(ctx, "No CompanyCam project matched this job", "warn"); return; }
-      if (!pr.count) { setStatus(ctx, "📷 No new CompanyCam photos for this job", ""); return; }
+      if (!pr.matched) {
+        // Auto-match failed — let the user find & pin the project by hand.
+        const picked = await ccManualPick(row, ctx, _firstLast(row.display_name || tc(ctx, row.client)));
+        if (!picked) { setStatus(ctx, "No CompanyCam project matched this job", "warn"); return; }
+        setStatus(ctx, "📷 Re-checking CompanyCam…", "");
+        try { pr = await pywebview.api.companycam_probe(row.client, cardId); }
+        catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
+        if (!pr || !pr.ok || !pr.matched) { setStatus(ctx, "Pinned, but couldn't read that project — try the pull again", "warn"); return; }
+      }
+      if (!pr.count) { setStatus(ctx, `📷 No new photos in ${pr.matched_name ? "“" + pr.matched_name + "”" : "this CompanyCam project"}`, ""); return; }
       const who = _firstLast(row.display_name || tc(ctx, row.client));
       // Pick the destination stage folder.
       if (typeof window.pickPicsStage !== "function") { setStatus(ctx, "Stage picker didn't load — reopen the tool", "warn"); return; }
