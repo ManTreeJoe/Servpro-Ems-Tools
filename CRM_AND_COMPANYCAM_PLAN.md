@@ -150,8 +150,17 @@ Jobs/Claims (link existing X: folder + Trello card + CompanyCam project + XA cla
 Migrate from: `ems_db` (job index + identity graph) · Trello cards · job folders · the trackers.
 
 ### Integrations — what each unlocks
-- **Xactimate / XactAnalysis** **[Access — Verisk API]**: replace email-scraping (`xa_notes_parser`,
-  `xa_notification_emails`) with real estimate/claim/assignment data. The estimating backbone.
+- **Xactimate / XactAnalysis** **[Access — via your Xactware rep, NOT a self-serve API]**: replace
+  email-scraping (`xa_notes_parser`, `xa_notification_emails`) with a real assignment/estimate/claim
+  data feed. **Researched 2026-07-29:** Verisk does *not* issue developer API keys. Access is the
+  **XactAnalysis integration** (two-way pipe: assignments, contacts, notes, photos, docs, milestones,
+  estimate data), enabled by your **Xactware account manager** — and oriented toward *approved
+  software partners* (Vendor Alliances), not a franchise's in-house tool. Three paths: (1) **call
+  your Xactware rep** and ask for an XactAnalysis assignment/estimate data feed to an internal
+  endpoint — shortest route, costs a call; (2) **piggyback** an already-integrated CRM (DASH,
+  Restoration Manager, JobNimbus, PSA, ClientRunner) if the company adopts one; (3) **keep the
+  email-scrape bridge** until a feed opens. Treat as account-rep enablement, not a key. The
+  estimating backbone. (Sources: Verisk Vendor Alliances; XactAnalysis Integrations help.)
 - **QuickBooks** **[Access — Intuit API]**: invoices, AR aging, payments post back to the job.
   Ties production to money; auto-answers "did they pay the change order."
 - **Outlook / MS Graph** **[Access — IT must approve Azure app]**: every adjuster email auto-filed
@@ -222,5 +231,28 @@ they converge:
 
 ---
 
+## Appendix — Draft ask to the Xactware account rep
+> Subject: XactAnalysis assignment/estimate data feed for an internal tool
+>
+> Hi [rep name],
+>
+> We're a SERVPRO franchise (L&P Group — SERVPRO of Woodcrest/El Cerrito/Lake Mathews) and an
+> active XactAnalysis customer. We're building an **internal** job-management tool for our own
+> admin team and want to stop re-keying assignment data by hand.
+>
+> Can you enable an **XactAnalysis integration / data feed** to our account so our new-loss
+> assignments and estimate data flow into our internal system automatically? Specifically:
+> - New-loss **assignments** (insured, carrier, claim #, loss type, address, adjuster) as they land
+> - **Estimate** totals / status and key **milestones** per claim
+> - If there's an XML feed, webhook, or partner endpoint we can receive on, what are the steps
+>   and requirements? If this requires the **Vendor Alliances / partner** path, what does that take
+>   for an in-house tool (vs. a commercial product)?
+>
+> We already receive the assignment emails — a structured feed would just remove the manual step.
+> What are our options and any cost?
+>
+> Thanks, [name] · [office] · 951-398-3240
+
 *Related memory: `project_crm_vision`, `project_ems_db`, `project_multi_department`,
-`project_update_check`. This doc is the living plan — update as keys land and phases ship.*
+`project_update_check`, `project_main_trial_channels`. This doc is the living plan — update as
+keys land and phases ship.*
