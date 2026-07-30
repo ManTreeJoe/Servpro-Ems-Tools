@@ -185,9 +185,15 @@ def test_safe_folder_caps_length():
 
 # ── the pull routes into room folders ───────────────────────────────────
 
-def _fake_photo(pid, tags, ts=1785435221):
+def _fake_photo(pid, tags, ts=1785435221, who="Fernando Baca"):
     return {"id": pid, "captured_at": ts, "original_url": f"http://x/{pid}.jpg",
-            "tags": tags}
+            "creator_name": who, "tags": tags}
+
+
+# The per-shoot box every pulled path now carries: <tech> <MM-DD-YYYY>,
+# matching what the zip importer writes. Derived from _fake_photo's
+# defaults so the tests move with the fixture.
+BOX = "FB 07-30-2026"
 
 
 @pytest.fixture
@@ -221,8 +227,8 @@ def test_pull_files_photos_under_stage_then_room(pull_env, monkeypatch):
     res = cc.pull_new_photos("1", str(dest), since_epoch=None)
     assert res["ok"] and res["downloaded"] == 2
     rels = sorted(os.path.relpath(w, dest) for w in written)
-    assert rels[0] .startswith(os.path.join("Demo", "Kitchen"))
-    assert rels[1].startswith("Master Bath" + os.sep)   # no stage tag
+    assert rels[0].startswith(os.path.join("Demo", BOX, "Kitchen"))
+    assert rels[1].startswith(os.path.join(BOX, "Master Bath"))  # no stage tag
     assert res["rooms"] == {"Kitchen": 1, "Master Bath": 1}
     assert res["stages"] == {"Demo": 1}
 
@@ -239,7 +245,7 @@ def test_two_room_tags_do_not_become_one_folder(pull_env, monkeypatch):
     ])
     cc.pull_new_photos("1", str(dest), since_epoch=None)
     rel = os.path.relpath(written[0], dest)
-    assert rel.startswith(os.path.join("Initial", "Master Bedroom"))
+    assert rel.startswith(os.path.join("Initial", BOX, "Master Bedroom"))
     assert "Master Bedroom Master Closet" not in rel
 
 
@@ -257,7 +263,7 @@ def test_photo_stage_tag_overrides_the_callers_stage(pull_env, monkeypatch):
     ])
     cc.pull_new_photos("1", str(dest), since_epoch=None, subfolder="Initial")
     rel = os.path.relpath(written[0], dest)
-    assert rel.startswith(os.path.join("Demo", "Kitchen"))
+    assert rel.startswith(os.path.join("Demo", BOX, "Kitchen"))
     assert not rel.startswith("Initial")
 
 
@@ -274,10 +280,10 @@ def test_equipment_nests_inside_the_room(pull_env, monkeypatch):
     rels = sorted(os.path.relpath(w, dest) for w in written)
     # No stage tag of its own → the caller's stage, then room, then Equipment
     assert rels[0].startswith(
-        os.path.join("Initial", "Master Bath", "Equipment"))
+        os.path.join("Initial", BOX, "Master Bath", "Equipment"))
     # Its own stage tag wins, and Equipment still nests under the room
     assert rels[1].startswith(
-        os.path.join("Initial", "Master Bedroom", "Equipment"))
+        os.path.join("Initial", BOX, "Master Bedroom", "Equipment"))
 
 
 def test_untagged_photos_stay_at_the_top_rather_than_an_unsorted_bucket(
@@ -288,7 +294,8 @@ def test_untagged_photos_stay_at_the_top_rather_than_an_unsorted_bucket(
     ])
     res = cc.pull_new_photos("1", str(dest), since_epoch=None)
     assert res["untagged"] == 1
-    assert os.sep not in os.path.relpath(written[0], dest)
+    # No room and no stage — only the per-shoot box.
+    assert os.path.relpath(written[0], dest).startswith(BOX + os.sep)
 
 
 def test_room_nests_under_the_callers_stage_subfolder(pull_env, monkeypatch):
@@ -299,7 +306,7 @@ def test_room_nests_under_the_callers_stage_subfolder(pull_env, monkeypatch):
     ])
     cc.pull_new_photos("1", str(dest), since_epoch=None, subfolder="Initial")
     rel = os.path.relpath(written[0], dest)
-    assert rel.startswith(os.path.join("Initial", "Kitchen"))
+    assert rel.startswith(os.path.join("Initial", BOX, "Kitchen"))
 
 
 def test_organize_can_be_turned_off(pull_env, monkeypatch):
@@ -308,7 +315,7 @@ def test_organize_can_be_turned_off(pull_env, monkeypatch):
         _fake_photo("a", ["Kitchen"]),
     ])
     cc.pull_new_photos("1", str(dest), since_epoch=None,
-                       organize_by_tags=False)
+                       organize_by_tags=False, tech_date_folder=False)
     assert os.sep not in os.path.relpath(written[0], dest)
 
 
@@ -371,3 +378,59 @@ def test_capture_time_is_stamped_on_the_file(pull_env, monkeypatch):
     ])
     cc.pull_new_photos("1", str(dest), since_epoch=None)
     assert abs(os.path.getmtime(written[0]) - ts) < 2
+
+
+# ── the tech / date box ─────────────────────────────────────────────────
+
+def test_tech_label_uses_initials_like_the_zip_import():
+    assert cc.tech_label({"creator_name": "Fernando Baca"}) == "FB"
+
+
+def test_tech_label_falls_back_to_the_picked_tech():
+    """CompanyCam normally knows the photographer; the picked tech is only
+    a backstop for a photo with no creator."""
+    assert cc.tech_label({}, "Fernando Baca") == "FB"
+    assert cc.tech_label({}) == ""
+
+
+def test_photo_creator_beats_the_picked_tech():
+    """A mixed-crew day must attribute per photo — the zip path can't,
+    because an export carries no photographer at all."""
+    assert cc.tech_label({"creator_name": "Fernando Baca"}, "Someone Else") == "FB"
+
+
+def test_date_label_matches_the_zip_import_format():
+    assert cc.date_label({"captured_at": 1785435221}) == "07-30-2026"
+    assert cc.date_label({}) == ""
+
+
+def test_tech_date_box_shape():
+    p = {"creator_name": "Fernando Baca", "captured_at": 1785435221}
+    assert cc.tech_date_box(p) == "FB 07-30-2026"
+    assert cc.tech_date_box({"captured_at": 1785435221}) == "07-30-2026"
+    assert cc.tech_date_box({}) == ""
+
+
+def test_two_techs_same_day_get_separate_boxes(pull_env, monkeypatch):
+    """The reason this is derived per photo rather than per batch."""
+    dest, written = pull_env
+    monkeypatch.setattr(cc, "new_photos", lambda pid, since_epoch=None: [
+        _fake_photo("a", ["Kitchen"], who="Fernando Baca"),
+        _fake_photo("b", ["Kitchen"], who="Jose  Estrella"),
+    ])
+    res = cc.pull_new_photos("1", str(dest), since_epoch=None,
+                             subfolder="Initial")
+    assert len(res["boxes"]) == 2, res["boxes"]
+    rels = sorted(os.path.relpath(w, dest) for w in written)
+    assert rels[0] != rels[1]
+
+
+def test_tech_date_box_can_be_turned_off(pull_env, monkeypatch):
+    dest, written = pull_env
+    monkeypatch.setattr(cc, "new_photos", lambda pid, since_epoch=None: [
+        _fake_photo("a", ["Kitchen"]),
+    ])
+    cc.pull_new_photos("1", str(dest), since_epoch=None, subfolder="Initial",
+                       tech_date_folder=False)
+    assert os.path.relpath(written[0], dest).startswith(
+        os.path.join("Initial", "Kitchen"))

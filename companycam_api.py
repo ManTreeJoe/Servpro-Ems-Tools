@@ -532,6 +532,46 @@ def _download(url, dest_path, _max_retries=3):
     return dest_path
 
 
+def tech_label(photo, fallback=""):
+    """Who shot this photo, as the folder/filename uses it.
+
+    CompanyCam gives `creator_name` per photo, so unlike the zip path —
+    which has no photographer at all and asks the operator for ONE name
+    per batch — a mixed-crew day attributes correctly. `fallback` (the
+    picked tech) is only used when CompanyCam has no creator.
+
+    Leads collapse to initials (Fernando Baca → FB), matching what the
+    zip import writes; anyone without initials keeps their name.
+    """
+    who = (photo.get("creator_name") or "").strip() or (fallback or "").strip()
+    if not who:
+        return ""
+    try:
+        import audit_logic
+        return _safe_folder(audit_logic.initials_for_name(who) or who)
+    except Exception:
+        return _safe_folder(who)
+
+
+def date_label(photo):
+    """Capture date as MM-DD-YYYY — the format the zip import already
+    writes, so both paths produce the same folder name."""
+    cap = photo.get("captured_at")
+    if cap is None:
+        return ""
+    try:
+        import datetime as _dt
+        return _dt.datetime.fromtimestamp(int(cap)).strftime("%m-%d-%Y")
+    except (TypeError, ValueError, OSError, OverflowError):
+        return ""
+
+
+def tech_date_box(photo, fallback=""):
+    """'FB 07-30-2026' — the per-shoot folder, or "" when neither is known."""
+    return " ".join(x for x in (tech_label(photo, fallback),
+                                date_label(photo)) if x).strip()
+
+
 def photo_id_token(photo):
     """The short id token embedded in a downloaded filename. Dedup keys on
     THIS rather than the whole name: the name carries the photo's tags, and
@@ -665,7 +705,7 @@ def pull_missing_photos(project_id, dest_dir, **kw):
 
 def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                     subfolder="", advance_watermark=True, tech="",
-                    organize_by_tags=True):
+                    organize_by_tags=True, tech_date_folder=True):
     """Download NEW project photos into `dest_dir` and advance the per-
     project high-water mark.
 
@@ -731,9 +771,9 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             pass          # labels are a nicety; never block the download
 
     downloaded, skipped, files, latest = 0, 0, [], since
-    rooms_used, stages_used, untagged = {}, {}, 0
+    rooms_used, stages_used, boxes_used, untagged = {}, {}, {}, 0
     for p in photos:
-        fname = _photo_filename(p, tech)
+        fname = _photo_filename(p, tech_label(p, tech))
         # Room tag → subfolder under the stage, matching the zip import's
         # layout. No room tag means the photo stays at the stage level
         # rather than landing in an "Unsorted" bucket nobody looks in.
@@ -747,18 +787,26 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             rooms_used[room] = rooms_used.get(room, 0) + 1
         else:
             untagged += 1
-        # <stage>\<room>\<qualifier>\
+        # <stage>\<tech date>\<room>\<qualifier>\
         #
-        # Stage is the workflow phase (Initial, Demo, Monitor, Post…) and
-        # comes from the photo's own tag, falling back to the caller's
-        # choice when it has none. Equipment is NOT a stage — it is gear
-        # photographed IN a room, so it nests inside that room rather than
-        # pulling the shot out into a folder of its own.
+        # Stage is the workflow phase (Initial, Demo, Monitor, Post…) from
+        # the photo's own tag, falling back to the caller's choice when it
+        # has none. The tech/date box matches what the zip import writes,
+        # except it is derived PER PHOTO — CompanyCam knows who took each
+        # one, so a day with two techs separates correctly instead of
+        # being labelled with whichever name the operator picked.
+        # Equipment is NOT a stage: it is gear photographed IN a room, so
+        # it nests under that room rather than pulling the shot out.
         stage_dir = tag_stage or subfolder
         photo_target = dest_dir
         if stage_dir:
             photo_target = os.path.join(photo_target, stage_dir)
             stages_used[stage_dir] = stages_used.get(stage_dir, 0) + 1
+        if tech_date_folder:
+            box = tech_date_box(p, tech)
+            if box:
+                photo_target = os.path.join(photo_target, box)
+                boxes_used[box] = boxes_used.get(box, 0) + 1
         if room:
             photo_target = os.path.join(photo_target, room)
         if qualifier:
@@ -795,4 +843,4 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
     return {"ok": True, "downloaded": downloaded, "skipped": skipped,
             "files": files, "latest": latest,
             "rooms": rooms_used, "stages": stages_used,
-            "untagged": untagged}
+            "boxes": boxes_used, "untagged": untagged}
