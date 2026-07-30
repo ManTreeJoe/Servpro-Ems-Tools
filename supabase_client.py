@@ -236,6 +236,50 @@ def verify_login_code(email: str, code: str) -> dict:
     return current_user() or {}
 
 
+def verify_magic_link(url_or_token: str, email: str = "") -> dict:
+    """Sign in from the LINK in the email instead of a typed code.
+
+    Supabase's stock email template sends `{{ .ConfirmationURL }}` — a link
+    whose redirect defaults to localhost:3000, which is nothing on a
+    desktop machine, so clicking it just fails. The link still carries the
+    same one-time token, so pull it out and verify it directly.
+
+    Accepts the whole URL or a bare token. Fix the template to show
+    `{{ .Token }}` and the 6-digit path works instead.
+    """
+    raw = (url_or_token or "").strip()
+    if not raw:
+        raise ValueError("paste the link or token from the email")
+    token = raw
+    if "://" in raw or raw.startswith("?") or "token" in raw:
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(raw).query)
+        token = (qs.get("token_hash") or qs.get("token") or [""])[0].strip()
+    if not token:
+        raise ValueError("no token found in that link")
+    last = None
+    # Two accepted shapes, and which one applies depends on how the link
+    # was minted: a HASHED token verifies on its own, a plain one must be
+    # paired with the address it was sent to ("Only an email address or
+    # phone number should be provided on verify"). Try both rather than
+    # make the caller know which kind they were emailed.
+    attempts = [{"type": "magiclink", "token_hash": token},
+                {"type": "email", "token_hash": token}]
+    email = (email or "").strip()
+    if email:
+        attempts += [{"type": "magiclink", "token": token, "email": email},
+                     {"type": "email", "token": token, "email": email}]
+    for body in attempts:
+        try:
+            payload = _raw("POST", "/auth/v1/verify", body=body)
+        except SupabaseError as ex:
+            last = ex
+            continue
+        if (payload or {}).get("access_token"):
+            _store_session(payload)
+            return current_user() or {}
+    raise last or SupabaseError(401, "token not accepted")
+
+
 def _refresh(sess: dict) -> dict:
     rt = sess.get("refresh_token")
     if not rt:
