@@ -2260,6 +2260,139 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    def _cc_pics_dir(self, client: str) -> str:
+        """The job's PICS folder, or "" when the job folder isn't resolved."""
+        import config as _cfg
+        base = (_cfg.load() or {}).get("audit_base") or ""
+        try:
+            path = persistence.get_folder_path(client) or ""
+        except Exception:
+            path = ""
+        if not path:
+            try:
+                p, _bn, _yr = audit_logic.try_resolve_folder_by_terms(
+                    base, [client])
+                path = p or ""
+            except Exception:
+                path = ""
+        if not path or not os.path.isdir(path):
+            return ""
+        pics = os.path.join(path, "EMS", "PICS")
+        if not os.path.isdir(pics):
+            alt = os.path.join(path, "PICS")
+            if os.path.isdir(alt):
+                return alt
+        return pics
+
+    def companycam_verify(self, client: str, card_id: str = "") -> dict:
+        """Compare the job folder against CompanyCam, photo by photo.
+
+        The high-water mark only records what has been SEEN, so a folder
+        that was emptied — or a download that failed — still reports "no
+        new photos" while photos are genuinely absent. This ignores the
+        watermark and diffs by photo id, which is what the folder actually
+        contains.
+
+        Returns counts plus a per-photo breakdown so the dialog can show
+        WHAT is missing (room / stage / who took it / when), not just how
+        many.
+        """
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        if not cc.is_configured():
+            return {"ok": False, "error": "CompanyCam token not set"}
+        pid, mname = self._cc_resolve(client, card_id)
+        if not pid:
+            return {"ok": True, "matched": False,
+                    "error": f"No CompanyCam project matched '{client}'"}
+        pics = self._cc_pics_dir(client)
+        if not pics:
+            return {"ok": False,
+                    "error": "No job folder — pin/find the folder first"}
+        try:
+            v = cc.verify_project(pid, pics)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        if not v.get("ok"):
+            return {"ok": False, "error": v.get("error") or "verify failed"}
+        # Describe each missing photo so the operator can sanity-check the
+        # list before downloading anything.
+        missing = []
+        try:
+            cc.attach_tags(v.get("missing_photos") or [])
+        except Exception:
+            pass
+        import datetime as _d
+        for p in (v.get("missing_photos") or []):
+            room, stage, qual = "", "", ""
+            try:
+                room, stage, qual = cc.classify_tags(p.get("tags"))
+            except Exception:
+                pass
+            when = ""
+            try:
+                if p.get("captured_at"):
+                    when = _d.datetime.fromtimestamp(
+                        int(p["captured_at"])).strftime("%m/%d %I:%M%p")
+            except Exception:
+                pass
+            missing.append({
+                "id": p.get("id"), "when": when,
+                "who": p.get("creator_name") or "",
+                "stage": stage, "room": room, "qualifier": qual,
+                "dest": os.path.join(*[x for x in (stage, room, qual) if x])
+                        if (stage or room or qual) else "(top level)",
+            })
+        return {"ok": True, "matched": True, "matched_name": mname,
+                "project_id": pid, "pics": pics,
+                "total": v.get("total", 0), "present": v.get("present", 0),
+                "missing": v.get("missing", 0),
+                "extra_files": v.get("extra_files", 0),
+                "missing_photos": missing}
+
+    def companycam_pull_missing(self, client: str, tech: str = "",
+                                card_id: str = "",
+                                dest_subfolder: str = "") -> dict:
+        """Download whatever the folder is missing, ignoring the watermark.
+
+        `companycam_pull_one` asks "anything newer than last time?"; this
+        asks "does the folder hold everything?" — the question that matters
+        after a folder is cleaned out or a pull half-failed.
+        """
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        pid, _m = self._cc_resolve(client, card_id)
+        if not pid:
+            return {"ok": False,
+                    "error": f"No CompanyCam project matched '{client}'"}
+        pics = self._cc_pics_dir(client)
+        if not pics:
+            return {"ok": False,
+                    "error": "No job folder — pin/find the folder first"}
+        try:
+            os.makedirs(pics, exist_ok=True)
+        except OSError:
+            pass
+        stage = (dest_subfolder or "").strip()
+        if stage.upper() == "AUTO":
+            stage = ""
+        try:
+            r = cc.pull_missing_photos(pid, pics, subfolder=stage,
+                                       tech=(tech or "")) or {}
+            return {"ok": True, "pulled": r.get("downloaded", 0),
+                    "skipped": r.get("skipped", 0), "pics": pics,
+                    "rooms": r.get("rooms", {}), "stages": r.get("stages", {})}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     def companycam_pull_one(self, client: str, dest_subfolder: str = "",
                             tech: str = "", card_id: str = "") -> dict:
         """Pull NEW CompanyCam photos for ONE job into its PICS folder (into

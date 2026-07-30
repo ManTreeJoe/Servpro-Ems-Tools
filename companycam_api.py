@@ -602,6 +602,67 @@ def probe_new(project_id, since_epoch="auto"):
     return {"count": len(photos), "uploaders": ups}
 
 
+def _id_tokens_on_disk(dest_dir):
+    """Every photo-id token already present anywhere under `dest_dir`.
+
+    The token is the last word of a pulled filename. This is what makes
+    "is it actually there?" answerable without a watermark — see
+    `verify_project`.
+    """
+    tokens = set()
+    for _root, _dirs, files in os.walk(dest_dir):
+        for f in files:
+            stem = os.path.splitext(f)[0]
+            tok = stem.rsplit(" ", 1)[-1].strip().lower()
+            if len(tok) == 8 and tok.isalnum():
+                tokens.add(tok)
+    return tokens
+
+
+def verify_project(project_id, dest_dir):
+    """Compare CompanyCam against what's actually in the job folder.
+
+    The high-water mark only records what has been SEEN — it cannot know
+    whether the file survived. A folder cleaned out, a failed download, a
+    photo filed under an old layout: all of them leave the watermark
+    saying "nothing new" while photos are genuinely missing. So this
+    ignores the watermark entirely and diffs by photo id.
+
+    Returns {ok, total, present, missing, missing_photos, extra_files}.
+    """
+    pid = str(project_id or "").strip()
+    if not pid:
+        return {"ok": False, "error": "no project id"}
+    try:
+        photos = list_project_photos(pid)
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+    have = _id_tokens_on_disk(dest_dir) if os.path.isdir(dest_dir) else set()
+    missing = [p for p in photos
+               if photo_id_token(p).lower() not in have]
+    return {"ok": True,
+            "total": len(photos),
+            "present": len(photos) - len(missing),
+            "missing": len(missing),
+            "missing_photos": missing,
+            # Tokens on disk that CompanyCam no longer has — a photo
+            # deleted in the app after it was pulled.
+            "extra_files": len(have - {photo_id_token(p).lower()
+                                       for p in photos})}
+
+
+def pull_missing_photos(project_id, dest_dir, **kw):
+    """Download whatever CompanyCam has that the folder doesn't.
+
+    The watermark path (`pull_new_photos`) answers "anything newer than
+    last time?"; this answers "does the folder actually hold everything?".
+    Use it when a job reports no new photos but looks short.
+    """
+    kw.setdefault("since_epoch", None)      # ignore the watermark
+    kw.setdefault("advance_watermark", True)
+    return pull_new_photos(project_id, dest_dir, **kw)
+
+
 def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                     subfolder="", advance_watermark=True, tech="",
                     organize_by_tags=True):

@@ -435,6 +435,95 @@
   // Manual CompanyCam project picker — used when auto-match fails (the
   // run-doc name is junk / the project is named by the insured). Resolves
   // to the picked {id, name} (and pins it) or null if cancelled.
+  // Folder-vs-CompanyCam reconciliation. Shows WHAT is missing and where
+  // each photo would land, so the operator can sanity-check the list
+  // before anything downloads. Reached when the watermark says "nothing
+  // new" but the folder is actually short — a cleared folder, a failed
+  // download, or photos removed by hand.
+  function ccMissingModal(row, ctx, v) {
+    return new Promise((resolve) => {
+      if (!window.openModal) { resolve(null); return; }
+      const who = _firstLast(row.display_name || tc(ctx, row.client));
+      const miss = v.missing_photos || [];
+      // Group by destination so a 40-photo gap reads as a few lines.
+      const byDest = new Map();
+      miss.forEach((m) => {
+        const k = m.dest || "(top level)";
+        if (!byDest.has(k)) byDest.set(k, []);
+        byDest.get(k).push(m);
+      });
+      const rows = [...byDest.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([dest, items]) => {
+          const who2 = [...new Set(items.map((i) => i.who).filter(Boolean))].join(", ");
+          const when = items[0].when || "";
+          return `<tr>
+            <td style="padding:4px 10px 4px 0;white-space:nowrap;"><b>${items.length}</b></td>
+            <td style="padding:4px 10px 4px 0;">${esc(ctx, dest)}</td>
+            <td style="padding:4px 10px 4px 0;color:var(--text-muted);white-space:nowrap;">${esc(ctx, who2)}</td>
+            <td style="padding:4px 0;color:var(--text-muted);white-space:nowrap;">${esc(ctx, when)}</td>
+          </tr>`;
+        }).join("");
+      const extraNote = v.extra_files
+        ? `<div class="muted" style="margin-top:10px;font-size:11.5px;">
+             ${v.extra_files} file${v.extra_files === 1 ? "" : "s"} in the folder
+             ${v.extra_files === 1 ? "is" : "are"} not in CompanyCam any more —
+             deleted there after being pulled. Nothing here removes them.
+           </div>` : "";
+      const overlay = window.openModal({
+        title: "📷 CompanyCam vs the job folder — " + who,
+        sub: `${v.present} of ${v.total} already here · ${v.missing} missing`
+             + (v.matched_name ? ` · project “${v.matched_name}”` : ""),
+        body: `
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+            <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;
+                              text-transform:uppercase;letter-spacing:.04em;">
+              <th style="padding-bottom:6px;">#</th><th>Goes to</th>
+              <th>Taken by</th><th>First</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          ${extraNote}
+          <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+            <button class="btn modal-close">Cancel</button>
+            <button class="btn btn-primary" id="ccm-pull">⬇ Pull ${v.missing} missing</button>
+          </div>`,
+      });
+      let done = false;
+      const finish = (val) => {
+        if (done) return;
+        done = true;
+        try { window.closeModal("modal-overlay"); } catch (e) { overlay.remove(); }
+        resolve(val);
+      };
+      overlay.querySelector(".modal-close")?.addEventListener("click", () => finish(null));
+      overlay.querySelector("#ccm-pull")?.addEventListener("click", async (ev) => {
+        const btn = ev.currentTarget;
+        btn.disabled = true;
+        btn.textContent = "⬇ Pulling…";
+        // Tech pre-filled from whoever actually took the missing shots.
+        const uploaders = [...new Set(miss.map((m) => m.who).filter(Boolean))];
+        let tech = "";
+        if (typeof window.pickImportTech === "function") {
+          tech = await window.pickImportTech({ client: who, techs: uploaders });
+          if (tech === null) { btn.disabled = false; btn.textContent = `⬇ Pull ${v.missing} missing`; return; }
+        }
+        let res;
+        try {
+          res = await pywebview.api.companycam_pull_missing(
+            row.client, tech || "", row.trello_card_id || "");
+        } catch (e) {
+          setStatus(ctx, "CompanyCam pull failed: " + e, "error");
+          finish(null); return;
+        }
+        finish(res);
+        if (!res || !res.ok) { setStatus(ctx, "CompanyCam: " + ((res && res.error) || "?"), "warn"); return; }
+        const p = res.pulled || 0;
+        setStatus(ctx, p ? `✓ Pulled ${p} missing photo${p === 1 ? "" : "s"}` : "Nothing pulled", p ? "ok" : "warn");
+        if (ctx.reauditAndRerender) ctx.reauditAndRerender(row.client);
+      });
+    });
+  }
+
   function ccManualPick(row, ctx, defaultQuery) {
     return new Promise((resolve) => {
       if (!window.openModal) { resolve(null); return; }
@@ -591,7 +680,23 @@
         catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
         if (!pr || !pr.ok || !pr.matched) { setStatus(ctx, "Pinned, but couldn't read that project — try the pull again", "warn"); return; }
       }
-      if (!pr.count) { setStatus(ctx, `📷 No new photos in ${pr.matched_name ? "“" + pr.matched_name + "”" : "this CompanyCam project"}`, ""); return; }
+      // "No new photos" only means nothing is newer than the last pull —
+      // it cannot tell you whether the folder still HAS them. Diff the
+      // folder against CompanyCam before reporting nothing to do.
+      if (!pr.count) {
+        setStatus(ctx, "📷 Nothing new — checking the folder…", "");
+        let v;
+        try { v = await pywebview.api.companycam_verify(row.client, cardId); }
+        catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
+        if (!v || !v.ok) { setStatus(ctx, "CompanyCam: " + ((v && v.error) || "?"), "warn"); return; }
+        if (!v.missing) {
+          setStatus(ctx, `📷 All ${v.total} photo${v.total === 1 ? "" : "s"} already in the folder`
+            + (v.extra_files ? ` · ${v.extra_files} not in CompanyCam any more` : ""), "ok");
+          return;
+        }
+        await ccMissingModal(row, ctx, v);
+        return;
+      }
       const who = _firstLast(row.display_name || tc(ctx, row.client));
       // Pick the destination stage folder.
       if (typeof window.pickPicsStage !== "function") { setStatus(ctx, "Stage picker didn't load — reopen the tool", "warn"); return; }
