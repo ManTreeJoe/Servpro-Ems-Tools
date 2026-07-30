@@ -75,7 +75,6 @@ window.addEventListener("pywebviewready", async () => {
     () => pywebview.api.open_run_doc(state.dayOffset || 0));
   $("#audit-one-btn").addEventListener("click", () => openAuditOneDialog());
   $("#new-loss-btn")?.addEventListener("click", () => openNewLossModal());
-  $("#incoming-btn")?.addEventListener("click", () => openIncomingPanel());
   $("#usage-btn")?.addEventListener("click", () => openUsagePanel());
   $("#overview-btn")?.addEventListener("click", () => openOverviewPanel());
   $("#cc-sync-btn")?.addEventListener("click", () => runCompanyCamSync());
@@ -1512,88 +1511,16 @@ function showCtxMenu(ev, row, customItems) {
   // 1-item menu without rebuilding the giant row-level menu. Mirrors
   // the OD-folder right-click pattern: small focused menu next to the
   // thing you clicked.
-  const items = customItems || [
-    // Cross-tool jump (Audit excluded — we're already here). Switches the
-    // shell's view to the target tool, focused on this client.
-    { label: "📸 Open in Snapshot",
-      action: () => window.emsNavigateTo?.("snapshot", row.client) },
-    { sep: true },
-    { label: "📁 Open OD folder",
-      action: () => onDetailAction("open-folder", row) },
+  // Low-use power/memory items collapsed under "Advanced ▸" (usage audit
+  // 2026-07-29: each 0 clicks in 7 days — kept, not deleted, just demoted).
+  const advancedItems = [
+    { label: "📖 Job tracker (activity + who)…",
+      action: () => onDetailAction("work-log", row) },
     { label: "📄 Show OD files/folders…",
       action: () => onDetailAction("od-contents", row),
       disabled: !row.path },
-    { label: "📖 Job tracker (activity + who)…",
-      action: () => onDetailAction("work-log", row) },
-    { label: "🗂 Past claims…",
-      action: () => onDetailAction("claim-folders", row),
-      disabled: !row.path },
-    { label: row.found ? "🔀 Change folder…" : "🔎 Find folder…",
-      action: () => openFindFolderModal(row) },
-    { iconImg: "../web_shared/trello.png", label: "Open Trello card", action: () => pywebview.api.open_trello_card(row.trello_card_id), disabled: !row.trello_card_id },
-    { iconImg: "../web_shared/xactanalysis.png", label: "Open XactAnalysis", action: async () => { const ok = await pywebview.api.open_xa_link(row.client, row.trello_card_id || ""); if (!ok) setStatus("No XactAnalysis link on this card yet — add an 'EMS Xactanalysis Link' line to the card's LINKS section.", "warn"); }, disabled: !row.trello_card_id },
-    { iconImg: "../web_shared/companycam.png", label: "Open CompanyCam", action: async () => {
-        const ok = await pywebview.api.open_companycam_link(row.client);
-        if (!ok) setStatus("No CompanyCam link on this card yet", "warn");
-      }, disabled: !row.trello_card_id },
-    { label: "📎 Trello attachments…",
-      action: () => window.openTrelloAttachmentsModal({ cardId: row.trello_card_id, client: row.client }),
-      disabled: !row.trello_card_id },
-    { sep: true },
-    { label: "📥 Import from SharePoint…", action: () => openSpImportModal(row) },
-    { label: "📂 Stage PICS for XA (drag-and-drop)…",
-      action: () => openCopyPicsToXaModal(row),
-      disabled: !row.path },
-    { label: "🏠 Pick day-units…",
-      action: () => openDayUnitsModal(row),
-      disabled: !row.path },
-    { label: "🏢 Property structure & settings…",
-      action: () => openPropertyStructureModal(row) },
     { label: "🧠 Client memory…",
       action: () => openClientMemoryModal(row) },
-    { label: "📨 Request paperwork via Teams…",
-      action: () => openPaperworkRequestModal(row) },
-    { label: "📋 Scope dialog", action: () => openScopeDialog(row) },
-    { label: "📌 Pin Trello card", action: () => openPinModal(row) },
-    { label: "💬 Post comment", action: () => openCommentModal(row), disabled: !row.trello_card_id },
-    { sep: true },
-    { label: "📐 Request Docusketch",
-      action: async () => {
-        if (!confirm(`Post Docusketch request comment on ${row.client}'s Trello card?`)) return;
-        const r = await pywebview.api.request_docusketch(row.client, row.trello_card_id || "");
-        if (!r?.ok) { setStatus(`Docusketch request failed: ${r?.error || "?"}`, "error"); return; }
-        setStatus(r.posted
-          ? `📐 Docusketch request posted to Trello`
-          : "📐 Recorded — comment failed, post manually", "ok");
-      },
-      disabled: !row.trello_card_id },
-    { label: "🔎 Match diagnostic…", action: () => openMatchDiagnostic(row) },
-    { label: "↻ Re-audit this job", action: () => doReaudit(row) },
-    { label: "📋 Copy client name", action: () => copyText(row.client) },
-    { label: "📋 Copy claim #", disabled: !row.trello_card_id,
-      action: async () => {
-        const res = await pywebview.api.get_claim_number(row.client);
-        if (res?.ok && res.claim) {
-          const ok = await copyText(res.claim);
-          setStatus(ok ? `📋 Copied claim #: ${res.claim}` : "Couldn't copy",
-                    ok ? "ok" : "error");
-        } else { setStatus(res?.error || "No claim # found", "warn"); }
-      } },
-    { label: "📋 Copy issue list",
-      action: () => {
-        const lines = [
-          ...(row.form_issues || []).map((i) => `📋 ${i}`),
-          ...(row.photo_issues || []).map((i) => `📷 ${i}`),
-        ];
-        const txt = lines.length
-          ? `${row.client}\n${lines.join("\n")}`
-          : row.client;
-        copyText(txt).then(() =>
-          setStatus(`📋 Copied ${lines.length} issue${lines.length !== 1 ? "s" : ""}`, "ok"));
-      },
-      disabled: !(row.form_issues?.length || row.photo_issues?.length) },
-    { sep: true },
-    // ── Per-client memory items (mirror Tk job_widgets.py:679) ────
     { label: "🏷 Edit search aliases…",
       action: () => openSearchAliasesModal(row) },
     { label: "🏢 Add to property…",
@@ -1641,6 +1568,74 @@ function showCtxMenu(ev, row, customItems) {
           renderAll();
         }
       } },
+  ];
+  // Multi-unit-only actions surface ONLY on umbrella / unit / subjob rows
+  // (audit: 0 clicks because they're situational, not useless).
+  const isMultiUnit = !!(row.is_parent || row.subjob || row.unit || row.parent_canon);
+  const muItems = isMultiUnit ? [
+    { label: "🏠 Pick day-units…",
+      action: () => openDayUnitsModal(row),
+      disabled: !row.path },
+    { label: "🏢 Property structure & settings…",
+      action: () => openPropertyStructureModal(row) },
+  ] : [];
+  const items = customItems || [
+    // Cross-tool jump (Audit excluded — we're already here). Switches the
+    // shell's view to the target tool, focused on this client.
+    { label: "📸 Open in Snapshot",
+      action: () => window.emsNavigateTo?.("snapshot", row.client) },
+    { sep: true },
+    { label: "📁 Open OD folder",
+      action: () => onDetailAction("open-folder", row) },
+    { label: "🗂 Past claims…",
+      action: () => onDetailAction("claim-folders", row),
+      disabled: !row.path },
+    { label: row.found ? "🔀 Change folder…" : "🔎 Find folder…",
+      action: () => openFindFolderModal(row) },
+    { iconImg: "../web_shared/trello.png", label: "Open Trello card", action: () => pywebview.api.open_trello_card(row.trello_card_id), disabled: !row.trello_card_id },
+    { iconImg: "../web_shared/xactanalysis.png", label: "Open XactAnalysis", action: async () => { const ok = await pywebview.api.open_xa_link(row.client, row.trello_card_id || ""); if (!ok) setStatus("No XactAnalysis link on this card yet — add an 'EMS Xactanalysis Link' line to the card's LINKS section.", "warn"); }, disabled: !row.trello_card_id },
+    { iconImg: "../web_shared/companycam.png", label: "Open CompanyCam", action: async () => {
+        const ok = await pywebview.api.open_companycam_link(row.client);
+        if (!ok) setStatus("No CompanyCam link on this card yet", "warn");
+      }, disabled: !row.trello_card_id },
+    { label: "📎 Trello attachments…",
+      action: () => window.openTrelloAttachmentsModal({ cardId: row.trello_card_id, client: row.client }),
+      disabled: !row.trello_card_id },
+    { sep: true },
+    { label: "📥 Import from SharePoint…", action: () => openSpImportModal(row) },
+    { label: "📂 Stage PICS for XA (drag-and-drop)…",
+      action: () => openCopyPicsToXaModal(row),
+      disabled: !row.path },
+    ...muItems,
+    { label: "📨 Request paperwork via Teams…",
+      action: () => openPaperworkRequestModal(row) },
+    { sep: true },
+    { label: "📐 Request Docusketch",
+      action: async () => {
+        if (!confirm(`Post Docusketch request comment on ${row.client}'s Trello card?`)) return;
+        const r = await pywebview.api.request_docusketch(row.client, row.trello_card_id || "");
+        if (!r?.ok) { setStatus(`Docusketch request failed: ${r?.error || "?"}`, "error"); return; }
+        setStatus(r.posted
+          ? `📐 Docusketch request posted to Trello`
+          : "📐 Recorded — comment failed, post manually", "ok");
+      },
+      disabled: !row.trello_card_id },
+    { label: "↻ Re-audit this job", action: () => doReaudit(row) },
+    { label: "📋 Copy client name", action: () => copyText(row.client) },
+    { label: "📋 Copy claim #", disabled: !row.trello_card_id,
+      action: async () => {
+        const res = await pywebview.api.get_claim_number(row.client);
+        if (res?.ok && res.claim) {
+          const ok = await copyText(res.claim);
+          setStatus(ok ? `📋 Copied claim #: ${res.claim}` : "Couldn't copy",
+                    ok ? "ok" : "error");
+        } else { setStatus(res?.error || "No claim # found", "warn"); }
+      } },
+    { sep: true },
+    { label: "🧠 Advanced ▸",
+      action: () => showCtxMenu(
+        { preventDefault() {}, stopPropagation() {}, clientX: ev.clientX, clientY: ev.clientY },
+        row, advancedItems) },
   ];
   m.innerHTML = items.map((it) => {
     if (it.sep) return `<div class="ctx-sep"></div>`;
@@ -4629,7 +4624,7 @@ function openNewLossModal() {
     body: `
       <div id="nl-board-line" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Resolving board…</div>
       <label class="modal-lbl" style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:2px;">Paste assignment email</label>
-      <textarea id="nl-paste" rows="6" placeholder="From: Mercury - Servpro …" style="${inputStyle}resize:vertical;"></textarea>
+      <textarea id="nl-paste" rows="14" placeholder="From: Mercury - Servpro …" style="${inputStyle}resize:vertical;min-height:240px;line-height:1.4;"></textarea>
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
         <button class="btn" id="nl-parse">✨ Parse email</button>
         <span id="nl-parse-status" style="font-size:11px;color:var(--text-muted);"></span>

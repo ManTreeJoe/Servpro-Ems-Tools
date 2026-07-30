@@ -1550,7 +1550,7 @@ async function openSnapPaperwork(row) {
   });
 }
 
-function showSnapshotAuditCtxMenu(ev, row) {
+function showSnapshotAuditCtxMenu(ev, row, customItems) {
   ev.preventDefault(); ev.stopPropagation();
   document.getElementById("snap-audit-ctx")?.remove();
   const m = document.createElement("div");
@@ -1559,12 +1559,26 @@ function showSnapshotAuditCtxMenu(ev, row) {
   m.style.cssText = `position:fixed;left:${ev.clientX}px;top:${ev.clientY}px;
     background:var(--surface);border:1px solid var(--border);border-radius:6px;
     box-shadow:0 6px 20px rgba(0,0,0,.4);z-index:200;min-width:240px;overflow:hidden;`;
-  const items = [
+  // Multi-unit-only actions surface ONLY on umbrella / unit / subjob rows.
+  const isMultiUnit = !!(row.is_parent || row.subjob || row.unit || row.parent_canon);
+  const muItems = isMultiUnit ? [
+    { lbl: "🏠 Pick day-units…", act: "day-units", off: !row.path },
+    { lbl: "🏢 Property structure & settings…", act: "property-structure",
+      off: !row.path },
+  ] : [];
+  // Low-use memory/power items collapsed under "Advanced ▸" (usage audit
+  // 2026-07-29: 0 clicks in 7 days — kept, demoted, mirrors the Audit panel).
+  const advancedItems = [
+    { lbl: "🏷 Edit search aliases…", act: "aliases" },
+    { lbl: "🏢 Add to property…", act: "property", off: !row.folder },
+    { lbl: "🧹 Clear saved folder path", act: "clear-folder", off: !row.path },
+    { lbl: "🏢 Clear Commercial flag", act: "clear-commercial", off: !row.is_commercial },
+    { lbl: `♻ Reset all memory for ${row.client}`, act: "reset-memory" },
+  ];
+  const items = customItems || [
     { lbl: "📁 Open OD folder", act: "open-folder", off: !row.path },
     { lbl: row.found ? "🔀 Change folder…" : "🔎 Find folder…", act: "find-folder" },
     { lbl: "🗂 Past claims…", act: "claim-folders", off: !row.path },
-    { lbl: "Pin Trello card", act: "pin-card",
-      iconImg: "../web_shared/trello.png" },
     { lbl: "Open Trello card", act: "open-trello",
       off: !row.trello_card_id,
       iconImg: "../web_shared/trello.png" },
@@ -1579,28 +1593,15 @@ function showSnapshotAuditCtxMenu(ev, row) {
     { sep: true },
     { lbl: "📥 Import from SharePoint…", act: "sp-import" },
     { lbl: "🗂 Import from Downloads…", act: "wc-import" },
-    { lbl: "💬 Post comment", act: "comment", off: !row.trello_card_id },
     { lbl: "📐 Request Docusketch", act: "docusketch", off: !row.trello_card_id },
+    ...muItems,
     { sep: true },
     { lbl: "📋 CLOSE OUT checklist…", act: "closeout" },
-    { lbl: "🔎 Match diagnostic", act: "match-diag" },
     { lbl: "↻ Re-audit this job", act: "reaudit" },
     { lbl: "📨 Request paperwork via Teams…", act: "paperwork" },
     { lbl: "📋 Copy claim #", act: "copy-claim", off: !row.trello_card_id },
-    { lbl: "📋 Copy issue list", act: "copy-issues" },
     { sep: true },
-    // Per-client memory items — mirror audit panel's right-click
-    { lbl: "🏷 Edit search aliases…", act: "aliases" },
-    { lbl: "🏢 Add to property…", act: "property",
-      off: !row.folder },
-    { lbl: "🏠 Pick day-units…", act: "day-units", off: !row.path },
-    { lbl: "🏢 Property structure & settings…", act: "property-structure",
-      off: !row.path },
-    { lbl: "🧹 Clear saved folder path", act: "clear-folder",
-      off: !row.path },
-    { lbl: "🏢 Clear Commercial flag", act: "clear-commercial",
-      off: !row.is_commercial },
-    { lbl: `♻ Reset all memory for ${row.client}`, act: "reset-memory" },
+    { lbl: "🧠 Advanced ▸", act: "__advanced__" },
   ];
   m.innerHTML = items.map((it, i) =>
     it.sep ? `<div style="height:1px;background:var(--border);margin:4px 0;"></div>`
@@ -1617,7 +1618,16 @@ function showSnapshotAuditCtxMenu(ev, row) {
   m.querySelectorAll("[data-i]").forEach((b) => {
     const it = items[+b.dataset.i];
     if (it.off) return;
-    b.addEventListener("click", () => { m.remove(); onAuditAction(it.act, row); });
+    b.addEventListener("click", () => {
+      m.remove();
+      if (it.act === "__advanced__") {
+        showSnapshotAuditCtxMenu(
+          { preventDefault() {}, stopPropagation() {}, clientX: ev.clientX, clientY: ev.clientY },
+          row, advancedItems);
+        return;
+      }
+      onAuditAction(it.act, row);
+    });
   });
   const closer = (e) => {
     if (!m.contains(e.target)) { m.remove(); document.removeEventListener("click", closer); }
