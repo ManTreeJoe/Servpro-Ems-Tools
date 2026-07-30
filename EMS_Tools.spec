@@ -29,6 +29,14 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 base = SPECPATH
 pkg  = os.path.join(base, '_packaging')
 
+# App name is env-driven so the SAME spec builds both channels:
+#   Main:  pyinstaller EMS_Tools.spec                        -> "EMS Tools"
+#   Trial: EMS_APP_NAME="EMS Tools Trial" pyinstaller ...    -> "EMS Tools Trial"
+# The exe/folder name carries the channel; paths._detect_channel() reads it at
+# runtime (a build whose path contains "trial" polls the trial update branch
+# and shows the TRIAL title). Data + config are shared between channels.
+APP_NAME = os.environ.get('EMS_APP_NAME', 'EMS Tools')
+
 # ── Bundled data ────────────────────────────────────────────────────────────
 # pywebview runs with http_server=True rooted at the dir of the URL file
 # (_ems_root_index.html, bundled at the bundle root). Each tool's UI loads via
@@ -120,7 +128,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='EMS Tools',
+    name=APP_NAME,
     icon='wrench.ico',
     debug=False,
     bootloader_ignore_signals=False,
@@ -141,5 +149,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='EMS Tools',
+    name=APP_NAME,
 )

@@ -697,9 +697,11 @@ def main(argv=None):
         quickimport_web.main()
         return
     _ensure_root_index()
+    import paths as _paths
     api = HomeApi()
     win = webview.create_window(
-        title="EMS Tools",
+        title=("EMS Tools — TRIAL" if getattr(_paths, "IS_TRIAL", False)
+               else "EMS Tools"),
         url=ROOT_INDEX_HTML,    # served as http://127.0.0.1:port/_ems_root_index.html
         js_api=api,
         width=1480, height=900,

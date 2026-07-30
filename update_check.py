@@ -16,8 +16,12 @@ import urllib.request
 
 import paths
 
-RAW_URL = ("https://raw.githubusercontent.com/ManTreeJoe/"
-           "Servpro-Ems-Tools/main/version.txt")
+# Each channel polls its own branch's version.txt: the Main app tracks
+# `main`, the Trial app tracks `trial`. Promote a feature by merging
+# trial → main, which then notifies Main users on their next launch.
+_BRANCH = "trial" if getattr(paths, "IS_TRIAL", False) else "main"
+RAW_URL = (f"https://raw.githubusercontent.com/ManTreeJoe/"
+           f"Servpro-Ems-Tools/{_BRANCH}/version.txt")
 
 
 def _tuple(v: str):

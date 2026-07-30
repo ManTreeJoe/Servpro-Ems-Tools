@@ -21,6 +21,30 @@ import shutil
 VERSION = "1.1.1"
 
 
+def _detect_channel():
+    """'trial' or 'main'. The Trial app is a separate build that installs to
+    an "EMS Tools Trial" folder / exe, so a frozen build detects its channel
+    from its own path. In dev (running from source) honor the EMS_CHANNEL env
+    var so the trial code path can be exercised without a build. Data + config
+    are SHARED between channels — only name / install dir / update channel
+    differ."""
+    try:
+        if getattr(sys, "frozen", False):
+            exe = sys.executable or ""
+            probe = (os.path.basename(exe) + " "
+                     + os.path.basename(os.path.dirname(exe))).lower()
+            if "trial" in probe:
+                return "trial"
+            return "main"
+    except Exception:
+        pass
+    return "trial" if os.environ.get("EMS_CHANNEL", "").lower() == "trial" else "main"
+
+
+CHANNEL = _detect_channel()
+IS_TRIAL = CHANNEL == "trial"
+
+
 # ── Stdout/stderr encoding ─────────────────────────────────────────────────
 # Windowed PyInstaller builds get cp1252 (or None) for stdout/stderr by
 # default. Any traceback or print containing a non-ASCII character (emoji
