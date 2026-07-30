@@ -1,0 +1,167 @@
+LINK_FOLDER = "folder_path"
+LINK_TRELLO = "trello_card"
+LINK_COMPANYCAM = "companycam_project"
+_STRONG_LINK_TYPES = (LINK_FOLDER, LINK_TRELLO, LINK_COMPANYCAM)
+
+
+def _norm_link(link_type: str, value: str) -> str:
+    """Normalize a link value so reverse lookup is stable no matter how the
+    caller spelled it. Folder paths → normcase(normpath) (case/slash-
+    insensitive on Windows); Trello → the card id/shortlink pulled out of a
+    full URL, lowercased; everything else → stripped."""
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if link_type == LINK_FOLDER:
+        return os.path.normcase(os.path.normpath(v))
+    if link_type == LINK_TRELLO:
+        m = re.search(r"/c/([A-Za-z0-9]+)", v)      # full card URL
+        if m:
+            return m.group(1).lower()
+        return v.rsplit("/", 1)[-1].strip().lower()  # bare id / shortlink
+    return v
+
+
+class DepartmentConflict(Exception):
+    """Raised when an operation would tie one franchise's data to another
+    franchise's job. Always a data question for a human — never something
+    to auto-resolve, because both silent outcomes (merge, or overwrite the
+    owner) corrupt one of the two jobs."""
+
+
+# ── Department (which franchise owns the job) ───────────────────────────
+# A job's department is derived from WHERE ITS FILES LIVE — the folder root
+# it sits under, matched against each department's configured `audit_base`.
+#
+# It is deliberately NOT derived from the Trello board. IE staff currently
+# run recon for BOTH franchises, so an OC-owned job legitimately appears on
+# an IE board (e.g. "KIM… - AAA - OC - MRP PO 139" on RECON CLOSEOUT/
+# COLLECTIONS). Board membership says who is doing the work; the folder root
+# says who owns the job. Only the latter identifies the franchise.
+#
+# NULL department = unknown, and unknown is always PERMISSIVE: it matches
+# anything and blocks nothing. The column exists to stop cross-wiring, not
+# to hide jobs — an IE user must still be able to look up the OC recon job
+# they are working.
+_DEPT_ROOTS_CACHE: list | None = None
+
+
+def invalidate_department_cache() -> None:
+    """Drop the cached department→folder-root map. Call on a department
+    switch or after editing department paths in Settings."""
+    global _DEPT_ROOTS_CACHE
+    _DEPT_ROOTS_CACHE = None
+
+
+def _department_roots() -> list:
+    """[(dept_key, normalized_audit_base), ...], longest root first so a
+    nested root wins over a parent. Empty when multi-dept is off."""
+    global _DEPT_ROOTS_CACHE
+    if _DEPT_ROOTS_CACHE is not None:
+        return _DEPT_ROOTS_CACHE
+    roots = []
+    try:
+        import config
+        if config.is_multi_dept():
+            for d in config.list_departments():
+                key = d.get("key") or ""
+                base = (config.load_for(key).get("audit_base") or "").strip()
+                if key and base:
+                    roots.append((key, os.path.normcase(os.path.normpath(base))))
+    except Exception:
+        roots = []
+    roots.sort(key=lambda kv: len(kv[1]), reverse=True)
+    _DEPT_ROOTS_CACHE = roots
+    return roots
+
+
+def department_for_path(path: str) -> str | None:
+    """Which department owns a job folder, by its root. None when the path
+    is blank, matches no configured root, or multi-dept is off."""
+    p = (path or "").strip()
+    if not p:
+        return None
+    norm = os.path.normcase(os.path.normpath(p))
+    for key, root in _department_roots():
+        if norm == root or norm.startswith(root + os.sep):
+            return key
+    return None
+
+
+def split_department_path(path: str) -> tuple[str | None, str | None]:
+    """(department, path relative to that department's root) for a job
+    folder, or (None, None) when it sits under no configured root.
+
+    This is what makes a folder link portable between machines. A root is
+    either a server share (X:\\IE_Public — same everywhere) or a synced
+    SharePoint library, whose LOCAL path contains the syncing user's own
+    profile and differs on every machine:
+
+        C:\\Users\\<user>\\Servpro12342\\Servpro-OC - OC-Onedrive
+            -> https://servpro12342.sharepoint.com/sites/Servpro-OC2/...
+
+    Storing "OC" + "2026 OC Jobs\\Garvin Ruth" instead of that absolute path
+    lets any machine rebuild it against its own sync root.
+    """
+    p = (path or "").strip()
+    if not p:
+        return (None, None)
+    norm = os.path.normcase(os.path.normpath(p))
+    for key, root in _department_roots():
+        if norm == root:
+            return (key, "")
+        if norm.startswith(root + os.sep):
+            return (key, norm[len(root) + 1:])
+    return (None, None)
+
+
+def rebase_department_path(department: str, relative: str) -> str | None:
+    """Rebuild an absolute folder path from (department, relative) against
+    THIS machine's configured root. None when the department isn't
+    configured here."""
+    dept = (department or "").strip()
+    if not dept:
+        return None
+    for key, root in _department_roots():
+        if key == dept:
+            rel = (relative or "").strip()
+            return os.path.normpath(os.path.join(root, rel)) if rel else root
+    return None
+
+
+def department_of_job(canon_key_value: str) -> str | None:
+    """The stored department for a job, or None when unknown."""
+    job = get_job(canon_key_value)
+    return (job or {}).get("department") or None
+
+
+def set_department(canon_key_value: str, department: str, *,
+                   overwrite: bool = False) -> bool:
+    """Stamp a job's owning department. By default only fills a NULL —
+    pass overwrite=True to correct a wrong one. Returns True if written."""
+    dept = (department or "").strip()
+    if not (canon_key_value and dept):
+        return False
+    with _LOCK, _connect() as c:
+        row = c.execute("SELECT department FROM jobs WHERE canon_key=?",
+                        (canon_key_value,)).fetchone()
+        if row is None:
+            return False
+        if row["department"] and not overwrite:
+            return False
+        c.execute("UPDATE jobs SET department=? WHERE canon_key=?",
+                  (dept, canon_key_value))
+        c.commit()
+    return True
+
+
+def _department_conflict(job: dict | None, incoming_dept: str | None) -> bool:
+    """True when a job already belongs to a DIFFERENT franchise than the
+    one implied by an incoming folder. Unknown on either side never
+    conflicts."""
+    if not job or not incoming_dept:
+        return False
+    have = (job.get("department") or "").strip()
+    return bool(have) and have != incoming_dept
+
+

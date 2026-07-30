@@ -1,0 +1,95 @@
+_UNIT_DETECT_PATTERNS = (
+    # "Property (Unit 123)" / "Property (#123)" / "Property (123)"
+    re.compile(
+        r"^(?P<prop>.+?)\s*\(\s*(?:unit\s+|#\s*)?(?P<unit>\d{2,4})\s*\)",
+        re.IGNORECASE),
+    # "Property Unit 123" or "Property- Unit 123" or "Property -Unit 123"
+    re.compile(
+        r"^(?P<prop>.+?)\s*[-\s]+unit\s+(?P<unit>\d{2,4})\b",
+        re.IGNORECASE),
+    # "Property Apt 123"
+    re.compile(
+        r"^(?P<prop>.+?)\s*[-\s]+(?:apt|apartment|suite|ste)\s+(?P<unit>\d{2,4})\b",
+        re.IGNORECASE),
+    # "Property #123"
+    re.compile(
+        r"^(?P<prop>.+?)\s+#\s*(?P<unit>\d{2,4})\b",
+        re.IGNORECASE),
+    # "Property 1234" — last resort, 3-4 digit unit only to avoid
+    # confusing single-family job names that happen to end in a number.
+    re.compile(
+        r"^(?P<prop>.+?)\s+(?P<unit>\d{3,4})\b"),
+)
+
+
+def detect_property_and_unit(display_name: str) -> tuple[str | None, str | None]:
+    """Try to split a job display name into (property, unit).
+
+    Returns (None, None) when the name doesn't look multi-unit. The
+    property string preserves the original casing (so `canon_key()`
+    can normalize once at the storage layer); the unit is the bare
+    digit string.
+
+    Negative guards to avoid false positives on single-family AR-board
+    card names:
+      • Prop contains a comma → "Last, First" person form, never a
+        property name.
+      • Unit looks like a YEAR (2000-2099) AND the form was the
+        paren-only variant → very likely a "(2025)" job-year tag
+        on a person-named card. Real units don't tend to land in
+        this exact slot. Hyphen/Unit-prefixed forms ARE allowed to
+        match year-shaped numbers because those formats are
+        unambiguously multi-unit ("Apt 2025" still means apt 2025).
+    """
+    s = (display_name or "").strip()
+    if not s:
+        return None, None
+    for pat in _UNIT_DETECT_PATTERNS:
+        m = pat.search(s)
+        if not m:
+            continue
+        prop = m.group("prop").strip().rstrip("-").rstrip(",").strip()
+        unit = m.group("unit").strip()
+        if not (prop and unit):
+            continue
+        if prop.lower() == "unit":
+            continue
+        if "," in prop:
+            # "Hankiewicz, Markus (2024) - State Farm" — person name
+            # masquerading as a property. Skip.
+            continue
+        try:
+            unit_int = int(unit)
+        except ValueError:
+            unit_int = None
+        # Only the paren-form and the bare-number-fallback patterns
+        # are ambiguous with year tags; reject year-shaped units on
+        # those two paths.
+        is_paren_or_bare = (pat is _UNIT_DETECT_PATTERNS[0]
+                             or pat is _UNIT_DETECT_PATTERNS[-1])
+        if (is_paren_or_bare and unit_int is not None
+                and 2000 <= unit_int <= 2099):
+            continue
+        return prop, unit
+    return None, None
+
+# Serialize all writes through one lock — SQLite handles read concurrency
+# fine but write contention from multiple panels on the same process can
+# race. The connection itself is opened per-call so threads each get
+# their own (sqlite3 module objects aren't safely shared across threads).
+_LOCK = threading.RLock()
+
+
+# ── Canonicalization ────────────────────────────────────────────────────
+
+def canon_key(name: str) -> str:
+    """Return the storage key for `name`. Same rule persistence uses for
+    pin keys: casefold + collapse whitespace + strip " - Carrier" suffix.
+    Shared so a pin written here lines up with one written by another
+    tool that consulted `persistence._canon_pin_key` directly."""
+    return _canon_pin_key_persistence(name)
+
+
+# ── Connection / schema ─────────────────────────────────────────────────
+
+@contextmanager

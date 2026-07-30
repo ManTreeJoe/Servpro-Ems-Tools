@@ -96,7 +96,7 @@ hiddenimports = web_modules + [
     # through that, so without these the packaged app has no job index at
     # all — every folder pin, card link and audit row lookup fails. Not
     # optional, unlike the belt-and-suspenders entries above.
-    'ems_db_sqlite', 'ems_db_supabase',
+    'ems_db_sqlite', 'ems_db_supabase', 'ems_db_common',
     # Reached only through function-local imports.
     'cache_bust', 'job_folders', 'trello_auth', 'supabase_client',
 ]

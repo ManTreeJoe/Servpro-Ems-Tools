@@ -1,0 +1,31 @@
+CHILD_CLAIM = "claim"
+CHILD_UNIT = "unit"
+CHILD_SUBJOB = "subjob"
+
+_UNIT_NAME_RE = re.compile(
+    r"\b(?:unit|apt|apartment|suite|ste|space|bldg|building|#)\s*"
+    r"([A-Za-z]?\d+[A-Za-z\-]*)", re.IGNORECASE)
+
+
+def classify_child(name: str) -> tuple:
+    """(kind, ordinal) for a child folder name.
+
+    '2nd Claim (KItchen)'   → ('claim', 2)
+    'Unit 147 - 3.4.26'     → ('unit', None)
+    'Coreland Company u121' → ('subjob', None)
+    """
+    nm = (name or "").strip()
+    if not nm:
+        return (CHILD_SUBJOB, None)
+    try:
+        import job_folders
+        n = job_folders.claim_ordinal_of(nm)
+    except Exception:
+        n = None
+    if n:
+        return (CHILD_CLAIM, n)
+    if _UNIT_NAME_RE.search(nm):
+        return (CHILD_UNIT, None)
+    return (CHILD_SUBJOB, None)
+
+
