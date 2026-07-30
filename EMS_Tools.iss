@@ -32,7 +32,7 @@
 [Setup]
 ; Stable per-channel AppId so a newer setup UPGRADES that channel in place
 ; (and Main vs Trial never overwrite each other).
-AppId={{#AppGuid}
+AppId={{{#AppGuid}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
