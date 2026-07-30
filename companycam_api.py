@@ -399,9 +399,25 @@ def classify_tags(tags):
         return "", ""
     try:
         import companycam_import as _cci
-        return _cci.room_stage_from_label(" ".join(names))
     except Exception:
         return "", ""
+    # Evaluate each tag SEPARATELY. Joining them first was wrong: the zip
+    # path receives one pre-joined label where a room is legitimately
+    # multi-word ("Master Bath"), but the API returns discrete tags, so
+    # joining turned ['Initial Inspection','Master Bedroom','Master Closet']
+    # into a folder literally named "Master Bedroom Master Closet".
+    room, stage = "", ""
+    for t in names:
+        r, s = _cci.room_stage_from_label(t)
+        if s:
+            if not stage:
+                stage = s
+            # A single tag can carry both ("Initial Inspection Master Bath").
+            if r and not room:
+                room = r
+        elif not room:
+            room = r or t
+    return room, stage
 
 
 def _safe_folder(name):
@@ -639,21 +655,33 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             pass          # labels are a nicety; never block the download
 
     downloaded, skipped, files, latest = 0, 0, [], since
-    rooms_used, untagged = {}, 0
+    rooms_used, stages_used, untagged = {}, {}, 0
     for p in photos:
         fname = _photo_filename(p, tech)
         # Room tag → subfolder under the stage, matching the zip import's
         # layout. No room tag means the photo stays at the stage level
         # rather than landing in an "Unsorted" bucket nobody looks in.
-        room = ""
+        room, tag_stage = "", ""
         if organize_by_tags:
-            room, _stage = classify_tags(p.get("tags"))
+            room, tag_stage = classify_tags(p.get("tags"))
             room = _safe_folder(room)
+            tag_stage = _safe_folder(tag_stage)
         if room:
             rooms_used[room] = rooms_used.get(room, 0) + 1
         else:
             untagged += 1
-        photo_target = os.path.join(target, room) if room else target
+        # The photo's OWN stage tag wins over the caller's blanket choice —
+        # that is the point of reading labels. Previously the tag stage was
+        # computed and then discarded, so a photo tagged Equipment landed
+        # under whatever stage the review panel had picked (Initial), which
+        # is how "Initial\Master Bath" ended up holding Equipment photos.
+        stage_dir = tag_stage or subfolder
+        photo_target = dest_dir
+        if stage_dir:
+            photo_target = os.path.join(photo_target, stage_dir)
+            stages_used[stage_dir] = stages_used.get(stage_dir, 0) + 1
+        if room:
+            photo_target = os.path.join(photo_target, room)
         tok = photo_id_token(p).lower()
         if fname.lower() in existing or (tok and tok in existing_tokens):
             skipped += 1
@@ -685,4 +713,5 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
 
     return {"ok": True, "downloaded": downloaded, "skipped": skipped,
             "files": files, "latest": latest,
-            "rooms": rooms_used, "untagged": untagged}
+            "rooms": rooms_used, "stages": stages_used,
+            "untagged": untagged}

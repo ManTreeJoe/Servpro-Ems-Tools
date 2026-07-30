@@ -189,7 +189,8 @@ def pull_env(tmp_path, monkeypatch):
     return tmp_path, written
 
 
-def test_pull_files_photos_under_their_room(pull_env, monkeypatch):
+def test_pull_files_photos_under_stage_then_room(pull_env, monkeypatch):
+    """<stage>/<room>/ — the photo's OWN tags decide both."""
     dest, written = pull_env
     monkeypatch.setattr(cc, "new_photos", lambda pid, since_epoch=None: [
         _fake_photo("a", ["Kitchen", "Demo"]),
@@ -198,9 +199,46 @@ def test_pull_files_photos_under_their_room(pull_env, monkeypatch):
     res = cc.pull_new_photos("1", str(dest), since_epoch=None)
     assert res["ok"] and res["downloaded"] == 2
     rels = sorted(os.path.relpath(w, dest) for w in written)
-    assert rels[0].startswith("Kitchen" + os.sep)
-    assert rels[1].startswith("Master Bath" + os.sep)
+    assert rels[0] .startswith(os.path.join("Demo", "Kitchen"))
+    assert rels[1].startswith("Master Bath" + os.sep)   # no stage tag
     assert res["rooms"] == {"Kitchen": 1, "Master Bath": 1}
+    assert res["stages"] == {"Demo": 1}
+
+
+def test_two_room_tags_do_not_become_one_folder(pull_env, monkeypatch):
+    """Live bug on 'Carmen Johnson': the API returns DISCRETE tags, and
+    joining them first produced a folder literally named
+    'Master Bedroom Master Closet'. The zip path can join, because it
+    receives one pre-made label where a room is legitimately multi-word."""
+    dest, written = pull_env
+    monkeypatch.setattr(cc, "new_photos", lambda pid, since_epoch=None: [
+        _fake_photo("a", ["Initial Inspection", "Master Bedroom",
+                          "Master Closet"]),
+    ])
+    cc.pull_new_photos("1", str(dest), since_epoch=None)
+    rel = os.path.relpath(written[0], dest)
+    assert rel.startswith(os.path.join("Initial", "Master Bedroom"))
+    assert "Master Bedroom Master Closet" not in rel
+
+
+def test_multiword_room_tag_survives():
+    """'Master Bath' is ONE tag — splitting per-tag must not break it."""
+    assert cc.classify_tags(["Equipment", "Master Bath"]) == ("Master Bath",
+                                                              "Equipment")
+
+
+def test_photo_stage_tag_overrides_the_callers_stage(pull_env, monkeypatch):
+    """Live bug: the tag stage was computed and then thrown away, so an
+    Equipment photo landed under whichever stage the review panel picked —
+    that is how 'Initial\\Master Bath' ended up holding Equipment shots."""
+    dest, written = pull_env
+    monkeypatch.setattr(cc, "new_photos", lambda pid, since_epoch=None: [
+        _fake_photo("a", ["Equipment", "Master Bath"]),
+    ])
+    cc.pull_new_photos("1", str(dest), since_epoch=None, subfolder="Initial")
+    rel = os.path.relpath(written[0], dest)
+    assert rel.startswith(os.path.join("Equipment", "Master Bath"))
+    assert not rel.startswith("Initial")
 
 
 def test_untagged_photos_stay_at_the_top_rather_than_an_unsorted_bucket(
