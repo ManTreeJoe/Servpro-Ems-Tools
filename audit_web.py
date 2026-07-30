@@ -286,10 +286,31 @@ def _pair_results_to_jobs(jobs, results):
     return out
 
 
-def _shape_job(j, audit_result, pin_id):
+def _card_display_map(jobs):
+    """{client: pinned-card name} for a whole batch of rows, in two queries.
+
+    Pass the result to `_shape_job(display_map=...)`. Without it, each row
+    costs its own `find_job_by_name` + `get_link` — ~600 queries on a
+    300-row audit, which is free against local SQLite and ruinous against
+    a hosted one. Never raises: a failure here just means rows fall back to
+    the run-doc spelling, exactly as they did before a card was pinned.
+    """
+    try:
+        import ems_db as _emsdb
+        return _emsdb.card_display_names_for(
+            [(j.get("client") or "") for j in jobs or ()])
+    except Exception:
+        return {}
+
+
+def _shape_job(j, audit_result, pin_id, display_map=None):
     """Combine one run-doc job + its audit result into a single
     JSON-shaped row for the frontend. Pulls activity labels via
     `detect_activity` so chip rendering matches the Tk version.
+
+    `display_map` is the batched card-name lookup from
+    `_card_display_map`; omit it for a single row and the per-row
+    lookup is used instead.
 
     Every field must be JSON-serializable — pywebview's bridge
     cannot pass datetime objects. `_jsonify_datetime` handles the
@@ -475,14 +496,17 @@ def _shape_job(j, audit_result, pin_id):
     # so folder + pin lookups are unaffected.
     display_name = ""
     if pin_id:
-        try:
-            import ems_db as _emsdb
-            _j = _emsdb.find_job_by_name(j.get("client") or "")
-            if (_j and _j.get("display_name") and _emsdb.get_link(
-                    _j.get("canon_key") or "", _emsdb.LINK_TRELLO)):
-                display_name = _j["display_name"]
-        except Exception:
-            display_name = ""
+        if display_map is not None:
+            display_name = display_map.get(j.get("client") or "") or ""
+        else:
+            try:
+                import ems_db as _emsdb
+                _j = _emsdb.find_job_by_name(j.get("client") or "")
+                if (_j and _j.get("display_name") and _emsdb.get_link(
+                        _j.get("canon_key") or "", _emsdb.LINK_TRELLO)):
+                    display_name = _j["display_name"]
+            except Exception:
+                display_name = ""
     return {
         "client":           j.get("client") or "",
         "display_name":     display_name,
@@ -880,7 +904,16 @@ class Api:
                 # `audit:sp_update` events. JS splices each updated
                 # row into state.rows as they arrive.
                 rows = []
-                for j, r in _pair_results_to_jobs(jobs, results):
+                _pairs = list(_pair_results_to_jobs(jobs, results))
+                # Batch the pinned-card name lookup for the whole render.
+                # Keyed on the RESOLVED client (an expanded sub-job or
+                # multi-claim row carries its own), so it must be computed
+                # after that adoption rule, not from the raw run-doc jobs.
+                _display_map = _card_display_map([
+                    {"client": ((r or {}).get("client") or "")
+                               or (j or {}).get("client") or ""}
+                    for j, r in _pairs])
+                for j, r in _pairs:
                     r = r or {}
                     _rc = r.get("client") or ""
                     if _rc and _rc != (j or {}).get("client"):
@@ -901,7 +934,8 @@ class Api:
                         pin = persistence.get_trello_card_id(client) or ""
                     except Exception:
                         pin = ""
-                    rows.append(_shape_job(j, r, pin))
+                    rows.append(_shape_job(j, r, pin,
+                                           display_map=_display_map))
                 self._last_rows = rows
                 self._last_meta = {
                     "date_iso":   d.strftime("%Y-%m-%d"),
@@ -1344,7 +1378,12 @@ class Api:
                 # for the rationale. Rows paint immediately and SP
                 # chips fill in via audit:sp_update events.
                 rows = []
-                for j, r in _pair_results_to_jobs(filtered, results):
+                _pairs = list(_pair_results_to_jobs(filtered, results))
+                _display_map = _card_display_map([
+                    {"client": ((r or {}).get("client") or "")
+                               or (j or {}).get("client") or ""}
+                    for j, r in _pairs])
+                for j, r in _pairs:
                     r = r or {}
                     _rc = r.get("client") or ""
                     if _rc and _rc != (j or {}).get("client"):
@@ -1361,7 +1400,8 @@ class Api:
                             r.get("client") or j.get("client") or "") or ""
                     except Exception:
                         pass
-                    rows.append(_shape_job(j, r, pin))
+                    rows.append(_shape_job(j, r, pin,
+                                           display_map=_display_map))
                 self._last_rows = rows
                 self._last_meta = {
                     "date_iso":      d.strftime("%Y-%m-%d"),
@@ -2015,14 +2055,49 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
-    def create_new_loss(self, fields: dict) -> dict:
-        """Clone the matching template into the intake list and fill it."""
+    def plan_new_loss_folder(self, fields: dict, child: str = "",
+                             second_claim: bool = False) -> dict:
+        """Where this new loss's folder would go — show it in the confirm
+        dialog BEFORE anything is created.
+
+        Returns mode 'new_client' (first job for this customer) or 'child'
+        (they already have a folder, so this becomes a subfolder inside it:
+        another claim, a unit, or a commercial sub-job). `children` lists
+        what's already in there so the operator can pick a non-clashing
+        name."""
+        try:
+            import new_loss_intake as nli
+            return nli.plan_folder(dict(fields or {}), child=child,
+                                   second_claim=bool(second_claim))
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def create_new_loss(self, fields: dict, *, make_folder: bool = True,
+                        child: str = "", second_claim: bool = False,
+                        promote_first: bool = False) -> dict:
+        """Clone the matching template into the intake list, fill it, and
+        (by default) create the job folder.
+
+        The card and the folder are created independently: a client with
+        several claims or units has several cards but ONE client folder,
+        so the two aren't one-to-one. A folder failure never fails the
+        card — the card is the part that can't be redone by hand.
+        """
         try:
             import new_loss_intake as nli
             fields = dict(fields or {})
-            return nli.create_new_loss(fields, fields.get("loss_type"))
+            res = nli.create_new_loss(fields, fields.get("loss_type"))
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+        if res.get("ok") and make_folder:
+            try:
+                folder = nli.create_folder(
+                    fields, child=child, second_claim=bool(second_claim),
+                    promote_first=bool(promote_first))
+            except Exception as ex:
+                folder = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+            res["folder"] = folder
+        return res
 
     # ── P0: XactAnalysis quick link from right-click menu ────────────
     def open_xa_link(self, client: str, card_id: str = "") -> bool:

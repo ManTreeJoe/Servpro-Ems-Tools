@@ -16,6 +16,7 @@ Retry-After, exactly like trello_client._call.
 """
 import json
 import os
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -323,6 +324,95 @@ def _shape_photo(photo):
     }
 
 
+# ── Photo tags ("labels") ───────────────────────────────────────────────
+# CompanyCam calls them tags in the API, labels in the UI. They are NOT in
+# the photo payload — a photo's keys are captured_at, creator_*, uris,
+# description and nothing else — so each costs its own
+# GET /photos/{id}/tags. Cached per process, because a pull, its review
+# panel and a re-pull all ask about the same photos.
+#
+# Worth the calls: the tags carry the two axes the importer already
+# organizes by. Of the 66 tags defined on this account `detect_stage`
+# already recognizes 13 (Demo, Initial Inspection, Equipment, Mold,
+# Monitor, Post, Abatement Prep…) and most of the rest name a room
+# (Kitchen, Master Bath, Bedroom 1-4, Attic, Crawlspace…). Without them a
+# pull is one undifferentiated dump — the equivalent zip import scrapes the
+# same information out of filenames, which CompanyCam photos don't have.
+_TAG_CACHE: dict = {}
+_TAG_FETCH_CAP = 400          # ~2 min of the 240/min GET budget
+
+
+def invalidate_tag_cache():
+    _TAG_CACHE.clear()
+
+
+def photo_tags(photo_id):
+    """Tag display names for one photo. [] on any failure — a pull must
+    never break because a label lookup did."""
+    pid = str(photo_id or "").strip()
+    if not pid:
+        return []
+    if pid in _TAG_CACHE:
+        return _TAG_CACHE[pid]
+    try:
+        raw = _call(f"/photos/{pid}/tags") or []
+    except Exception:
+        raw = []
+    names = []
+    for t in raw:
+        if isinstance(t, dict):
+            n = (t.get("display_value") or t.get("value") or "").strip()
+        else:
+            n = str(t or "").strip()
+        if n:
+            names.append(n)
+    _TAG_CACHE[pid] = names
+    return names
+
+
+def attach_tags(photos, *, cap=_TAG_FETCH_CAP):
+    """Populate `tags` on each shaped photo, in place. Returns the list.
+
+    Capped so an accidental full-history pull can't spend thousands of
+    calls; photos past the cap keep an empty tag list and fall back to
+    un-organized behaviour rather than erroring.
+    """
+    for i, p in enumerate(photos or ()):
+        p["tags"] = photo_tags(p.get("id")) if i < cap else []
+    return photos
+
+
+def classify_tags(tags):
+    """(room, stage) for one photo's tags.
+
+    Delegates to `companycam_import.room_stage_from_label` — the SAME
+    ruleset the zip-export path uses. That path gets the tags joined into
+    the filename ("Initial Inspection Master Bath-11-…"); here they arrive
+    as a list. Joining them and reusing that function is what guarantees a
+    job pulled by API and a job pulled by zip land in identical folders.
+
+    Returns ("", "") when nothing is tagged, so the caller leaves the photo
+    where it is rather than inventing an "Unsorted" bucket.
+    """
+    names = [str(t or "").strip() for t in (tags or ()) if str(t or "").strip()]
+    if not names:
+        return "", ""
+    try:
+        import companycam_import as _cci
+        return _cci.room_stage_from_label(" ".join(names))
+    except Exception:
+        return "", ""
+
+
+def _safe_folder(name):
+    """A tag turned into a folder name Windows will accept. Mirrors
+    companycam_import._safe_folder; kept here so a tag can be sanitized
+    without importing the zip path."""
+    s = re.sub(r'[<>:"/\\|?*]', " ", (name or "")).strip(" .")
+    s = re.sub(r"\s+", " ", s)
+    return s[:40].strip()
+
+
 def list_project_photos(project_id, per_page=100, max_pages=50):
     """Every photo for a project, newest capture first (API default order).
     Paginated; max_pages×per_page caps a runaway pull (50×100 = 5000)."""
@@ -411,11 +501,30 @@ def _download(url, dest_path, _max_retries=3):
     return dest_path
 
 
+def photo_id_token(photo):
+    """The short id token embedded in a downloaded filename. Dedup keys on
+    THIS rather than the whole name: the name carries the photo's tags, and
+    tags get edited in CompanyCam after the fact, so matching whole names
+    would re-download every photo whose label changed."""
+    return (str(photo.get("id") or ""))[:8]
+
+
 def _photo_filename(photo, tech=""):
-    """A stable, sortable filename carrying the tech + capture time + a short
-    id token (so re-runs dedup by name, like the zip importer). e.g.
-    'CC FB 2026-06-30 13-04-11 a1b2c3d4.jpg'."""
+    """A stable, sortable filename led by the photo's CompanyCam tags —
+    its "true name", the same information the zip export puts in the
+    filename ("Initial Inspection Master Bath-11-…").
+
+    e.g. 'Initial Inspection Master Bath FB 2026-06-30 13-04-11 a1b2c3d4.jpg'
+    Untagged photos keep the old 'CC …' prefix so they're still obviously
+    CompanyCam in origin.
+
+    Trailing tech + capture time + id token are unchanged: the timestamp is
+    what makes Explorer sort by shoot order, and the id token is what
+    dedups a re-run.
+    """
     import datetime as _dt
+    label = _safe_folder(" ".join(
+        str(t or "").strip() for t in (photo.get("tags") or ()) if t)) or "CC"
     cap = photo.get("captured_at")
     stamp = ""
     try:
@@ -428,9 +537,9 @@ def _photo_filename(photo, tech=""):
         photo.get("original_url") or "").path)[1].lower()
     if ext not in (".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif"):
         ext = ".jpg"
-    idtok = (photo.get("id") or "")[:8]
+    idtok = photo_id_token(photo)
     t = (tech or "").strip()
-    parts = ["CC"] + ([t] if t else []) + ([stamp] if stamp else []) + [idtok]
+    parts = [label] + ([t] if t else []) + ([stamp] if stamp else []) + [idtok]
     return " ".join(p for p in parts if p).strip() + ext
 
 
@@ -463,7 +572,8 @@ def probe_new(project_id, since_epoch="auto"):
 
 
 def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
-                    subfolder="", advance_watermark=True, tech=""):
+                    subfolder="", advance_watermark=True, tech="",
+                    organize_by_tags=True):
     """Download NEW project photos into `dest_dir` and advance the per-
     project high-water mark.
 
@@ -473,9 +583,18 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
       int              → pull photos captured after this unix time
     subfolder: optional child of dest_dir to drop files into (e.g. a stage
       like "Initial"); created on demand.
-    Returns {ok, downloaded, skipped, latest, files:[paths], error?}.
+    organize_by_tags: file each photo under its room tag, mirroring what
+      `wc_zip_import.organize_by_room` does for a Workcenter import — that
+      one reads the room out of the filename ("bed 1 pre 6.jpg"), which
+      CompanyCam photos don't have, so the tag is the equivalent signal.
+      The caller's `subfolder` (the stage) still wins as the parent; the
+      room nests inside it. Costs one extra GET per photo.
+
+    Returns {ok, downloaded, skipped, latest, files:[paths],
+             rooms:{room: n}, untagged:n, error?}.
     Dedups by filename (capture-time + id token), so a same-day re-run
-    combines instead of writing '(2)' copies."""
+    combines instead of writing '(2)' copies. Filenames are unchanged by
+    tagging — organization happens in folders, not names."""
     import persistence
     pid = str(project_id or "").strip()
     if not pid:
@@ -498,19 +617,49 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
 
     target = dest_dir if not subfolder else os.path.join(dest_dir, subfolder)
     os.makedirs(target, exist_ok=True)
-    # Existing basenames anywhere under dest_dir → skip re-downloads.
+    # Already-downloaded photos, keyed by their ID TOKEN rather than the
+    # whole filename. The name now leads with the photo's tags, and tags
+    # get edited in CompanyCam after the fact — matching whole names would
+    # re-download every photo whose label changed, and would re-download
+    # EVERYTHING once, on the first run after this naming change.
     existing = set()
+    existing_tokens = set()
     for _root, _dirs, _files in os.walk(dest_dir):
         for _f in _files:
             existing.add(_f.lower())
+            stem = os.path.splitext(_f)[0]
+            tok = stem.rsplit(" ", 1)[-1].strip().lower()
+            if len(tok) == 8 and tok.isalnum():
+                existing_tokens.add(tok)
+
+    if organize_by_tags:
+        try:
+            attach_tags(photos)
+        except Exception:
+            pass          # labels are a nicety; never block the download
 
     downloaded, skipped, files, latest = 0, 0, [], since
+    rooms_used, untagged = {}, 0
     for p in photos:
         fname = _photo_filename(p, tech)
-        if fname.lower() in existing:
+        # Room tag → subfolder under the stage, matching the zip import's
+        # layout. No room tag means the photo stays at the stage level
+        # rather than landing in an "Unsorted" bucket nobody looks in.
+        room = ""
+        if organize_by_tags:
+            room, _stage = classify_tags(p.get("tags"))
+            room = _safe_folder(room)
+        if room:
+            rooms_used[room] = rooms_used.get(room, 0) + 1
+        else:
+            untagged += 1
+        photo_target = os.path.join(target, room) if room else target
+        tok = photo_id_token(p).lower()
+        if fname.lower() in existing or (tok and tok in existing_tokens):
             skipped += 1
         else:
-            dest = os.path.join(target, fname)
+            os.makedirs(photo_target, exist_ok=True)
+            dest = os.path.join(photo_target, fname)
             try:
                 _download(p["original_url"], dest)
             except Exception:
@@ -523,6 +672,8 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             except (OSError, OverflowError, ValueError):
                 pass
             existing.add(fname.lower())
+            if tok:
+                existing_tokens.add(tok)
             files.append(dest)
             downloaded += 1
         cap = p["captured_at"]
@@ -533,4 +684,5 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         persistence.set_companycam_seen(pid, latest, job=job)
 
     return {"ok": True, "downloaded": downloaded, "skipped": skipped,
-            "files": files, "latest": latest}
+            "files": files, "latest": latest,
+            "rooms": rooms_used, "untagged": untagged}

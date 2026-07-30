@@ -146,12 +146,33 @@ def invalidate_caches():
     here too."""
     global _QUALITY_EXCLUDED_IDS_CACHE
     global _logs_board_id_cache, _ar_board_id_cache, _logs_list_ids_cache
+    global _WARNED_NO_BOARDS
+    _WARNED_NO_BOARDS = False
     _QUALITY_EXCLUDED_IDS_CACHE = None
     _logs_board_id_cache = None
     _ar_board_id_cache = None
     _logs_list_ids_cache = None
     _LIST_NAME_CACHE.clear()
     _MEMBER_NAME_CACHE.clear()
+
+
+_WARNED_NO_BOARDS = False
+
+
+def _warn_no_boards(detail):
+    """Log (once per process) that the active department can't see any
+    Trello boards. Silent [] here is what made a mis-pointed workspace look
+    like broken name-matching for weeks."""
+    global _WARNED_NO_BOARDS
+    if _WARNED_NO_BOARDS:
+        return
+    _WARNED_NO_BOARDS = True
+    try:
+        import ems_log
+        dept = config.active_department() or "(single-dept)"
+        ems_log.warn("trello", f"no boards for department {dept}: {detail}")
+    except Exception:
+        pass
 
 
 def list_boards(*, exclude_quality: bool = False):
@@ -167,6 +188,7 @@ def list_boards(*, exclude_quality: bool = False):
     cfg = config.load()
     org_id = (cfg.get("trello_workspace_id") or "").strip()
     if not org_id:
+        _warn_no_boards("no trello_workspace_id configured")
         return []
     excludes = set(cfg.get("trello_boards_exclude") or [])
     raw = _call(
@@ -187,6 +209,13 @@ def list_boards(*, exclude_quality: bool = False):
             "name":      b.get("name", ""),
             "url":       b.get("url", ""),
         })
+    if not out:
+        # Zero boards means every downstream card search returns nothing,
+        # which reads to the user as "matching is broken" rather than
+        # "you're pointed at the wrong workspace". Say so in the log.
+        _warn_no_boards(
+            f"workspace {org_id} returned no usable boards "
+            f"(raw={len(raw or [])}, excluded={len(excludes)})")
     return out
 
 

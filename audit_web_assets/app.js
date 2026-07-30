@@ -20,7 +20,9 @@ const state = {
   starred_clients: [],     // lowercase client names the user has ⭐'d
   selected_set: new Set(), // client names selected for bulk action
   importBtn: null,         // <button> currently running an import (HEIC progress target)
-  oneoffHits: [],          // one-off audit rows surfaced when a search finds nothing
+  oneoffHits: [],          // jobs pulled up by Search — they ACCUMULATE so
+                           // several can be worked side by side, and survive
+                           // clearing the box (✕ Clear results empties them)
   oneoffTried: "",         // last term we auto-ran a one-off for (avoid repeats)
   oneoffRunning: false,    // guard against overlapping auto one-off audits
 };
@@ -28,6 +30,10 @@ const state = {
 // Commercial-parent groups (e.g. "Menifee Union School District") the
 // user has collapsed in the list. Keyed by lowercased parent name.
 // Module-level so it survives re-renders within the session.
+// Cap on jobs held on the Search tab. They accumulate as you search, so a
+// long session would otherwise grow an unbounded list; newest wins.
+const ONEOFF_MAX = 40;
+
 const collapsedParents = new Set();
 // Parent keys we've already seeded as collapsed-on-startup, so a manual
 // expand isn't re-collapsed on the next render — only brand-new parents
@@ -88,6 +94,13 @@ window.addEventListener("pywebviewready", async () => {
   refreshDayLabel();
   updateNotesBadge();          // show the open-notes count on the 📝 button
   // Mode switcher (streamlined 2026-07: Search default, Daily Run, Starred)
+  $("#clear-oneoff-btn")?.addEventListener("click", () => {
+    state.oneoffHits = [];
+    state.oneoffTried = "";
+    renderList();
+    renderDetail();
+    setStatus("Cleared searched jobs", "ok");
+  });
   $("#mode-search")?.addEventListener("click",  () => switchMode("search"));
   $("#mode-daily")?.addEventListener("click",   () => switchMode("daily"));
   $("#mode-starred")?.addEventListener("click", () => switchMode("starred"));
@@ -172,6 +185,24 @@ window.addEventListener("pywebviewready", async () => {
   // back on the whole board.
   const _focus = window.emsDeepLinkFocus ? window.emsDeepLinkFocus() : "";
 
+  // Decide the landing tab BEFORE the first paint. This used to happen at
+  // the very END of boot: the cached daily-run rows were rendered, and only
+  // then did a trailing switchMode("search") run — so every launch flashed
+  // the daily board and jumped to Search. That trailing call also passed no
+  // isRestore flag, which PERSISTED mode="search" on every boot and quietly
+  // overwrote whichever tab you'd actually left open.
+  if (!_focus && !state.userSwitchedMode) {
+    let landing = "search";
+    try {
+      const st = await pywebview.api.get_ui_state("audit");
+      if (st && ["search", "daily", "starred"].includes(st.mode)) {
+        landing = st.mode;
+      }
+    } catch (_) { /* no saved tab — Search is the default */ }
+    // Chrome only: the data load below paints once, under the right tab.
+    if (!state.userSwitchedMode) applyModeChrome(landing);
+  }
+
   try {
     const cached = await pywebview.api.last_audit();
     if (cached && cached.rows && cached.rows.length) {
@@ -218,9 +249,14 @@ window.addEventListener("pywebviewready", async () => {
   // today's run-doc, so filtering matched nothing.
   if (_focus) {
     await openFocusJob(_focus);
+  } else if (state.mode !== "daily") {
+    // The tab was already chosen above; this only loads that tab's data.
+    // Daily is skipped because the cached-audit block just loaded it —
+    // re-entering switchMode("daily") would fetch and repaint it twice.
+    // isRestore: boot is not a user choice, so it must not persist.
+    await switchMode(state.mode, true);
   } else {
-    // Search is the default landing tab now (not the daily board).
-    await switchMode("search");
+    renderAll();
   }
 });
 
@@ -256,7 +292,15 @@ async function openFocusJob(name) {
 }
 
 // ── Mode switcher (Daily / Backlog / SP Recent / One-off — P1) ──
-async function switchMode(mode) {
+// NOTE: the tab is restored during boot (see pywebviewready), not here.
+// An async restore fired alongside boot raced the trailing landing switch
+// and flashed the daily board; resolving the tab before the first paint
+// removes the race instead of guarding against it.
+
+// Tab chrome only — active pill, toolbar visibility, button labels. Split
+// out of switchMode so boot can set the landing tab BEFORE the first paint
+// without also re-running switchMode's data loading.
+function applyModeChrome(mode) {
   state.mode = mode;
   ["search", "daily", "starred"].forEach((m) => {
     document.getElementById("mode-" + m)?.classList.toggle("active", m === mode);
@@ -271,6 +315,16 @@ async function switchMode(mode) {
   $("#run-btn").textContent = mode === "daily" ? "↻ Run Audit"
     : mode === "starred" ? "↻ Reload starred"
     :                      "↻ Reload";
+}
+
+async function switchMode(mode, isRestore) {
+  // Remember the tab for next launch. Fire-and-forget — losing this costs
+  // a restore, never the switch the user just asked for.
+  if (!isRestore) {
+    state.userSwitchedMode = true;
+    try { pywebview?.api?.set_ui_state?.("audit", { mode }); } catch (_) { /**/ }
+  }
+  applyModeChrome(mode);
 
   // Search tab (default) — start from previously-audited jobs; the search box
   // auto-audits any typed name not already in the list (type-to-find).
@@ -1801,6 +1855,14 @@ function renderStats() {
 
 function renderList() {
   const body = $("#list-body");
+  // "✕ Clear results" only exists when there's something to clear — the
+  // searched jobs now persist, so there has to be a way to empty them.
+  const clearBtn = $("#clear-oneoff-btn");
+  if (clearBtn) {
+    const n = (state.oneoffHits || []).length;
+    clearBtn.classList.toggle("hidden", n === 0);
+    clearBtn.textContent = n > 1 ? `✕ Clear ${n}` : "✕ Clear result";
+  }
   const filtered = filterRows();
   // If the selected job dropped out of the filter, fall back to first.
   // Selection keys off `rowKey(r)` so two rows for the same property
@@ -1815,13 +1877,32 @@ function renderList() {
   if (filtered.length === 0) {
     const q = state.search.trim();
     if (q) {
-      body.innerHTML =
-        `<div class="list-empty">No jobs match “${escapeHtml(q)}”.`
-        + `<br><button class="btn" id="oneoff-search-btn" style="margin-top:8px;"`
-        + (state.oneoffRunning ? " disabled" : "")
-        + `>${state.oneoffRunning ? "🔍 Searching…" : `🔍 Audit “${escapeHtml(q)}” as a one-off`}</button></div>`;
-      const b = document.getElementById("oneoff-search-btn");
-      if (b) b.addEventListener("click", () => runOneoffFromSearch(q));
+      // Don't claim "no jobs match" while we're still looking. The loaded
+      // list not matching is NOT the answer — a one-off audit resolves the
+      // folder and audits it, and only when THAT comes back empty is the
+      // job genuinely not found. `queued` covers the debounce window,
+      // where the lookup hasn't started but is about to.
+      const queued = q.length >= 3
+        && q.toLowerCase() !== (state.oneoffTried || "").toLowerCase();
+      if (state.oneoffRunning || queued) {
+        body.innerHTML =
+          `<div class="list-empty">🔍 Searching “${escapeHtml(q)}”…</div>`;
+      } else if (q.length < 3) {
+        // Too short to trigger a lookup — you're still typing, so this
+        // isn't a "not found" either.
+        body.innerHTML =
+          `<div class="list-empty muted">Keep typing to search…</div>`;
+      } else {
+        body.innerHTML =
+          `<div class="list-empty">No job found for “${escapeHtml(q)}”.`
+          + `<br><button class="btn" id="oneoff-search-btn" style="margin-top:8px;">`
+          + `🔍 Search again</button></div>`;
+        const b = document.getElementById("oneoff-search-btn");
+        if (b) b.addEventListener("click", () => {
+          state.oneoffTried = "";      // allow the same term to re-run
+          runOneoffFromSearch(q);
+        });
+      }
     } else {
       body.innerHTML = `<div class="list-empty">No jobs match.</div>`;
     }
@@ -2832,9 +2913,10 @@ async function toggleStarred(client) {
 let searchTimer = null;
 function onSearchInput(ev) {
   state.search = ev.target.value;
-  // Clearing the box drops any one-off results we surfaced.
+  // Clearing the box no longer discards what you've pulled up — the jobs
+  // you searched stay on the Search tab so you can work across several at
+  // once. Use ✕ Clear results to empty the list deliberately.
   if (!state.search.trim()) {
-    state.oneoffHits = [];
     state.oneoffTried = "";
   }
   if (searchTimer) clearTimeout(searchTimer);
@@ -2869,13 +2951,22 @@ async function runOneoffFromSearch(term) {
   try {
     const res = await pywebview.api.audit_one_job(t);
     if (res?.ok && (res.rows || []).length) {
-      state.oneoffHits = res.rows;
+      // ACCUMULATE rather than replace: searching a second job used to
+      // wipe the first, so you couldn't hold two jobs side by side on the
+      // Search tab. Newest first, deduped by row key, capped so a long
+      // session doesn't grow an unbounded list.
+      const fresh = res.rows;
+      const seen = new Set(fresh.map(rowKey));
+      const kept = (state.oneoffHits || []).filter((h) => !seen.has(rowKey(h)));
+      state.oneoffHits = fresh.concat(kept).slice(0, ONEOFF_MAX);
       renderList();
       renderDetail();
+      const held = state.oneoffHits.length;
       setStatus(
-        `🔍 One-off: ${firstLast(res.canonical)}`
+        `🔍 ${firstLast(res.canonical)}`
         + (res.resolved ? ` (from “${t}”)` : "")
-        + ` — ${res.count} row${res.count === 1 ? "" : "s"}`, "ok");
+        + ` — ${res.count} row${res.count === 1 ? "" : "s"}`
+        + (held > res.count ? ` · ${held} jobs on this tab` : ""), "ok");
     } else {
       setStatus(res?.error
         ? `No one-off match for “${t}”: ${res.error}`

@@ -54,9 +54,24 @@ async function loadShell() {
   state.header = await pywebview.api.header();
   state.nav = await pywebview.api.nav();
   renderSidebar();
+  // Reopen the last panel IMMEDIATELY after the sidebar exists — same
+  // tick, no further awaits. `last_panel` rode in on header() precisely so
+  // there is nothing left to wait for here; any await between the sidebar
+  // appearing and this call is a window in which the user could click a
+  // tool and then get thrown somewhere else.
+  restoreLastPanel();
   renderWelcome();
   updateClock();
   renderDeptSwitch();
+}
+
+function restoreLastPanel() {
+  if (state.userNavigated) return;          // you clicked first — you win
+  const key = state.header?.last_panel;
+  if (!key) return;                          // first run, or nothing saved
+  const item = findItem(key);
+  if (!item) return;                         // panel hidden or gone
+  navigate(key, item.src, "", true);
 }
 
 // ── Department switcher (multi-account) ────────────────────────────
@@ -196,9 +211,14 @@ function renderNavItem(it) {
   </div>`;
 }
 
-function navigate(key, src, focus) {
+// `isRestore` marks the one navigation the app performs on its own —
+// reopening wherever you left off. Anything else is you, and you always
+// win: once state.userNavigated is set, the restore is abandoned rather
+// than switching the panel out from under you a moment after you clicked.
+function navigate(key, src, focus, isRestore) {
   const item = findItem(key);
   if (!item) return;
+  if (!isRestore) state.userNavigated = true;
   state.active = item;
   // Update active highlight without re-rendering whole sidebar
   $$(".sb-item").forEach((el) => {
@@ -214,6 +234,13 @@ function navigate(key, src, focus) {
     url += (url.indexOf("?") >= 0 ? "&" : "?") + "focus=" + encodeURIComponent(focus);
   }
   $("#content-frame").src = url;
+  // Remember where we are for next launch. Fire-and-forget: a failure here
+  // costs a restore, never the navigation the user just asked for. The
+  // deep-link `focus` is deliberately NOT stored — reopening tomorrow on a
+  // job you were briefly sent to would be worse than reopening the panel.
+  if (!isRestore) {
+    try { pywebview?.api?.set_last_panel?.(key); } catch (_) { /* ignore */ }
+  }
 }
 
 function findItem(key) {

@@ -1932,6 +1932,18 @@ def audit_jobs(client_names, audit_base, year=None, folder_path_lookup=None,
                     ok = _match_tokens(ft, ntoks)
                 if ok:
                     matches.append(f)
+            if len(matches) > 1:
+                # Ambiguous by fuzzy match — but an EXACT name match among
+                # them is not ambiguous at all. `_match_tokens` fires on any
+                # two shared tokens, and generic words collide hard: every
+                # "<Name> Property Management" matches all six others, and a
+                # school district matches its own per-campus folder. Without
+                # this narrowing the year loop treats the current year as
+                # unresolved and falls through to the PRIOR year, so a 2026
+                # commercial parent gets audited against its 2025 folder.
+                exact = [f for f in matches if _norm(f) == nl]
+                if len(exact) == 1:
+                    matches = exact
             if len(matches) != 1:
                 continue
             parent = os.path.join(yp, matches[0])

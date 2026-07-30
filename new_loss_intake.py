@@ -228,10 +228,62 @@ def fill_template_desc(template_desc, fields):
     return "\n".join(out)
 
 
+def plan_folder(fields, *, child="", second_claim=False):
+    """What folder this new loss would create — call before the confirm
+    dialog so the operator sees it and can rename the child.
+
+    A client who already has a folder gets a CHILD inside it, never a
+    second top-level folder. See `job_folders` for the year → client →
+    child model: claims, units and commercial sub-jobs are one shape
+    there, so the only decision left here is what to call the child.
+    """
+    import job_folders
+    insured = ((fields or {}).get("insured_name") or "").strip()
+    if not insured:
+        return {"ok": False, "error": "No insured name to file under"}
+    return job_folders.plan(insured, child=child, second_claim=second_claim)
+
+
+def create_folder(fields, *, child="", second_claim=False,
+                  promote_first=False):
+    """Create the folder `plan_folder` described, and pin it so the
+    resolver finds the job immediately.
+
+    `promote_first=True` also tucks the client root's existing job content
+    into a '1st Claim' folder, so an existing single-claim customer ends up
+    with two sibling claims instead of one loose one. It MOVES live files,
+    so it stays opt-in — confirm from `plan_folder()['promote_first_claim']`.
+    """
+    import job_folders
+    insured = ((fields or {}).get("insured_name") or "").strip()
+    if not insured:
+        return {"ok": False, "error": "No insured name to file under"}
+    res = job_folders.create(insured, child=child, second_claim=second_claim,
+                             promote_first=promote_first)
+    if res.get("ok") and res.get("path"):
+        try:
+            import persistence
+            # Pin under the CHILD's name when there is one: a unit or an
+            # extra claim is what an audit row refers to, not the client
+            # umbrella, so pinning the umbrella would send that row's
+            # imports to the wrong folder.
+            persistence.set_folder_path(res.get("child") or insured,
+                                        res["path"])
+        except Exception:
+            pass
+    return res
+
+
 def create_new_loss(fields, loss_type=None, *, pin=True):
     """Clone the chosen template into the intake list (bottom), fill its desc
     from `fields`, name it, and (optionally) pin it to the insured so the audit
-    picks it up. Returns {ok, card_id, url, name} or {ok:False, error}."""
+    picks it up. Returns {ok, card_id, url, name} or {ok:False, error}.
+
+    Folder creation is a SEPARATE call (`plan_folder` / `create_folder`) so
+    the operator can confirm — or rename — the child folder before it
+    exists. A client with more than one claim/unit also has more than one
+    Trello card, which is why the card and the folder are created
+    independently rather than in one step."""
     import trello_client as tc
 
     fields = dict(fields or {})

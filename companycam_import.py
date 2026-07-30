@@ -49,6 +49,12 @@ _STAGE_RULES = [
     ("initial inspection", "Initial"),
     ("mold",              "Mold"),
     ("demo",              "Demo"),
+    # Both are real stages and both are live CompanyCam tags, but this list
+    # didn't know them — so a photo tagged "Monitor" became a ROOM folder
+    # from CompanyCam while the Workcenter import (import_grouping) filed
+    # the same word as a STAGE. Added 2026-07-30 to reconcile the two.
+    ("monitor",           "Monitor"),
+    ("equipment",         "Equipment"),
     ("initial",           "Initial"),
     ("inspection",        "Initial"),
     ("post",              "Post"),
@@ -119,6 +125,19 @@ def parse_room_stage(filename):
     if label == stem:        # stamp didn't match — fall back to old split
         m = _LABEL_RE.match(base)
         label = (m.group(1) if m else stem).strip()
+    return room_stage_from_label(label)
+
+
+def room_stage_from_label(label):
+    """(room, stage) from a photo's joined tag text.
+
+    Split out of `parse_room_stage` so the API pull can share it. The zip
+    export bakes tags INTO the filename; the API returns them as a list
+    from GET /photos/{id}/tags. Same tags, two transports — they have to
+    classify identically, or one job pulled both ways ends up in two
+    different folder layouts.
+    """
+    label = (label or "").strip()
     for kw, folder in _STAGE_RULES:        # most-specific first
         mm = re.search(r'\b' + re.escape(kw) + r'\b', label, re.IGNORECASE)
         if mm:

@@ -91,6 +91,14 @@ hiddenimports = web_modules + [
     'new_loss_intake',
     # CompanyCam + dept-browser are reached via function-local imports too.
     'companycam_api', 'companycam_import', 'dept_browser', 'update_check',
+    # ems_db is a FAÇADE that selects its backend with
+    # importlib.import_module(<variable>). Static analysis cannot see
+    # through that, so without these the packaged app has no job index at
+    # all — every folder pin, card link and audit row lookup fails. Not
+    # optional, unlike the belt-and-suspenders entries above.
+    'ems_db_sqlite', 'ems_db_supabase',
+    # Reached only through function-local imports.
+    'cache_bust', 'job_folders', 'trello_auth', 'supabase_client',
 ]
 hiddenimports += collect_submodules('openpyxl')
 # pywebview Windows backend + its http-server deps. pywebview 6.x ships a

@@ -21,6 +21,8 @@ import os, sys
 from pathlib import Path as _Path
 import webview
 
+import persistence
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path: sys.path.insert(0, _HERE)
 
@@ -289,7 +291,81 @@ class HomeApi:
             "greeting": greet,
             "date":     now.strftime("%A, %B %d"),
             "time":     now.strftime("%I:%M %p").lstrip("0"),
+            # Panel to reopen on launch. Ships INSIDE header() rather than
+            # as its own call so the restore can run synchronously right
+            # after the sidebar renders. A separate round trip would leave
+            # a window where the user has already clicked something and the
+            # late reply yanks them somewhere else.
+            "last_panel": self.get_last_panel(),
         }
+
+    def get_last_panel(self) -> str:
+        """Key of the panel that was open when the app last closed, or ""
+        for none.
+
+        Returns "" when that panel has since been hidden or failed to
+        import, so a stale value can't strand the user on a dead tab.
+        """
+        try:
+            key = (persistence.get("home_last_panel") or "").strip()
+        except Exception:
+            return ""
+        if not key:
+            return ""
+        if key in getattr(self, "_failed_subs", {}):
+            return ""
+        try:
+            if not self._is_panel_visible(key):
+                return ""
+        except Exception:
+            return ""
+        return key
+
+    def set_last_panel(self, key: str) -> dict:
+        """Remember the open panel. Called on every navigation; failures
+        are swallowed because losing this is a nuisance, never an error."""
+        try:
+            persistence.set_value("home_last_panel", (key or "").strip())
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    # ── Per-panel UI state (which tab, which filter) ─────────────────
+    # Deliberately LOCAL, in state.json, never the shared job index: where
+    # you left the Audit tab is yours, not a team fact. When the job graph
+    # moves to a shared backend this stays exactly where it is.
+    #
+    # Panels reach these through the iframe shim's fall-through to the
+    # un-prefixed HomeApi, so no per-panel wiring is needed — a new panel
+    # gets persistence by calling get_ui_state/set_ui_state with its key.
+
+    def get_ui_state(self, panel: str) -> dict:
+        """Saved UI state for one panel ({} when nothing is stored)."""
+        try:
+            all_state = persistence.get("ui_state") or {}
+            val = all_state.get((panel or "").strip())
+            return val if isinstance(val, dict) else {}
+        except Exception:
+            return {}
+
+    def set_ui_state(self, panel: str, patch: dict) -> dict:
+        """Merge `patch` into one panel's saved UI state.
+
+        Merge rather than replace so a panel can persist one field at a
+        time without having to know (or clobber) the others.
+        """
+        panel = (panel or "").strip()
+        if not panel or not isinstance(patch, dict):
+            return {"ok": False, "error": "panel and patch required"}
+        try:
+            all_state = dict(persistence.get("ui_state") or {})
+            cur = dict(all_state.get(panel) or {})
+            cur.update(patch)
+            all_state[panel] = cur
+            persistence.set_value("ui_state", all_state)
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def nav(self):
         """Sidebar groups + tools — filtered by per-panel visibility.
@@ -663,25 +739,15 @@ class HomeApi:
 
 
 def _invalidate_scoped_caches():
-    """Drop the process-lifetime caches that are scoped to the active
-    department, so an in-process switch doesn't serve the previous
-    department's data. config.load() and the logic-module roots are
-    already lazy (mtime-cached); this clears the two workspace-scoped
-    caches those don't cover. Best-effort — a missing module never
-    blocks the switch."""
+    """Drop every process-lifetime cache scoped to the active department.
+
+    Delegates to `cache_bust`, which Settings-save uses too. This list used
+    to live here and had already fallen behind — it didn't know about the
+    department→root map or the storage-backend selection, so a department
+    switch kept serving the previous department's folder roots."""
     try:
-        import trello_client
-        trello_client.invalidate_caches()
-    except Exception:
-        pass
-    try:
-        import weekly_checkins            # own Estimating-board id cache
-        weekly_checkins.invalidate_caches()
-    except Exception:
-        pass
-    try:
-        from state_hub import hub as _hub
-        _hub._cache.clear()          # parse_run_doc etc. — re-fetch fresh
+        import cache_bust
+        cache_bust.invalidate_all("department switch")
     except Exception:
         pass
 

@@ -65,6 +65,20 @@ DEPT_OVERRIDE_KEYS = (
     "franchise_name", "office_phone",
 )
 
+# The subset of DEPT_OVERRIDE_KEYS that answers "WHICH FRANCHISE is this?".
+# Two departments sharing a value here is never legitimate — it means one
+# department is silently operating on the other's Trello workspace or file
+# share. Inheriting one from the base is equally dangerous: the base is
+# editable from the global Settings form, so a single stray save can
+# redirect every department that inherits it. `check_department_integrity`
+# reports both cases; keep this list to keys where a collision is provably
+# a bug (not merely unusual).
+DEPT_IDENTITY_KEYS = (
+    "trello_workspace_id",   # which Trello workspace = which franchise
+    "audit_base",            # which job-folder share
+    "runs_dir",              # which daily-run share
+)
+
 # Franchise identity defaults (Inland Empire) used when a config key is
 # absent, so nothing breaks on installs whose config.json predates these
 # keys. Overridable per-department once multi-dept is on.
@@ -85,14 +99,16 @@ def _is_blank(v):
     return False
 
 
-def _apply_department(cfg):
-    """Overlay the active department's non-empty overrides onto the base
-    config. No-op when multi-dept is off or the active profile is missing.
-    Operates on (and returns) a fresh dict — never mutates the cache."""
+def _apply_department(cfg, dept=None):
+    """Overlay a department's non-empty overrides onto the base config.
+    `dept` defaults to the active department. No-op when multi-dept is off
+    or the profile is missing. Operates on (and returns) a fresh dict —
+    never mutates the cache."""
     if not cfg.get("multi_department_enabled"):
         return cfg
     depts = cfg.get("departments") or {}
-    active = (cfg.get("active_department") or "").strip()
+    active = (dept if dept is not None
+              else (cfg.get("active_department") or "")).strip()
     prof = depts.get(active)
     if not isinstance(prof, dict):
         return cfg
@@ -146,6 +162,14 @@ def load():
     copy so callers can safely mutate it."""
     cfg = _json.loads(_json.dumps(_read_raw()))
     return _apply_department(cfg)
+
+
+def load_for(dept):
+    """Effective config as it would resolve if `dept` were the active
+    department. Used by the integrity check (and any cross-department
+    guard) to compare franchises without switching."""
+    cfg = _json.loads(_json.dumps(_read_raw()))
+    return _apply_department(cfg, dept=dept)
 
 
 def save(cfg):
@@ -218,6 +242,87 @@ def set_active_department(name):
     return True
 
 
+def _norm_identity(key, value):
+    """Comparable form of an identity value. Paths are case- and
+    separator-insensitive on Windows; ids compare as lowercased text."""
+    s = ("" if value is None else str(value)).strip()
+    if not s:
+        return ""
+    if key in ("audit_base", "runs_dir"):
+        return _os.path.normcase(_os.path.normpath(s))
+    return s.lower()
+
+
+def check_department_integrity():
+    """Report configuration states that let one franchise act on another's
+    data. Returns a list of {level, key, dept, message} dicts — empty when
+    the setup is sound. Never raises.
+
+    Two failure modes, both of which have actually happened:
+
+    * **collision** — two departments resolve to the SAME identity value
+      (e.g. both point at the same Trello workspace). Whichever department
+      inherited it is silently working in the other's franchise: every card
+      lookup returns either nothing or, worse, the wrong franchise's cards.
+    * **inherited** — a department has no explicit value and falls back to
+      the base. The base is writable from the global Settings form, so this
+      is a collision waiting to happen; it is what caused the first one.
+
+    Cheap and offline (no API calls), so it is safe to run on every
+    Settings open and at startup.
+    """
+    out = []
+    try:
+        base = load_base()
+    except Exception as ex:
+        return [{"level": "error", "key": "", "dept": "",
+                 "message": f"config unreadable: {ex}"}]
+    if not base.get("multi_department_enabled"):
+        return out
+    depts = base.get("departments") or {}
+    if not isinstance(depts, dict) or len(depts) < 2:
+        return out
+
+    resolved = {}          # dept -> {key: effective value}
+    for dk in depts:
+        try:
+            eff = load_for(dk)
+        except Exception:
+            continue
+        resolved[dk] = {k: eff.get(k) for k in DEPT_IDENTITY_KEYS}
+
+    for key in DEPT_IDENTITY_KEYS:
+        seen = {}
+        for dk, vals in resolved.items():
+            prof = depts.get(dk) if isinstance(depts.get(dk), dict) else {}
+            explicit = not _is_blank(prof.get(key))
+            norm = _norm_identity(key, vals.get(key))
+            if not norm:
+                out.append({
+                    "level": "error", "key": key, "dept": dk,
+                    "message": (f"{dk} has no {key} — nothing identifies "
+                                f"which franchise it operates on."),
+                })
+                continue
+            if not explicit:
+                out.append({
+                    "level": "warn", "key": key, "dept": dk,
+                    "message": (f"{dk} inherits {key} from the base config. "
+                                f"Set it explicitly in Settings → Departments "
+                                f"so a global save can't redirect {dk}."),
+                })
+            seen.setdefault(norm, []).append(dk)
+        for norm, owners in seen.items():
+            if len(owners) > 1:
+                out.append({
+                    "level": "error", "key": key, "dept": ", ".join(owners),
+                    "message": (f"{' and '.join(owners)} both resolve to the "
+                                f"SAME {key} ({norm!r}). One of them is "
+                                f"operating on the other franchise's data."),
+                })
+    return out
+
+
 def ensure_departments_scaffold():
     """Create the default IE + OC department profiles the first time
     multi-dept is turned on. IE inherits the current base values (empty
@@ -231,9 +336,17 @@ def ensure_departments_scaffold():
         depts = {}
         changed = True
     if "IE" not in depts:
-        # IE = the current single-department setup; empty overrides mean
-        # it inherits every base value (which is IE today).
-        depts["IE"] = {"label": "Inland Empire"}
+        # IE = the current single-department setup. Copy the base identity
+        # values in EXPLICITLY rather than leaving the profile empty to
+        # inherit them: the base is writable from the global Settings form,
+        # so an inherited identity can be redirected to the other franchise
+        # by an unrelated save (which is exactly how IE once ended up
+        # searching OC's Trello workspace).
+        prof = {"label": "Inland Empire"}
+        for k in DEPT_IDENTITY_KEYS:
+            if not _is_blank(base.get(k)):
+                prof[k] = base[k]
+        depts["IE"] = prof
         changed = True
     if "OC" not in depts:
         depts["OC"] = {"label": "Orange County"}

@@ -68,9 +68,14 @@
       <button class="btn" id="open-tech-roster">👷 Tech roster (JSON)</button>
       <button class="btn" id="edit-tech-roster">👷 Edit roster…</button>
       <button class="btn" id="authorize-trello">🔑 Authorize Trello…</button>
+      <button class="btn" id="authorize-trello-manual" title="Opens Trello and shows the token to copy. Works without registering an allowed origin.">🔑 Manual token…</button>
       <button class="btn" id="check-trello">🔌 Test Trello connection</button>
     </div>
     <div id="trello-status" class="muted" style="margin-top:8px;font-size:12px;"></div>
+    <div id="trello-origin-help" class="muted"
+         style="display:none;margin-top:8px;font-size:11.5px;line-height:1.6;
+                border-left:3px solid var(--amber);padding:8px 10px;
+                background:var(--surface-2);border-radius:0 6px 6px 0;"></div>
   </section>
 
   <section style="margin-bottom: 22px; padding: 14px 18px;
@@ -126,10 +131,12 @@
     <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
       Run the tools against two SERVPRO departments, each with its own Trello
       board, job/photo folders, and office identity. Switch between them from
-      the launcher. The main settings below stay as your <b>Inland Empire</b>
-      defaults; any field you leave blank for a department <b>inherits</b> those.
+      the launcher. Give each department its <b>own</b> Trello workspace ID and
+      folder roots — a field left blank inherits the base, and a base edit can
+      then silently point that department at the other franchise.
       CompanyCam, appearance, and feature flags stay shared.
     </div>
+    <div id="dept-problems" style="display:none;margin-bottom:12px;"></div>
     <div id="dept-body" style="display:none;">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
         <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);">Editing</label>
@@ -226,7 +233,71 @@ window.addEventListener("pywebviewready", async () => {
   document.getElementById("edit-tech-roster").addEventListener("click",
     openTechRosterEditor);
   document.getElementById("authorize-trello").addEventListener("click",
-    () => pywebview.api.authorize_trello());
+    async (ev) => {
+      const btn = ev.currentTarget;
+      const el = document.getElementById("trello-status");
+      btn.disabled = true;
+      const was = btn.textContent;
+      btn.textContent = "🔑 Waiting for Trello…";
+      if (el) {
+        el.textContent = "A browser tab has opened — approve access there. "
+                       + "The token is captured automatically.";
+        el.style.color = "";
+      }
+      try {
+        const r = await pywebview.api.authorize_trello();
+        if (r?.ok) {
+          if (el) { el.textContent = "✓ " + (r.message || "Trello connected");
+                    el.style.color = "var(--green)"; }
+          await load();          // token field now shows the saved value
+        } else if (el) {
+          el.textContent = "✕ " + (r?.error || "Sign-in failed");
+          el.style.color = "var(--red)";
+          // "Invalid return_url" means the loopback origin isn't registered
+          // against the API key. Show the exact string to paste rather than
+          // making the user work it out from Trello's message.
+          if (r?.allowed_origin) showOriginHelp(r.allowed_origin);
+        }
+      } catch (e) {
+        if (el) { el.textContent = "✕ " + e; el.style.color = "var(--red)"; }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = was;
+      }
+    });
+  document.getElementById("authorize-trello-manual").addEventListener("click",
+    async () => {
+      const el = document.getElementById("trello-status");
+      const r = await pywebview.api.authorize_trello_manual();
+      if (el) {
+        el.textContent = (r?.ok ? "→ " : "✕ ") + (r?.message || r?.error || "");
+        el.style.color = r?.ok ? "" : "var(--red)";
+      }
+    });
+
+async function showOriginHelp(origin) {
+  const box = document.getElementById("trello-origin-help");
+  if (!box) return;
+  let info = null;
+  try { info = await pywebview.api.trello_allowed_origin(); } catch (_) {}
+  const o = origin || info?.origin || "http://localhost:8976";
+  box.style.display = "block";
+  box.innerHTML =
+    `<b>Trello rejected the return URL.</b><br>`
+    + `Trello only accepts a sign-in redirect whose origin is registered `
+    + `against your API key. Add this one:<br>`
+    + `<code style="display:inline-block;margin:6px 0;padding:3px 8px;`
+    + `background:var(--surface);border:1px solid var(--border);border-radius:4px;">`
+    + `${esc(o)}</code><br>`
+    + `at <a href="#" id="open-trello-admin">trello.com/power-ups/admin</a> → `
+    + `your Power-Up → <b>API key</b> → <b>Allowed origins</b>.<br>`
+    + `<span class="muted">Or skip it entirely and use `
+    + `<b>🔑 Manual token…</b>, which needs no origin.</span>`;
+  document.getElementById("open-trello-admin")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    pywebview.api.open_url?.("https://trello.com/power-ups/admin");
+  });
+}
   // Job identity lookup + backfill
   document.getElementById("ji-lookup").addEventListener("click", lookupJobIdentity);
   document.getElementById("ji-name").addEventListener("keydown", (e) => {
@@ -272,6 +343,7 @@ async function renderDepartments() {
   if (!DEPT?.ok) { body.style.display = "none"; enable.checked = false; return; }
   enable.checked = !!DEPT.enabled;
   body.style.display = DEPT.enabled ? "block" : "none";
+  renderDeptProblems();
   if (!DEPT.enabled) return;
   const pick = document.getElementById("dept-pick");
   pick.innerHTML = (DEPT.departments || []).map((d) =>
@@ -282,6 +354,33 @@ async function renderDepartments() {
   const oc = (DEPT.departments || []).find((d) => !d.is_base);
   if (oc) pick.value = oc.key;
   renderDeptFields();
+}
+
+// Cross-franchise misconfiguration banner. An ERROR here means one
+// department is reading the other's Trello workspace or file share — the
+// symptom is "nothing matches anymore", so name it loudly rather than
+// letting searches quietly come back empty.
+function renderDeptProblems() {
+  const wrap = document.getElementById("dept-problems");
+  const problems = (DEPT && DEPT.problems) || [];
+  if (!problems.length) { wrap.style.display = "none"; wrap.innerHTML = ""; return; }
+  const errors = problems.filter((p) => p.level === "error");
+  const warns  = problems.filter((p) => p.level !== "error");
+  const bad = errors.length > 0;
+  const color = bad ? "var(--red, #e5534b)" : "var(--yellow, #d29922)";
+  wrap.style.display = "block";
+  wrap.innerHTML = `
+    <div style="border:1px solid ${color};border-left:4px solid ${color};
+                border-radius:6px;padding:10px 12px;background:var(--surface-2);">
+      <div style="font-size:12px;font-weight:700;color:${color};margin-bottom:6px;">
+        ${bad ? "⛔ Departments are not separated" : "⚠ Department setup is fragile"}
+      </div>
+      <ul style="margin:0;padding-left:18px;font-size:11.5px;line-height:1.55;">
+        ${errors.concat(warns).map((p) =>
+          `<li${p.level === "error" ? ` style="color:${color};font-weight:600;"` : ""}>${esc(p.message)}</li>`
+        ).join("")}
+      </ul>
+    </div>`;
 }
 
 function _deptByKey(key) {
@@ -346,7 +445,7 @@ async function saveDepartment() {
   });
   const r = await pywebview.api.save_department(key, overrides, dept?.label || "");
   if (!r?.ok) { setDeptStatus(`Save failed: ${r?.error || "?"}`, "error"); return; }
-  setDeptStatus(`💾 Saved ${dept?.label || key}` + (DEPT.active === key ? " — reload / switch to apply" : ""), "ok");
+  setDeptStatus(`💾 Saved ${dept?.label || key}` + (DEPT.active === key ? " — applied" : ""), "ok");
   await renderDepartments();
   document.getElementById("dept-pick").value = key;
   renderDeptFields();
@@ -454,7 +553,7 @@ function wireBrowse() {
       if (!res?.ok) { setStatus(`Browse failed: ${res?.error || "?"}`, "error"); return; }
       if (res.path && input) {
         input.value = res.path;
-        setStatus("📂 Picked — click 💾 Save to apply (then restart EMS Tools)", "ok");
+        setStatus("📂 Picked — click 💾 Save to apply", "ok");
       }
     });
   });
@@ -525,14 +624,30 @@ async function backfillJobGraph() {
 
 async function save() {
   const out = {};
-  document.querySelectorAll("[data-key]").forEach((el) => {
+  // SCOPED to the main form. A global [data-key] sweep also picked up the
+  // Departments editor (which defaults to showing OC) and the panel-
+  // visibility checkboxes — so clicking 💾 Save copied whichever department
+  // was on screen into the config. That is how the base config ended up
+  // holding OC's Trello workspace while IE inherited it, which had IE
+  // searching OC's boards and matching nothing.
+  document.querySelectorAll("#form-fields [data-key]").forEach((el) => {
     const k = el.dataset.key;
     if (el.type === "checkbox") out[k] = el.checked;
     else out[k] = el.value;
   });
+  // Appearance + UI scale are applied to the DOM at render time, so those
+  // two still need a reload. Everything else now takes effect immediately:
+  // the save clears the caches that were holding the old values.
+  const needsReload = ["appearance", "ui_scale"].some(
+    (k) => k in out && String(out[k]) !== String(VALUES?.[k] ?? ""));
   const res = await pywebview.api.save(out);
-  setStatus(res?.ok ? "💾 Saved — restart EMS Tools to pick up changes" : `Save failed: ${res?.error || "?"}`,
-            res?.ok ? "ok" : "error");
+  setStatus(
+    res?.ok
+      ? (needsReload
+          ? "💾 Saved — reload the window to apply the new appearance"
+          : "💾 Saved — applied, no restart needed")
+      : `Save failed: ${res?.error || "?"}`,
+    res?.ok ? "ok" : "error");
   if (res?.ok) { VALUES = out; await renderFirstRunWizard(); }
 }
 let st = null;

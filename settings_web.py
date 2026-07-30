@@ -27,6 +27,13 @@ FIELDS = [
     ("trello_api_key",      "Trello API key",             "secret"),
     ("trello_token",        "Trello token (per-user)",    "secret"),
     ("companycam_api_token", "CompanyCam access token",   "secret"),
+    # Shared job-index backend. ONE project serves both departments —
+    # Row-Level Security keyed on jobs.department is what separates IE
+    # from OC, so these stay global rather than per-department.
+    # The anon/publishable key is designed to be shipped in a client;
+    # the service_role key must NEVER be stored here — it bypasses RLS.
+    ("supabase_url",        "Supabase project URL",       "url"),
+    ("supabase_anon_key",   "Supabase anon / publishable key", "secret"),
     ("appearance",          "Appearance",                 "choice", ["system","light","dark"]),
     ("ui_scale",            "UI scale",                   "choice",
                             ["auto","1.0","1.25","1.5","1.75","2.0","2.25","2.5"]),
@@ -51,6 +58,29 @@ DEPT_FIELDS = [
 ]
 
 
+# The ONLY keys the main Settings form may write. A key not declared in
+# FIELDS did not come from that form, so it is not the form's to save.
+#
+# This is a second line of defence for a bug that has now bitten twice. The
+# page's save loop used a global `[data-key]` selector, which also matched
+# the Departments editor (showing whichever department was picked, OC by
+# default) and the panel-visibility checkboxes. Clicking 💾 Save therefore
+# wrote that department's values — including `trello_workspace_id` — into
+# the config, which is how IE ended up searching OC's Trello workspace.
+# The selector is scoped now; this makes the same mistake unwritable.
+_ALLOWED_SAVE_KEYS = frozenset(f[0] for f in FIELDS)
+
+
+def _invalidate(reason):
+    """Drop derived caches so a saved setting applies without a restart.
+    Never raises — failing to clear a cache must not fail the save."""
+    try:
+        import cache_bust
+        return cache_bust.invalidate_all(reason)
+    except Exception as ex:
+        return {"cleared": [], "failed": [str(ex)]}
+
+
 class Api:
     def __init__(self): self._window = None
     def attach(self, w): self._window = w
@@ -61,11 +91,13 @@ class Api:
                 for f in FIELDS]
 
     def load(self):
-        # The global form edits the BASE config (the Inland Empire
-        # defaults), consistent with save() writing to base. Per-
-        # department overrides are edited in the Departments section.
+        # Show what is actually IN EFFECT for the active department, so the
+        # form is what-you-see-is-what-you-save: save() routes any
+        # department-scoped key to the active department's profile, and
+        # showing base values here would let an unrelated save copy one
+        # franchise's paths into the other's profile.
         try:
-            return dict(config.load_base() or {})
+            return dict(config.load() or {})
         except Exception:
             return {}
 
@@ -77,9 +109,54 @@ class Api:
             # so saving the global fields can't accidentally bake the active
             # department's overrides into the base.
             cfg = dict(config.load_base() or {})
+            # ...EXCEPT for department-scoped keys while multi-dept is on.
+            # Seven of this form's fields (audit_base, runs_dir, photos_root,
+            # snapshot_template, apa_monitor_root, trello key/token) are also
+            # DEPT_OVERRIDE_KEYS. Writing those to the base sets them for
+            # every department that inherits — one franchise's paths silently
+            # become another's. Route them to the ACTIVE department instead,
+            # which is the franchise the user is looking at when they save.
+            # Drop anything the main form has no business writing. Ignoring
+            # is right rather than failing: the extra keys are a UI accident,
+            # not user intent, and rejecting the whole save would block a
+            # legitimate settings change. Logged + returned so it's visible.
+            incoming = dict(values)
+            rejected = sorted(k for k in incoming
+                              if k not in _ALLOWED_SAVE_KEYS)
+            values = {k: v for k, v in incoming.items()
+                      if k in _ALLOWED_SAVE_KEYS}
+            if rejected:
+                try:
+                    import ems_log
+                    ems_log.warn("settings",
+                                 f"ignored non-form keys on save: {rejected}")
+                except Exception:
+                    pass
+            routed = {}
+            if cfg.get("multi_department_enabled"):
+                active = (cfg.get("active_department") or "").strip()
+                depts = cfg.get("departments") or {}
+                if active and isinstance(depts.get(active), dict):
+                    for k in list(values):
+                        if k in config.DEPT_OVERRIDE_KEYS:
+                            routed[k] = values.pop(k)
+                    if routed:
+                        prof = dict(depts[active])
+                        prof.update(routed)
+                        depts[active] = prof
+                        cfg["departments"] = depts
             cfg.update(values)
             config.save(cfg)
-            return {"ok": True}
+            # Make the change live NOW. Without this, a saved setting sat
+            # behind whatever each module had already derived from the old
+            # config — a Trello board id, the department→root map, the
+            # storage backend — so the app had to be restarted to pick it
+            # up. Appearance / UI scale still need a page reload, since
+            # those are applied to the DOM at render time.
+            _bust = _invalidate("settings save")
+            return {"ok": True, "routed_to_department": sorted(routed),
+                    "ignored_keys": rejected,
+                    "applied_live": True, "cache": _bust}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
@@ -142,6 +219,9 @@ class Api:
                 "fields": fields,
                 "departments": out,
                 "base": {fk: base.get(fk, "") for fk in keyset},
+                # Cross-franchise misconfiguration (shared workspace / share,
+                # or an identity inherited from the base). Offline + cheap.
+                "problems": config.check_department_integrity(),
             }
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
@@ -155,6 +235,7 @@ class Api:
             base = config.load_base()
             base["multi_department_enabled"] = bool(enabled)
             config.save(base)
+            _invalidate("multi-department toggle")
             return {"ok": True}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
@@ -183,6 +264,7 @@ class Api:
             depts[key] = prof
             base["departments"] = depts
             config.save(base)
+            _invalidate("department settings save")
             return {"ok": True}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
@@ -353,19 +435,57 @@ class Api:
             return {"ok": False, "error": str(ex)}
 
     def authorize_trello(self):
-        """Open Trello's per-user token-generation page in the browser.
-        User pastes the resulting token back into the Trello token
-        field above."""
+        """Sign in to Trello — approve in the browser, token saved for you.
+
+        The old version opened Trello's token page with a HARDCODED api key
+        (4f7cf06b…) that isn't the key this install calls with, so the token
+        it produced authenticated as a different application and every later
+        request failed. It also required copy-pasting the token back.
+
+        Now: uses the configured key, catches the token on a loopback
+        listener, and writes it to the ACTIVE department (trello_token is
+        department-scoped — writing it to the base would hand one
+        franchise's token to the other).
+        """
         try:
+            import trello_auth
+            res = trello_auth.authorize()
+            if res.get("ok"):
+                return {"ok": True,
+                        "message": f"Trello connected ({res.get('scope')})"}
+            return res
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def trello_allowed_origin(self) -> dict:
+        """The origin to register against the Trello API key.
+
+        Trello validates `return_url` against the key's Allowed Origins and
+        rejects anything else with "Invalid return_url". Shown in Settings
+        so the string can be copied rather than guessed."""
+        try:
+            import trello_auth
+            return {"ok": True, "origin": trello_auth.allowed_origin(),
+                    "admin_url": "https://trello.com/power-ups/admin"}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def authorize_trello_manual(self) -> dict:
+        """Fallback: open Trello WITHOUT a return_url, so it prints the
+        token for copy-paste. Needs no Allowed Origins entry, which is the
+        point — it works even when the loopback origin isn't registered."""
+        try:
+            import trello_auth
             import webbrowser
-            webbrowser.open(
-                "https://trello.com/1/authorize"
-                "?expiration=never&scope=read,write,account"
-                "&response_type=token&name=EMS%20Tools"
-                "&key=4f7cf06b75c52d6c63a73e7a8df7d1a8")
-            return True
-        except Exception:
-            return False
+            res = trello_auth.manual_url()
+            if not res.get("ok"):
+                return res
+            webbrowser.open(res["url"])
+            return {"ok": True, "manual": True,
+                    "message": "Trello opened — copy the token it shows and "
+                               "paste it into the Trello token field below."}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def first_run_status(self) -> dict:
         """Return a checklist for the first-run wizard: which critical

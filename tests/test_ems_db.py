@@ -184,7 +184,10 @@ def test_export_import_roundtrip(tmp_path):
                       source="email_subject")
     ems_db.set_link("ploussard, guadalupe", "trello_card",
                      "69f8efef5e320b8283a5b970")
-    ems_db.set_link("ploussard, guadalupe", "od_folder",
+    # The folder type every tool actually writes (LINK_FOLDER), NOT the
+    # legacy "od_folder" spelling — asserting on the latter is what let
+    # export_db ship zero folder links unnoticed.
+    ems_db.set_link("ploussard, guadalupe", ems_db.LINK_FOLDER,
                      r"X:\IE_Public\2026 Jobs\Ploussard, Guadalupe 2-19-26")
     # Machine-specific link type — should NOT export
     ems_db.set_link("ploussard, guadalupe", "sp_folder", "/sites/...")
@@ -198,7 +201,7 @@ def test_export_import_roundtrip(tmp_path):
     exported_job = payload["jobs"][0]
     assert exported_job["display_name"] == "Ploussard, Guadalupe - AAA"
     link_types = {l["type"] for l in exported_job["links"]}
-    assert link_types == {"trello_card", "od_folder"}    # sp_folder excluded
+    assert link_types == {ems_db.LINK_TRELLO, ems_db.LINK_FOLDER}  # sp_folder excluded
 
     # Wipe + reimport
     with ems_db._connect() as c:
@@ -211,6 +214,39 @@ def test_export_import_roundtrip(tmp_path):
     assert ems_db.find_job_by_name("GUADALUPE PLOUSSARD") is not None
     assert ems_db.get_link("ploussard, guadalupe", "trello_card") == \
         "69f8efef5e320b8283a5b970"
+    # The folder must survive the round trip too — the whole point of
+    # include_folders (recipients share the same X:\ mount).
+    assert ems_db.get_link("ploussard, guadalupe", ems_db.LINK_FOLDER)
+
+
+def test_export_include_folders_actually_exports_folders(tmp_path):
+    """Regression: the allow-list said "od_folder" while every tool writes
+    LINK_FOLDER ("folder_path"), so include_folders=True shipped none."""
+    ems_db.upsert_job(display_name="Folder Job")
+    ems_db.set_link("folder job", ems_db.LINK_FOLDER, r"X:\IE_Public\A")
+
+    out_file = tmp_path / "with.json"
+    ems_db.export_db(str(out_file), include_folders=True)
+    payload = json.loads(out_file.read_text(encoding="utf-8"))
+    types = {l["type"] for j in payload["jobs"] for l in j["links"]}
+    assert ems_db.LINK_FOLDER in types
+
+    out_no = tmp_path / "without.json"
+    ems_db.export_db(str(out_no), include_folders=False)
+    payload_no = json.loads(out_no.read_text(encoding="utf-8"))
+    types_no = {l["type"] for j in payload_no["jobs"] for l in j["links"]}
+    assert ems_db.LINK_FOLDER not in types_no
+
+
+def test_export_still_reads_the_legacy_od_folder_spelling(tmp_path):
+    """Databases written before the rename must not lose their folders."""
+    ems_db.upsert_job(display_name="Legacy Job")
+    ems_db.set_link("legacy job", "od_folder", r"X:\IE_Public\Legacy")
+    out_file = tmp_path / "legacy.json"
+    ems_db.export_db(str(out_file), include_folders=True)
+    payload = json.loads(out_file.read_text(encoding="utf-8"))
+    types = {l["type"] for j in payload["jobs"] for l in j["links"]}
+    assert "od_folder" in types
 
 
 def test_import_upsert_preserves_local_only_jobs(tmp_path):
@@ -322,12 +358,16 @@ def test_detect_allows_explicit_unit_2025():
     assert unit == "2025"
 
 
-def test_upsert_job_auto_sets_parent_canon():
-    """Inserting a multi-unit job should auto-fill parent_canon + unit_number."""
+def test_upsert_job_no_longer_infers_a_parent_from_the_name(tmp_path):
+    """DEPRECATED in v4. upsert_job used to derive parent_canon +
+    unit_number from the display name. On live data that inference had
+    populated 21 rows, and every single parent it named ('store',
+    'stater bros', 'monterey apartments ga') did not exist — a name is not
+    a hierarchy. `job_children`, built from the folder tree, replaces it."""
     ems_db.upsert_job(display_name="Avila Apartments 1416")
     job = ems_db.find_job_by_name("Avila Apartments 1416")
-    assert job["parent_canon"] == "avila apartments"
-    assert job["unit_number"] == "1416"
+    assert job["parent_canon"] is None
+    assert job["unit_number"] is None
 
 
 def test_upsert_job_no_parent_for_single_family():
@@ -337,56 +377,48 @@ def test_upsert_job_no_parent_for_single_family():
     assert job["unit_number"] is None
 
 
-def test_find_units_of_aggregates_siblings():
-    """Sibling units of the same property should be queryable as one set
-    regardless of whether an umbrella row exists."""
-    ems_db.upsert_job(display_name="Avila Apartments 527")
-    ems_db.upsert_job(display_name="Avila Apartments 1416")
-    ems_db.upsert_job(display_name="Avila Apartments 2216")
+def _register_unit(tmp_path, parent, child_name, canon):
+    """Register a child the v4 way — from a folder inside the client."""
+    path = str(tmp_path / parent / child_name)
+    ems_db.set_link(canon, ems_db.LINK_FOLDER, path)
+    ems_db.set_child(ems_db.canon_key(parent), child_name, folder_path=path)
+    return path
+
+
+def test_find_units_of_aggregates_children(tmp_path):
+    """Siblings group because their FOLDERS sit under one client."""
+    ems_db.upsert_job(display_name="Avila Apartments")
+    for n in ("Unit 527", "Unit 1416", "Unit 2216"):
+        key = ems_db.upsert_job(display_name=f"Avila Apartments {n}")
+        _register_unit(tmp_path, "Avila Apartments", n, key)
     units = ems_db.find_units_of("avila apartments")
     assert len(units) == 3
-    # Sorted by numeric unit_number
-    assert [u["unit_number"] for u in units] == ["527", "1416", "2216"]
+    assert sorted(u["name"] for u in units) == ["Unit 1416", "Unit 2216",
+                                                "Unit 527"]
 
 
-def test_find_property_of_returns_umbrella_when_present():
+def test_find_property_of_returns_umbrella_when_present(tmp_path):
     ems_db.upsert_job(display_name="Avila Apartments")     # umbrella row
-    ems_db.upsert_job(display_name="Avila Apartments 1416")
-    parent = ems_db.find_property_of("avila apartments 1416")
+    key = ems_db.upsert_job(display_name="Avila Apartments 1416")
+    _register_unit(tmp_path, "Avila Apartments", "Unit 1416", key)
+    parent = ems_db.find_property_of(key)
     assert parent is not None
     assert parent["canon_key"] == "avila apartments"
 
 
-def test_find_property_of_returns_none_when_umbrella_missing():
-    """Sibling-only grouping: the umbrella row is optional."""
+def test_find_property_of_returns_none_when_not_a_child():
     ems_db.upsert_job(display_name="Avila Apartments 1416")
-    parent = ems_db.find_property_of("avila apartments 1416")
-    assert parent is None     # parent_canon set but no umbrella row
+    assert ems_db.find_property_of("avila apartments 1416") is None
 
 
-def test_group_by_property_rolls_up_siblings():
-    ems_db.upsert_job(display_name="Avila Apartments 527")
-    ems_db.upsert_job(display_name="Avila Apartments 1416")
+def test_group_by_property_rolls_up_children(tmp_path):
+    ems_db.upsert_job(display_name="Avila Apartments")
+    k1 = ems_db.upsert_job(display_name="Avila Apartments 527")
+    k2 = ems_db.upsert_job(display_name="Avila Apartments 1416")
     ems_db.upsert_job(display_name="Doe, John")
-    grouped = ems_db.group_by_property([
-        "avila apartments 527",
-        "avila apartments 1416",
-        "doe, john",
-    ])
-    assert sorted(grouped["avila apartments"]) == [
-        "avila apartments 1416", "avila apartments 527"]
-    # Single-family job groups under its own canon_key
+    _register_unit(tmp_path, "Avila Apartments", "Unit 527", k1)
+    _register_unit(tmp_path, "Avila Apartments", "Unit 1416", k2)
+    grouped = ems_db.group_by_property([k1, k2, "doe, john"])
+    assert sorted(grouped["avila apartments"]) == sorted([k1, k2])
+    # A job with no parent groups under its own canon_key.
     assert grouped["doe, john"] == ["doe, john"]
-
-
-def test_upsert_partial_update_preserves_parent_canon():
-    """A re-upsert with a non-multi-unit name shouldn't blow away a
-    previously-detected parent. (Edge case: someone renames a card to
-    drop the unit number temporarily.)"""
-    ems_db.upsert_job(display_name="Avila Apartments 1416")
-    # Re-upsert with the same display name — partial update preserves
-    # parent_canon even though detect would re-set it anyway.
-    ems_db.upsert_job(display_name="Avila Apartments 1416", status="active")
-    job = ems_db.find_job_by_name("Avila Apartments 1416")
-    assert job["parent_canon"] == "avila apartments"
-    assert job["unit_number"] == "1416"
