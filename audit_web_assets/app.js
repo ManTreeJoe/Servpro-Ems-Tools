@@ -4736,6 +4736,10 @@ function openNewLossModal() {
         </div>
       </div>
 
+      <div id="nl-folder-card" style="margin-top:16px;padding:10px 12px;
+           border:1px solid var(--border);border-left-width:3px;border-radius:0 6px 6px 0;
+           background:var(--surface-2);font-size:12px;display:none;"></div>
+
       ${NL_FIELD_GROUPS.map(groupBlock).join("")}
 
       <div class="modal-footer" style="margin-top:16px;display:flex;gap:8px;align-items:center;">
@@ -4747,6 +4751,74 @@ function openNewLossModal() {
 
   const $$ = (sel) => overlay.querySelector(sel);
   const setVal = (key, val) => { const el = $$(`#nl-${key}`); if (el) el.value = val || ""; };
+
+  // ── Where the folder will go ────────────────────────────────────
+  // A customer gets ONE folder. A second claim, a unit, or a tenant of a
+  // property-management client is a CHILD inside it — never a second
+  // top-level folder. This panel shows which of those is about to happen
+  // and lets the child be renamed BEFORE anything is created, because
+  // the name is the one thing the parser can't infer.
+  let nlPlan = null;
+  async function refreshFolderPlan() {
+    const card = $$("#nl-folder-card");
+    const insured = ($$("#nl-insured_name")?.value || "").trim();
+    if (!insured) { card.style.display = "none"; nlPlan = null; return; }
+    const child = ($$("#nl-child-name")?.value || "").trim();
+    const second = !!$$("#nl-second-claim")?.checked;
+    let p;
+    try { p = await pywebview.api.plan_new_loss_folder({ insured_name: insured }, child, second); }
+    catch (e) { card.style.display = "none"; return; }
+    nlPlan = p;
+    if (!p?.ok) {
+      card.style.display = "block";
+      card.style.borderLeftColor = "var(--amber)";
+      card.innerHTML = `<b>No folder will be created</b><br>
+        <span class="muted">${escapeHtml(p?.error || "?")}</span>`;
+      return;
+    }
+    card.style.display = "block";
+    const ctx = p.context || {};
+    if (p.mode === "new_client") {
+      card.style.borderLeftColor = "var(--green)";
+      const prior = ctx.suggest_new_claim
+        ? `<div style="margin-top:6px;color:var(--amber);">⚠ No folder yet, but this customer already has
+             ${ctx.cards?.length ? `${ctx.cards.length} Trello card${ctx.cards.length === 1 ? "" : "s"}` : ""}
+             ${ctx.companycam ? " and a CompanyCam project" : ""} —
+             they may be filed under a different spelling.</div>`
+        : "";
+      card.innerHTML = `<b>📁 New customer folder</b><br>
+        <code style="font-size:11.5px;">${escapeHtml(p.path)}</code>${prior}`;
+      return;
+    }
+    // Existing customer → this becomes a child inside their folder.
+    card.style.borderLeftColor = "var(--blue, #4a9eff)";
+    const kids = (p.children || []);
+    const promo = p.promote_first_claim || {};
+    card.innerHTML = `
+      <b>📁 ${escapeHtml(p.client)} already exists — filing as a sub-folder</b>
+      <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="nl-child-name" value="${escapeHtml(p.child || "")}"
+               placeholder="Sub-folder name"
+               style="flex:1;min-width:180px;font:inherit;font-size:12px;
+                      background:var(--surface);color:var(--text);
+                      border:1px solid var(--border);border-radius:5px;padding:5px 8px;" />
+        <label style="display:flex;align-items:center;gap:5px;white-space:nowrap;">
+          <input type="checkbox" id="nl-second-claim" ${second ? "checked" : ""} />
+          <span>New claim (auto-number)</span>
+        </label>
+      </div>
+      <div style="margin-top:6px;"><code style="font-size:11.5px;">${escapeHtml(p.path)}</code></div>
+      ${kids.length ? `<div class="muted" style="margin-top:6px;">Already inside: ${kids.map(escapeHtml).join(" · ")}</div>` : ""}
+      ${promo.eligible ? `
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;color:var(--amber);">
+          <input type="checkbox" id="nl-promote" />
+          <span>Move the existing loose photos into <b>1st Claim</b> first
+                (${(promo.moves || []).join(", ")})</span>
+        </label>` : ""}`;
+    // Re-bind: the panel was just replaced.
+    $$("#nl-child-name")?.addEventListener("change", refreshFolderPlan);
+    $$("#nl-second-claim")?.addEventListener("change", refreshFolderPlan);
+  }
 
   // Show which board / intake list / templates we'll use.
   (async () => {
@@ -4779,7 +4851,13 @@ function openNewLossModal() {
     setVal("card_name", f.card_name);
     const got = Object.keys(f).filter((k) => f[k] && k !== "loss_type").length;
     $$("#nl-parse-status").innerHTML = `<span style="color:var(--green);">✓ Parsed ${got} field${got === 1 ? "" : "s"} — review below</span>`;
+    refreshFolderPlan();
   });
+
+  // The insured name decides everything about the folder, so re-plan
+  // whenever it changes (typed or parsed).
+  $$("#nl-insured_name")?.addEventListener("change", refreshFolderPlan);
+  $$("#nl-insured_name")?.addEventListener("blur", refreshFolderPlan);
 
   $$("#nl-create").addEventListener("click", async () => {
     const fields = { loss_type: $$("#nl-loss_type").value };
@@ -4794,14 +4872,27 @@ function openNewLossModal() {
     const btn = $$("#nl-create");
     btn.disabled = true;
     $$("#nl-status").textContent = "Creating card…";
-    const res = await pywebview.api.create_new_loss(fields);
+    const res = await pywebview.api.create_new_loss(
+      fields,
+      // Folder options come from the panel above. The card and the folder
+      // are created independently — a customer with several claims has
+      // several cards but ONE folder — and a folder failure never fails
+      // the card, which is the part that can't be redone by hand.
+      ($$("#nl-child-name")?.value || "").trim(),
+      !!$$("#nl-second-claim")?.checked,
+      !!$$("#nl-promote")?.checked);
     if (!res?.ok) {
       btn.disabled = false;
       $$("#nl-status").innerHTML = `<span style="color:var(--red);">${escapeHtml(res?.error || "Create failed")}</span>`;
       return;
     }
     closeOverlay();
-    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom). ${res.url || ""}`, "ok");
+    const f = res.folder || {};
+    const folderNote = f.ok
+      ? ` · 📁 ${f.mode === "child" ? f.child : "new folder"}`
+      : (f.error ? ` · ⚠ folder: ${f.error}` : "");
+    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom)${folderNote}. ${res.url || ""}`,
+              f.error ? "warn" : "ok");
     if (typeof runAudit === "function") { try { runAudit(true); } catch (e) {} }
   });
 }

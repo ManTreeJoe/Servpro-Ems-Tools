@@ -2072,9 +2072,10 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
-    def create_new_loss(self, fields: dict, *, make_folder: bool = True,
-                        child: str = "", second_claim: bool = False,
-                        promote_first: bool = False) -> dict:
+    def create_new_loss(self, fields: dict, child: str = "",
+                        second_claim: bool = False,
+                        promote_first: bool = False,
+                        make_folder: bool = True) -> dict:
         """Clone the matching template into the intake list, fill it, and
         (by default) create the job folder.
 

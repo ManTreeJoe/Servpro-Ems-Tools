@@ -365,3 +365,40 @@ def test_loose_files_are_left_when_the_client_has_any_child(base):
     p = jf.plan_promote_first_claim(d)
     assert p["eligible"] and p["moves"] == ["EMS"]
     assert "client level.pdf" not in p["moves"]
+
+
+# ── the New Loss dialog contract ────────────────────────────────────────
+
+def test_property_management_client_gets_a_named_child(base):
+    """Action Property Management's real shape: a corporate client that
+    accrues one child per claim/tenant. A new loss for one of their
+    tenants must file INSIDE them, not as a second top-level folder —
+    which is exactly how 'Mendiola Mary' ended up loose on the share."""
+    _client(base, "Action Property Management", ["Garage Door", "Villaigo"])
+    res = jf.create("Action Property Management", child="Mendiola Mary",
+                    base=base, year=2026)
+    assert res["ok"] and res["mode"] == "child"
+    assert res["path"].endswith(
+        os.path.join("Action Property Management", "Mendiola Mary"))
+    year = os.path.join(base, "2026 Jobs")
+    assert os.listdir(year) == ["Action Property Management"], \
+        "no second top-level folder"
+
+
+def test_plan_is_stable_when_called_repeatedly(base):
+    """The dialog re-plans on every keystroke-ish event; planning must not
+    create anything or drift."""
+    _client(base, "Riley, Robert", ["1st Claim", "2nd Claim"])
+    a = jf.plan("Riley, Robert", base=base, year=2026)
+    b = jf.plan("Riley, Robert", base=base, year=2026)
+    assert a["child"] == b["child"] == "3rd Claim"
+    assert not os.path.isdir(a["path"])
+
+
+def test_named_child_wins_unless_second_claim_is_set(base):
+    _client(base, "Riley, Robert", ["1st Claim"])
+    named = jf.plan("Riley, Robert", child="Unit 5", base=base, year=2026)
+    assert named["child"] == "Unit 5"
+    forced = jf.plan("Riley, Robert", child="Unit 5", second_claim=True,
+                     base=base, year=2026)
+    assert forced["child"] == "2nd Claim"
