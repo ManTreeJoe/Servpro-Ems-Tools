@@ -382,8 +382,19 @@ def attach_tags(photos, *, cap=_TAG_FETCH_CAP):
     return photos
 
 
+# Tags that are NOT a workflow stage but a sub-category WITHIN a room, so
+# they nest one level deeper: <stage>\<room>\<qualifier>\. Equipment is the
+# case that prompted this — drying gear photographed in a room belongs with
+# that room, not in a stage folder of its own.
+_ROOM_QUALIFIERS = {"equipment", "inital eq", "initial eq"}
+
+
 def classify_tags(tags):
-    """(room, stage) for one photo's tags.
+    """(room, stage, qualifier) for one photo's tags.
+
+    stage     — the workflow stage: Initial, Demo, Monitor, Post, Mold…
+    room      — the room/area tag
+    qualifier — a sub-category inside the room (Equipment)
 
     Delegates to `companycam_import.room_stage_from_label` — the SAME
     ruleset the zip-export path uses. That path gets the tags joined into
@@ -396,18 +407,22 @@ def classify_tags(tags):
     """
     names = [str(t or "").strip() for t in (tags or ()) if str(t or "").strip()]
     if not names:
-        return "", ""
+        return "", "", ""
     try:
         import companycam_import as _cci
     except Exception:
-        return "", ""
+        return "", "", ""
     # Evaluate each tag SEPARATELY. Joining them first was wrong: the zip
     # path receives one pre-joined label where a room is legitimately
     # multi-word ("Master Bath"), but the API returns discrete tags, so
     # joining turned ['Initial Inspection','Master Bedroom','Master Closet']
     # into a folder literally named "Master Bedroom Master Closet".
-    room, stage = "", ""
+    room, stage, qualifier = "", "", ""
     for t in names:
+        if t.strip().lower() in _ROOM_QUALIFIERS:
+            if not qualifier:
+                qualifier = t.strip()
+            continue
         r, s = _cci.room_stage_from_label(t)
         if s:
             if not stage:
@@ -417,7 +432,7 @@ def classify_tags(tags):
                 room = r
         elif not room:
             room = r or t
-    return room, stage
+    return room, stage, qualifier
 
 
 def _safe_folder(name):
@@ -661,20 +676,23 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         # Room tag → subfolder under the stage, matching the zip import's
         # layout. No room tag means the photo stays at the stage level
         # rather than landing in an "Unsorted" bucket nobody looks in.
-        room, tag_stage = "", ""
+        room, tag_stage, qualifier = "", "", ""
         if organize_by_tags:
-            room, tag_stage = classify_tags(p.get("tags"))
+            room, tag_stage, qualifier = classify_tags(p.get("tags"))
             room = _safe_folder(room)
             tag_stage = _safe_folder(tag_stage)
+            qualifier = _safe_folder(qualifier)
         if room:
             rooms_used[room] = rooms_used.get(room, 0) + 1
         else:
             untagged += 1
-        # The photo's OWN stage tag wins over the caller's blanket choice —
-        # that is the point of reading labels. Previously the tag stage was
-        # computed and then discarded, so a photo tagged Equipment landed
-        # under whatever stage the review panel had picked (Initial), which
-        # is how "Initial\Master Bath" ended up holding Equipment photos.
+        # <stage>\<room>\<qualifier>\
+        #
+        # Stage is the workflow phase (Initial, Demo, Monitor, Post…) and
+        # comes from the photo's own tag, falling back to the caller's
+        # choice when it has none. Equipment is NOT a stage — it is gear
+        # photographed IN a room, so it nests inside that room rather than
+        # pulling the shot out into a folder of its own.
         stage_dir = tag_stage or subfolder
         photo_target = dest_dir
         if stage_dir:
@@ -682,6 +700,8 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             stages_used[stage_dir] = stages_used.get(stage_dir, 0) + 1
         if room:
             photo_target = os.path.join(photo_target, room)
+        if qualifier:
+            photo_target = os.path.join(photo_target, qualifier)
         tok = photo_id_token(p).lower()
         if fname.lower() in existing or (tok and tok in existing_tokens):
             skipped += 1

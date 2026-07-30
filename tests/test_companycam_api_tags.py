@@ -39,40 +39,62 @@ def _clear_cache():
     (["Demo"], "Demo-3-Jun 17 2026 11_35am-6oWw.jpg"),
     (["Master Bath"], "Master Bath-19-Jun 17 2026 11_35am-6oWw.jpg"),
 ])
-def test_api_and_zip_classify_the_same_tags_identically(tags, zip_name):
-    """One job pulled both ways must land in ONE folder layout."""
-    assert cc.classify_tags(tags) == ci.parse_room_stage(zip_name)
+def test_api_and_zip_agree_on_room_and_stage(tags, zip_name):
+    """One job pulled both ways must land in ONE folder layout. (The API
+    also returns a qualifier; the zip path has no equivalent.)"""
+    room, stage, _qual = cc.classify_tags(tags)
+    assert (room, stage) == ci.parse_room_stage(zip_name)
 
 
-@pytest.mark.parametrize("tags,room,stage", [
-    (["Exterior", "Initial Inspection"], "Exterior", "Initial"),
-    (["Attic"],                          "Attic", ""),
-    ([],                                 "", ""),
-    (["", None],                         "", ""),
+@pytest.mark.parametrize("tags,room,stage,qual", [
+    (["Exterior", "Initial Inspection"], "Exterior", "Initial", ""),
+    (["Attic"],                          "Attic", "", ""),
+    ([],                                 "", "", ""),
+    (["", None],                         "", "", ""),
+    # Equipment is NOT a stage — it is gear photographed IN a room, so it
+    # nests inside that room instead of pulling the shot into its own
+    # stage folder.
+    (["Equipment", "Master Bath"],       "Master Bath", "", "Equipment"),
+    (["Initial Inspection", "Master Bedroom", "Equipment"],
+                                         "Master Bedroom", "Initial",
+                                         "Equipment"),
 ])
-def test_classify_real_account_tag_combinations(tags, room, stage):
-    assert cc.classify_tags(tags) == (room, stage)
+def test_classify_real_account_tag_combinations(tags, room, stage, qual):
+    assert cc.classify_tags(tags) == (room, stage, qual)
 
 
-@pytest.mark.parametrize("tag,stage", [
-    ("Monitor",   "Monitor"),
-    ("Equipment", "Equipment"),
-])
-def test_monitor_and_equipment_are_stages_on_both_paths(tag, stage):
-    """Reconciled 2026-07-30. These are real stages and real CompanyCam
-    tags, but `_STAGE_RULES` didn't know them — so the same word became a
-    ROOM folder from CompanyCam and a STAGE folder from Workcenter."""
+def test_monitor_is_a_stage_on_both_paths():
+    """Reconciled 2026-07-30: `_STAGE_RULES` didn't know Monitor, so the
+    same word became a ROOM folder from CompanyCam and a STAGE folder from
+    Workcenter."""
     import import_grouping as ig
-    assert ci.room_stage_from_label(tag)[1] == stage
-    assert (ig.detect_stage(tag) or "") == stage
-    assert cc.classify_tags([tag]) == ("", stage)
+    assert ci.room_stage_from_label("Monitor")[1] == "Monitor"
+    assert (ig.detect_stage("Monitor") or "") == "Monitor"
+    assert cc.classify_tags(["Monitor"]) == ("", "Monitor", "")
+
+
+def test_equipment_is_a_qualifier_on_the_api_path_only():
+    """DELIBERATE divergence (2026-07-30, user's folder model).
+
+    The API path files photos <stage>\\<room>\\<qualifier>, where Equipment
+    is gear photographed IN a room — so it nests under that room instead of
+    pulling the shot out into a stage folder of its own.
+
+    The ZIP path has no qualifier level: `parse_room_stage` returns only
+    (room, stage), and _STAGE_RULES still reads Equipment as a stage. So a
+    job imported both ways puts Equipment photos in different places.
+    Changing the zip side would move photos already on disk, so it needs
+    its own decision.
+    """
+    assert cc.classify_tags(["Equipment"]) == ("", "", "Equipment")
+    assert ci.room_stage_from_label("Equipment")[1] == "Equipment"
 
 
 def test_monitor_and_equipment_still_split_room_from_stage():
     assert cc.classify_tags(["Master Bath", "Monitor"]) == ("Master Bath",
-                                                            "Monitor")
+                                                            "Monitor", "")
     assert cc.classify_tags(["Equipment", "Master Bath"]) == ("Master Bath",
-                                                              "Equipment")
+                                                              "", "Equipment")
 
 
 def test_remaining_divergence_mold_after():
@@ -223,22 +245,39 @@ def test_two_room_tags_do_not_become_one_folder(pull_env, monkeypatch):
 
 def test_multiword_room_tag_survives():
     """'Master Bath' is ONE tag — splitting per-tag must not break it."""
-    assert cc.classify_tags(["Equipment", "Master Bath"]) == ("Master Bath",
-                                                              "Equipment")
+    assert cc.classify_tags(["Equipment", "Master Bath"])[0] == "Master Bath"
 
 
 def test_photo_stage_tag_overrides_the_callers_stage(pull_env, monkeypatch):
-    """Live bug: the tag stage was computed and then thrown away, so an
-    Equipment photo landed under whichever stage the review panel picked —
-    that is how 'Initial\\Master Bath' ended up holding Equipment shots."""
+    """Live bug: the tag stage was computed and then thrown away, so every
+    photo went under whichever stage the review panel picked."""
     dest, written = pull_env
     monkeypatch.setattr(cc, "new_photos", lambda pid, since_epoch=None: [
-        _fake_photo("a", ["Equipment", "Master Bath"]),
+        _fake_photo("a", ["Demo", "Kitchen"]),
     ])
     cc.pull_new_photos("1", str(dest), since_epoch=None, subfolder="Initial")
     rel = os.path.relpath(written[0], dest)
-    assert rel.startswith(os.path.join("Equipment", "Master Bath"))
+    assert rel.startswith(os.path.join("Demo", "Kitchen"))
     assert not rel.startswith("Initial")
+
+
+def test_equipment_nests_inside_the_room(pull_env, monkeypatch):
+    """<stage>\\<room>\\Equipment — gear shots stay WITH their room rather
+    than being pulled into a stage folder of their own."""
+    dest, written = pull_env
+    monkeypatch.setattr(cc, "new_photos", lambda pid, since_epoch=None: [
+        _fake_photo("a", ["Equipment", "Master Bath"]),
+        _fake_photo("b", ["Initial Inspection", "Master Bedroom",
+                          "Equipment"]),
+    ])
+    cc.pull_new_photos("1", str(dest), since_epoch=None, subfolder="Initial")
+    rels = sorted(os.path.relpath(w, dest) for w in written)
+    # No stage tag of its own → the caller's stage, then room, then Equipment
+    assert rels[0].startswith(
+        os.path.join("Initial", "Master Bath", "Equipment"))
+    # Its own stage tag wins, and Equipment still nests under the room
+    assert rels[1].startswith(
+        os.path.join("Initial", "Master Bedroom", "Equipment"))
 
 
 def test_untagged_photos_stay_at_the_top_rather_than_an_unsorted_bucket(
