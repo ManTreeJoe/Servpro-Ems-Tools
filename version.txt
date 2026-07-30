@@ -1,6 +1,6 @@
 {
-  "version": "1.1.1",
+  "version": "1.1.2",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.1.1/EMS-Tools-Setup-1.1.1.exe",
-  "notes": "CompanyCam pull now organizes like the regular import (stage folder + tech from the uploader), and updates now install with one click."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.1.2/EMS-Tools-Setup-1.1.2.exe",
+  "notes": "Leaner Audit/Snapshot right-click menu (Advanced ▸ submenu, multi-unit actions only where relevant), removed the Incoming button, bigger New Loss paste box, and the CompanyCam pull organizes photos by stage + tech like the regular import."
 }

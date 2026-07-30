@@ -18,7 +18,7 @@ import sys
 import glob
 import shutil
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 
 def _detect_channel():
