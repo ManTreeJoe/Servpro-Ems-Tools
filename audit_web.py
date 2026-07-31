@@ -2450,10 +2450,64 @@ class Api(JobSettingsApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def companycam_pull_assigned(self, client: str, assignments: list,
+                                 tech: str = "", card_id: str = "") -> dict:
+        """Pull the ticked shoots, each into the stage chosen for IT.
+
+        One stage for a whole project is wrong whenever a job has more than
+        one visit — Gary Mongue's 181 untagged photos are eight shoots by
+        six techs across six dates, and they are not all "Initial". So the
+        caller sends [{photo_ids: [...], stage: "Demo"}, …] and each group
+        is pulled with its own destination.
+        """
+        if not client:
+            return {"ok": False, "error": "no client"}
+        groups = [g for g in (assignments or []) if (g or {}).get("photo_ids")]
+        if not groups:
+            return {"ok": False, "error": "nothing selected"}
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        pid, _m = self._cc_resolve(client, card_id)
+        if not pid:
+            return {"ok": False,
+                    "error": f"No CompanyCam project matched '{client}'"}
+        pics = self._cc_pics_dir(client)
+        if not pics:
+            return {"ok": False,
+                    "error": "No job folder — pin/find the folder first"}
+
+        pulled = skipped = 0
+        errors = []
+        for g in groups:
+            ids = [str(i) for i in (g.get("photo_ids") or []) if str(i).strip()]
+            if not ids:
+                continue
+            stage = (g.get("stage") or "").strip()
+            if stage.upper() == "AUTO":
+                stage = ""
+            try:
+                r = cc.pull_new_photos(
+                    pid, pics, since_epoch=None, subfolder=stage,
+                    tech=(tech or ""), only_ids=ids,
+                    # Never advance past shoots deliberately skipped —
+                    # they'd fall behind the mark and go unpullable.
+                    advance_watermark=False) or {}
+                pulled += r.get("downloaded", 0)
+                skipped += r.get("skipped", 0)
+            except Exception as ex:
+                # One bad shoot must not lose the others already pulled.
+                errors.append(f"{stage or 'untagged'}: {ex}")
+        return {"ok": True, "pulled": pulled, "skipped": skipped,
+                "pics": pics, "error": "; ".join(errors)}
+
     def companycam_pull_groups(self, client: str, photo_ids: list,
                                tech: str = "", card_id: str = "",
                                dest_subfolder: str = "") -> dict:
-        """Pull ONLY the shoots ticked in the preview."""
+        """Pull ONLY the shoots ticked in the preview, all into one stage.
+        Superseded by `companycam_pull_assigned`; kept for callers that
+        genuinely want a single destination."""
         if not client:
             return {"ok": False, "error": "no client"}
         ids = [str(i) for i in (photo_ids or []) if str(i).strip()]

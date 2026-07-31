@@ -442,7 +442,7 @@
   // before anything downloads. Reached when the watermark says "nothing
   // new" but the folder is actually short — a cleared folder, a failed
   // download, or photos removed by hand.
-  function ccMissingModal(row, ctx, v, stage) {
+  function ccMissingModal(row, ctx, v) {
     return new Promise((resolve) => {
       if (!window.openModal) { resolve(null); return; }
       const who = _firstLast(row.display_name || tc(ctx, row.client));
@@ -453,21 +453,36 @@
       // routes photos through the SAME code the download uses, so the
       // "goes to" column is what will actually happen.
       const groups = v.groups || [];
+      const STAGES = window.PICS_STAGES || [];
       const rows = groups.map((g, i) => {
         const rooms = (g.rooms || []).slice(0, 3)
           .map(([r, n]) => `${esc(ctx, r)} ${n}`).join(" · ");
+        // A shoot CompanyCam already tagged routes itself. One with no
+        // stage tag gets its own dropdown — asking once for all of them
+        // was the original complaint: Gary Mongue's 181 photos are eight
+        // separate visits by six techs, and they are not all "Initial".
+        const tagged = g.stage && g.stage !== "(no stage tag)";
         return `<tr>
           <td style="padding:6px 8px 6px 0;vertical-align:top;">
             <input type="checkbox" class="ccm-g" data-i="${i}" checked /></td>
           <td style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top;">
             <b>${esc(ctx, g.date || "—")}</b></td>
           <td style="padding:6px 10px 6px 0;vertical-align:top;">
-            <b>${esc(ctx, g.stage)}</b>
+            ${tagged
+              ? `<b>${esc(ctx, g.stage)}</b>`
+              : `<select class="ccm-stage" data-i="${i}"
+                         style="background:var(--surface-2);color:var(--text);
+                                border:1px solid var(--border);border-radius:5px;
+                                padding:3px 6px;font:inherit;font-size:12px;">
+                   <option value="">— pick a stage —</option>
+                   ${STAGES.map((st) => `<option value="${escA(ctx, st)}">${esc(ctx, st)}</option>`).join("")}
+                 </select>`}
             ${g.tech ? `<span style="color:var(--text-muted);"> · ${esc(ctx, g.tech)}</span>` : ""}
             ${rooms ? `<div style="color:var(--text-muted);font-size:11px;margin-top:2px;">${rooms}</div>` : ""}</td>
           <td style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top;">
             <b>${g.count}</b> photo${g.count === 1 ? "" : "s"}</td>
-          <td style="padding:6px 0;color:var(--text-muted);font-size:11px;vertical-align:top;">
+          <td class="ccm-dest" data-i="${i}"
+              style="padding:6px 0;color:var(--text-muted);font-size:11px;vertical-align:top;">
             ${esc(ctx, g.target || "(top level)")}</td>
         </tr>`;
       }).join("");
@@ -481,8 +496,7 @@
         title: "📷 Pull from CompanyCam — " + who,
         sub: `${v.present} of ${v.total} already in the folder · `
              + `${v.missing} to pull, across ${(v.groups || []).length} `
-             + `shoot${(v.groups || []).length === 1 ? "" : "s"}`
-             + (stage ? ` · untagged → ${stage}` : ""),
+             + `shoot${(v.groups || []).length === 1 ? "" : "s"}`,
         body: `
           <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
             <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;
@@ -508,16 +522,46 @@
       overlay.querySelector(".modal-close")?.addEventListener("click", () => finish(null));
 
       const boxes = () => [...overlay.querySelectorAll(".ccm-g")];
-      const chosen = () => boxes().filter((b) => b.checked)
-        .flatMap((b) => (groups[+b.dataset.i] || {}).photo_ids || []);
+      const stageOf = (i) => {
+        const sel = overlay.querySelector(`.ccm-stage[data-i="${i}"]`);
+        return sel ? sel.value : "";        // tagged rows have no dropdown
+      };
+      // One assignment per ticked shoot, each with its OWN stage, so a
+      // day of demo and a day of monitor land in different folders.
+      const assignments = () => boxes().filter((b) => b.checked).map((b) => {
+        const i = +b.dataset.i;
+        return {photo_ids: (groups[i] || {}).photo_ids || [],
+                stage: stageOf(i)};
+      });
+      const needStage = () => boxes().filter((b) => b.checked)
+        .some((b) => overlay.querySelector(`.ccm-stage[data-i="${b.dataset.i}"]`)
+                     && !stageOf(+b.dataset.i));
       const refreshCount = () => {
-        const n = chosen().length;
+        const picked = assignments();
+        const n = picked.reduce((t, a) => t + a.photo_ids.length, 0);
+        // Keep the "goes to" column truthful as stages are chosen.
+        boxes().forEach((b) => {
+          const i = +b.dataset.i, g = groups[i] || {};
+          const cell = overlay.querySelector(`.ccm-dest[data-i="${i}"]`);
+          if (!cell) return;
+          const st = stageOf(i);
+          const base = g.box || "";
+          cell.textContent = st ? [st, base].filter(Boolean).join("\\")
+                                : (g.target || base || "(top level)");
+        });
         const btn = overlay.querySelector("#ccm-pull");
         if (!btn) return;
+        if (needStage()) {
+          btn.disabled = true;
+          btn.textContent = "⬇ Pick a stage for each shoot";
+          return;
+        }
         btn.disabled = n === 0;
         btn.textContent = n ? `⬇ Pull ${n} photo${n === 1 ? "" : "s"}`
                             : "⬇ Nothing selected";
       };
+      overlay.querySelectorAll(".ccm-stage").forEach(
+        (sel) => sel.addEventListener("change", refreshCount));
       overlay.querySelector("#ccm-all")?.addEventListener("change", (e) => {
         boxes().forEach((b) => { b.checked = e.target.checked; });
         refreshCount();
@@ -538,11 +582,9 @@
         }
         let res;
         try {
-          // Only the ticked shoots. Pulling everything here would ignore
-          // the choice the dialog exists to offer.
-          res = await pywebview.api.companycam_pull_groups(
-            row.client, chosen(), tech || "", row.trello_card_id || "",
-            stage || "");
+          // Only the ticked shoots, each into the stage chosen for IT.
+          res = await pywebview.api.companycam_pull_assigned(
+            row.client, assignments(), tech || "", row.trello_card_id || "");
         } catch (e) {
           setStatus(ctx, "CompanyCam pull failed: " + e, "error");
           finish(null); return;
@@ -732,23 +774,11 @@
           + (v.extra_files ? ` · ${v.extra_files} not in CompanyCam any more` : ""), "ok");
         return;
       }
-      // Tagged shoots route themselves. Only ask for a stage when some
-      // photos have NO stage tag and would otherwise land loose — and ask
-      // once, for those, rather than overriding every tagged shoot.
-      let stage = "";
-      const untagged = (v.groups || []).filter((g) => !g.box || g.stage === "(no stage tag)");
-      const untaggedN = untagged.reduce((n, g) => n + g.count, 0);
-      if (untaggedN && typeof window.pickPicsStage === "function") {
-        const dest = await window.pickPicsStage(
-          { client: who, count: untaggedN, allowAuto: true });
-        if (dest === null) return;
-        if (dest && dest !== "AUTO") {
-          stage = dest;
-          try { v = await pywebview.api.companycam_plan_pull(row.client, "", cardId, stage); }
-          catch (e) { /* keep the un-staged plan rather than dropping out */ }
-        }
-      }
-      await ccMissingModal(row, ctx, v, stage);
+      // No up-front stage prompt. Asking once for a whole project is the
+      // bug this replaced: Gary Mongue's 181 untagged photos are eight
+      // separate visits by six techs, and they are not all one stage.
+      // Each shoot picks its own stage in the list instead.
+      await ccMissingModal(row, ctx, v);
     } else if (action === "job-info") {
       await openJobInfoModal(row, ctx);
     } else if (action === "copy-client") {

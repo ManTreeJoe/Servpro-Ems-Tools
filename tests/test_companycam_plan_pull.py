@@ -115,3 +115,56 @@ def test_nothing_missing_gives_no_groups(monkeypatch):
     monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
     r = cc.plan_pull("1", r"X:\job\PICS")
     assert r["ok"] and r["missing"] == 0 and r["groups"] == []
+
+
+# ── per-shoot stage assignment ────────────────────────────────────────
+# A project's photos are often untagged (Gary Mongue: 181 photos, zero
+# tags, eight shoots by six techs across six dates). One stage for the
+# whole project is wrong for every job with more than one visit, so each
+# shoot carries its own destination.
+
+def test_untagged_photos_group_by_tech_and_day(monkeypatch):
+    """With no tags at all, the shoot is still recoverable: CompanyCam
+    knows who took each photo and when."""
+    photos = [
+        _photo("a1", DAY1, "Maria Espinoza", []),
+        _photo("a2", DAY1, "Maria Espinoza", []),
+        _photo("a3", DAY1, "Jose Estrada", []),      # same day, other tech
+        _photo("a4", DAY2, "Maria Espinoza", []),    # same tech, next day
+    ]
+    monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
+    monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: set())
+    monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
+
+    r = cc.plan_pull("1", r"X:\job\PICS")
+    assert len(r["groups"]) == 3          # ME day1, JE day1, ME day2
+    assert all(g["stage"] == "" or g["stage"] == "(no stage tag)"
+               for g in r["groups"])
+    counts = sorted(g["count"] for g in r["groups"])
+    assert counts == [1, 1, 2]
+
+
+def test_each_untagged_shoot_can_take_a_different_stage(monkeypatch):
+    """The whole point: pulling one visit as Demo and another as Monitor
+    in a single pass."""
+    photos = [_photo("a1", DAY1, "ME", []), _photo("a2", DAY2, "ME", [])]
+    monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
+    monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: set())
+    monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
+
+    plan = cc.plan_pull("1", r"X:\job\PICS")
+    ids = {g["date"]: g["photo_ids"] for g in plan["groups"]}
+    assert len(ids) == 2
+
+    # Routing each with its own stage puts them in different folders.
+    a = cc.route_photo(photos[0], subfolder="Demo", tech="ME")
+    b = cc.route_photo(photos[1], subfolder="Monitor", tech="ME")
+    assert a["parts"][0] == "Demo"
+    assert b["parts"][0] == "Monitor"
+
+
+def test_a_tagged_shoot_keeps_its_own_stage_over_the_fallback(monkeypatch):
+    """A dropdown must never override what CompanyCam already knows."""
+    p = _photo("a1", DAY1, "ME", ["Kitchen", "Demo"])
+    r = cc.route_photo(p, subfolder="Initial", tech="ME")
+    assert r["stage"] == "Demo"
