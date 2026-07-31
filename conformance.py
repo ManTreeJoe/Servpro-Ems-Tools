@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 import traceback
 import uuid
 
@@ -172,6 +173,26 @@ def _s_merge_conflict(db, tag):
     return {"merged": res.get("merged"),
             "skipped": bool(res.get("skipped_department_conflict")),
             "oc_survives": db.get_job(oc) is not None}
+
+
+@scenario("iter_jobs is newest-seen first")
+def _s_iter_order(db, tag):
+    """Every other scenario compares row SETS, so an ordering regression is
+    invisible to them. The Supabase backend really did return iter_jobs
+    alphabetically for a while, silently breaking any "most recent" list.
+
+    Ties are left unspecified on purpose — SQLite breaks an identical
+    last_seen_at by rowid, Postgres by canon_key — so this asserts only
+    that the timestamps descend, and spaces the writes so there are no
+    ties to argue about."""
+    for name in ("Oscar", "Papa", "Quebec"):
+        db.upsert_job(display_name=f"{tag} {name}")
+        time.sleep(0.01)
+    mine = [j for j in db.iter_jobs()
+            if (j.get("display_name") or "").startswith(tag)]
+    stamps = [j.get("last_seen_at") or "" for j in mine]
+    return {"count": len(mine),
+            "descending": stamps == sorted(stamps, reverse=True)}
 
 
 # ── runner ──────────────────────────────────────────────────────────────

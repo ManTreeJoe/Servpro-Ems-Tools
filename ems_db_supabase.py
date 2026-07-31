@@ -55,9 +55,51 @@ def _unsupported(name):
 
 # ── low-level helpers ───────────────────────────────────────────────────
 
+_PAGE = 1000
+
+# Deterministic paging needs an ORDER BY. PostgREST guarantees no ordering
+# across limit/offset pages, so without one a row can repeat on page 2
+# while another vanishes entirely.
+_ORDER_BY = {
+    "jobs":                  "canon_key",
+    "job_aliases":           "canon_key,alias_canon",
+    "job_links":             "canon_key,link_type,link_value",
+    "job_children":          "id",
+    "job_events":            "id",
+    "job_lifecycle":         "card_id",
+    "job_stage_transitions": "id",
+    "meta":                  "key",
+    "app_user_departments":  "user_id,department",
+}
+
+
 def _rows(table, **params):
-    out = _sb.rest("GET", table, params=params)
-    return out if isinstance(out, list) else []
+    """GET rows, following pagination to the end.
+
+    Supabase caps a select at `db-max-rows` (1000) and reports the cap
+    only in the Content-Range header, which we don't surface. An unpaged
+    read of job_lifecycle — 3175 rows live — therefore returned the first
+    1000 and looked complete, silently hiding two thirds of the pipeline
+    from every lifecycle query.
+
+    A caller passing its own `limit` wants a bounded slice (see `_one`),
+    so that is honoured as-is and never paged.
+    """
+    if "limit" in params:
+        out = _sb.rest("GET", table, params=params)
+        return out if isinstance(out, list) else []
+
+    params.setdefault("order", _ORDER_BY.get(table, "id"))
+    out, offset = [], 0
+    while True:
+        got = _sb.rest("GET", table, params={**params, "limit": str(_PAGE),
+                                             "offset": str(offset)})
+        if not isinstance(got, list):
+            return out
+        out.extend(got)
+        if len(got) < _PAGE:
+            return out
+        offset += _PAGE
 
 
 def _one(table, **params):
@@ -135,7 +177,13 @@ def get_job(canon_key_value: str):
 
 
 def iter_jobs() -> list:
-    return [_job(r) for r in _rows("jobs", select="*", order="canon_key.asc")]
+    # Newest-seen first, matching the SQLite contract. Ordering by
+    # canon_key here instead returned the list alphabetically, which no
+    # caller expects and the conformance suite could not see because it
+    # compares row SETS, not sequence. canon_key breaks ties so paging
+    # stays deterministic when several jobs share a last_seen_at.
+    return [_job(r) for r in _rows("jobs", select="*",
+                                   order="last_seen_at.desc,canon_key.asc")]
 
 
 def find_jobs_by_status(status: str) -> list:
