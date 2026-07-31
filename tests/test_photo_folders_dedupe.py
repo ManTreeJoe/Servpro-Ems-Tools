@@ -11,16 +11,22 @@ import os
 import pytest
 
 import daily_photos_gui as dpg
+import sharepoint
 
 
 @pytest.fixture
 def fake_photos_root(tmp_path, monkeypatch):
     """Spin up a tmp PHOTOS_ROOT with an `FB` tech subfolder and
-    pin _TECH_INITIALS so "Fernando" → "FB"."""
+    pin _TECH_INITIALS so "Fernando" → "FB".
+
+    Patch the root on `sharepoint`, not on `dpg`: daily_photos_gui
+    delegates PHOTOS_ROOT to sharepoint as the single lazy source, so
+    patching the dpg name only shadows an alias nothing reads and leaves
+    the scan pointed at the real share."""
     root = tmp_path / "photos"
     fb = root / "FB"
     fb.mkdir(parents=True)
-    monkeypatch.setattr(dpg, "PHOTOS_ROOT", str(root))
+    monkeypatch.setattr(sharepoint, "PHOTOS_ROOT", str(root), raising=False)
     monkeypatch.setattr(dpg, "_TECH_INITIALS", {"Fernando": "FB"})
     return root, fb
 
@@ -97,8 +103,8 @@ def test_make_folders_skips_when_client_format_differs(fake_photos_root):
 def test_make_folders_skips_unreachable_root_gracefully(tmp_path, monkeypatch):
     """If PHOTOS_ROOT doesn't exist, every job is skipped with a
     "folder not found" message — never a created entry."""
-    monkeypatch.setattr(dpg, "PHOTOS_ROOT",
-                          str(tmp_path / "does_not_exist"))
+    monkeypatch.setattr(sharepoint, "PHOTOS_ROOT",
+                          str(tmp_path / "does_not_exist"), raising=False)
     monkeypatch.setattr(dpg, "_TECH_INITIALS", {"Fernando": "FB"})
     jobs = [{"client": "Smith, John", "techs": ["Fernando"]}]
 

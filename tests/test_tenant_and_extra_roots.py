@@ -529,3 +529,30 @@ def test_audit_unit_match_uses_word_boundary(tmp_path):
     assert results[0]["found"] is True
     assert "(Unit 16)" in results[0]["folder"]
     assert "168" not in results[0]["folder"]
+
+
+# --- lazy-root contract -----------------------------------------------
+# These lock in the rule that made 38 tests fail silently: PHOTOS_ROOT is
+# resolved lazily through `sharepoint._photos_root()`, so a test that
+# patches the module CONSTANT must still redirect the scan. PEP 562
+# `__getattr__` only fires when normal lookup fails, so the moment a test
+# assigns the name it stops running — and before the override check in
+# `_photos_root`, every internal caller quietly went back to reading
+# config and walking the real SharePoint share.
+
+def test_patching_photos_root_redirects_the_lazy_getter(tmp_path,
+                                                          monkeypatch):
+    monkeypatch.setattr(sharepoint, "PHOTOS_ROOT", str(tmp_path),
+                        raising=False)
+    assert sharepoint._photos_root() == str(tmp_path)
+
+
+def test_daily_photos_gui_reads_the_root_through_sharepoint(tmp_path,
+                                                              monkeypatch):
+    """daily_photos_gui must not own a second copy of the root. If this
+    fails, someone re-introduced a module-local PHOTOS_ROOT and the
+    photo-folder tests are scanning the live share again."""
+    import daily_photos_gui as dpg
+    monkeypatch.setattr(sharepoint, "PHOTOS_ROOT", str(tmp_path),
+                        raising=False)
+    assert dpg.PHOTOS_ROOT == str(tmp_path)

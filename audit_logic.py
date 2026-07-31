@@ -340,10 +340,14 @@ def _build_tech_pattern():
     user_names, abbrev_keys = [], []
     try:
         import persistence
-        seeded = persistence.user_techs_seeded()
         ut = persistence.get_user_techs() or {}
         user_names = list(ut.get("names") or [])
         abbrev_keys = list((ut.get("abbrev") or {}).keys())
+        # Read the seeded flag LAST. Setting it first meant a failure in
+        # get_user_techs() (corrupt state.json) left seeded=True with an
+        # empty roster, which falls into the "empty roster → recognize
+        # nothing" branch below and silently stops matching every tech.
+        seeded = persistence.user_techs_seeded()
     except Exception:
         pass
 

@@ -36,6 +36,17 @@ _IMAGE_EXTS = {
 # `sharepoint.PHOTOS_ROOT` still works for callers via the module __getattr__
 # below; in-module code calls _photos_root() directly.
 def _photos_root():
+    # A caller that assigns `sharepoint.PHOTOS_ROOT` directly wins over
+    # config. In production nothing does, so this is a no-op — but PEP 562
+    # `__getattr__` only fires when normal lookup FAILS, so once a test
+    # monkeypatches the documented module constant it lands in globals()
+    # and the hook below stops running. Without this check the internal
+    # callers would keep reading config and walk the real SharePoint
+    # share, which is exactly what made the sharepoint tests fail on a
+    # machine that has one mounted.
+    override = globals().get("PHOTOS_ROOT")
+    if override is not None:
+        return override
     return config.load().get("photos_root", "")
 
 
