@@ -54,6 +54,20 @@ def _rank(path: str) -> int:
     return 2
 
 
+def _id_len(path: str) -> int:
+    """Length of the trailing id token — longer wins a tie.
+
+    A duplicate pair is usually the SAME photo under a legacy 8-character
+    token and its full 10-digit id. Keeping the short one preserves the
+    ambiguity that created the duplicate: two photos can share an 8-char
+    prefix, so "do we already have this?" stays unanswerable for them.
+    Without this the tie fell to mtime, which kept the older short name.
+    """
+    stem = os.path.splitext(os.path.basename(path))[0]
+    tok = stem.rsplit(" ", 1)[-1]
+    return len(tok) if tok.isalnum() else 0
+
+
 def _digest(path: str, chunk: int = 1 << 20) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -92,7 +106,7 @@ def scan(folder: str):
                 hashed += 1
             except OSError:
                 pass
-    dupes = {h: sorted(ps, key=lambda p: (_rank(p), os.path.getmtime(p)))
+    dupes = {h: sorted(ps, key=lambda p: (_rank(p), -_id_len(p), os.path.getmtime(p)))
              for h, ps in groups.items() if len(ps) > 1}
     total = sum(len(v) for v in by_size.values())
     return dupes, {"images": total, "hashed": hashed}

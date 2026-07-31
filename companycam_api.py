@@ -938,6 +938,13 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
 
     downloaded, skipped, files, latest = 0, 0, [], since
     failed, last_error = 0, ""
+    # ONE definition of "already have it", shared with verify_project.
+    # The skip check used to do its own naive prefix match, so a photo
+    # whose legacy 8-char prefix collided with a DIFFERENT downloaded
+    # photo was skipped forever — verify correctly called it missing and
+    # the download refused to fetch it, which is a gap nothing could
+    # close.
+    already = _present_tokens(photos, existing_tokens)
     rooms_used, stages_used, boxes_used, untagged = {}, {}, {}, 0
     for p in photos:
         fname = _photo_filename(p, tech_label(p, tech, force=force_tech))
@@ -961,11 +968,8 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             boxes_used[box] = boxes_used.get(box, 0) + 1
         photo_target = os.path.join(dest_dir, *r["parts"]) if r["parts"] \
             else dest_dir
-        # Full id, or a legacy 8-char name from before the truncation fix.
         tok = photo_id_token(p).lower()
-        legacy = tok[:_LEGACY_TOKEN_LEN]
-        if (fname.lower() in existing or (tok and tok in existing_tokens)
-                or (legacy and legacy in existing_tokens)):
+        if fname.lower() in existing or str(p.get("id") or "") in already:
             skipped += 1
         else:
             os.makedirs(photo_target, exist_ok=True)
