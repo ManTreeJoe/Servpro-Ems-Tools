@@ -496,7 +496,7 @@ class HomeApi:
         """Live counts per sidebar item — best-effort, cheap reads."""
         out = {}
         try:
-            import run_audit_gui as _rag
+            import run_doc as _rag
             from state_hub import hub as _sh
             doc = _rag._find_run_doc_for_date(_dt.date.today())
             if doc:

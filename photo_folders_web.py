@@ -29,7 +29,7 @@ class Api:
         audit panel's `find_run_doc_for` so the UI can show the same
         kind of date label + Open run-doc button."""
         try:
-            import run_audit_gui as _rag
+            import run_doc as _rag
             offset = int(day_offset or 0)
             d = _dt.date.today() + _dt.timedelta(days=offset)
             doc = _rag._find_run_doc_for_date(d)
@@ -47,7 +47,7 @@ class Api:
 
     def open_run_doc(self, day_offset: int = 0) -> bool:
         try:
-            import run_audit_gui as _rag
+            import run_doc as _rag
             d = _dt.date.today() + _dt.timedelta(days=int(day_offset or 0))
             doc = _rag._find_run_doc_for_date(d)
             if doc and os.path.isfile(doc):
@@ -61,7 +61,7 @@ class Api:
         negative = earlier days). Returns each job with its detected
         techs + folder-exists status so the UI can color-code rows."""
         try:
-            import run_audit_gui as _rag
+            import run_doc as _rag
             from state_hub import hub as _sh
             offset = int(day_offset or 0)
             d = _dt.date.today() + _dt.timedelta(days=offset)
@@ -134,7 +134,7 @@ class Api:
         message format `daily_photos_gui.make_folders` produces.
         """
         try:
-            import run_audit_gui as _rag
+            import run_doc as _rag
             from state_hub import hub as _sh
             d = _dt.date.today() + _dt.timedelta(days=int(day_offset or 0))
             doc = _rag._find_run_doc_for_date(d)
