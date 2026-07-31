@@ -303,6 +303,32 @@ def _card_display_map(jobs):
         return {}
 
 
+def _shells_for(path):
+    """{"own": [...], "from_children": [...]} — which work shells a job has.
+
+    "Does this one have a recon side?" currently means opening the folder.
+    Live 2026: EMS 79%, RECON 25%, CONTENTS 14%, and 320 of 580 clients
+    are EMS-only.
+
+    An umbrella keeps its shells one level down inside each unit, so its
+    own root has none — reporting an empty list for the whole property
+    would be true and useless. Falls back to the union across children,
+    flagged separately so the UI can say where they came from.
+
+    Two scandirs at worst, and only when a folder was resolved.
+    """
+    if not path:
+        return {"own": [], "from_children": []}
+    try:
+        import job_folders
+        own = job_folders.shells_at(path)
+        if own:
+            return {"own": own, "from_children": []}
+        return {"own": [], "from_children": job_folders.shells_of_children(path)}
+    except Exception:
+        return {"own": [], "from_children": []}
+
+
 def _shape_job(j, audit_result, pin_id, display_map=None):
     """Combine one run-doc job + its audit result into a single
     JSON-shaped row for the frontend. Pulls activity labels via
@@ -517,6 +543,7 @@ def _shape_job(j, audit_result, pin_id, display_map=None):
         "new_loss":         bool(j.get("new_loss")),
         "folder":           audit_result.get("folder") or "",
         "path":             audit_result.get("path") or "",
+        "shells":           _shells_for(audit_result.get("path") or ""),
         "found":            found,
         "form_issues":      form_issues,
         "photo_issues":     photo_issues,

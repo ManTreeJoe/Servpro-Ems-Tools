@@ -983,3 +983,11 @@ body { display: flex; flex-direction: column; }
 
 /* topbar slim — recover vertical space */
 .topbar { padding: 6px 14px !important; gap: 10px !important; }
+
+/* Work-shell chips (EMS / RECON / CONTENTS) on the job card. Muted on
+   purpose — they are context, not a problem to fix, so they must not
+   compete with the missing/aging chips beside them. */
+.detail-chip.shell {
+  background: var(--surface-2); color: var(--text-muted);
+  border: 1px solid var(--border); letter-spacing: .03em;
+}

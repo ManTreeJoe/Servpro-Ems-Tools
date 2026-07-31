@@ -206,6 +206,55 @@ NON_JOB_CHILD_NAMES = _JOB_CONTAINERS | {
 }
 
 
+# The work shells a job can have. Order is how they're displayed.
+SHELLS = ("EMS", "RECON", "CONTENTS")
+
+
+def shells_at(path: str) -> list:
+    """Which work shells exist directly inside a job folder.
+
+    Live 2026 data across 580 client folders: EMS 79%, RECON 25%,
+    CONTENTS 14% — 320 are EMS-only. Worth surfacing because "does this
+    job have a recon side?" currently means opening the folder.
+
+    Only the job's OWN root is checked. A multi-unit client keeps its
+    shells one level down inside each unit, so 92 clients have none at
+    root; `shells_of_children` answers that case instead of this one
+    silently reporting "nothing here".
+    """
+    if not path or not os.path.isdir(path):
+        return []
+    want = {s.lower(): s for s in SHELLS}
+    found = set()
+    try:
+        with os.scandir(path) as it:
+            for e in it:
+                if e.is_dir(follow_symlinks=False):
+                    hit = want.get(e.name.strip().lower())
+                    if hit:
+                        found.add(hit)
+    except OSError:
+        return []
+    return [s for s in SHELLS if s in found]
+
+
+def shells_of_children(path: str) -> list:
+    """The UNION of the shells of a client's child jobs.
+
+    An umbrella folder holds no work of its own — its shells live inside
+    each unit or claim. Reporting "no shells" for the property as a whole
+    would be true and useless.
+    """
+    if not path or not os.path.isdir(path):
+        return []
+    found = set()
+    for name in list_children(path):
+        child = os.path.join(path, name)
+        if is_child_job_folder(child, name):
+            found.update(shells_at(child))
+    return [s for s in SHELLS if s in found]
+
+
 def is_child_job_folder(path: str, name: str = "") -> bool:
     """Is this subfolder of a client a child job (claim / unit / sub-job)?
 

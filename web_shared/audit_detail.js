@@ -107,6 +107,18 @@
     if (r.new_loss) {
       chips.push(`<span class="detail-chip new-loss">🆕 New loss</span>`);
     }
+    // Which work shells the job has. "Does this one have a recon side?"
+    // otherwise means opening the folder. An umbrella has none at its own
+    // root — its shells sit inside each unit — so those are shown too,
+    // marked, rather than reporting nothing.
+    const sh = r.shells || {};
+    const shOwn = sh.own || [], shKids = sh.from_children || [];
+    (shOwn.length ? shOwn : shKids).forEach((name) => {
+      const viaKids = !shOwn.length;
+      chips.push(`<span class="detail-chip shell" title="${viaKids
+        ? "Comes from this client's units/claims, not the top folder"
+        : "Work shell in this job's folder"}">${esc(ctx, name)}${viaKids ? " ↓" : ""}</span>`);
+    });
     if ((r.sharepoint_new || 0) > 0) {
       chips.push(`<span class="detail-chip sp-new" style="background:var(--act-monitor);color:#fff;cursor:pointer;" title="Click to import — ${r.sharepoint_new} files on SharePoint not in OneDrive yet">📥 SP +${r.sharepoint_new} new</span>`);
     }

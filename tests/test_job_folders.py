@@ -455,3 +455,52 @@ def test_photo_report_output_is_not_a_job(tmp_path):
     d = tmp_path / "Photo Report"
     d.mkdir()
     assert not jf.is_child_job_folder(str(d))
+
+
+# ── work shells (EMS / RECON / CONTENTS) ──────────────────────────────
+# "Does this one have a recon side?" otherwise means opening the folder.
+# Live 2026 across 580 clients: EMS 79%, RECON 25%, CONTENTS 14%, and 320
+# are EMS-only.
+
+def test_shells_are_found_at_the_job_root(tmp_path):
+    for n in ("EMS", "RECON", "PICS"):
+        (tmp_path / n).mkdir()
+    assert jf.shells_at(str(tmp_path)) == ["EMS", "RECON"]   # PICS is not one
+
+
+def test_shells_come_back_in_display_order(tmp_path):
+    for n in ("CONTENTS", "EMS"):
+        (tmp_path / n).mkdir()
+    assert jf.shells_at(str(tmp_path)) == ["EMS", "CONTENTS"]
+
+
+def test_shell_names_are_case_insensitive(tmp_path):
+    (tmp_path / "ems").mkdir()
+    assert jf.shells_at(str(tmp_path)) == ["EMS"]
+
+
+def test_a_job_with_no_shells_reports_none(tmp_path):
+    (tmp_path / "DOCS").mkdir()
+    assert jf.shells_at(str(tmp_path)) == []
+
+
+def test_a_missing_folder_does_not_raise(tmp_path):
+    assert jf.shells_at(str(tmp_path / "nope")) == []
+    assert jf.shells_at("") == []
+
+
+def test_an_umbrella_reports_the_union_of_its_units(tmp_path):
+    """92 of 580 clients have no shell at root — a multi-unit property
+    keeps them inside each unit. Reporting "none" for the property would
+    be true and useless."""
+    (tmp_path / "Unit 101" / "EMS").mkdir(parents=True)
+    (tmp_path / "Unit 102" / "RECON").mkdir(parents=True)
+    assert jf.shells_at(str(tmp_path)) == []
+    assert jf.shells_of_children(str(tmp_path)) == ["EMS", "RECON"]
+
+
+def test_paperwork_folders_are_not_searched_for_shells(tmp_path):
+    """FIELD DOCS is not a child job, so anything inside it is not a
+    unit's work shell."""
+    (tmp_path / "FIELD DOCS" / "EMS").mkdir(parents=True)
+    assert jf.shells_of_children(str(tmp_path)) == []

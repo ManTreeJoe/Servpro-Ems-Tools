@@ -349,7 +349,7 @@ async function switchMode(mode, isRestore) {
                      flagged: 0, ok: 0 };
       renderAll();
     }
-    setStatus("🔍 Type a job name in the search box to find and audit it", "");
+    setStatus("🔍 Search above to pull a job up — it stays here while you work", "");
     $("#search-box")?.focus();
     return;
   }
