@@ -158,39 +158,6 @@ option, optgroup {
   color: #E8E8E8;
 }
 
-/* ── Search type-ahead ────────────────────────────────────────────────
-   Anchored under #search-box. Typing only queries the job index; the
-   expensive folder/SharePoint scan runs when a row is picked. */
-.suggest-box {
-  position: absolute; top: calc(100% + 4px); left: 0;
-  min-width: 100%; max-width: 420px; z-index: 60;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  overflow: hidden; max-height: 320px; overflow-y: auto;
-}
-.suggest-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 11px; cursor: pointer; font-size: 12.5px;
-  border-bottom: 1px solid var(--border);
-}
-.suggest-row:last-child { border-bottom: 0; }
-.suggest-row:hover, .suggest-row:focus {
-  background: var(--surface-2); outline: none;
-}
-.suggest-name { flex: 1; white-space: nowrap; overflow: hidden;
-                text-overflow: ellipsis; }
-/* "also known as" / "did you mean" — says WHY a row is here, which
-   matters when an alias surfaces a differently-named job. */
-.suggest-why {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--text-muted); border: 1px solid var(--border);
-  border-radius: 999px; padding: 1px 6px; flex: none;
-}
-.suggest-dept {
-  font-size: 10px; color: var(--text-muted); flex: none;
-}
-.suggest-empty {
-  padding: 10px 11px; font-size: 12px; color: var(--text-muted);
-  display: flex; align-items: center; gap: 10px; justify-content: space-between;
-}
-.suggest-force { flex: none; }
+/* Search type-ahead styles live in app.css — index.html links that
+   file, not this one. A duplicate block here looked live, loaded
+   nothing, and would have drifted from the rules that do apply. */

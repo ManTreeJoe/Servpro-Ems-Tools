@@ -931,6 +931,53 @@ body { display: flex; flex-direction: column; }
 .status-msg.warn  { color: var(--amber); }
 .status-msg.error { color: var(--red); }
 
+/* ── Search type-ahead ────────────────────────────────────────────────
+   Floats over the toolbar instead of sitting in the flow: anchored to
+   #search-wrap (position:relative) and lifted out, so typing never
+   shifts the Search / Daily Run / Starred buttons.
+   These rules used to live in audit_web_assets/theme.css, which
+   index.html never links — so they never loaded and the rows rendered
+   as raw run-together text ("Lim, Ben - AAAalso known asIE"). */
+.suggest-box {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  min-width: 340px; max-width: 460px; z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  overflow: hidden; max-height: 340px; overflow-y: auto;
+}
+.suggest-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 11px; cursor: pointer; font-size: 12.5px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.suggest-row:last-child { border-bottom: 0; }
+.suggest-row:hover, .suggest-row:focus {
+  background: var(--row-hover); outline: none;
+}
+.suggest-name {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* "also known as" / "did you mean" — says WHY a row is here, which
+   matters when an alias surfaces a differently-named job. */
+.suggest-why {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); background: var(--chip-bg);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 1px 7px; flex: none; white-space: nowrap;
+}
+.suggest-dept {
+  font-size: 10px; color: var(--text-dim); flex: none; white-space: nowrap;
+}
+.suggest-empty {
+  padding: 10px 11px; font-size: 12px; color: var(--text-muted);
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+}
+.suggest-force { flex: none; }
+
 /* brand hidden — extra topbar space */
 .brand, .brand-mark, .brand-name, .brand-tag { display: none !important; }
 
