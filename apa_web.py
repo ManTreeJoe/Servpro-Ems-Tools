@@ -1670,7 +1670,7 @@ class Api:
 def main(argv=None):
     api = Api()
     window = webview.create_window(
-        title="APA Monitor — EMS Tools (web spike)",
+        title="APA Monitor — Linguar Hub (web spike)",
         url=INDEX_HTML,
         js_api=api,
         width=1480, height=860,

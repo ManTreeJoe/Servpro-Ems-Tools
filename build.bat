@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-echo === EMS Tools build ===
+echo === Linguar Hub build ===
 echo.
 
 REM Install/upgrade PyInstaller and runtime deps the first time
@@ -14,9 +14,9 @@ if errorlevel 1 (
 
 REM Wipe previous build outputs
 if exist build rmdir /s /q build
-if exist "dist\EMS Tools" rmdir /s /q "dist\EMS Tools"
+if exist "dist\Linguar Hub" rmdir /s /q "dist\Linguar Hub"
 
-pyinstaller --noconfirm EMS_Tools.spec
+pyinstaller --noconfirm Linguar_Hub.spec
 if errorlevel 1 (
     echo.
     echo BUILD FAILED.
@@ -25,11 +25,11 @@ if errorlevel 1 (
 )
 
 REM Drop README.txt next to the .exe so end users see it before clicking
-if exist README.txt copy /y README.txt "dist\EMS Tools\README.txt" >nul
+if exist README.txt copy /y README.txt "dist\Linguar Hub\README.txt" >nul
 
 echo.
 echo === Build complete ===
-echo Output: dist\EMS Tools\EMS Tools.exe
-echo Ship the ENTIRE dist\EMS Tools\ folder.
+echo Output: dist\Linguar Hub\Linguar Hub.exe
+echo Ship the ENTIRE dist\Linguar Hub\ folder.
 echo.
 pause

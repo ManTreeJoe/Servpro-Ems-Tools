@@ -1,4 +1,4 @@
-/* EMS Tools — shared right-click context menu builder.
+/* Linguar Hub — shared right-click context menu builder.
  *
  * Replaces the panel-local `showCtxMenu` / `openCtxMenu` builders
  * that audit / disputes / snapshot / IUQ / APA all had. One call:

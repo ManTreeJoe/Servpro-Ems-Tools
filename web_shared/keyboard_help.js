@@ -1,4 +1,4 @@
-/* EMS Tools — shared "?" keyboard shortcut overlay.
+/* Linguar Hub — shared "?" keyboard shortcut overlay.
  *
  * Each panel registers its own shortcut list with
  * `registerKeyboardHelp([{ keys: "?", desc: "Show this help" }, ...])`.

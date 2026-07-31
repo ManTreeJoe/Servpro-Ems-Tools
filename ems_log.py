@@ -1,5 +1,5 @@
 """
-Lightweight rotating logfile for the EMS Automation suite.
+Lightweight rotating logfile for the Linguar Hub.
 Use ems_log.error('source', 'message') anywhere a try/except swallows errors.
 File: scripts/ems.log (rotates when over 1 MB)
 """

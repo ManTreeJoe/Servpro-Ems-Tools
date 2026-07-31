@@ -1,6 +1,6 @@
 """Single-source config loader.
 
-Reads `%APPDATA%\\EMS Automation\\config.json` so the user can edit paths
+Reads `%APPDATA%\\Linguar Hub\\config.json` so the user can edit paths
 without rebuilding. On first run, seeds it from the bundled default in
 RESOURCE_DIR.
 """
@@ -173,7 +173,7 @@ def load_for(dept):
 
 
 def save(cfg):
-    """Persist the user's edited config to %APPDATA%\\EMS Automation\\config.json."""
+    """Persist the user's edited config to %APPDATA%\\Linguar Hub\\config.json."""
     global _CACHE, _CACHE_MTIME
     _os.makedirs(_os.path.dirname(_USER_CFG), exist_ok=True)
     tmp = _USER_CFG + ".tmp"

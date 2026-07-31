@@ -1,4 +1,4 @@
--- EMS Tools — schema v4: job_children.
+-- Linguar Hub — schema v4: job_children.
 --
 -- `year → client → child`. A child is a CLAIM, a UNIT, or a commercial
 -- SUB-JOB — one shape, only `kind` differs. Each has its own folder and

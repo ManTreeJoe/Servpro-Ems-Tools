@@ -1,4 +1,4 @@
-/* EMS Tools — shared 📎 Trello attachments modal.
+/* Linguar Hub — shared 📎 Trello attachments modal.
  *
  * Lists every attachment on a Trello card with image thumbnails
  * (when available), bulk-select checkboxes, and a per-row 📥

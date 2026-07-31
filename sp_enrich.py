@@ -333,7 +333,7 @@ def _pick_default_pics_path(pics_options):
 # into, we track which original SharePoint basenames have already been
 # pulled so future audits can suppress them.
 #
-# Stored under %APPDATA%\EMS Automation\sp_imports\<hashed-path>.json
+# Stored under %APPDATA%\Linguar Hub\sp_imports\<hashed-path>.json
 # instead of inside the PICS folder itself, so the manifests stay private
 # to each PC and never sync into the shared OneDrive.
 #

@@ -1,4 +1,4 @@
--- EMS Tools — grant a user access to a franchise.
+-- Linguar Hub — grant a user access to a franchise.
 --
 -- Until a person has a row here they can sign in successfully and see
 -- NOTHING. That's the RLS policy working, not a bug.

@@ -1,5 +1,5 @@
 """
-Canonical stage taxonomy for the EMS Automation suite.
+Canonical stage taxonomy for the Linguar Hub.
 
 The franchise's job stages (Initial Inspection, Mold Prep, Demo, …) appear
 in three different flows:

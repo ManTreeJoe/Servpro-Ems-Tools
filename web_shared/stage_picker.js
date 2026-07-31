@@ -1,4 +1,4 @@
-/* EMS Tools — shared PICS stage-folder picker.
+/* Linguar Hub — shared PICS stage-folder picker.
  *
  * Before any PHOTO import (CompanyCam / WorkCenter photos / hand-picked
  * images) the panel calls:

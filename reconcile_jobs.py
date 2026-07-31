@@ -13,7 +13,7 @@ supports a read-only dry run.
     python reconcile_jobs.py --dry     # report only, no writes
     python reconcile_jobs.py           # apply
 
-Back up %APPDATA%\\EMS Automation\\{state.json,ems_jobs.db} before applying.
+Back up %APPDATA%\\Linguar Hub\\{state.json,ems_jobs.db} before applying.
 """
 import collections
 

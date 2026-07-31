@@ -1,4 +1,4 @@
-/* EMS Tools — Snapshot web frontend.
+/* Linguar Hub — Snapshot web frontend.
  *
  * Two views in one page:
  *  • LIST view (default): candidates (closeout + run-doc) + recent PDFs

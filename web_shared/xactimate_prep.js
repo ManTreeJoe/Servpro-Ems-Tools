@@ -1,4 +1,4 @@
-/* EMS Tools — Xactimate "new estimate from scratch" prep dialog.
+/* Linguar Hub — Xactimate "new estimate from scratch" prep dialog.
  *
  * Can't build the .esx (Verisk proprietary) — this kills the manual work
  * around it: shows the price list you use for this carrier (remembered per

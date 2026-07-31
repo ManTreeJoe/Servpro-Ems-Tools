@@ -1,4 +1,4 @@
-/* EMS Tools — shared undo toast.
+/* Linguar Hub — shared undo toast.
  *
  * Optimistic action pattern: UI updates immediately + user sees a
  * "Item dismissed · Undo" toast at the bottom of the screen. After

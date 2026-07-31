@@ -1,5 +1,5 @@
 """
-Shared persistent state for the EMS Automation suite.
+Shared persistent state for the Linguar Hub.
 Stores resolved checkbox states per audit run, contact emails, folder
 overrides, and any other cross-session memory in a single state.json
 next to the scripts.

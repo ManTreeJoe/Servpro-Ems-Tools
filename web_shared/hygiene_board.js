@@ -1,4 +1,4 @@
-/* EMS Tools — shared Hygiene job-board renderer.
+/* Linguar Hub — shared Hygiene job-board renderer.
  *
  * One at-a-glance table: a row per active job with four admin milestones
  * (DocuSign requested · Initial sent · Final sent · Weekly check-in).

@@ -1,4 +1,4 @@
-/* EMS Tools — shared cross-tool "Open in…" right-click menu.
+/* Linguar Hub — shared cross-tool "Open in…" right-click menu.
  *
  * One helper every panel reuses so a job can be opened in any other
  * tool from a right-click. Navigation goes UP to the home shell via

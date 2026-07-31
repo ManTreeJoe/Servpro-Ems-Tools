@@ -1,4 +1,4 @@
-/* EMS Tools — shared keyboard shortcuts.
+/* Linguar Hub — shared keyboard shortcuts.
  *
  * Auto-wires the most common cross-panel hotkeys when the page
  * loads:

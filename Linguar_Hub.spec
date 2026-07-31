@@ -1,20 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for EMS Tools — WEB UI build (pywebview single window).
+PyInstaller spec for Linguar Hub — WEB UI build (pywebview single window).
 
 Build:
     cd "<scripts folder>"
-    pyinstaller --noconfirm EMS_Tools.spec
+    pyinstaller --noconfirm Linguar_Hub.spec
 
 Output:
-    dist\EMS Tools\EMS Tools.exe        <- double-click to launch
-    dist\EMS Tools\_internal\           <- Python runtime + bundled web assets
+    dist\Linguar Hub\Linguar Hub.exe        <- double-click to launch
+    dist\Linguar Hub\_internal\           <- Python runtime + bundled web assets
 
 Distribution:
-    Ship the entire `dist\EMS Tools\` folder (or zip it). The .exe will not
+    Ship the entire `dist\Linguar Hub\` folder (or zip it). The .exe will not
     run by itself.
 
-User data lives in %APPDATA%\EMS Automation\ — created/seeded on first run
+User data lives in %APPDATA%\Linguar Hub\ — created/seeded on first run
 from the bundled (sanitized) config.json. The shipped config carries NO
 secrets: each user enters their own Trello key/token + paths in Settings.
 
@@ -30,12 +30,12 @@ base = SPECPATH
 pkg  = os.path.join(base, '_packaging')
 
 # App name is env-driven so the SAME spec builds both channels:
-#   Main:  pyinstaller EMS_Tools.spec                        -> "EMS Tools"
-#   Trial: EMS_APP_NAME="EMS Tools Trial" pyinstaller ...    -> "EMS Tools Trial"
+#   Main:  pyinstaller Linguar_Hub.spec                        -> "Linguar Hub"
+#   Trial: LINGUAR_APP_NAME="Linguar Hub Trial" pyinstaller ...    -> "Linguar Hub Trial"
 # The exe/folder name carries the channel; paths._detect_channel() reads it at
 # runtime (a build whose path contains "trial" polls the trial update branch
 # and shows the TRIAL title). Data + config are shared between channels.
-APP_NAME = os.environ.get('EMS_APP_NAME', 'EMS Tools')
+APP_NAME = os.environ.get('LINGUAR_APP_NAME', 'Linguar Hub')
 
 # ── Bundled data ────────────────────────────────────────────────────────────
 # pywebview runs with http_server=True rooted at the dir of the URL file

@@ -180,7 +180,7 @@ def _franchise_colors(name):
 
 
 # ── Draft autosave path ────────────────────────────────────────────────────
-# Drafts go to %APPDATA%\EMS Automation\apa_drafts\ — one per doc-date so a
+# Drafts go to %APPDATA%\Linguar Hub\apa_drafts\ — one per doc-date so a
 # crash mid-edit doesn't lose work. Recovery on next open compares draft
 # mtime vs the .docx mtime.
 def _draft_path_for(doc_path):
@@ -854,7 +854,7 @@ class APAMonitorApp(ToolPanel):
         flat = self._flatten_sections_for_write()
 
         # Keep a single rolling backup so a bad save is recoverable.
-        # Stored under %APPDATA%\EMS Automation\apa_backups\ — private to the
+        # Stored under %APPDATA%\Linguar Hub\apa_backups\ — private to the
         # user, NOT in X:\IE_Public\ where coworkers would see it.
         if os.path.isfile(self.doc_path):
             try:

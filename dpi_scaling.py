@@ -1,4 +1,4 @@
-"""DPI awareness + scaling for the EMS Tools suite.
+"""DPI awareness + scaling for the Linguar Hub suite.
 
 Why this exists:
     Tk on Windows is NOT DPI-aware by default. On a 4K laptop with

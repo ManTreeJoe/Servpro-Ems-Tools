@@ -1,4 +1,4 @@
-/* EMS Tools — skeleton helper. Returns HTML for N placeholder rows. */
+/* Linguar Hub — skeleton helper. Returns HTML for N placeholder rows. */
 (function () {
   "use strict";
   function mkSkeletonRows(n) {

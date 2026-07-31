@@ -1,4 +1,4 @@
-/* EMS Tools — shared toast log.
+/* Linguar Hub — shared toast log.
  *
  * Wraps every panel's `setStatus(msg, kind)` so each toast also
  * lands in a session-wide log accessible from the launcher's 🛎

@@ -1,4 +1,4 @@
-/* EMS Tools — shared "Request items" dialog.
+/* Linguar Hub — shared "Request items" dialog.
  *
  * Tick the forms / scope / docusketch you need from the lead → posts a
  * Trello comment @mentioning them + copies the Teams message for you to

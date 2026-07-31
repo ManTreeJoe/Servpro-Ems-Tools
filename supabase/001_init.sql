@@ -1,4 +1,4 @@
--- EMS Tools — shared job index, schema v3.
+-- Linguar Hub — shared job index, schema v3.
 --
 -- Faithful port of ems_db.py's SQLite schema. Deliberately NOT a redesign:
 -- the CRM property→claim→job model is a later, separate migration. Changing

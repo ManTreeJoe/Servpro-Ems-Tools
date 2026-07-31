@@ -1,4 +1,4 @@
-/* EMS Tools — shared frontend utilities.
+/* Linguar Hub — shared frontend utilities.
  *
  * One canonical home for the helpers every panel duplicates:
  *

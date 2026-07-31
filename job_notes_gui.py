@@ -1,7 +1,7 @@
 """
 Job Notes — paste/edit Trello notes per client, see timeline + expected files.
 
-Notes save to %APPDATA%\\EMS Automation\\notes\\<year>\\<client>.md so they
+Notes save to %APPDATA%\\Linguar Hub\\notes\\<year>\\<client>.md so they
 persist across sessions and are private to the user. The panel auto-parses
 pasted text for activity keywords (initial / mold prep / demo / monitor /
 teardown / recon / reinspect) and renders:

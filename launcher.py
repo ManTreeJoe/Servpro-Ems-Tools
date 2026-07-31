@@ -1,5 +1,5 @@
 """
-EMS Tools — single-window launcher.
+Linguar Hub — single-window launcher.
 
 Two modes (selected by argv):
   - With "--tool <name> [args...]" → dispatches to that tool's main() and exits.
@@ -105,7 +105,7 @@ def _install_crash_handler():
             if root is None:
                 root = _tk.Tk(); root.withdraw()
             _mb.showerror(
-                "EMS Tools — Error",
+                "Linguar Hub — Error",
                 f"Something went wrong:\n\n{exc_value}\n\n"
                 f"Details have been written to the log\n"
                 f"(Settings → Open data folder → ems.log).")
@@ -434,7 +434,7 @@ class LauncherApp(_LauncherBase):
             _log_swallowed("launcher", f"alpha-flag read failed: {ex}")
             _alpha_suffix = ""
         self.title(
-            f"SERVPRO  ·  EMS Tools  ·  v{paths.VERSION}{_alpha_suffix}")
+            f"SERVPRO  ·  Linguar Hub  ·  v{paths.VERSION}{_alpha_suffix}")
         # Restore last window size/position; fall back to default on first run.
         try:
             import persistence as _persistence
@@ -519,7 +519,7 @@ class LauncherApp(_LauncherBase):
         self._history = []
         self._back_btn = None  # populated in _build_ui
 
-        self._title_var = tk.StringVar(value="EMS Tools")
+        self._title_var = tk.StringVar(value="Linguar Hub")
 
         self._build_ui()
 
@@ -537,7 +537,7 @@ class LauncherApp(_LauncherBase):
                 self._content,
                 message="Preparing your tools…",
                 with_progress=True,
-                brand="SERVPRO  ·  EMS Tools")
+                brand="SERVPRO  ·  Linguar Hub")
             self._startup_overlay.pack(fill="both", expand=True)
             self._startup_overlay.start()
             # Paint immediately so the spinner is visible before the
@@ -622,7 +622,7 @@ class LauncherApp(_LauncherBase):
         `_content` stays as a plain tk.Frame so existing ToolPanel children
         (which are tk.Frames) embed without issue."""
         # Footer first so bottom-stacked widgets layer correctly
-        ctk.CTkLabel(self, text=f"EMS Automation  ·  v{paths.VERSION}",
+        ctk.CTkLabel(self, text=f"Linguar Hub  ·  v{paths.VERSION}",
                      font=ctk.CTkFont("Segoe UI Variable", 11),
                      text_color="#9AA5AE"
                      ).pack(side="bottom", pady=(0, 8))
@@ -672,7 +672,7 @@ class LauncherApp(_LauncherBase):
         installed. Mirrors the original look so dev installs without ctk
         keep working."""
         # Footer first
-        tk.Label(self, text=f"EMS Automation  ·  v{paths.VERSION}",
+        tk.Label(self, text=f"Linguar Hub  ·  v{paths.VERSION}",
                  font=("Segoe UI Variable", 7), bg=BG, fg=TEXT_MUTED).pack(side="bottom", pady=(0, 6))
 
         self._status_bar = tk.Frame(self, bg=WHITE,
@@ -1461,13 +1461,13 @@ class LauncherApp(_LauncherBase):
         self._current_key = None
         self._history.clear()
         self._set_active_row(None)
-        self._title_var.set("EMS Tools")
+        self._title_var.set("Linguar Hub")
         self._refresh_back_btn()
 
         if _HAVE_CTK:
             wrap = ctk.CTkFrame(self._content, fg_color=BG, corner_radius=0)
             wrap.place(relx=0.5, rely=0.5, anchor="center")
-            ctk.CTkLabel(wrap, text="SERVPRO  ·  EMS Tools",
+            ctk.CTkLabel(wrap, text="SERVPRO  ·  Linguar Hub",
                          font=ctk.CTkFont("Segoe UI Variable", 22, "bold"),
                          text_color=TEXT_DARK).pack()
             ctk.CTkLabel(wrap, text="Pick a tool from the toolbar to get started.",
@@ -1487,7 +1487,7 @@ class LauncherApp(_LauncherBase):
         else:
             wrap = tk.Frame(self._content, bg=BG)
             wrap.place(relx=0.5, rely=0.5, anchor="center")
-            tk.Label(wrap, text="SERVPRO  ·  EMS Tools",
+            tk.Label(wrap, text="SERVPRO  ·  Linguar Hub",
                      font=("Segoe UI Variable", 18, "bold"),
                      bg=BG, fg=TEXT_DARK).pack()
             tk.Label(wrap, text="Pick a tool from the toolbar to get started.",

@@ -66,7 +66,7 @@ from persistence import _canon_pin_key as _canon_pin_key_persistence
 
 
 # Single canonical DB path — sits alongside persistence.json under
-# %APPDATA%\EMS Automation\ so coworkers find both files in the same
+# %APPDATA%\Linguar Hub\ so coworkers find both files in the same
 # place when they need to back the suite up or migrate machines.
 DB_PATH = _paths.data("ems_jobs.db")
 

@@ -572,7 +572,7 @@ class Api:
 def main(argv=None):
     api = Api()
     window = webview.create_window(
-        title="Pipeline — EMS Tools (web spike)",
+        title="Pipeline — Linguar Hub (web spike)",
         url=INDEX_HTML,
         js_api=api,
         width=1280, height=820,

@@ -12,7 +12,7 @@ Microsoft Graph API client (stdlib only, device-code auth).
 ONE-TIME SETUP (~15 min):
     1. Go to https://portal.azure.com → Azure Active Directory →
        App registrations → New registration.
-    2. Name: "EMS Automation"  (or anything).
+    2. Name: "Linguar Hub"  (or anything).
        Supported account types: "Accounts in this organizational
        directory only" (single tenant).
        Redirect URI: leave blank — device-code flow doesn't need one.
@@ -28,7 +28,7 @@ ONE-TIME SETUP (~15 min):
        consent (or have IT click the button).
     6. From PowerShell run `python outlook_client.py login` once. It
        prints a code + URL; sign in on any device with that code. Token
-       lands in %APPDATA%\\EMS Automation\\msgraph_token.json. Refresh
+       lands in %APPDATA%\\Linguar Hub\\msgraph_token.json. Refresh
        happens automatically thereafter.
 
 After setup, this module exposes:

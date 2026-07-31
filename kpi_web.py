@@ -123,7 +123,7 @@ class Api:
 def main(argv=None):
     api = Api()
     window = webview.create_window(
-        title="KPI — EMS Tools (web spike)",
+        title="KPI — Linguar Hub (web spike)",
         url=INDEX_HTML,
         js_api=api,
         width=1180, height=820,

@@ -1,4 +1,4 @@
-# EMS Tools — Software Audit (what we use vs. don't)
+# Linguar Hub — Software Audit (what we use vs. don't)
 
 *Compiled 2026-07-29 from the built-in usage tracker (`usage.db`) + code inventory.*
 

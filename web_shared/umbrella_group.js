@@ -1,4 +1,4 @@
-/* EMS Tools — shared multi-unit (Phase 2: multi-claim) umbrella helpers.
+/* Linguar Hub — shared multi-unit (Phase 2: multi-claim) umbrella helpers.
  *
  * Reusable pieces for the "parent property → child unit" experience,
  * shared by Audit, IUQ and Snapshot so the three surfaces stay in

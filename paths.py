@@ -1,17 +1,23 @@
 """
-Path resolution for the EMS Automation suite.
+Path resolution for Linguar Hub.
 
 Two roots:
   RESOURCE_DIR — read-only bundled assets (icon, cheat-sheet, default config).
                  In dev mode this is the scripts folder; in a PyInstaller
                  build it's sys._MEIPASS (onefile) or the exe folder (onedir).
 
-  DATA_DIR    — writable user state (%APPDATA%\\EMS Automation).
+  DATA_DIR    — writable user state (%APPDATA%\\Linguar Hub).
                  state.json, audit_backlog.json, EMS_Audit_Log.md,
                  EMS_Audit_Backlog.md, ems.log, user config.json all live here.
 
-Importing this module guarantees DATA_DIR exists and runs a one-time
-migration of any files left behind in the legacy scripts folder.
+Importing this module guarantees DATA_DIR exists and runs two one-time
+migrations: files left behind in the legacy scripts folder, and the
+pre-rebrand %APPDATA%\\EMS Automation directory.
+
+Note on the name: "EMS" survives throughout this codebase as the SERVPRO
+business term — "2026 EMS Files", "EMS Admin", an EMS job. Those are folder
+names on the franchise share and must never be renamed. Only the product
+was called EMS Tools.
 """
 import os
 import sys
@@ -23,8 +29,8 @@ VERSION = "1.2.0"
 
 def _detect_channel():
     """'trial' or 'main'. The Trial app is a separate build that installs to
-    an "EMS Tools Trial" folder / exe, so a frozen build detects its channel
-    from its own path. In dev (running from source) honor the EMS_CHANNEL env
+    a "Linguar Hub Trial" folder / exe, so a frozen build detects its channel
+    from its own path. In dev (running from source) honor the LINGUAR_CHANNEL env
     var so the trial code path can be exercised without a build. Data + config
     are SHARED between channels — only name / install dir / update channel
     differ."""
@@ -38,7 +44,7 @@ def _detect_channel():
             return "main"
     except Exception:
         pass
-    return "trial" if os.environ.get("EMS_CHANNEL", "").lower() == "trial" else "main"
+    return "trial" if os.environ.get("LINGUAR_CHANNEL", "").lower() == "trial" else "main"
 
 
 CHANNEL = _detect_channel()
@@ -89,8 +95,79 @@ else:
     RESOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ── Writable data dir ───────────────────────────────────────────────────────
-APPDATA  = os.environ.get("APPDATA") or os.path.expanduser(r"~\AppData\Roaming")
-DATA_DIR = os.path.join(APPDATA, "EMS Automation")
+APPDATA = os.environ.get("APPDATA") or os.path.expanduser(r"~\AppData\Roaming")
+
+APP_DIR_NAME = "Linguar Hub"
+# Pre-rebrand name. Everything lived here through v1.1.3, so a machine
+# upgrading from that build has ~90 MB of real state — config.json, the
+# job index, APA drafts, every backup — sitting under the old name.
+LEGACY_APP_DIR_NAME = "EMS Automation"
+
+DATA_DIR = os.path.join(APPDATA, APP_DIR_NAME)
+LEGACY_DATA_DIR = os.path.join(APPDATA, LEGACY_APP_DIR_NAME)
+
+
+def _has_state(d):
+    """A directory that actually holds user state, not just an empty shell
+    left behind by makedirs on a previous aborted run."""
+    if not os.path.isdir(d):
+        return False
+    try:
+        # `with`, because a bare scandir leaves the directory handle open
+        # and Windows then refuses the rmdir/rename this function exists to
+        # guard — the migration would fail on the folder it just checked.
+        with os.scandir(d) as it:
+            return any(it)
+    except OSError:
+        return False
+
+
+def _adopt_legacy_data_dir():
+    """One-time move of %APPDATA%\\EMS Automation -> %APPDATA%\\Linguar Hub.
+
+    Copies into a scratch directory and RENAMES it into place, so a crash
+    or a full disk halfway through leaves no half-populated data dir for
+    the app to start writing into. The old folder is deliberately left
+    untouched: it costs 90 MB and it is the only way back if the rebrand
+    turns out to have broken something.
+
+    Returns the directory to actually use. If the copy fails for any
+    reason this returns the LEGACY path — continuing to run against the
+    old data beats starting up empty and looking like every job vanished.
+    """
+    if _has_state(DATA_DIR) or not _has_state(LEGACY_DATA_DIR):
+        return DATA_DIR
+
+    staging = DATA_DIR + ".migrating"
+    try:
+        if os.path.isdir(staging):
+            shutil.rmtree(staging, ignore_errors=True)
+        shutil.copytree(LEGACY_DATA_DIR, staging)
+        if os.path.isdir(DATA_DIR):
+            os.rmdir(DATA_DIR)          # empty shell only; raises if not
+        os.rename(staging, DATA_DIR)
+    except Exception as ex:
+        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            import ems_log
+            ems_log.warn("paths", f"rebrand migration failed ({ex}); "
+                                  f"continuing on {LEGACY_DATA_DIR!r}")
+        except Exception:
+            pass
+        return LEGACY_DATA_DIR
+
+    try:
+        with open(os.path.join(DATA_DIR, "MIGRATED_FROM.txt"), "w",
+                  encoding="utf-8") as f:
+            f.write(f"Copied from {LEGACY_DATA_DIR}\n"
+                    f"The old folder was left in place on purpose — delete "
+                    f"it once you're happy everything came across.\n")
+    except OSError:
+        pass
+    return DATA_DIR
+
+
+DATA_DIR = _adopt_legacy_data_dir()
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
@@ -100,7 +177,7 @@ def resource(name):
 
 
 def data(name):
-    """Path to a user-writable file under %APPDATA%\\EMS Automation."""
+    """Path to a user-writable file under %APPDATA%\\Linguar Hub."""
     return os.path.join(DATA_DIR, name)
 
 

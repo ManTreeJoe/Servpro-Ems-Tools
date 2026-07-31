@@ -10,7 +10,7 @@ finished. A subprocess has its own Python interpreter / GIL / heap
 so nothing the scan does can affect the main UI process — the panel
 just polls a status file for completion.
 
-Status file layout (~/AppData/Local/EMS Automation/hygiene_scan.json):
+Status file layout (~/AppData/Local/Linguar Hub/hygiene_scan.json):
     {
       "phase":   "running" | "done" | "error",
       "started_at": ISO,
@@ -40,7 +40,7 @@ def status_path() -> str:
     """Status file location — under %LOCALAPPDATA% on Windows so the
     main app and the subprocess agree on the path."""
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    folder = os.path.join(base, "EMS Automation")
+    folder = os.path.join(base, "Linguar Hub")
     os.makedirs(folder, exist_ok=True)
     return os.path.join(folder, "hygiene_scan_status.json")
 

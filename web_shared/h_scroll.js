@@ -1,4 +1,4 @@
-/* EMS Tools — horizontal scroll helper.
+/* Linguar Hub — horizontal scroll helper.
  *
  * Trello-style click-and-drag scrolling + wheel-to-horizontal on
  * any container marked with [data-hdrag] (or a known class like

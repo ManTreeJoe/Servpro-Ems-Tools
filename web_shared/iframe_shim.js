@@ -1,4 +1,4 @@
-/* EMS Tools — iframe shim (v2).
+/* Linguar Hub — iframe shim (v2).
  *
  * Sets up `window.pywebview.api` inside each tool's iframe as a
  * Proxy that auto-prefixes method names with the tool's namespace

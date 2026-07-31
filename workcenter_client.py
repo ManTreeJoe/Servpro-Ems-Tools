@@ -448,7 +448,7 @@ def _find_search_input(page):
     _dump_screenshot(page, "no_search_input")
     raise RuntimeError(
         "Could not locate the Workcenter search input. "
-        "A screenshot was saved to %APPDATA%\\EMS Automation\\"
+        "A screenshot was saved to %APPDATA%\\Linguar Hub\\"
         "workcenter_debug_no_search_input.png — share it so the "
         "selector list can be updated.")
 
@@ -1167,7 +1167,7 @@ def _cli(argv):
             f"persists at:\n  {_PROFILE_DIR}\n"
             "\n"
             "Add --debug for step-by-step progress + screenshots to\n"
-            "%APPDATA%\\EMS Automation\\workcenter_debug_*.png on misses.",
+            "%APPDATA%\\Linguar Hub\\workcenter_debug_*.png on misses.",
             file=sys.stderr)
         return 2
     cmd = argv[1].lower()

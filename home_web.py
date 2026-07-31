@@ -1,4 +1,4 @@
-"""EMS Tools — unified web shell.
+"""Linguar Hub — unified web shell.
 
 Single Pywebview window with a left sidebar of tools and a right
 pane that swaps content as the user navigates. Each tool's existing
@@ -44,7 +44,7 @@ def _ensure_root_index():
         '<!DOCTYPE html><html><head>'
         '<meta http-equiv="refresh" '
         'content="0; url=home_web_assets/index.html">'
-        '<title>EMS Tools</title>'
+        '<title>Linguar Hub</title>'
         '</head><body></body></html>\n')
     try:
         with open(ROOT_INDEX_HTML, "w", encoding="utf-8") as fh:
@@ -240,7 +240,7 @@ class HomeApi:
             import ctypes
             from ctypes import wintypes
             u = ctypes.windll.user32
-            hwnd = u.FindWindowW(None, "EMS Tools")
+            hwnd = u.FindWindowW(None, "Linguar Hub")
             if not hwnd:
                 return {"ok": False, "error": "window not found"}
             fg = u.GetForegroundWindow()
@@ -766,8 +766,8 @@ def main(argv=None):
     import paths as _paths
     api = HomeApi()
     win = webview.create_window(
-        title=("EMS Tools — TRIAL" if getattr(_paths, "IS_TRIAL", False)
-               else "EMS Tools"),
+        title=("Linguar Hub — TRIAL" if getattr(_paths, "IS_TRIAL", False)
+               else "Linguar Hub"),
         url=ROOT_INDEX_HTML,    # served as http://127.0.0.1:port/_ems_root_index.html
         js_api=api,
         width=1480, height=900,

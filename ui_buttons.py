@@ -1,4 +1,4 @@
-"""Shared button factories for the EMS Automation suite.
+"""Shared button factories for the Linguar Hub.
 
 Every tool with row-level actions (Audit, Initial Upload, Snapshot,
 Hygiene, APA Monitor, Daily Photos, SP Recent) renders buttons that

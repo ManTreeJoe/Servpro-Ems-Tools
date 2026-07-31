@@ -1,4 +1,4 @@
-/* EMS Tools — lightweight, privacy-safe usage tracker (client side).
+/* Linguar Hub — lightweight, privacy-safe usage tracker (client side).
  *
  * Drop-in: add <script src="../web_shared/usage_track.js"> to any panel
  * and it auto-records a 'view' on load plus a 'click' for every button

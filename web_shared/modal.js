@@ -1,4 +1,4 @@
-/* EMS Tools — shared modal/overlay builder.
+/* Linguar Hub — shared modal/overlay builder.
  *
  * Replaces the panel-local `createOverlay` (audit) and `mkModal` (IUQ)
  * factories. Same overlay-panel/overlay-head/overlay-body class

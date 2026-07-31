@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 PyInstaller spec for QUICK IMPORT — the standalone mini tool for general
-office users. A SEPARATE exe/bundle from EMS Tools so a simple user can have
+office users. A SEPARATE exe/bundle from Linguar Hub so a simple user can have
 just this, and it runs fully independently (own process, own _internal — the
 main app can be open while this rebuilds and vice-versa).
 
@@ -12,8 +12,8 @@ Output:
     <dest>\Quick Import\Quick Import.exe
 
 Entry point is quickimport_web.py, which loads its UI via file:// and reuses
-the full audit_web backend. Shares user data with EMS Tools
-(%APPDATA%\EMS Automation\) so pins/config are common.
+the full audit_web backend. Shares user data with Linguar Hub
+(%APPDATA%\Linguar Hub\) so pins/config are common.
 """
 
 import os

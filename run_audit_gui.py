@@ -6550,7 +6550,7 @@ class RunAuditApp(ToolPanel):
 
             # Notes button — opens Job Notes panel. Checks both legacy
             # persistence notes AND the new .md store under
-            # %APPDATA%\EMS Automation\notes\.
+            # %APPDATA%\Linguar Hub\notes\.
             try:
                 from job_notes_gui import (has_note as _jn_has_note,
                                             has_any_note_for_client

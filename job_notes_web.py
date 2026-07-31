@@ -338,7 +338,7 @@ class Api:
 def main(argv=None):
     api = Api()
     win = webview.create_window(
-        title="Job Notes — EMS Tools (web)",
+        title="Job Notes — Linguar Hub (web)",
         url=INDEX_HTML, js_api=api,
         width=1200, height=820, min_size=(720, 500))
     api.attach(win)

@@ -32,7 +32,7 @@ if errorlevel 1 (
     where py >nul 2>nul
     if errorlevel 1 (
         echo ERROR: Neither 'python' nor 'py' found on PATH.
-        echo Install Python or activate the EMS Tools venv.
+        echo Install Python or activate the Linguar Hub venv.
         pause
         exit /b 1
     )

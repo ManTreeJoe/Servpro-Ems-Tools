@@ -28,7 +28,7 @@ import webbrowser
 import config
 
 _SCOPE = "read,write,account"
-_APP_NAME = "EMS Tools"
+_APP_NAME = "Linguar Hub"
 _TIMEOUT_S = 240
 
 # FIXED port, not an ephemeral one. Trello validates `return_url` against
@@ -38,7 +38,7 @@ _TIMEOUT_S = 240
 _DEFAULT_PORT = 8976
 
 _PAGE_HEAD = """<!doctype html><meta charset="utf-8">
-<title>EMS Tools — Trello</title>
+<title>Linguar Hub — Trello</title>
 <style>
  body{font:15px/1.5 system-ui,Segoe UI,sans-serif;background:#12141a;color:#e6e8ee;
       display:flex;align-items:center;justify-content:center;height:100vh;margin:0}

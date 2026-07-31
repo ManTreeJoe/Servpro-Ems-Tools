@@ -1,4 +1,4 @@
-/* EMS Tools KPI — Pywebview spike frontend.
+/* Linguar Hub KPI — Pywebview spike frontend.
  *
  * Same patterns as pipeline_web's app.js: vanilla JS, single
  * state object, bridge calls via pywebview.api. The dashboard

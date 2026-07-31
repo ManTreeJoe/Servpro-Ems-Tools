@@ -1,14 +1,14 @@
-EMS Tools
+Linguar Hub
 =========
 SERVPRO IE Department admin automation suite.
 
 
 GETTING STARTED
 ---------------
-1. Keep this entire folder together. Don't move "EMS Tools.exe" out of it
+1. Keep this entire folder together. Don't move "Linguar Hub.exe" out of it
    — it needs the "_internal" folder next to it to run.
 
-2. Double-click "EMS Tools.exe".
+2. Double-click "Linguar Hub.exe".
 
 3. The first time you run it, a Settings dialog will pop up. The tool
    tries to auto-fill the right folder paths by looking for OneDrive
@@ -20,7 +20,7 @@ GETTING STARTED
 WHERE THINGS LIVE
 -----------------
 Settings, logs, and audit history live in:
-    %APPDATA%\EMS Automation\
+    %APPDATA%\Linguar Hub\
     (i.e. C:\Users\<you>\AppData\Roaming\EMS Automation)
 
 You can open this folder anytime via Settings → "Open data folder".
@@ -52,15 +52,15 @@ TROUBLESHOOTING
     than expected. Click Browse next to the field and pick the right one.
 
 "I want to start fresh"
-    Close EMS Tools, delete %APPDATA%\EMS Automation, then relaunch.
+    Close Linguar Hub, delete %APPDATA%\Linguar Hub, then relaunch.
     The wizard will pop again as if it's a fresh install.
 
 
 UNINSTALLING
 ------------
-1. Close EMS Tools.
+1. Close Linguar Hub.
 2. Delete this folder.
-3. Optionally delete %APPDATA%\EMS Automation to remove your settings
+3. Optionally delete %APPDATA%\Linguar Hub to remove your settings
    and history.
 
 There's no installer, no registry entries, no services — just files.

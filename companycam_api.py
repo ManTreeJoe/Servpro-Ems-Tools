@@ -33,7 +33,7 @@ def _token():
     if not tok:
         raise RuntimeError(
             "CompanyCam not configured. Set companycam_api_token in "
-            r"%APPDATA%\EMS Automation\config.json (generate an access "
+            r"%APPDATA%\Linguar Hub\config.json (generate an access "
             "token in the CompanyCam app → Integrations → Developer).")
     return tok
 

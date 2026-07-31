@@ -1,4 +1,4 @@
-/* EMS Tools — recently-opened jobs tracker.
+/* Linguar Hub — recently-opened jobs tracker.
  *
  * Stored in localStorage so it survives panel reopens + window
  * crashes. Capped at 10 entries. Each entry: {client, source, ts}

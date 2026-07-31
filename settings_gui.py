@@ -5,7 +5,7 @@ Used two ways:
   - First-run wizard, popped automatically on the first launch
   - Anytime via the gear icon in the launcher header
 
-Saves to %APPDATA%\\EMS Automation\\config.json so per-PC settings don't get
+Saves to %APPDATA%\\Linguar Hub\\config.json so per-PC settings don't get
 clobbered by a rebuild.
 """
 import os
@@ -93,7 +93,7 @@ FIELDS = [
      "Override automatic display-scaling detection. 'auto' uses the "
      "monitor's reported DPI. Bump higher if the app feels tiny on a "
      "4K laptop / small high-DPI screen, lower to fit more on screen. "
-     "Restart EMS Tools after changing.",
+     "Restart Linguar Hub after changing.",
      "choice", ["auto", "1.0", "1.25", "1.5", "1.75",
                 "2.0", "2.25", "2.5"]),
 ]
@@ -106,7 +106,7 @@ class SettingsDialog(tk.Toplevel):
         self.on_save   = on_save
         self.saved     = False
 
-        self.title("EMS Tools Settings")
+        self.title("Linguar Hub Settings")
         self.configure(bg=BG)
         # Hide the window until layout + centering are done. Without
         # this the user sees the dialog flash at Tk's default top-left
@@ -502,7 +502,7 @@ class SettingsDialog(tk.Toplevel):
         """Re-load the bundled default config into the form (does not save)."""
         if not messagebox.askyesno(
             "Reset to defaults",
-            "Reset every field to the values shipped with EMS Tools?\n\n"
+            "Reset every field to the values shipped with Linguar Hub?\n\n"
             "(You'll still need to click Save to commit.)", parent=self):
             return
         default = paths.resource("config.json")
@@ -551,7 +551,7 @@ class SettingsDialog(tk.Toplevel):
         if not api_key:
             messagebox.showerror(
                 "Trello key missing",
-                "No Trello API key is configured. The bundled EMS Tools "
+                "No Trello API key is configured. The bundled Linguar Hub "
                 "default should include one — reinstall or contact the "
                 "person who built your install.",
                 parent=self)
@@ -560,7 +560,7 @@ class SettingsDialog(tk.Toplevel):
         import webbrowser
         url = "https://trello.com/1/authorize?" + urllib.parse.urlencode({
             "key":           api_key,
-            "name":          "EMS Automation",
+            "name":          "Linguar Hub",
             "expiration":    "never",
             "response_type": "token",
             "scope":         "read,write",

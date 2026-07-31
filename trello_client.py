@@ -1,6 +1,6 @@
 """Trello read-only client.
 
-Auth via API key + token from %APPDATA%\\EMS Automation\\config.json:
+Auth via API key + token from %APPDATA%\\Linguar Hub\\config.json:
     trello_api_key, trello_token, trello_workspace_id, trello_boards_exclude
 
 Phase 1: list_boards (workspace boards minus excludes), find_cards_by_name
@@ -29,7 +29,7 @@ def _creds():
     if not key or not token:
         raise RuntimeError(
             "Trello not configured. Set trello_api_key and trello_token in "
-            r"%APPDATA%\EMS Automation\config.json")
+            r"%APPDATA%\Linguar Hub\config.json")
     return key, token
 
 

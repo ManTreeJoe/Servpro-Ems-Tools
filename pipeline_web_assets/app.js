@@ -1,4 +1,4 @@
-/* EMS Tools Pipeline — Pywebview frontend.
+/* Linguar Hub Pipeline — Pywebview frontend.
  *
  * Two views, one panel:
  *   🗂 Board  — a live Trello-style kanban of the WORK IN PROGRESS and
