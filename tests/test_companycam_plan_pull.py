@@ -275,3 +275,22 @@ def test_a_legacy_file_is_not_counted_as_an_orphan(monkeypatch):
     monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: {"34103410"})
     monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
     assert cc.verify_project("1", r"X:\job")["extra_files"] == 0
+
+
+def test_a_failed_download_is_counted_not_swallowed(monkeypatch, tmp_path):
+    """The folder is created BEFORE the download, so swallowing the error
+    made a failed pull look identical to a successful one: new folders, no
+    photos, no message. That is what "it says it pulled but nothing showed
+    up" looked like."""
+    photos = [{"id": "1111111111", "captured_at": DAY1, "creator_name": "ME",
+               "original_url": "https://x/1.jpg", "processing_status": "processed",
+               "tags": []}]
+    monkeypatch.setattr(cc, "new_photos", lambda pid, since_epoch=None: photos)
+    monkeypatch.setattr(cc, "_download",
+                        lambda url, dest: (_ for _ in ()).throw(
+                            OSError("connection reset")))
+    r = cc.pull_new_photos("1", str(tmp_path), since_epoch=None,
+                           advance_watermark=False)
+    assert r["downloaded"] == 0
+    assert r["failed"] == 1
+    assert "connection reset" in r["error"]

@@ -614,7 +614,17 @@
         finish(res);
         if (!res || !res.ok) { setStatus(ctx, "CompanyCam: " + ((res && res.error) || "?"), "warn"); return; }
         const p = res.pulled || 0;
-        setStatus(ctx, p ? `✓ Pulled ${p} missing photo${p === 1 ? "" : "s"}` : "Nothing pulled", p ? "ok" : "warn");
+        // res.error is set when a group partly or wholly failed. Ignoring
+        // it reported a clean "✓ Pulled 0" for a pull that had actually
+        // errored — folders created, no photos, no explanation.
+        if (res.error) {
+          setStatus(ctx, p ? `Pulled ${p}, but some failed — ${res.error}`
+                           : `Pull failed — ${res.error}`, "warn");
+        } else {
+          setStatus(ctx, p ? `✓ Pulled ${p} photo${p === 1 ? "" : "s"}`
+                           : "Nothing pulled — everything was already there",
+                    p ? "ok" : "");
+        }
         if (ctx.reauditAndRerender) ctx.reauditAndRerender(row.client);
       });
     });

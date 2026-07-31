@@ -2528,6 +2528,10 @@ class Api(JobSettingsApi):
                     advance_watermark=False) or {}
                 pulled += r.get("downloaded", 0)
                 skipped += r.get("skipped", 0)
+                if r.get("failed"):
+                    errors.append(f"{stage or 'untagged'}: "
+                                  f"{r['failed']} failed to download"
+                                  f"{' — ' + r['error'] if r.get('error') else ''}")
             except Exception as ex:
                 # One bad shoot must not lose the others already pulled.
                 errors.append(f"{stage or 'untagged'}: {ex}")

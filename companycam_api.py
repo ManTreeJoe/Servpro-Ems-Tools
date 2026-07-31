@@ -937,6 +937,7 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             pass          # labels are a nicety; never block the download
 
     downloaded, skipped, files, latest = 0, 0, [], since
+    failed, last_error = 0, ""
     rooms_used, stages_used, boxes_used, untagged = {}, {}, {}, 0
     for p in photos:
         fname = _photo_filename(p, tech_label(p, tech, force=force_tech))
@@ -971,7 +972,14 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             dest = os.path.join(photo_target, fname)
             try:
                 _download(p["original_url"], dest)
-            except Exception:
+            except Exception as ex:
+                # Counted, not just skipped. Swallowing this made a failed
+                # pull indistinguishable from a successful one: the folder
+                # was already created above, so the user saw new folders,
+                # no photos, and no message.
+                failed += 1
+                if not last_error:
+                    last_error = f"{type(ex).__name__}: {ex}"
                 continue          # transient — leave for the next run
             # Stamp file time to capture time so Explorer sorts by shoot date.
             try:
@@ -993,6 +1001,7 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         persistence.set_companycam_seen(pid, latest, job=job)
 
     return {"ok": True, "downloaded": downloaded, "skipped": skipped,
+            "failed": failed, "error": last_error,
             "files": files, "latest": latest,
             "rooms": rooms_used, "stages": stages_used,
             "boxes": boxes_used, "untagged": untagged}
