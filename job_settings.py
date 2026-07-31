@@ -299,6 +299,32 @@ def _card_id(rec, canon_key, child_name=""):
     return links[0]["link_value"] if links else ""
 
 
+def inherited_values(canon_key, child_rec):
+    """A child's effective values: its own where set, the client's otherwise.
+
+    Carrier, adjuster and deductible are nearly always shared across a
+    property's units — retyping them six times for Avana Springs would be
+    absurd and would drift. Date of loss and claim number usually differ,
+    so anything typed on the child WINS and is stored as an override.
+
+    A value equal to the parent's is not stored as an override, so
+    correcting the client later flows down to every unit that never
+    disagreed with it.
+    """
+    parent = stored_values(_record(canon_key) or {})
+    own = _meta_of(child_rec).get(_META_SETTINGS) or {}
+    out, inherited = {}, []
+    for fid in BY_ID:
+        v = (own.get(fid) or "").strip()
+        if v:
+            out[fid] = v
+        else:
+            out[fid] = (parent.get(fid) or "").strip()
+            if out[fid]:
+                inherited.append(fid)
+    return out, inherited, parent
+
+
 def load(canon_key, child_name=""):
     """Current values for a job (or child), merged with its Trello card.
 
@@ -308,6 +334,19 @@ def load(canon_key, child_name=""):
     rec = _record(canon_key, child_name)
     if rec is None:
         return {"ok": False, "error": "job not found"}
+
+    if child_name:
+        mine, inherited, _parent = inherited_values(canon_key, rec)
+        card_id = _card_id(rec, canon_key, child_name)
+        if not card_id:
+            # No card of its own — which is every child on live data. The
+            # client's card describes the client, not this unit, so merging
+            # it in here would overwrite the unit's own claim and DOL with
+            # the parent's on every open.
+            return {"ok": True, "canon_key": canon_key,
+                    "child_name": child_name, "card_id": "",
+                    "values": mine, "inherited": inherited,
+                    "conflicts": [], "synced": False, "error": ""}
 
     mine = stored_values(rec)
     card_id = _card_id(rec, canon_key, child_name)
@@ -348,10 +387,26 @@ def save(canon_key, values, child_name="", card_desc=""):
 
     values = {k: (v or "").strip() for k, v in (values or {}).items()
               if k in BY_ID}
+    meta = _meta_of(rec)
+
+    if child_name:
+        # Store only what DISAGREES with the client. A value equal to the
+        # parent's is inheritance, not an override — keeping it would
+        # freeze a stale copy, so correcting the client later would leave
+        # every unit still showing the old carrier.
+        effective, _inh, parent = inherited_values(canon_key, rec)
+        overrides = {fid: v for fid, v in values.items()
+                     if v and v != (parent.get(fid) or "")}
+        changed = [fid for fid, v in values.items()
+                   if v != (effective.get(fid) or "")]
+        meta[_META_SETTINGS] = overrides
+        _persist(canon_key, child_name, values, meta)
+        return {"ok": True, "changed": changed, "wrote_to_card": [],
+                "pushed": False, "pending_push": False, "error": "",
+                "overrides": sorted(overrides)}
+
     before = stored_values(rec)
     changed = [fid for fid, v in values.items() if v != before.get(fid, "")]
-
-    meta = _meta_of(rec)
     settings = {fid: values.get(fid, before.get(fid, "")) for fid in BY_ID}
     meta[_META_SETTINGS] = settings
 

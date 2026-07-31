@@ -308,3 +308,77 @@ def test_baseline_is_not_advanced_when_the_push_fails(monkeypatch):
     assert "trello_base" not in (db.job["metadata"] or {})
     # …and the edit is still saved locally rather than lost to a failed call.
     assert db.job["metadata"]["settings"]["deductible"] == "1500"
+
+
+# ── child inheritance ─────────────────────────────────────────────────
+# Carrier, adjuster and deductible are shared across a property's units;
+# claim number and date of loss usually are not. So a child shows the
+# client's values until it disagrees, and only the disagreement is stored.
+
+class _FakeDBWithChild(_FakeDB):
+    def __init__(self, parent_settings, child_settings=None):
+        super().__init__()
+        self.job["metadata"] = {"settings": parent_settings}
+        self.child = {"name": "Unit 561-I", "parent_canon": "k",
+                      "trello_card": "",
+                      "metadata": {"settings": child_settings or {}}}
+        self.saved = None
+    def children_of(self, _k): return [self.child]
+    def set_child(self, _p, _n, **kw):
+        self.saved = kw.get("metadata")
+        self.child["metadata"] = self.saved
+        return self.child
+
+
+def _wire_child(monkeypatch, parent, child=None):
+    import sys
+    db = _FakeDBWithChild(parent, child)
+    monkeypatch.setitem(sys.modules, "ems_db", db)
+    return db
+
+
+def test_child_inherits_the_clients_values(monkeypatch):
+    _wire_child(monkeypatch, {"carrier": "Mercury", "adjuster_name": "Pat"})
+    r = js.load("k", "Unit 561-I")
+    assert r["values"]["carrier"] == "Mercury"
+    assert "carrier" in r["inherited"]
+
+
+def test_a_value_typed_on_the_child_wins(monkeypatch):
+    _wire_child(monkeypatch, {"carrier": "Mercury", "claim_number": "P-1"},
+                {"claim_number": "UNIT-9"})
+    r = js.load("k", "Unit 561-I")
+    assert r["values"]["claim_number"] == "UNIT-9"      # its own
+    assert r["values"]["carrier"] == "Mercury"          # still inherited
+    assert "claim_number" not in r["inherited"]
+
+
+def test_only_the_disagreement_is_stored(monkeypatch):
+    """Storing an inherited value would freeze a stale copy — fixing the
+    client's carrier later would leave every unit on the old one."""
+    db = _wire_child(monkeypatch, {"carrier": "Mercury", "claim_number": ""})
+    vals = js.from_card("")
+    vals.update({"carrier": "Mercury", "claim_number": "UNIT-9"})
+    js.save("k", vals, child_name="Unit 561-I")
+    stored = (db.saved or {}).get("settings") or {}
+    assert stored == {"claim_number": "UNIT-9"}         # carrier NOT stored
+
+
+def test_correcting_the_client_flows_down_to_units(monkeypatch):
+    db = _wire_child(monkeypatch, {"carrier": "Mercury"})
+    vals = js.from_card("")
+    vals["carrier"] = "Mercury"                  # user re-saves, no change
+    js.save("k", vals, child_name="Unit 561-I")
+    db.job["metadata"]["settings"]["carrier"] = "Farmers"   # client corrected
+    r = js.load("k", "Unit 561-I")
+    assert r["values"]["carrier"] == "Farmers"
+
+
+def test_child_without_its_own_card_is_not_merged_with_the_clients(monkeypatch):
+    """The client's card describes the CLIENT. Merging it into a unit would
+    overwrite that unit's own claim number and DOL on every open."""
+    _wire_child(monkeypatch, {"carrier": "Mercury"}, {"claim_number": "U-9"})
+    r = js.load("k", "Unit 561-I")
+    assert r["synced"] is False
+    assert r["card_id"] == ""
+    assert r["values"]["claim_number"] == "U-9"

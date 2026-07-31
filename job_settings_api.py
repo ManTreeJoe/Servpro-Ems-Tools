@@ -10,6 +10,32 @@ twice is the setup where one gets a fix and the other doesn't.
 """
 
 
+def _resolve(client):
+    """Display name -> canon_key, THROUGH the alias layer.
+
+    `canon_key()` alone is not a lookup. An audit row carries the run-doc
+    spelling — "Marcus Giles" — while the job is filed surname-first as
+    "Giles, Marcus - Farmers" (canon `giles, marcus`). Keying straight off
+    canon_key produced `marcus giles`, matched nothing, and every job whose
+    run-doc name isn't already canonical reported "job not found".
+
+    `find_job_by_name` is the resolver the rest of the app uses: exact key,
+    then aliases, then the fuzzy fallbacks. Only if it finds nothing at all
+    do we fall back to the raw key, so a genuinely new job still gets one.
+    """
+    import ems_db
+    name = (client or "").strip()
+    if not name:
+        return ""
+    try:
+        hit = ems_db.find_job_by_name(name)
+        if hit and hit.get("canon_key"):
+            return hit["canon_key"]
+    except Exception:
+        pass
+    return ems_db.canon_key(name)
+
+
 class JobSettingsApi:
     """Mix into a panel's `Api` class. pywebview exposes inherited methods
     exactly like defined ones."""
@@ -26,9 +52,8 @@ class JobSettingsApi:
         """Values for a job (or one of its units/claims), merged per field
         with the Trello card. Pulls the card once — about half a second."""
         try:
-            import ems_db
             import job_settings
-            key = ems_db.canon_key(client or "")
+            key = _resolve(client)
             if not key:
                 return {"ok": False, "error": "no job name"}
             return job_settings.load(key, child_name or "")
@@ -45,9 +70,8 @@ class JobSettingsApi:
         moved while the user was typing.
         """
         try:
-            import ems_db
             import job_settings
-            key = ems_db.canon_key(client or "")
+            key = _resolve(client)
             if not key:
                 return {"ok": False, "error": "no job name"}
             res = job_settings.save(key, values or {}, child_name or "",

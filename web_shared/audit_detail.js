@@ -1216,6 +1216,7 @@
     }
     const fields = (sch && sch.fields) || [];
     const vals = data.values || {};
+    const inherited = new Set(data.inherited || []);
 
     const group = (list) => {
       const bySec = {};
@@ -1226,15 +1227,23 @@
                       letter-spacing:.04em;color:var(--text-muted);
                       margin-bottom:6px;">${_escapeHtml(sec)}</div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;">
-            ${fs.map((f) => `
+            ${fs.map((f) => {
+              // An inherited value comes from the client, not this unit.
+              // Showing it plain would read as "this unit says Mercury",
+              // and the user couldn't tell what typing here would override.
+              const inh = inherited.has(f.id);
+              return `
               <label style="display:block;font-size:11px;color:var(--text-muted);">
-                ${_escapeHtml(f.label)}
+                ${_escapeHtml(f.label)}${inh
+                  ? ` <span style="font-size:9.5px;opacity:.75;">· from client</span>`
+                  : ""}
                 <input class="ji-f" data-fid="${_escapeAttr(f.id)}" type="text"
                        value="${_escapeAttr(vals[f.id] || "")}"
                        style="width:100%;margin-top:3px;background:var(--surface-2);
-                              color:var(--text);border:1px solid var(--border);
+                              color:${inh ? "var(--text-muted)" : "var(--text)"};
+                              border:1px solid ${inh ? "transparent" : "var(--border)"};
                               border-radius:6px;padding:6px 8px;font-size:12.5px;" />
-              </label>`).join("")}
+              </label>`; }).join("")}
           </div>
         </div>`).join("");
     };
@@ -1270,8 +1279,12 @@
     mkModal({
       title: `⚙ ${_firstLast(row.display_name || row.client)}`
              + (child ? ` / ${child}` : ""),
-      sub: data.card_id ? "Saving updates the Trello card too"
-                        : "Stored in Linguar Hub",
+      sub: child
+        ? (inherited.size
+            ? `${inherited.size} field${inherited.size === 1 ? "" : "s"} shown from the client — type to override just this one`
+            : "Stored in Linguar Hub")
+        : (data.card_id ? "Saving updates the Trello card too"
+                        : "Stored in Linguar Hub"),
       width: 720,
       body: `
         ${conflicts}${note}
