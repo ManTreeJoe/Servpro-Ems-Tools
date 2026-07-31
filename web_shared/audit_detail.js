@@ -211,6 +211,8 @@
                   title="Browse + download the Trello card's photos/files"><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello Attachments</button>
         </div>
         <div class="action-row">
+          <button class="action-btn primary" data-action="job-info"
+                  title="Carrier, claim number, adjuster, date of loss — edit here and it syncs with the Trello card">⚙ Job info</button>
           <button class="action-btn" data-action="copy-client">📋 Copy name</button>
           <button class="action-btn" data-action="copy-path"
                   title="Copy this job's OD folder path to the clipboard"
@@ -716,6 +718,8 @@
       const p = res.pulled || 0;
       setStatus(ctx, p ? `✓ Pulled ${p} CompanyCam photo${p === 1 ? "" : "s"}${res.stage ? " → " + res.stage : ""}` : "📷 No new photos", p ? "ok" : "");
       if (ctx.reauditAndRerender) ctx.reauditAndRerender(row.client);
+    } else if (action === "job-info") {
+      await openJobInfoModal(row, ctx);
     } else if (action === "copy-client") {
       // Always copy as "First Last" when it's a Last,First personal name.
       const nm = _firstLast(row.client);
@@ -1188,6 +1192,143 @@
   }
 
   // ── Shared modal chrome (pure DOM — same look in both tools) ───────
+  // ── ⚙ Job info ───────────────────────────────────────────────────────
+  // One editable record per job. Values are merged per FIELD against the
+  // Trello card, so a colleague's edit to a different field is kept rather
+  // than overwritten. Only fields that actually differ from the card get
+  // written back — which is what stops an unchanged value having its
+  // hand-typed markdown flattened.
+
+  async function openJobInfoModal(row, ctx) {
+    const child = row.subjob_name || row.child_name || "";
+    setStatus(ctx, "⚙ Loading job info…", "");
+    let sch = null, data = null;
+    try {
+      sch  = await pywebview.api.job_settings_schema();
+      data = await pywebview.api.job_settings_load(row.client, child);
+    } catch (ex) {
+      setStatus(ctx, "Job info failed: " + ex, "error");
+      return;
+    }
+    if (!data || !data.ok) {
+      setStatus(ctx, "Job info: " + ((data && data.error) || "?"), "warn");
+      return;
+    }
+    const fields = (sch && sch.fields) || [];
+    const vals = data.values || {};
+
+    const group = (list) => {
+      const bySec = {};
+      list.forEach((f) => { (bySec[f.section] = bySec[f.section] || []).push(f); });
+      return Object.entries(bySec).map(([sec, fs]) => `
+        <div style="margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;
+                      letter-spacing:.04em;color:var(--text-muted);
+                      margin-bottom:6px;">${_escapeHtml(sec)}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;">
+            ${fs.map((f) => `
+              <label style="display:block;font-size:11px;color:var(--text-muted);">
+                ${_escapeHtml(f.label)}
+                <input class="ji-f" data-fid="${_escapeAttr(f.id)}" type="text"
+                       value="${_escapeAttr(vals[f.id] || "")}"
+                       style="width:100%;margin-top:3px;background:var(--surface-2);
+                              color:var(--text);border:1px solid var(--border);
+                              border-radius:6px;padding:6px 8px;font-size:12.5px;" />
+              </label>`).join("")}
+          </div>
+        </div>`).join("");
+    };
+
+    // A same-field clash is the only thing that needs a human. Shown at the
+    // top because it's the one thing you must look at before saving.
+    const conflicts = (data.conflicts || []).length ? `
+      <div style="margin-bottom:14px;padding:10px 12px;border-radius:8px;
+                  border-left:3px solid var(--amber);background:var(--surface-2);">
+        <div style="font-size:12px;font-weight:600;margin-bottom:6px;">
+          ⚠ Changed here AND on the card since the last sync</div>
+        ${data.conflicts.map((c) => `
+          <div style="font-size:11.5px;margin-bottom:5px;">
+            <b>${_escapeHtml(c.label)}</b> —
+            yours <code>${_escapeHtml(c.mine || "(blank)")}</code>,
+            card <code>${_escapeHtml(c.theirs || "(blank)")}</code>
+            <button class="btn ji-take" data-fid="${_escapeAttr(c.id)}"
+                    data-val="${_escapeAttr(c.theirs)}"
+                    style="margin-left:6px;">Take the card's</button>
+          </div>`).join("")}
+      </div>` : "";
+
+    const note = !data.card_id
+      ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">
+           No Trello card linked — this is stored in Linguar Hub only.</div>`
+      : (data.error
+        ? `<div style="font-size:11px;color:var(--amber);margin-bottom:12px;">
+             ${_escapeHtml(data.error)}</div>`
+        : "");
+
+    const core = fields.filter((f) => f.core);
+    const more = fields.filter((f) => !f.core);
+    mkModal({
+      title: `⚙ ${_firstLast(row.display_name || row.client)}`
+             + (child ? ` / ${child}` : ""),
+      sub: data.card_id ? "Saving updates the Trello card too"
+                        : "Stored in Linguar Hub",
+      width: 720,
+      body: `
+        ${conflicts}${note}
+        ${group(core)}
+        <details style="margin-top:4px;">
+          <summary style="cursor:pointer;font-size:11.5px;color:var(--text-muted);">
+            More fields (${more.length})</summary>
+          <div style="margin-top:10px;">${group(more)}</div>
+        </details>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+          <span id="ji-msg" style="margin-right:auto;font-size:11.5px;
+                                   color:var(--text-muted);align-self:center;"></span>
+          <button class="btn modal-close">Cancel</button>
+          <button class="btn btn-primary" id="ji-save">Save</button>
+        </div>`,
+    });
+
+    document.querySelectorAll(".ji-take").forEach((b) => {
+      b.addEventListener("click", () => {
+        const inp = document.querySelector(`.ji-f[data-fid="${b.dataset.fid}"]`);
+        if (inp) { inp.value = b.dataset.val || ""; inp.focus(); }
+        b.closest("div").style.opacity = ".5";
+      });
+    });
+
+    document.getElementById("ji-save").addEventListener("click", async () => {
+      const out = {};
+      document.querySelectorAll(".ji-f").forEach((i) => {
+        out[i.dataset.fid] = i.value;
+      });
+      const msg = document.getElementById("ji-msg");
+      msg.textContent = "Saving…";
+      let res = null;
+      try {
+        // card_desc is the description this edit was based on. Passing it
+        // back avoids a second fetch and keeps the diff honest.
+        res = await pywebview.api.job_settings_save(
+          row.client, out, child, data.card_desc || "");
+      } catch (ex) {
+        msg.textContent = "Failed: " + ex;
+        return;
+      }
+      if (!res || !res.ok) {
+        msg.textContent = (res && res.error) || "failed";
+        return;
+      }
+      document.getElementById("ad-modal")?.remove();
+      const n = (res.wrote_to_card || []).length;
+      setStatus(ctx,
+        res.pending_push
+          ? `Saved here — ${n} field${n === 1 ? "" : "s"} still to reach Trello`
+          : (n ? `✓ Saved · ${n} field${n === 1 ? "" : "s"} updated on the card`
+               : "✓ Saved"),
+        res.pending_push ? "warn" : "ok");
+    });
+  }
+
   function mkModal({ title, sub, body, width }) {
     document.getElementById("ad-modal")?.remove();
     const w = document.createElement("div");

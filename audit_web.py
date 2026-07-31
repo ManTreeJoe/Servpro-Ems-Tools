@@ -674,7 +674,10 @@ def _group_audit_candidates(raw):
     return cands
 
 
-class Api:
+from job_settings_api import JobSettingsApi
+
+
+class Api(JobSettingsApi):
     """Methods exposed to JS via `pywebview.api`."""
 
     def __init__(self):

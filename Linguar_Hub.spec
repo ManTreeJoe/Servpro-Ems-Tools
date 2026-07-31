@@ -99,7 +99,7 @@ hiddenimports = web_modules + [
     'ems_db_sqlite', 'ems_db_supabase', 'ems_db_common', 'ems_db_offline',
     # Reached only through function-local imports.
     'cache_bust', 'job_folders', 'trello_auth', 'supabase_client',
-    'job_search',
+    'job_search', 'job_settings', 'job_settings_api',
 ]
 hiddenimports += collect_submodules('openpyxl')
 # pywebview Windows backend + its http-server deps. pywebview 6.x ships a
