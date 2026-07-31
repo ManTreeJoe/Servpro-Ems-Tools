@@ -175,6 +175,19 @@ def _s_merge_conflict(db, tag):
             "oc_survives": db.get_job(oc) is not None}
 
 
+@scenario("all_aliases returns every pair in one call")
+def _s_all_aliases(db, tag):
+    """Type-ahead ranks against the whole alias table. Per-job fetches would
+    be the N+1 that cost 36s on the hosted backend, so both backends must
+    serve this in one shot — and agree on what comes back."""
+    key = db.upsert_job(display_name=f"{tag} Romeo")
+    db.add_alias(key, f"{tag} Romeo Alt")
+    db.add_alias(key, f"{tag} R. Romeo")
+    mine = sorted(r["alias"] for r in db.all_aliases()
+                  if (r.get("canon_key") or "") == key)
+    return {"count": len(mine), "aliases": mine}
+
+
 @scenario("iter_jobs is newest-seen first")
 def _s_iter_order(db, tag):
     """Every other scenario compares row SETS, so an ordering regression is

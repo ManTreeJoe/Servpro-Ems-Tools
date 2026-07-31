@@ -1267,6 +1267,19 @@ def get_aliases(canon_key_value: str) -> list[str]:
     return [r["alias"] for r in rows]
 
 
+def all_aliases() -> list[dict]:
+    """Every (canon_key, alias) pair in ONE query.
+
+    Type-ahead ranks against the whole alias table. Calling get_aliases()
+    per job would be 412 round trips — near-free here, but the identical
+    code path on the hosted backend is the N+1 that used to cost 36s.
+    """
+    with _LOCK, _connect() as c:
+        rows = c.execute(
+            "SELECT canon_key, alias FROM job_aliases").fetchall()
+    return [{"canon_key": r["canon_key"], "alias": r["alias"]} for r in rows]
+
+
 # ── Export / Import ─────────────────────────────────────────────────────
 
 def export_db(path: str, *, include_folders: bool = True) -> dict:

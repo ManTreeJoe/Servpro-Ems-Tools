@@ -1529,6 +1529,23 @@ class Api:
                                         x[1].lower()))
         return candidates[0][1] if candidates else typed
 
+    def suggest_jobs(self, query: str, limit: int = 8) -> dict:
+        """Type-ahead candidates for the search box. DB only.
+
+        The search box used to fire a full `audit_one_job` — year-folder
+        walk, SharePoint scan, Trello lookups — as soon as three characters
+        were typed, against ONE guessed canonical name. This answers "which
+        job did you mean" from the job index instead, so the expensive scan
+        runs once, after a pick.
+        """
+        try:
+            import job_search
+            rows = job_search.suggest(query, limit=int(limit or 8))
+            return {"ok": True, "rows": rows, "query": query}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}",
+                    "rows": []}
+
     def audit_one_job(self, client_name: str, folder_path: str = "",
                       skip_canon: bool = False) -> dict:
         """Audit a single named job (one-off, not from the run-doc).

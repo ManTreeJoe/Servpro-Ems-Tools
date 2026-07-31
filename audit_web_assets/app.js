@@ -89,6 +89,19 @@ window.addEventListener("pywebviewready", async () => {
   $("#sec-monitor").addEventListener("change", () => refreshDayLabel());
   // Right-click context menu (close on outside click)
   document.addEventListener("click", () => $("#ctx-menu")?.remove());
+  // Dismiss the type-ahead when focus moves elsewhere. Scoped to clicks
+  // OUTSIDE the wrapper so picking a row isn't cancelled before it fires.
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest?.("#search-wrap")) hideSuggestions();
+  });
+  // ↓/↑ to walk the list, Enter to take the top hit, Esc to dismiss.
+  $("#search-box").addEventListener("keydown", (e) => {
+    const rows = Array.from(document.querySelectorAll(".suggest-row"));
+    if (e.key === "Escape") { hideSuggestions(); return; }
+    if (!rows.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); rows[0].focus(); }
+    else if (e.key === "Enter") { e.preventDefault(); rows[0].click(); }
+  });
   state.dayOffset = 0;
   state.mode = "search";
   refreshDayLabel();
@@ -2923,33 +2936,111 @@ function onSearchInput(ev) {
   searchTimer = setTimeout(async () => {
     renderList();
     renderDetail();
-    // Nothing in the loaded list matches → fall back to a one-off audit
-    // of the typed name (resolves the folder + audits it), so the search
-    // still surfaces the job. Debounced + guarded so it fires once per
-    // distinct term, not on every keystroke.
-    // Auto-audit the typed job. On the Search tab we ALWAYS pull it (even if
-    // partial matches exist) so the exact job surfaces at the top; elsewhere
-    // only when nothing local matches.
+    // Typing no longer triggers an audit. It used to run a FULL one-off
+    // audit (folder walk + SharePoint scan) at 3 characters against a
+    // single guessed name — slow, and it gave one answer instead of a
+    // choice. Now we ask the job index for candidates and let you pick;
+    // the scan happens on the pick.
     const q = state.search.trim();
-    if (q.length >= 3 && !state.oneoffRunning
-        && q.toLowerCase() !== (state.oneoffTried || "").toLowerCase()
-        && (state.mode === "search" || filterRows().length === 0)) {
-      await runOneoffFromSearch(q);
+    if (q.length >= 3) {
+      await showSuggestions(q);
+    } else {
+      hideSuggestions();
     }
-  }, 300);
+  }, 180);
+}
+
+// ── Type-ahead ────────────────────────────────────────────────────────
+// Pure DB read via suggest_jobs — no disk, no network, so this can run on
+// keystrokes. Picking a row is what triggers the expensive audit.
+
+function hideSuggestions() {
+  state.suggestSeq = (state.suggestSeq || 0) + 1;   // cancel in-flight
+  $("#suggest-box")?.remove();
+}
+
+async function showSuggestions(q) {
+  const seq = (state.suggestSeq || 0) + 1;
+  state.suggestSeq = seq;
+  let res = null;
+  try {
+    res = await pywebview.api.suggest_jobs(q, 8);
+  } catch (ex) {
+    return;
+  }
+  // A slower earlier request must not overwrite a newer one's results.
+  if (seq !== state.suggestSeq) return;
+
+  const rows = (res && res.ok && res.rows) || [];
+  renderSuggestions(q, rows);
+}
+
+function renderSuggestions(q, rows) {
+  $("#suggest-box")?.remove();
+  const box = $("#search-box");
+  if (!box) return;
+
+  const wrap = $("#search-wrap") || box.parentNode;
+  const el = document.createElement("div");
+  el.id = "suggest-box";
+  el.className = "suggest-box";
+  if (!rows.length) {
+    el.innerHTML = `<div class="suggest-empty">No job matches “${escapeHtml(q)}”`
+      + `<button class="btn suggest-force" id="sg-force">🔍 Search folders anyway</button></div>`;
+  } else {
+    el.innerHTML = rows.map((r, i) => {
+      const why = r.why && r.why !== "starts with" && r.why !== "matches"
+        ? `<span class="suggest-why">${escapeHtml(r.why)}</span>` : "";
+      const dept = r.department
+        ? `<span class="suggest-dept">${escapeHtml(r.department)}</span>` : "";
+      return `<div class="suggest-row" data-i="${i}" tabindex="0">`
+        + `<span class="suggest-name">${escapeHtml(r.display_name)}</span>`
+        + why + dept + `</div>`;
+    }).join("");
+  }
+  wrap.appendChild(el);
+
+  el.querySelectorAll(".suggest-row").forEach((row) => {
+    row.addEventListener("click", () => pickSuggestion(rows[+row.dataset.i]));
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { pickSuggestion(rows[+row.dataset.i]); return; }
+      if (e.key === "Escape") { hideSuggestions(); $("#search-box")?.focus(); return; }
+      const all = Array.from(document.querySelectorAll(".suggest-row"));
+      const i = all.indexOf(row);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        (all[i + 1] || all[0]).focus();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (i === 0) $("#search-box")?.focus(); else all[i - 1].focus();
+      }
+    });
+  });
+  $("#sg-force")?.addEventListener("click", () => {
+    hideSuggestions();
+    runOneoffFromSearch(q);
+  });
+}
+
+// The pick is where the real work starts: we already know the canonical
+// name, so skip_canon avoids re-fuzzing a name the user just confirmed.
+async function pickSuggestion(r) {
+  if (!r) return;
+  hideSuggestions();
+  await runOneoffFromSearch(r.display_name, true);
 }
 
 // Run a one-off audit for a typed search term and surface the result in
 // the list. Shared by the auto-fallback and the empty-state button.
-async function runOneoffFromSearch(term) {
+async function runOneoffFromSearch(term, skipCanon) {
   const t = (term || "").trim();
   if (!t || state.oneoffRunning) return;
   state.oneoffRunning = true;
   state.oneoffTried = t;
   renderList();  // repaint the empty-state button as "Searching…"
-  setStatus(`🔍 Not in the list — running a one-off audit for “${t}”…`, "info");
+  setStatus(`🔍 Auditing “${t}” — scanning folders…`, "info");
   try {
-    const res = await pywebview.api.audit_one_job(t);
+    const res = await pywebview.api.audit_one_job(t, "", !!skipCanon);
     if (res?.ok && (res.rows || []).length) {
       // ACCUMULATE rather than replace: searching a second job used to
       // wipe the first, so you couldn't hold two jobs side by side on the

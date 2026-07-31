@@ -242,6 +242,13 @@ def get_aliases(canon_key_value: str) -> list:
                   select="alias", order="added_at.asc")]
 
 
+def all_aliases() -> list:
+    """Every (canon_key, alias) pair in ONE request — see the SQLite twin.
+    `_rows` pages, so this is complete even past the 1000-row cap."""
+    return [{"canon_key": r.get("canon_key"), "alias": r.get("alias")}
+            for r in _rows("job_aliases", select="canon_key,alias")]
+
+
 # ── links ───────────────────────────────────────────────────────────────
 
 def set_link(canon_key_value: str, link_type: str, link_value: str, *,

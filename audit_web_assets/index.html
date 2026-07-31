@@ -37,8 +37,12 @@
     <span class="brand-tag">web spike · two-pane</span>
   </div>
   <div class="topbar-actions">
-    <input id="search-box" class="search" type="search"
-           placeholder="🔎 Search client / form / tech…" autocomplete="off" />
+    <!-- Positioned wrapper so the type-ahead list can anchor under the
+         input instead of the whole toolbar row. -->
+    <span id="search-wrap" style="position:relative;display:inline-block;">
+      <input id="search-box" class="search" type="search"
+             placeholder="🔎 Search client / form / tech…" autocomplete="off" />
+    </span>
     <button id="clear-oneoff-btn" class="btn hidden"
             title="Clear the jobs you've pulled up by searching. Searched jobs stay on this tab so you can work several at once.">✕ Clear results</button>
     <button id="run-btn"      class="btn btn-primary" disabled title="Run the daily audit for today's run-doc (uses cached results where possible)">↻ Run Audit</button>

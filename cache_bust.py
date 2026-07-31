@@ -31,6 +31,9 @@ _INVALIDATORS = (
     ("audit_logic",     "invalidate_year_index_cache"),
     # CompanyCam photo tags — cheap to refetch, and the token may have changed
     ("companycam_api",  "invalidate_tag_cache"),
+    # type-ahead index (job names + aliases) built from the job index, so a
+    # backend switch or a department change must rebuild it
+    ("job_search",      "invalidate_cache"),
 )
 
 
