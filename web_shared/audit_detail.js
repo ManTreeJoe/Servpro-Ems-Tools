@@ -442,18 +442,10 @@
   // before anything downloads. Reached when the watermark says "nothing
   // new" but the folder is actually short — a cleared folder, a failed
   // download, or photos removed by hand.
-  function ccMissingModal(row, ctx, v) {
+  function ccMissingModal(row, ctx, v, stage) {
     return new Promise((resolve) => {
       if (!window.openModal) { resolve(null); return; }
       const who = _firstLast(row.display_name || tc(ctx, row.client));
-      const miss = v.missing_photos || [];
-      // Group by destination so a 40-photo gap reads as a few lines.
-      const byDest = new Map();
-      miss.forEach((m) => {
-        const k = m.dest || "(top level)";
-        if (!byDest.has(k)) byDest.set(k, []);
-        byDest.get(k).push(m);
-      });
       // One row per SHOOT — day + what was done + how many — each with a
       // tick box. A flat "40 missing" can't be acted on: it is usually
       // several visits, and you may want yesterday's demo but not a
@@ -486,9 +478,11 @@
              deleted there after being pulled. Nothing here removes them.
            </div>` : "";
       const overlay = window.openModal({
-        title: "📷 CompanyCam vs the job folder — " + who,
-        sub: `${v.present} of ${v.total} already here · ${v.missing} missing`
-             + (v.matched_name ? ` · project “${v.matched_name}”` : ""),
+        title: "📷 Pull from CompanyCam — " + who,
+        sub: `${v.present} of ${v.total} already in the folder · `
+             + `${v.missing} to pull, across ${(v.groups || []).length} `
+             + `shoot${(v.groups || []).length === 1 ? "" : "s"}`
+             + (stage ? ` · untagged → ${stage}` : ""),
         body: `
           <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
             <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;
@@ -547,7 +541,8 @@
           // Only the ticked shoots. Pulling everything here would ignore
           // the choice the dialog exists to offer.
           res = await pywebview.api.companycam_pull_groups(
-            row.client, chosen(), tech || "", row.trello_card_id || "");
+            row.client, chosen(), tech || "", row.trello_card_id || "",
+            stage || "");
         } catch (e) {
           setStatus(ctx, "CompanyCam pull failed: " + e, "error");
           finish(null); return;
@@ -717,45 +712,43 @@
         catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
         if (!pr || !pr.ok || !pr.matched) { setStatus(ctx, "Pinned, but couldn't read that project — try the pull again", "warn"); return; }
       }
-      // "No new photos" only means nothing is newer than the last pull —
-      // it cannot tell you whether the folder still HAS them. Diff the
-      // folder against CompanyCam before reporting nothing to do.
-      if (!pr.count) {
-        setStatus(ctx, "📷 Nothing new — checking the folder…", "");
-        let v;
-        // plan_pull, not verify: it returns the same counts PLUS the
-        // per-shoot grouping the dialog needs to offer a choice.
-        try { v = await pywebview.api.companycam_plan_pull(
-                row.client, "", cardId); }
-        catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
-        if (!v || !v.ok) { setStatus(ctx, "CompanyCam: " + ((v && v.error) || "?"), "warn"); return; }
-        if (!v.missing) {
-          setStatus(ctx, `📷 All ${v.total} photo${v.total === 1 ? "" : "s"} already in the folder`
-            + (v.extra_files ? ` · ${v.extra_files} not in CompanyCam any more` : ""), "ok");
-          return;
-        }
-        await ccMissingModal(row, ctx, v);
+      // The per-shoot preview is the MAIN path, not a fallback.
+      //
+      // It used to run only when the watermark said "nothing new", so a
+      // job with 181 new photos skipped it and went straight to the
+      // single-stage picker — forcing ONE stage for every shoot, which is
+      // wrong the moment a job has an initial AND a demo AND a monitor.
+      // The watermark also can't tell you whether the folder still HAS
+      // what it already saw, so planning against the folder is the more
+      // honest question in both cases.
+      const who = _firstLast(row.display_name || tc(ctx, row.client));
+      setStatus(ctx, "📷 Working out what's missing…", "");
+      let v;
+      try { v = await pywebview.api.companycam_plan_pull(row.client, "", cardId); }
+      catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
+      if (!v || !v.ok) { setStatus(ctx, "CompanyCam: " + ((v && v.error) || "?"), "warn"); return; }
+      if (!v.missing) {
+        setStatus(ctx, `📷 All ${v.total} photo${v.total === 1 ? "" : "s"} already in the folder`
+          + (v.extra_files ? ` · ${v.extra_files} not in CompanyCam any more` : ""), "ok");
         return;
       }
-      const who = _firstLast(row.display_name || tc(ctx, row.client));
-      // Pick the destination stage folder.
-      if (typeof window.pickPicsStage !== "function") { setStatus(ctx, "Stage picker didn't load — reopen the tool", "warn"); return; }
-      const dest = await window.pickPicsStage({ client: who, count: pr.count, allowAuto: false });
-      if (dest === null) return;
-      // Confirm the tech — pre-filled with the CompanyCam uploader(s).
-      let tech = "";
-      if (typeof window.pickImportTech === "function") {
-        tech = await window.pickImportTech({ client: who, techs: pr.uploaders || [] });
-        if (tech === null) return;
+      // Tagged shoots route themselves. Only ask for a stage when some
+      // photos have NO stage tag and would otherwise land loose — and ask
+      // once, for those, rather than overriding every tagged shoot.
+      let stage = "";
+      const untagged = (v.groups || []).filter((g) => !g.box || g.stage === "(no stage tag)");
+      const untaggedN = untagged.reduce((n, g) => n + g.count, 0);
+      if (untaggedN && typeof window.pickPicsStage === "function") {
+        const dest = await window.pickPicsStage(
+          { client: who, count: untaggedN, allowAuto: true });
+        if (dest === null) return;
+        if (dest && dest !== "AUTO") {
+          stage = dest;
+          try { v = await pywebview.api.companycam_plan_pull(row.client, "", cardId, stage); }
+          catch (e) { /* keep the un-staged plan rather than dropping out */ }
+        }
       }
-      setStatus(ctx, `📷 Pulling ${pr.count} photo${pr.count === 1 ? "" : "s"}…`, "");
-      let res;
-      try { res = await pywebview.api.companycam_pull_one(row.client, dest === "AUTO" ? "" : dest, tech || "", row.trello_card_id || ""); }
-      catch (e) { setStatus(ctx, "CompanyCam pull failed: " + e, "error"); return; }
-      if (!res || !res.ok) { setStatus(ctx, "CompanyCam: " + ((res && res.error) || "?"), "warn"); return; }
-      const p = res.pulled || 0;
-      setStatus(ctx, p ? `✓ Pulled ${p} CompanyCam photo${p === 1 ? "" : "s"}${res.stage ? " → " + res.stage : ""}` : "📷 No new photos", p ? "ok" : "");
-      if (ctx.reauditAndRerender) ctx.reauditAndRerender(row.client);
+      await ccMissingModal(row, ctx, v, stage);
     } else if (action === "job-info") {
       await openJobInfoModal(row, ctx);
     } else if (action === "copy-client") {
