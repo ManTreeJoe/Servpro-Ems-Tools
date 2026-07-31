@@ -38,6 +38,11 @@ import apa_logic as apa
 ASSETS_DIR = os.path.join(_HERE, "apa_web_assets")
 INDEX_HTML = os.path.join(ASSETS_DIR, "index.html")
 
+# Opening line of the EOD email, above the date and the sections. Standing
+# text, not a computed status — nothing in the APA doc says whether the day
+# actually went green, so deriving it would be a guess dressed up as a fact.
+EOD_HEADLINE = "We are in the Green:"
+
 
 # How many calendar days back from today to surface in the date
 # picker. APA docs only exist for working days, so a 21-day window
@@ -1392,8 +1397,13 @@ class Api:
             # APA doc is the date in m/d/yy form. Mirror that at the
             # top of the email body so the recipient sees the date
             # right alongside the sections.
-            lines = [d.strftime("%-m/%-d/%y") if os.name != "nt"
-                     else d.strftime("%m/%d/%y").lstrip("0").replace("/0", "/")]
+            # Standing headline above everything. The date still mirrors
+            # the .docx first paragraph; it just isn't the first line of
+            # the EMAIL any more, so the recipient reads the status before
+            # the detail.
+            lines = [EOD_HEADLINE, ""]
+            lines.append(d.strftime("%-m/%-d/%y") if os.name != "nt"
+                         else d.strftime("%m/%d/%y").lstrip("0").replace("/0", "/"))
             lines.append("")  # blank line between date and first section
             # Iterate the section order from the payload when given —
             # the user's customized order — falling back to apa.SECTION_ORDER
