@@ -82,6 +82,50 @@
                   background: var(--surface); border: 1px solid var(--border);
                   border-radius: 8px;">
     <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">
+      ☁ Shared job database
+    </div>
+    <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
+      The local database is yours alone. The shared one puts every folder
+      pin, Trello link and alias in one place so the whole office sees the
+      same job, from any machine. You still only see the franchises you
+      belong to — the database enforces that, not the app.
+    </div>
+
+    <div id="sb-status" class="muted"
+         style="font-size:12px;margin-bottom:12px;padding:8px 10px;
+                border-left:3px solid var(--border);background:var(--surface-2);
+                border-radius:0 6px 6px 0;">checking…</div>
+
+    <div id="sb-signin" style="display:none;margin-bottom:12px;">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <input id="sb-email" type="email" placeholder="you@servpro10100.com"
+               autocomplete="email"
+               style="flex:1 1 240px;min-width:200px;" />
+        <button class="btn" id="sb-send-code">✉ Email me a code</button>
+      </div>
+      <div id="sb-code-row"
+           style="display:none;margin-top:8px;gap:8px;flex-wrap:wrap;
+                  align-items:center;">
+        <input id="sb-code" type="text" placeholder="6-digit code (or paste the link)"
+               autocomplete="one-time-code"
+               style="flex:1 1 240px;min-width:200px;" />
+        <button class="btn" id="sb-verify">✓ Sign in</button>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      <button class="btn" id="sb-use-cloud">☁ Use the shared database</button>
+      <button class="btn" id="sb-use-local">💾 Use the local database</button>
+      <button class="btn" id="sb-sign-out">🚪 Sign out</button>
+    </div>
+    <div id="sb-msg" class="muted"
+         style="margin-top:8px;font-size:12px;"></div>
+  </section>
+
+  <section style="margin-bottom: 22px; padding: 14px 18px;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px;">
+    <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">
       🔗 Job identity
     </div>
     <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
@@ -316,6 +360,27 @@ async function showOriginHelp(origin) {
       el.style.color = "var(--red)";
     }
   });
+  // Shared job database (Supabase).
+  await refreshSupabase();
+  document.getElementById("sb-send-code").addEventListener("click", sbSendCode);
+  document.getElementById("sb-email").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); sbSendCode(); }
+  });
+  document.getElementById("sb-verify").addEventListener("click", sbVerify);
+  document.getElementById("sb-code").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); sbVerify(); }
+  });
+  document.getElementById("sb-use-cloud").addEventListener("click",
+    () => sbSetBackend("supabase"));
+  document.getElementById("sb-use-local").addEventListener("click",
+    () => sbSetBackend("sqlite"));
+  document.getElementById("sb-sign-out").addEventListener("click", async () => {
+    sbMsg("Signing out…");
+    const r = await pywebview.api.supabase_sign_out();
+    sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
+    await refreshSupabase();
+  });
+
   // Sidebar visibility grid — one checkbox per panel.
   await renderPanelVisibility();
   // Departments (multi-account) editor.
@@ -332,6 +397,79 @@ async function showOriginHelp(origin) {
   document.getElementById("dept-pick").addEventListener("change", renderDeptFields);
   document.getElementById("dept-save").addEventListener("click", saveDepartment);
 });
+
+// ── Shared job database (Supabase) ─────────────────────────────────
+//
+// Sign-in is an emailed one-time code, so nothing password-shaped is ever
+// typed into Settings. The only key entered here is the anon/publishable
+// one; the service_role key bypasses row-level security and must never be
+// pasted in, stored in config, or shipped.
+
+function sbMsg(text, isError) {
+  const el = document.getElementById("sb-msg");
+  el.textContent = text || "";
+  el.style.color = isError ? "var(--red)" : "";
+}
+
+async function refreshSupabase() {
+  const box = document.getElementById("sb-status");
+  const signin = document.getElementById("sb-signin");
+  let s = null;
+  try { s = await pywebview.api.supabase_status(); } catch (_) {}
+  if (!s || !s.ok) {
+    box.textContent = "Couldn't check the connection.";
+    box.style.borderLeftColor = "var(--red)";
+    return;
+  }
+  const cloud = s.backend === "supabase";
+  if (!s.configured) {
+    box.innerHTML = "Not set up. Fill in <b>Supabase project URL</b> and "
+      + "<b>anon / publishable key</b> above, save, then come back.";
+    box.style.borderLeftColor = "var(--amber)";
+    signin.style.display = "none";
+  } else if (!s.signed_in) {
+    box.textContent = "Set up, but you're not signed in yet.";
+    box.style.borderLeftColor = "var(--amber)";
+    signin.style.display = "";
+  } else {
+    const who = (s.user && s.user.email) || "you";
+    box.innerHTML = `Signed in as <b>${esc(who)}</b> — currently reading the `
+      + (cloud ? "<b>shared</b>" : "<b>local</b>") + " database."
+      + (s.reachable ? "" : " <span style='color:var(--red)'>Can't reach it "
+         + "right now.</span>");
+    box.style.borderLeftColor = cloud ? "var(--green)" : "var(--border)";
+    signin.style.display = "none";
+  }
+}
+
+async function sbSendCode() {
+  const email = document.getElementById("sb-email").value;
+  sbMsg("Sending…");
+  const r = await pywebview.api.supabase_send_code(email);
+  sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
+  if (r?.ok) {
+    const row = document.getElementById("sb-code-row");
+    row.style.display = "flex";
+    document.getElementById("sb-code").focus();
+  }
+}
+
+async function sbVerify() {
+  const email = document.getElementById("sb-email").value;
+  const code = document.getElementById("sb-code").value;
+  sbMsg("Checking…");
+  const r = await pywebview.api.supabase_verify_code(email, code);
+  sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
+  if (r?.ok) document.getElementById("sb-code").value = "";
+  await refreshSupabase();
+}
+
+async function sbSetBackend(name) {
+  sbMsg("Switching…");
+  const r = await pywebview.api.set_db_backend(name);
+  sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
+  await refreshSupabase();
+}
 
 // ── Departments (multi-account) ────────────────────────────────────
 let DEPT = null;   // last dept_config() result

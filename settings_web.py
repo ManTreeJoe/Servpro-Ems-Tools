@@ -487,6 +487,130 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    # ── Cloud backend (Supabase) ────────────────────────────────────────
+    #
+    # Sign-in is email one-time-code, not password: there is no password to
+    # leak into a config file or a build, and the session refresh token
+    # lives in DATA_DIR alongside the other per-user state.
+    #
+    # Only the anon/publishable key is ever entered here. The service_role
+    # key bypasses RLS entirely — it must never be pasted into Settings,
+    # stored in config, or shipped in the .exe.
+
+    def supabase_status(self) -> dict:
+        """Configured / reachable / signed-in, for the Settings panel."""
+        try:
+            import supabase_client
+            import ems_db
+            h = supabase_client.health()
+            h["backend"] = ems_db.backend_name()
+            h["ok"] = True
+            return h
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def supabase_send_code(self, email) -> dict:
+        """Mail a 6-digit login code."""
+        email = (email or "").strip()
+        if not email:
+            return {"ok": False, "error": "Enter your email address first."}
+        try:
+            import supabase_client
+            supabase_client.send_login_code(email)
+            return {"ok": True,
+                    "message": f"Code sent to {email}. It expires in an hour."}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def supabase_verify_code(self, email, code) -> dict:
+        """Exchange the emailed code for a session.
+
+        Accepts a pasted magic-LINK url too: Supabase's default template
+        sends `{{ .ConfirmationURL }}`, which resolves to localhost and
+        breaks, so people paste the link instead of a code. Rather than
+        make that an error, detect it and verify the token out of the URL.
+        """
+        email = (email or "").strip()
+        code = (code or "").strip()
+        if not code:
+            return {"ok": False, "error": "Enter the code from the email."}
+        try:
+            import supabase_client
+            if "://" in code or "token" in code.lower():
+                supabase_client.verify_magic_link(code, email=email)
+            else:
+                supabase_client.verify_login_code(email, code)
+            u = supabase_client.current_user() or {}
+            return {"ok": True,
+                    "message": f"Signed in as {u.get('email') or email}"}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def supabase_sign_out(self) -> dict:
+        """Drop the local session and fall back to SQLite.
+
+        Leaving the backend pointed at Supabase with no session would make
+        every job lookup fail rather than quietly work offline.
+        """
+        try:
+            import supabase_client
+            import ems_db
+            supabase_client.sign_out()
+            if ems_db.backend_name() == "supabase":
+                self.set_db_backend("sqlite")
+            return {"ok": True, "message": "Signed out — using the local "
+                                           "database."}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def set_db_backend(self, name) -> dict:
+        """Switch the job index between the local file and the cloud."""
+        name = (name or "sqlite").strip()
+        if name not in ("sqlite", "supabase"):
+            return {"ok": False, "error": f"unknown backend {name!r}"}
+        try:
+            import supabase_client
+            if name == "supabase":
+                h = supabase_client.health()
+                if not h["configured"]:
+                    return {"ok": False, "error": "Set the Supabase URL and "
+                                                  "anon key first."}
+                if not h["signed_in"]:
+                    return {"ok": False, "error": "Sign in to Supabase first."}
+                if not h["reachable"]:
+                    return {"ok": False,
+                            "error": f"Can't reach Supabase: {h['error']}"}
+            import ems_db
+            # Base, not the department overlay: the backend is a property
+            # of the install, not of the franchise being viewed.
+            cfg = dict(config.load_base() or {})
+            # The key is `ems_db_backend` — ems_db._resolve reads that name.
+            # Writing `db_backend` saved a key nothing reads, so the switch
+            # survived only until the next invalidate_backend() re-derived
+            # the backend from config and silently fell back to sqlite.
+            config.save({**cfg, "ems_db_backend": name})
+            ems_db.use_backend(name)
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+        # Dropping the scoped caches is a best-effort side effect, and it
+        # runs AFTER the switch has already been persisted. Letting it throw
+        # inside the block above reported failure for a switch that had in
+        # fact happened — the worst of both, since the user retries or
+        # assumes nothing changed while the backend really did move.
+        try:
+            _invalidate(f"db backend -> {name}")
+        except Exception as ex:
+            try:
+                import ems_log
+                ems_log.warn("settings", f"cache invalidate failed: {ex}")
+            except Exception:
+                pass
+        return {"ok": True, "backend": ems_db.backend_name(),
+                "message": ("Using the shared cloud database."
+                            if name == "supabase"
+                            else "Using the local database.")}
+
     def first_run_status(self) -> dict:
         """Return a checklist for the first-run wizard: which critical
         fields are configured and which still need attention.
