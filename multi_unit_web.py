@@ -5,7 +5,7 @@ import webview
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path: sys.path.insert(0, _HERE)
-import multi_unit_gui as mu
+import multi_unit_logic as mu
 
 ASSETS_DIR = os.path.join(_HERE, "multi_unit_web_assets")
 INDEX_HTML = os.path.join(ASSETS_DIR, "index.html")

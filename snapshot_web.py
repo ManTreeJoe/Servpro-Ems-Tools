@@ -1505,7 +1505,7 @@ class Api(JobSettingsApi, CompanyCamApi):
         # 2) Build units from the umbrella folder's Unit subfolders (disk).
         if umbrella_path:
             try:
-                import multi_unit_gui as _mu
+                import multi_unit_logic as _mu
                 disk_units = _mu.list_unit_subfolders(umbrella_path) or []
             except Exception:
                 disk_units = []

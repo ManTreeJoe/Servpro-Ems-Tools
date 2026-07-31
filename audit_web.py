@@ -3431,7 +3431,7 @@ class Api(JobSettingsApi, CompanyCamApi):
         # unit folders share the same number — keeps "Mendiola Unit
         # 104" out of the "Straub Unit 104" folder.
         try:
-            from multi_unit_gui import (parse_unit_token,
+            from multi_unit_logic import (parse_unit_token,
                                           list_unit_subfolders)
             sp_basename = os.path.basename(sp_path.rstrip(os.sep))
             sp_unit = parse_unit_token(sp_basename)
@@ -5294,7 +5294,7 @@ class Api(JobSettingsApi, CompanyCamApi):
         if not client:
             return False
         try:
-            import multi_unit_gui as _mu
+            import multi_unit_logic as _mu
             import persistence as _ps
             import audit_logic as _al
             import config as _cfg

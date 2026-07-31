@@ -106,7 +106,7 @@ class Api:
                 # so you can import straight into a specific unit (e.g. Lilia
                 # Robles › Unit 1016).
                 try:
-                    import multi_unit_gui as _mu
+                    import multi_unit_logic as _mu
                     for u in (_mu.list_unit_subfolders(fpath) or []):
                         uk = _canon(name + " " + (u.get("name") or ""))
                         if uk in seen:
