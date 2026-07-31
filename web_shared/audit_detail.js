@@ -454,17 +454,31 @@
         if (!byDest.has(k)) byDest.set(k, []);
         byDest.get(k).push(m);
       });
-      const rows = [...byDest.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([dest, items]) => {
-          const who2 = [...new Set(items.map((i) => i.who).filter(Boolean))].join(", ");
-          const when = items[0].when || "";
-          return `<tr>
-            <td style="padding:4px 10px 4px 0;white-space:nowrap;"><b>${items.length}</b></td>
-            <td style="padding:4px 10px 4px 0;">${esc(ctx, dest)}</td>
-            <td style="padding:4px 10px 4px 0;color:var(--text-muted);white-space:nowrap;">${esc(ctx, who2)}</td>
-            <td style="padding:4px 0;color:var(--text-muted);white-space:nowrap;">${esc(ctx, when)}</td>
-          </tr>`;
-        }).join("");
+      // One row per SHOOT — day + what was done + how many — each with a
+      // tick box. A flat "40 missing" can't be acted on: it is usually
+      // several visits, and you may want yesterday's demo but not a
+      // re-shoot of the initial. `groups` comes from plan_pull, which
+      // routes photos through the SAME code the download uses, so the
+      // "goes to" column is what will actually happen.
+      const groups = v.groups || [];
+      const rows = groups.map((g, i) => {
+        const rooms = (g.rooms || []).slice(0, 3)
+          .map(([r, n]) => `${esc(ctx, r)} ${n}`).join(" · ");
+        return `<tr>
+          <td style="padding:6px 8px 6px 0;vertical-align:top;">
+            <input type="checkbox" class="ccm-g" data-i="${i}" checked /></td>
+          <td style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top;">
+            <b>${esc(ctx, g.date || "—")}</b></td>
+          <td style="padding:6px 10px 6px 0;vertical-align:top;">
+            <b>${esc(ctx, g.stage)}</b>
+            ${g.tech ? `<span style="color:var(--text-muted);"> · ${esc(ctx, g.tech)}</span>` : ""}
+            ${rooms ? `<div style="color:var(--text-muted);font-size:11px;margin-top:2px;">${rooms}</div>` : ""}</td>
+          <td style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top;">
+            <b>${g.count}</b> photo${g.count === 1 ? "" : "s"}</td>
+          <td style="padding:6px 0;color:var(--text-muted);font-size:11px;vertical-align:top;">
+            ${esc(ctx, g.target || "(top level)")}</td>
+        </tr>`;
+      }).join("");
       const extraNote = v.extra_files
         ? `<div class="muted" style="margin-top:10px;font-size:11.5px;">
              ${v.extra_files} file${v.extra_files === 1 ? "" : "s"} in the folder
@@ -479,8 +493,8 @@
           <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
             <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;
                               text-transform:uppercase;letter-spacing:.04em;">
-              <th style="padding-bottom:6px;">#</th><th>Goes to</th>
-              <th>Taken by</th><th>First</th>
+              <th style="padding-bottom:6px;"><input type="checkbox" id="ccm-all" checked /></th>
+              <th>Day</th><th>What we did</th><th>Photos</th><th>Goes to</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
@@ -498,12 +512,31 @@
         resolve(val);
       };
       overlay.querySelector(".modal-close")?.addEventListener("click", () => finish(null));
+
+      const boxes = () => [...overlay.querySelectorAll(".ccm-g")];
+      const chosen = () => boxes().filter((b) => b.checked)
+        .flatMap((b) => (groups[+b.dataset.i] || {}).photo_ids || []);
+      const refreshCount = () => {
+        const n = chosen().length;
+        const btn = overlay.querySelector("#ccm-pull");
+        if (!btn) return;
+        btn.disabled = n === 0;
+        btn.textContent = n ? `⬇ Pull ${n} photo${n === 1 ? "" : "s"}`
+                            : "⬇ Nothing selected";
+      };
+      overlay.querySelector("#ccm-all")?.addEventListener("change", (e) => {
+        boxes().forEach((b) => { b.checked = e.target.checked; });
+        refreshCount();
+      });
+      boxes().forEach((b) => b.addEventListener("change", refreshCount));
+      refreshCount();
+
       overlay.querySelector("#ccm-pull")?.addEventListener("click", async (ev) => {
         const btn = ev.currentTarget;
         btn.disabled = true;
         btn.textContent = "⬇ Pulling…";
         // Tech pre-filled from whoever actually took the missing shots.
-        const uploaders = [...new Set(miss.map((m) => m.who).filter(Boolean))];
+        const uploaders = [...new Set(groups.map((g) => g.tech).filter(Boolean))];
         let tech = "";
         if (typeof window.pickImportTech === "function") {
           tech = await window.pickImportTech({ client: who, techs: uploaders });
@@ -511,8 +544,10 @@
         }
         let res;
         try {
-          res = await pywebview.api.companycam_pull_missing(
-            row.client, tech || "", row.trello_card_id || "");
+          // Only the ticked shoots. Pulling everything here would ignore
+          // the choice the dialog exists to offer.
+          res = await pywebview.api.companycam_pull_groups(
+            row.client, chosen(), tech || "", row.trello_card_id || "");
         } catch (e) {
           setStatus(ctx, "CompanyCam pull failed: " + e, "error");
           finish(null); return;
@@ -688,7 +723,10 @@
       if (!pr.count) {
         setStatus(ctx, "📷 Nothing new — checking the folder…", "");
         let v;
-        try { v = await pywebview.api.companycam_verify(row.client, cardId); }
+        // plan_pull, not verify: it returns the same counts PLUS the
+        // per-shoot grouping the dialog needs to offer a choice.
+        try { v = await pywebview.api.companycam_plan_pull(
+                row.client, "", cardId); }
         catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
         if (!v || !v.ok) { setStatus(ctx, "CompanyCam: " + ((v && v.error) || "?"), "warn"); return; }
         if (!v.missing) {

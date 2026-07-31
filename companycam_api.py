@@ -659,6 +659,82 @@ def _id_tokens_on_disk(dest_dir):
     return tokens
 
 
+def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
+                organize_by_tags=True):
+    """Where ONE photo lands, as (relative parts, room, stage, box).
+
+    Extracted from the download loop so the pull PREVIEW and the pull
+    itself cannot disagree about the destination — a preview that shows a
+    different folder than the download uses is worse than no preview.
+
+    Layout is `<stage>\\<tech date>\\<room>\\<qualifier>`. Stage is the
+    workflow phase from the photo's own tag; Equipment is a qualifier, not
+    a stage, because it is gear photographed IN a room.
+    """
+    room = stage = qualifier = ""
+    if organize_by_tags:
+        room, stage, qualifier = classify_tags(p.get("tags"))
+        room = _safe_folder(room)
+        stage = _safe_folder(stage)
+        qualifier = _safe_folder(qualifier)
+    stage_dir = stage or subfolder
+    box = tech_date_box(p, tech) if tech_date_folder else ""
+    parts = [x for x in (stage_dir, box, room, qualifier) if x]
+    return {"parts": parts, "room": room, "stage": stage_dir,
+            "box": box, "qualifier": qualifier}
+
+
+def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
+              tech_date_folder=True, organize_by_tags=True):
+    """What a pull WOULD bring in, grouped by day and by what was done.
+
+    Answers the question you actually have in front of a job: which
+    shoots am I missing, what were they, and do I want them? A flat
+    "142 photos missing" can't be acted on — 142 photos is usually four
+    or five distinct visits, and you may want yesterday's demo but not a
+    re-shoot of the initial.
+
+    One row per (stage, tech+date), with the destination it would use and
+    a room breakdown. Rows carry their photo ids so the caller can pull a
+    subset.
+    """
+    v = verify_project(project_id, dest_dir)
+    if not v.get("ok"):
+        return v
+
+    groups = {}
+    for p in v.get("missing_photos") or []:
+        r = route_photo(p, subfolder=subfolder, tech=tech,
+                        tech_date_folder=tech_date_folder,
+                        organize_by_tags=organize_by_tags)
+        parts, room, stage, box = r["parts"], r["room"], r["stage"], r["box"]
+        key = (stage, box)
+        g = groups.setdefault(key, {
+            "stage": stage or "(no stage tag)",
+            "box": box,
+            "date": date_label(p),
+            "tech": tech_label(p, tech),
+            "target": os.path.join(*parts) if parts else "",
+            "count": 0, "rooms": {}, "photo_ids": [],
+        })
+        g["count"] += 1
+        g["photo_ids"].append(str(p.get("id") or ""))
+        r = room or "(no room tag)"
+        g["rooms"][r] = g["rooms"].get(r, 0) + 1
+
+    rows = sorted(groups.values(),
+                  # Newest shoot first: the thing you just did is the
+                  # thing you are most likely pulling.
+                  key=lambda g: (g["date"] or "", g["stage"]), reverse=True)
+    for g in rows:
+        g["rooms"] = sorted(g["rooms"].items(), key=lambda kv: -kv[1])
+    return {"ok": True, "total": v["total"], "present": v["present"],
+            "missing": v["missing"], "groups": rows,
+            # Carried through so callers can keep showing the "deleted in
+            # CompanyCam after being pulled" note.
+            "extra_files": v.get("extra_files", 0)}
+
+
 def verify_project(project_id, dest_dir):
     """Compare CompanyCam against what's actually in the job folder.
 
@@ -705,7 +781,8 @@ def pull_missing_photos(project_id, dest_dir, **kw):
 
 def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                     subfolder="", advance_watermark=True, tech="",
-                    organize_by_tags=True, tech_date_folder=True):
+                    organize_by_tags=True, tech_date_folder=True,
+                    only_ids=None):
     """Download NEW project photos into `dest_dir` and advance the per-
     project high-water mark.
 
@@ -747,6 +824,15 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         return {"ok": False, "error": str(ex), "downloaded": 0,
                 "skipped": 0, "files": [], "latest": None}
 
+    if only_ids is not None:
+        # Pulling a chosen subset (see plan_pull): the user picked which
+        # shoots to bring in. The watermark must NOT advance past photos
+        # they deliberately skipped, or those become invisible to the next
+        # "anything new?" check — so callers passing this also pass
+        # advance_watermark=False.
+        want = {str(i) for i in only_ids}
+        photos = [p for p in photos if str(p.get("id") or "") in want]
+
     target = dest_dir if not subfolder else os.path.join(dest_dir, subfolder)
     os.makedirs(target, exist_ok=True)
     # Already-downloaded photos, keyed by their ID TOKEN rather than the
@@ -777,40 +863,23 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         # Room tag → subfolder under the stage, matching the zip import's
         # layout. No room tag means the photo stays at the stage level
         # rather than landing in an "Unsorted" bucket nobody looks in.
-        room, tag_stage, qualifier = "", "", ""
-        if organize_by_tags:
-            room, tag_stage, qualifier = classify_tags(p.get("tags"))
-            room = _safe_folder(room)
-            tag_stage = _safe_folder(tag_stage)
-            qualifier = _safe_folder(qualifier)
+        # <stage>\<tech date>\<room>\<qualifier>\ — built by route_photo,
+        # which plan_pull also calls, so the preview and the download can
+        # never disagree about where a photo lands.
+        r = route_photo(p, subfolder=subfolder, tech=tech,
+                        tech_date_folder=tech_date_folder,
+                        organize_by_tags=organize_by_tags)
+        room, stage_dir, box = r["room"], r["stage"], r["box"]
         if room:
             rooms_used[room] = rooms_used.get(room, 0) + 1
         else:
             untagged += 1
-        # <stage>\<tech date>\<room>\<qualifier>\
-        #
-        # Stage is the workflow phase (Initial, Demo, Monitor, Post…) from
-        # the photo's own tag, falling back to the caller's choice when it
-        # has none. The tech/date box matches what the zip import writes,
-        # except it is derived PER PHOTO — CompanyCam knows who took each
-        # one, so a day with two techs separates correctly instead of
-        # being labelled with whichever name the operator picked.
-        # Equipment is NOT a stage: it is gear photographed IN a room, so
-        # it nests under that room rather than pulling the shot out.
-        stage_dir = tag_stage or subfolder
-        photo_target = dest_dir
         if stage_dir:
-            photo_target = os.path.join(photo_target, stage_dir)
             stages_used[stage_dir] = stages_used.get(stage_dir, 0) + 1
-        if tech_date_folder:
-            box = tech_date_box(p, tech)
-            if box:
-                photo_target = os.path.join(photo_target, box)
-                boxes_used[box] = boxes_used.get(box, 0) + 1
-        if room:
-            photo_target = os.path.join(photo_target, room)
-        if qualifier:
-            photo_target = os.path.join(photo_target, qualifier)
+        if box:
+            boxes_used[box] = boxes_used.get(box, 0) + 1
+        photo_target = os.path.join(dest_dir, *r["parts"]) if r["parts"] \
+            else dest_dir
         tok = photo_id_token(p).lower()
         if fname.lower() in existing or (tok and tok in existing_tokens):
             skipped += 1

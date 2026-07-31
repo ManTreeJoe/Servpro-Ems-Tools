@@ -2414,6 +2414,79 @@ class Api(JobSettingsApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    def companycam_plan_pull(self, client: str, tech: str = "",
+                             card_id: str = "",
+                             dest_subfolder: str = "") -> dict:
+        """What a pull would bring in, grouped by shoot — day, what was
+        done, how many, and where it lands.
+
+        "142 photos missing" can't be acted on: 142 photos is usually four
+        or five separate visits, and you may want yesterday's demo but not
+        a re-shoot of the initial. One row per (stage, tech + date), so the
+        choice is per shoot.
+        """
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        pid, _m = self._cc_resolve(client, card_id)
+        if not pid:
+            return {"ok": False,
+                    "error": f"No CompanyCam project matched '{client}'"}
+        pics = self._cc_pics_dir(client)
+        if not pics:
+            return {"ok": False,
+                    "error": "No job folder — pin/find the folder first"}
+        stage = (dest_subfolder or "").strip()
+        if stage.upper() == "AUTO":
+            stage = ""
+        try:
+            r = cc.plan_pull(pid, pics, subfolder=stage, tech=(tech or ""))
+            if r.get("ok"):
+                r["pics"] = pics
+            return r
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def companycam_pull_groups(self, client: str, photo_ids: list,
+                               tech: str = "", card_id: str = "",
+                               dest_subfolder: str = "") -> dict:
+        """Pull ONLY the shoots ticked in the preview."""
+        if not client:
+            return {"ok": False, "error": "no client"}
+        ids = [str(i) for i in (photo_ids or []) if str(i).strip()]
+        if not ids:
+            return {"ok": False, "error": "nothing selected"}
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        pid, _m = self._cc_resolve(client, card_id)
+        if not pid:
+            return {"ok": False,
+                    "error": f"No CompanyCam project matched '{client}'"}
+        pics = self._cc_pics_dir(client)
+        if not pics:
+            return {"ok": False,
+                    "error": "No job folder — pin/find the folder first"}
+        stage = (dest_subfolder or "").strip()
+        if stage.upper() == "AUTO":
+            stage = ""
+        try:
+            r = cc.pull_new_photos(
+                pid, pics, since_epoch=None, subfolder=stage,
+                tech=(tech or ""), only_ids=ids,
+                # The watermark must NOT advance past shoots deliberately
+                # skipped, or they go invisible to the next "anything new?"
+                # check and become silently unpullable.
+                advance_watermark=False) or {}
+            return {"ok": True, "pulled": r.get("downloaded", 0),
+                    "skipped": r.get("skipped", 0), "pics": pics}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def companycam_pull_one(self, client: str, dest_subfolder: str = "",
                             tech: str = "", card_id: str = "") -> dict:
         """Pull NEW CompanyCam photos for ONE job into its PICS folder (into
