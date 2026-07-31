@@ -447,3 +447,33 @@ def test_remove_link_normalizes_a_trello_url():
     ems_db.remove_link(key, ems_db.LINK_TRELLO,
                        "https://trello.com/c/AbCd1234/some-slug")
     assert ems_db.get_link(key, ems_db.LINK_TRELLO) is None
+
+
+def test_find_dead_folder_links(tmp_path):
+    """Links accumulate when a folder is renamed outside the app. They make
+    a job look like it owns two folders, which is what the duplicate-folder
+    report keys on — so stale links generate false alarms."""
+    real = tmp_path / "Real Job"
+    real.mkdir()
+    ems_db.upsert_job(display_name="Dead Link Job")
+    key = "dead link job"
+    ems_db.set_link(key, ems_db.LINK_FOLDER, str(real))
+    ems_db.set_link(key, ems_db.LINK_FOLDER, str(tmp_path / "Renamed Away"))
+
+    dead = ems_db.find_dead_folder_links()
+    assert [d["path"] for d in dead] == [
+        os.path.normcase(os.path.normpath(str(tmp_path / "Renamed Away")))]
+
+
+def test_prune_dead_folder_links_keeps_the_live_one(tmp_path):
+    real = tmp_path / "Real Job"
+    real.mkdir()
+    ems_db.upsert_job(display_name="Prune Job")
+    key = "prune job"
+    ems_db.set_link(key, ems_db.LINK_FOLDER, str(real))
+    ems_db.set_link(key, ems_db.LINK_FOLDER, str(tmp_path / "Gone"))
+
+    assert ems_db.prune_dead_folder_links()["removed"] == 1
+    left = [l["link_value"] for l in ems_db.get_links(key, ems_db.LINK_FOLDER)]
+    assert left == [os.path.normcase(os.path.normpath(str(real)))]
+    assert ems_db.find_dead_folder_links() == []

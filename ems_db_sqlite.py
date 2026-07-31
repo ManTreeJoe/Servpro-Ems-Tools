@@ -665,6 +665,39 @@ def backfill_departments(*, overwrite: bool = False) -> dict:
             "unknown": unknown, "conflicts": conflicts}
 
 
+def find_dead_folder_links() -> list[dict]:
+    """Folder links whose path no longer exists on disk.
+
+    They accumulate whenever a folder is renamed or merged outside the app
+    — the old link just sits there. Harmless on their own, but they make a
+    job look like it owns two folders, which is what the duplicate-folder
+    report keys on, so stale links generate false alarms.
+
+    Read-only. Returns [{canon_key, display_name, path}].
+    """
+    out = []
+    for job in iter_jobs():
+        for l in get_links(job["canon_key"], LINK_FOLDER):
+            p = l["link_value"]
+            if p and not os.path.isdir(p):
+                out.append({"canon_key": job["canon_key"],
+                            "display_name": job.get("display_name") or "",
+                            "path": p})
+    return out
+
+
+def prune_dead_folder_links() -> dict:
+    """Drop every folder link whose path is gone.
+
+    Only run this with the share REACHABLE — an unreachable X: makes every
+    path look dead and would wipe the lot.
+    """
+    dead = find_dead_folder_links()
+    for d in dead:
+        remove_link(d["canon_key"], LINK_FOLDER, d["path"])
+    return {"removed": len(dead), "links": dead}
+
+
 def find_department_conflicts() -> list[dict]:
     """Jobs whose folder links span more than one franchise, or whose
     stored department contradicts its folders. Empty = clean."""

@@ -57,23 +57,32 @@ def _scan(base="", year=None):
     return found, notes
 
 
-def _suspect_pins():
-    """Jobs whose folder links point at SIBLING folders rather than a
-    parent/child pair — misspellings and mis-pins. Reported, never
-    migrated."""
+def _suspect_pins(base="", year=None):
+    """Jobs linked to two or more TOP-LEVEL folders — i.e. the same job
+    filed twice, usually under a misspelling.
+
+    Only folders sitting directly in the year folder count. An earlier
+    version flagged any job whose linked folders weren't nested in EACH
+    OTHER, which wrongly reported every property-management client: PCM's
+    three links are siblings of one another but all children of PCM, so
+    the nesting was real and simply invisible to that test.
+    """
+    yd = job_folders.year_dir(base=base, year=year)
+    if not yd:
+        return []
+    yd_norm = os.path.normcase(os.path.normpath(yd))
     out = []
     for job in ems_db.iter_jobs():
         paths = [l["link_value"] for l in
                  ems_db.get_links(job["canon_key"], ems_db.LINK_FOLDER)]
-        if len(paths) < 2:
+        top = [p for p in paths
+               if os.path.normcase(os.path.normpath(os.path.dirname(p)))
+               == yd_norm]
+        if len(top) < 2:
             continue
-        nested = any(
-            os.path.normcase(a).startswith(os.path.normcase(b) + os.sep)
-            for a in paths for b in paths if a != b)
-        if not nested:
-            out.append({"canon_key": job["canon_key"],
-                        "display_name": job.get("display_name") or "",
-                        "folders": [os.path.basename(p) for p in paths]})
+        out.append({"canon_key": job["canon_key"],
+                    "display_name": job.get("display_name") or "",
+                    "folders": [os.path.basename(p) for p in top]})
     return out
 
 

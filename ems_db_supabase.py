@@ -417,6 +417,35 @@ def count_by_department() -> dict:
     return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
 
+def find_dead_folder_links() -> list:
+    """Folder links whose path no longer exists on disk.
+
+    Disk-local even on the shared backend: the paths are per-machine, so
+    "does this folder exist?" can only be answered here. On a machine that
+    doesn't mount the share, everything looks dead — which is exactly why
+    `prune_dead_folder_links` must never run unattended.
+    """
+    import os
+    out = []
+    for job in iter_jobs():
+        for l in get_links(job["canon_key"], LINK_FOLDER):
+            p = l["link_value"]
+            if p and not os.path.isdir(p):
+                out.append({"canon_key": job["canon_key"],
+                            "display_name": job.get("display_name") or "",
+                            "path": p})
+    return out
+
+
+def prune_dead_folder_links() -> dict:
+    """Drop every folder link whose path is gone. Only with the share
+    REACHABLE — otherwise every path looks dead and the lot is wiped."""
+    dead = find_dead_folder_links()
+    for d in dead:
+        remove_link(d["canon_key"], LINK_FOLDER, d["path"])
+    return {"removed": len(dead), "links": dead}
+
+
 def find_department_conflicts() -> list:
     out = []
     jobs = {j["canon_key"]: j for j in
