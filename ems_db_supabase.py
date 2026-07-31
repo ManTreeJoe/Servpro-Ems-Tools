@@ -38,7 +38,7 @@ from ems_db_common import (            # noqa: F401 — re-exported as API
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class DepartmentConflict(Exception):
@@ -528,7 +528,8 @@ def find_department_conflicts() -> list:
 
 def set_child(parent_canon: str, name: str, *, kind: str = "",
               ordinal=None, folder_path: str = "", trello_card: str = "",
-              companycam: str = "", department: str = "") -> dict:
+              companycam: str = "", department: str = "",
+              metadata: dict | None = None) -> dict:
     parent_canon = (parent_canon or "").strip()
     name = (name or "").strip()
     if not (parent_canon and name):
@@ -538,6 +539,9 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
     fp = _norm_link(LINK_FOLDER, folder_path) if folder_path else ""
     card = _norm_link(LINK_TRELLO, trello_card) if trello_card else ""
     now = _now_iso()
+    # None means "leave alone" — {} would blank a child's settings on any
+    # unrelated set_child call, and backfill_children calls it per folder.
+    md = json.dumps(metadata) if isinstance(metadata, dict) else None
     cur = _one("job_children", parent_canon=f"eq.{parent_canon}",
                name=f"eq.{name}", select="*")
     if cur is None:
@@ -547,6 +551,12 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
             "trello_card": card or None, "companycam": companycam or None,
             "department": department or None,
             "created_at": now, "updated_at": now,
+            # Only sent when there is something to store. Sending it
+            # unconditionally makes every set_child fail with PGRST204 on a
+            # project where 004_job_settings.sql hasn't run yet — which
+            # would take backfill_children down with it, over a column that
+            # call never uses.
+            **({"metadata_json": md} if md is not None else {}),
         }, prefer="resolution=merge-duplicates")
     else:
         _sb.rest("PATCH", "job_children",
@@ -561,6 +571,7 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
                      "companycam": companycam or cur.get("companycam"),
                      "department": department or cur.get("department"),
                      "updated_at": now,
+                     **({"metadata_json": md} if md is not None else {}),
                  })
     return _one("job_children", parent_canon=f"eq.{parent_canon}",
                 name=f"eq.{name}", select="*") or {}

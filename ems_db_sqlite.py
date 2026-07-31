@@ -70,7 +70,7 @@ from persistence import _canon_pin_key as _canon_pin_key_persistence
 # place when they need to back the suite up or migrate machines.
 DB_PATH = _paths.data("ems_jobs.db")
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 
@@ -281,6 +281,12 @@ def _init_schema():
             # honest "days in stage" instead of the dateLastActivity
             # proxy). NULL = not yet enriched.
             "ALTER TABLE job_lifecycle ADD COLUMN actions_synced_at TEXT",
+            # v5: per-child job settings. A unit or claim has its own claim
+            # number, date of loss and cause — six units on one property are
+            # rarely one claim — and none of the 139 live children has a
+            # Trello card of its own, so the Hub is the only place that
+            # record can live.
+            "ALTER TABLE job_children ADD COLUMN metadata_json TEXT",
         ):
             try:
                 c.execute(col_sql)
@@ -1070,7 +1076,8 @@ def iter_jobs() -> list[dict]:
 
 def set_child(parent_canon: str, name: str, *, kind: str = "",
               ordinal=None, folder_path: str = "", trello_card: str = "",
-              companycam: str = "", department: str = "") -> dict:
+              companycam: str = "", department: str = "",
+              metadata: dict | None = None) -> dict:
     """Record (or update) one child of a client. Idempotent on
     (parent_canon, name); blank values never overwrite existing ones —
     the same partial-update rule as upsert_job."""
@@ -1083,6 +1090,10 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
     fp = _norm_link(LINK_FOLDER, folder_path) if folder_path else ""
     card = _norm_link(LINK_TRELLO, trello_card) if trello_card else ""
     now = _now_iso()
+    # v5: per-child job settings. None means "leave alone" — passing {}
+    # would blank a child's settings on any unrelated set_child call, and
+    # backfill_children calls it for every folder on every run.
+    md = json.dumps(metadata) if isinstance(metadata, dict) else None
     with _LOCK, _connect() as c:
         row = c.execute("SELECT * FROM job_children WHERE parent_canon=? "
                         "AND name=?", (parent_canon, name)).fetchone()
@@ -1091,21 +1102,23 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
                 INSERT INTO job_children
                     (parent_canon, name, kind, ordinal, folder_path,
                      trello_card, companycam, department, created_at,
-                     updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     updated_at, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (parent_canon, name, kind, ordinal, fp, card,
-                  companycam, department, now, now))
+                  companycam, department, now, now, md))
         else:
             c.execute("""
                 UPDATE job_children SET
                     kind=?, ordinal=?, folder_path=?, trello_card=?,
-                    companycam=?, department=?, updated_at=?
+                    companycam=?, department=?, updated_at=?,
+                    metadata_json=?
                 WHERE parent_canon=? AND name=?
             """, (kind or row["kind"],
                   ordinal if ordinal is not None else row["ordinal"],
                   fp or row["folder_path"], card or row["trello_card"],
                   companycam or row["companycam"],
                   department or row["department"], now,
+                  md if md is not None else row["metadata_json"],
                   parent_canon, name))
         c.commit()
         out = c.execute("SELECT * FROM job_children WHERE parent_canon=? "

@@ -1266,6 +1266,36 @@ def create_card(list_id, name, *, desc="", pos="bottom"):
     return _call("/cards", method="POST", data=params)
 
 
+def update_card_desc(card_id, desc):
+    """Replace a card's description. Returns the updated card, or None.
+
+    The only call in this module that overwrites text a human wrote, so it
+    guards itself twice:
+
+      * an empty description is REFUSED. A parse that silently produced
+        nothing would otherwise wipe the card — every job fact the office
+        keeps, gone in one PUT.
+      * callers are expected to build `desc` with
+        `job_settings.render_desc`, which rewrites line by line and leaves
+        untouched lines byte-identical. Handing this a freshly generated
+        template would delete every field that template doesn't model.
+
+    Trello allows ~100 requests per 10s per key, so this fires on save for
+    one card, never across a sweep.
+    """
+    if not card_id:
+        return None
+    if not (desc or "").strip():
+        try:
+            import ems_log
+            ems_log.warn("trello", f"refused to blank the description on "
+                                   f"card {card_id}")
+        except Exception:
+            pass
+        return None
+    return _call(f"/cards/{card_id}", method="PUT", data={"desc": desc})
+
+
 def post_comment(card_id, text):
     """Post `text` as a new comment on the card. The author is whichever
     user owns the trello_token in their config. Returns the created
