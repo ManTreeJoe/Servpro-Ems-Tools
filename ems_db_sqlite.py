@@ -1113,6 +1113,21 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
     return dict(out) if out else {}
 
 
+def all_children() -> list:
+    """Every child row, in ONE query — for the type-ahead index.
+
+    Children are where units and commercial sub-jobs live, and they are
+    the names people actually search for ("Unit 418", "Eastvale"). Walking
+    children_of() per client would be 41 round trips here and the same
+    N+1 on the hosted backend.
+    """
+    with _LOCK, _connect() as c:
+        rows = c.execute(
+            "SELECT * FROM job_children "
+            "ORDER BY parent_canon, COALESCE(ordinal, 9999), name").fetchall()
+    return [dict(r) for r in rows]
+
+
 def children_of(parent_canon: str, *, kind: str = "") -> list:
     """Every child of a client, optionally filtered by kind. Claims sort
     by ordinal, everything else by name."""

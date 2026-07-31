@@ -137,3 +137,94 @@ def test_missing_alias_support_does_not_break_search(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "ems_db", NoAliases)
     job_search.invalidate_cache()
     assert [r["display_name"] for r in job_search.suggest("smi")] == ["Smith, John"]
+
+
+# ── children (units / claims / sub-jobs) ──────────────────────────────
+# These are the names people actually type — "Unit 418", "Eastvale".
+# Indexing only the jobs table meant a sub-job could be correct on disk
+# AND registered in job_children and still be unfindable.
+
+def _index_with_children(monkeypatch, jobs, children):
+    entries = [{"canon_key": n.lower(), "display_name": n,
+                "last_seen_at": "2026-07-01T00:00:00"} for n in jobs]
+
+    class FakeDB:
+        @staticmethod
+        def iter_jobs():
+            return entries
+
+        @staticmethod
+        def all_aliases():
+            return []
+
+        @staticmethod
+        def all_children():
+            return children
+
+    monkeypatch.setitem(__import__("sys").modules, "ems_db", FakeDB)
+    job_search.invalidate_cache()
+
+
+def test_child_is_findable_by_its_own_name(monkeypatch):
+    _index_with_children(monkeypatch, ["Subway"], [
+        {"parent_canon": "subway", "name": "Subway (Eastvale)",
+         "kind": "subjob", "folder_path": r"X:\2026\Subway\Subway (Eastvale)"},
+    ])
+    rows = job_search.suggest("eastvale")
+    assert rows and rows[0]["child_name"] == "Subway (Eastvale)"
+
+
+def test_child_row_carries_its_own_folder(monkeypatch):
+    """The pick pins this path, so the audit resolves the CHILD's folder
+    rather than re-resolving to the parent client."""
+    _index_with_children(monkeypatch, ["Metro at Main"], [
+        {"parent_canon": "metro at main", "name": "Unit 418", "kind": "unit",
+         "folder_path": r"X:\2026\Metro at Main\Unit 418"},
+    ])
+    r = job_search.suggest("unit 418")[0]
+    assert r["folder_path"] == r"X:\2026\Metro at Main\Unit 418"
+    assert r["audit_name"] == "Unit 418"
+    assert r["child_kind"] == "unit"
+
+
+def test_child_is_labelled_with_its_parent(monkeypatch):
+    """"Unit 418" alone is ambiguous across a dozen properties."""
+    _index_with_children(monkeypatch, ["Metro at Main"], [
+        {"parent_canon": "metro at main", "name": "Unit 418", "kind": "unit",
+         "folder_path": ""},
+    ])
+    assert job_search.suggest("unit 418")[0]["display_name"] == \
+        "Metro at Main / Unit 418"
+
+
+def test_child_does_not_match_on_its_parents_name(monkeypatch):
+    """Ranking uses the child's OWN name. Including the parent would make
+    all six of a property's units score on the property name and crowd the
+    client itself out of the list."""
+    _index_with_children(monkeypatch, ["Avana Springs"], [
+        {"parent_canon": "avana springs", "name": f"Unit 56{i}", "kind": "unit",
+         "folder_path": ""} for i in range(6)
+    ])
+    assert job_search.suggest("avana")[0]["display_name"] == "Avana Springs"
+
+
+def test_missing_children_support_does_not_break_search(monkeypatch):
+    entries = [{"canon_key": "subway", "display_name": "Subway",
+                "last_seen_at": ""}]
+
+    class NoChildren:
+        @staticmethod
+        def iter_jobs():
+            return entries
+
+        @staticmethod
+        def all_aliases():
+            return []
+
+        @staticmethod
+        def all_children():
+            raise RuntimeError("backend too old")
+
+    monkeypatch.setitem(__import__("sys").modules, "ems_db", NoChildren)
+    job_search.invalidate_cache()
+    assert [r["display_name"] for r in job_search.suggest("subw")] == ["Subway"]

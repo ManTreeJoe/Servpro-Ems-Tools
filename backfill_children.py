@@ -43,8 +43,12 @@ def _scan(base="", year=None):
     for cl in clients:
         for name in job_folders.list_children(cl.path):
             path = os.path.join(cl.path, name)
-            if not job_folders._has_job_structure(path):
-                # A bare paperwork folder (FIELD DOCS) is not a child job.
+            if not job_folders.is_child_job_folder(path, name):
+                # Paperwork / containers / tool output only. This used to
+                # ask _has_job_structure, which required an EMS or PICS
+                # folder INSIDE the child — so a sub-job stayed invisible
+                # until someone put work in it, and a folder made today for
+                # tomorrow's work never registered at all.
                 continue
             kind, ordinal = ems_db.classify_child(name)
             found.append({

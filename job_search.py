@@ -125,6 +125,36 @@ def _build():
         # can't serve them should still give you name search.
         pass
 
+    # Children — units, claims and commercial sub-jobs — are searchable in
+    # their own right. They are what people actually type ("Unit 418",
+    # "Eastvale"), and indexing only the `jobs` table meant a sub-job could
+    # be correctly registered on disk and in the DB and still be unfindable.
+    # Each carries its own folder, so picking one audits THAT folder rather
+    # than re-resolving the parent.
+    try:
+        for ch in ems_db.all_children():
+            parent = by_key.get(ch.get("parent_canon") or "")
+            name = ch.get("name") or ""
+            if not name:
+                continue
+            label = f"{parent['display_name']} / {name}" if parent else name
+            entries.append({
+                "canon_key": ch.get("parent_canon") or "",
+                "display_name": label,
+                # Rank against the child's OWN name: including the parent
+                # would make every one of Avana Springs' six units score on
+                # "avana" and crowd out the client itself.
+                "norm": _norm(name), "tokens": _tokens(name),
+                "alias_tokens": [], "aliases": [], "alias_norms": [],
+                "last_seen": ch.get("updated_at") or ch.get("created_at") or "",
+                "department": ch.get("department") or "",
+                "child_name": name,
+                "child_kind": ch.get("kind") or "",
+                "folder_path": ch.get("folder_path") or "",
+            })
+    except Exception:
+        pass
+
     # Character bigrams, precomputed once, used to skip entries that cannot
     # possibly be a near-miss before paying for SequenceMatcher.
     for e in entries:
@@ -291,11 +321,21 @@ def suggest(query, limit=8):
                              _neg_str(h[2]["last_seen"])))
     out = []
     for score, why, e in hits[:limit]:
-        out.append({"canon_key": e["canon_key"],
-                    "display_name": e["display_name"],
-                    "why": why, "score": score,
-                    "aliases": e["aliases"][:3],
-                    "department": e["department"]})
+        row = {"canon_key": e["canon_key"],
+               "display_name": e["display_name"],
+               "why": why, "score": score,
+               "aliases": e["aliases"][:3],
+               "department": e["department"]}
+        if e.get("child_name"):
+            # The caller audits `audit_name` and pins `folder_path`, so a
+            # child resolves to its OWN folder instead of the parent's.
+            row.update({"child_name": e["child_name"],
+                        "child_kind": e.get("child_kind") or "",
+                        "folder_path": e.get("folder_path") or "",
+                        "audit_name": e["child_name"]})
+        else:
+            row["audit_name"] = e["display_name"]
+        out.append(row)
     return out
 
 

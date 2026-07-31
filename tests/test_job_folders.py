@@ -402,3 +402,56 @@ def test_named_child_wins_unless_second_claim_is_set(base):
     forced = jf.plan("Riley, Robert", child="Unit 5", second_claim=True,
                      base=base, year=2026)
     assert forced["child"] == "2nd Claim"
+
+
+# ── is_child_job_folder ───────────────────────────────────────────────
+# A sub-job folder is created BEFORE the work goes into it. The old rule
+# asked whether an EMS/PICS folder existed INSIDE the child, so a folder
+# made today for tomorrow's work was invisible — which is exactly when you
+# need to find it. On live data that hid 27 real children, including
+# `Metro at Main / Unit 418` and both of Subway's sub-jobs.
+
+def test_empty_child_folder_is_still_a_job(tmp_path):
+    child = tmp_path / "Subway - Fontana Sierra Crossroads 7-30-2026"
+    child.mkdir()
+    assert jf.is_child_job_folder(str(child))
+
+
+def test_child_with_only_loose_files_is_a_job(tmp_path):
+    child = tmp_path / "Subway (Eastvale)"
+    child.mkdir()
+    (child / "proposal.pdf").write_bytes(b"x")
+    assert jf.is_child_job_folder(str(child))
+
+
+def test_unit_folder_is_a_job(tmp_path):
+    child = tmp_path / "Unit 418"
+    child.mkdir()
+    assert jf.is_child_job_folder(str(child))
+
+
+@pytest.mark.parametrize("name", [
+    "FIELD DOCS", "field docs", "DOCS", "Paperwork", "SP Invoices",
+    "From SharePoint", "Signed Docs", "Sketches",
+])
+def test_paperwork_folders_are_not_jobs(tmp_path, name):
+    d = tmp_path / name
+    d.mkdir()
+    assert not jf.is_child_job_folder(str(d))
+
+
+@pytest.mark.parametrize("name", ["EMS", "RECON", "CONTENTS", "PICS", "Photos"])
+def test_the_clients_own_work_containers_are_not_children(tmp_path, name):
+    """EMS/ under a client is that client's own work, not a sub-job. Treating
+    it as one would invent a child for every ordinary single-claim job."""
+    d = tmp_path / name
+    d.mkdir()
+    assert not jf.is_child_job_folder(str(d))
+
+
+def test_photo_report_output_is_not_a_job(tmp_path):
+    """Generated into the client folder by the report tool, so counting it
+    would invent a sub-job for every job a report has ever been run on."""
+    d = tmp_path / "Photo Report"
+    d.mkdir()
+    assert not jf.is_child_job_folder(str(d))

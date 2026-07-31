@@ -148,11 +148,49 @@ def push(table, keys, dry=False):
     return len(rows), sent
 
 
+def prune(table, keys, apply=False):
+    """Remote rows whose natural key no longer exists locally.
+
+    Upserting alone is not a mirror: a row DELETED locally stays remote
+    forever. That is how three pruned dead folder links and a removed
+    Trello card link survived a "successful" sync and made the counts
+    disagree.
+
+    Deleting is opt-in because the remote database is SHARED — a row
+    missing locally might be one a colleague added from another machine,
+    and local is only authoritative when you know it is. Without --prune
+    this just reports.
+    """
+    local = {tuple(str(r.get(k) or "") for k in keys)
+             for r in _clean(table, _local_rows(table))}
+    remote_rows, offset = [], 0
+    while True:
+        got = supabase_client.rest(
+            "GET", table, params={"select": ",".join(keys), "limit": "1000",
+                                  "offset": str(offset),
+                                  "order": ",".join(keys)})
+        remote_rows.extend(got)
+        if len(got) < 1000:
+            break
+        offset += 1000
+
+    extra = [r for r in remote_rows
+             if tuple(str(r.get(k) or "") for k in keys) not in local]
+    if apply:
+        for r in extra:
+            params = {k: f"eq.{r.get(k)}" for k in keys}
+            supabase_client.rest("DELETE", table, params=params)
+    return [tuple(r.get(k) for k in keys) for r in extra]
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry", action="store_true", help="report only")
     ap.add_argument("--verify", action="store_true",
                     help="compare local vs remote counts, write nothing")
+    ap.add_argument("--prune", action="store_true",
+                    help="also DELETE remote rows that no longer exist "
+                         "locally (makes remote exactly match local)")
     args = ap.parse_args(argv)
 
     h = supabase_client.health()
@@ -201,6 +239,13 @@ def main(argv):
         total += sent
         print(f"   {'would send' if args.dry else 'sent'} {n if args.dry else sent}"
               f" row(s)          ")
+        if keys and not args.dry:
+            gone = prune(table, keys, apply=args.prune)
+            if gone:
+                verb = "deleted" if args.prune else "remote-only (use --prune)"
+                print(f"   {len(gone)} {verb}")
+                for g in gone[:5]:
+                    print(f"      {g}")
 
     if args.dry:
         print("\n--dry: nothing written.")

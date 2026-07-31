@@ -2988,14 +2988,20 @@ function renderSuggestions(q, rows) {
     el.innerHTML = `<div class="suggest-empty">No job matches “${escapeHtml(q)}”`
       + `<button class="btn suggest-force" id="sg-force">🔍 Search folders anyway</button></div>`;
   } else {
+    const KIND = { unit: "🏢 unit", claim: "📄 claim", subjob: "🔧 sub-job" };
     el.innerHTML = rows.map((r, i) => {
       const why = r.why && r.why !== "starts with" && r.why !== "matches"
         ? `<span class="suggest-why">${escapeHtml(r.why)}</span>` : "";
+      // A child is a different thing from a client — say which, or
+      // "Unit 418" and "Metro at Main" look like the same kind of row.
+      const kind = r.child_kind
+        ? `<span class="suggest-why">${escapeHtml(KIND[r.child_kind] || r.child_kind)}</span>`
+        : "";
       const dept = r.department
         ? `<span class="suggest-dept">${escapeHtml(r.department)}</span>` : "";
       return `<div class="suggest-row" data-i="${i}" tabindex="0">`
         + `<span class="suggest-name">${escapeHtml(r.display_name)}</span>`
-        + why + dept + `</div>`;
+        + kind + why + dept + `</div>`;
     }).join("");
   }
   wrap.appendChild(el);
@@ -3024,15 +3030,18 @@ function renderSuggestions(q, rows) {
 
 // The pick is where the real work starts: we already know the canonical
 // name, so skip_canon avoids re-fuzzing a name the user just confirmed.
+// A child (unit / claim / sub-job) carries its own folder — pass it so the
+// audit pins THAT folder instead of re-resolving to the parent client.
 async function pickSuggestion(r) {
   if (!r) return;
   hideSuggestions();
-  await runOneoffFromSearch(r.display_name, true);
+  await runOneoffFromSearch(r.audit_name || r.display_name, true,
+                            r.folder_path || "");
 }
 
 // Run a one-off audit for a typed search term and surface the result in
 // the list. Shared by the auto-fallback and the empty-state button.
-async function runOneoffFromSearch(term, skipCanon) {
+async function runOneoffFromSearch(term, skipCanon, folderPath) {
   const t = (term || "").trim();
   if (!t || state.oneoffRunning) return;
   state.oneoffRunning = true;
@@ -3040,7 +3049,8 @@ async function runOneoffFromSearch(term, skipCanon) {
   renderList();  // repaint the empty-state button as "Searching…"
   setStatus(`🔍 Auditing “${t}” — scanning folders…`, "info");
   try {
-    const res = await pywebview.api.audit_one_job(t, "", !!skipCanon);
+    const res = await pywebview.api.audit_one_job(t, folderPath || "",
+                                                  !!skipCanon);
     if (res?.ok && (res.rows || []).length) {
       // ACCUMULATE rather than replace: searching a second job used to
       // wipe the first, so you couldn't hold two jobs side by side on the

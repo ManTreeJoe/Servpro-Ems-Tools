@@ -163,7 +163,14 @@ _JOB_CONTAINERS = {"ems", "recon", "contents", "pics", "photos", "videos"}
 
 def _has_job_structure(path: str) -> bool:
     """True when a folder holds a job's work (EMS / RECON / CONTENTS /
-    PICS…), i.e. it is a real child job rather than a folder of paperwork."""
+    PICS…), i.e. it is a real child job rather than a folder of paperwork.
+
+    Used to decide whether a client's ROOT content is one claim's work —
+    see plan_promote_first_claim. Do NOT use it to decide whether a
+    subfolder is a child job: that question is `is_child_job_folder`, and
+    answering it with this allow-list hid every new or lightly-filled
+    sub-job.
+    """
     try:
         with os.scandir(path) as it:
             for e in it:
@@ -173,6 +180,42 @@ def _has_job_structure(path: str) -> bool:
     except OSError:
         return False
     return False
+
+
+# Folder names under a client that are NEVER a child job: the client's own
+# work containers, its paperwork, and tool output.
+#
+# A DENY-list, not an allow-list. Requiring an EMS/PICS subfolder inside a
+# child meant a sub-job was invisible until someone put work in it — which
+# is backwards, since a folder is created BEFORE the work goes in. On live
+# data it hid 27 real children, including `Metro at Main / Unit 418`,
+# `Avana Springs / Unit 545-O`, PCM's work orders and four Western
+# Municipal sub-jobs. audit_logic reached the same conclusion separately
+# after the "exists but not listed" finding; this is now the shared set so
+# the two cannot drift.
+NON_JOB_CHILD_NAMES = _JOB_CONTAINERS | {
+    "docs", "doc", "documents", "field docs", "paperwork", "forms",
+    "sp invoices", "invoices", "receipts", "estimates",
+    "from sharepoint", "scans", "signed docs",
+    "sketch", "sketches",
+    # Tool output, not a job: the photo report is GENERATED into the client
+    # folder, so treating it as a sub-job would invent one for every job
+    # that has ever had a report run.
+    "photo report", "photo reports",
+    "old", "backup", "archive", "misc", "temp",
+}
+
+
+def is_child_job_folder(path: str, name: str = "") -> bool:
+    """Is this subfolder of a client a child job (claim / unit / sub-job)?
+
+    Empty counts. A folder created today for work that starts tomorrow is
+    still the job — and that is exactly when you need to find it.
+    """
+    leaf = (name or os.path.basename(path or "")).strip().lower()
+    if not leaf:
+        return False
+    return leaf not in NON_JOB_CHILD_NAMES
 
 
 def plan_promote_first_claim(client_dir: str) -> dict:

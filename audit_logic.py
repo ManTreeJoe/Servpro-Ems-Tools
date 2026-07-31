@@ -905,11 +905,25 @@ _UNIT_NUM_RE = re.compile(r"^\s*#?\s*(?:unit|apt|apartment|suite|ste)?"
 # folders. Anything NOT in this set is surfaced as a child so real units
 # with off-convention names (1416B, tenant-named "Smith", "Building A")
 # stop silently vanishing (audit finding: "exists but not listed").
-_NON_UNIT_CHILDREN = {
-    "ems", "recon", "contents", "docs", "pics", "photos",
-    "sp invoices", "receipts", "field docs", "videos", "from sharepoint",
-    "old", "backup", "archive", "signed docs", "misc", "temp",
-}
+def _non_unit_children():
+    """Shared with job_folders so the two can't drift.
+
+    Both modules answer the same question — "is this subfolder a child job
+    or just a container?" — and had grown separate lists. job_folders is
+    the lighter module (config + stdlib), so it owns the set; imported
+    lazily to keep import order free of surprises.
+    """
+    try:
+        import job_folders
+        return job_folders.NON_JOB_CHILD_NAMES
+    except Exception:
+        return {"ems", "recon", "contents", "docs", "pics", "photos",
+                "sp invoices", "receipts", "field docs", "videos",
+                "from sharepoint", "old", "backup", "archive",
+                "signed docs", "misc", "temp"}
+
+
+_NON_UNIT_CHILDREN = _non_unit_children()
 
 
 def _unit_num_of(name):

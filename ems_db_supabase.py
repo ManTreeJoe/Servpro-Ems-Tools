@@ -566,6 +566,13 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
                 name=f"eq.{name}", select="*") or {}
 
 
+def all_children() -> list:
+    """Every child row in ONE request — see the SQLite twin. `_rows` pages,
+    so this stays complete past the 1000-row cap."""
+    return _rows("job_children", select="*",
+                 order="parent_canon.asc,ordinal.asc.nullslast,name.asc")
+
+
 def children_of(parent_canon: str, *, kind: str = "") -> list:
     parent_canon = (parent_canon or "").strip()
     if not parent_canon:

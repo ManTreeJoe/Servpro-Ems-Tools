@@ -188,6 +188,19 @@ def _s_all_aliases(db, tag):
     return {"count": len(mine), "aliases": mine}
 
 
+@scenario("all_children returns every child in one call")
+def _s_all_children(db, tag):
+    """Type-ahead indexes children — units and sub-jobs are the names people
+    actually type. Per-parent fetches would be the same N+1."""
+    key = db.upsert_job(display_name=f"{tag} Sierra")
+    db.set_child(key, "Unit 101", kind="unit", folder_path=r"X:\x\Unit 101")
+    db.set_child(key, "Unit 102", kind="unit", folder_path=r"X:\x\Unit 102")
+    mine = sorted((c.get("name"), c.get("kind"), c.get("folder_path"))
+                  for c in db.all_children()
+                  if (c.get("parent_canon") or "") == key)
+    return {"count": len(mine), "children": mine}
+
+
 @scenario("iter_jobs is newest-seen first")
 def _s_iter_order(db, tag):
     """Every other scenario compares row SETS, so an ordering regression is
