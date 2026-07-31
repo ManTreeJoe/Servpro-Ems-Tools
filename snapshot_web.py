@@ -117,10 +117,11 @@ def _merge_log_row(existing: dict, incoming: dict) -> dict:
     return existing
 
 
+from companycam_web_api import CompanyCamApi
 from job_settings_api import JobSettingsApi
 
 
-class Api(JobSettingsApi):
+class Api(JobSettingsApi, CompanyCamApi):
     def __init__(self): self._window = None
     def attach(self, w): self._window = w
 

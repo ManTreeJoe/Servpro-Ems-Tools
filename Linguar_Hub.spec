@@ -100,6 +100,7 @@ hiddenimports = web_modules + [
     # Reached only through function-local imports.
     'cache_bust', 'job_folders', 'trello_auth', 'supabase_client',
     'job_search', 'job_settings', 'job_settings_api',
+    'companycam_web_api',
 ]
 hiddenimports += collect_submodules('openpyxl')
 # pywebview Windows backend + its http-server deps. pywebview 6.x ships a
