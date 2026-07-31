@@ -3058,6 +3058,50 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    def activity_comment_text(self, stage: str, tech: str,
+                              date_iso: str = "") -> dict:
+        """The dated activity comment, in the shape the office already
+        writes by hand:
+
+            Saturday 08/01
+
+            Monitor - ME
+
+        Built here rather than in JS so the Trello comment and anything
+        else that logs the same visit cannot drift in wording. `date_iso`
+        defaults to today.
+        """
+        stage = (stage or "").strip()
+        tech = (tech or "").strip()
+        if not stage:
+            return {"ok": False, "error": "stage required"}
+        try:
+            d = (_dt.date.fromisoformat(date_iso) if date_iso
+                 else _dt.date.today())
+        except ValueError:
+            d = _dt.date.today()
+        # Zero-padded: %-d/%-m aren't portable to Windows, and the
+        # handwritten form is "08/01" anyway, not "8/1".
+        head = f"{d.strftime('%A')} {d.strftime('%m/%d')}"
+        body = f"{stage} - {tech}" if tech else stage
+        return {"ok": True, "text": f"{head}\n\n{body}",
+                "stage": stage, "tech": tech, "date": d.isoformat()}
+
+    def post_activity_comment(self, card_id: str, stage: str, tech: str,
+                              date_iso: str = "") -> dict:
+        """Post the dated activity comment to a card."""
+        built = self.activity_comment_text(stage, tech, date_iso)
+        if not built.get("ok"):
+            return built
+        if not card_id:
+            return {"ok": False, "error": "no Trello card pinned"}
+        try:
+            import trello_client as tc
+            tc.post_comment(card_id, built["text"])
+            return {"ok": True, "text": built["text"]}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def post_canned(self, card_id: str, key: str) -> dict:
         """Post a canned intake comment to a Trello card — folded in from
         the IUQ. `key` is 'ipr' or 'upload'."""
