@@ -422,3 +422,28 @@ def test_group_by_property_rolls_up_children(tmp_path):
     assert sorted(grouped["avila apartments"]) == sorted([k1, k2])
     # A job with no parent groups under its own canon_key.
     assert grouped["doe, john"] == ["doe, john"]
+
+
+def test_remove_link_normalizes_the_value():
+    """set_link normalizes strong-identifier values on the way in, so
+    remove_link must too. It didn't — removing a folder by its natural
+    mixed-case path matched nothing and returned as though it worked,
+    leaving a WRONG folder attached to a job (de la Torre kept de la
+    Cruz's folder after being unpinned)."""
+    ems_db.upsert_job(display_name="Link Norm Job")
+    key = "link norm job"
+    natural = r"X:\IE_Public\2026 Jobs\De La Cruz Gustavo"
+    ems_db.set_link(key, ems_db.LINK_FOLDER, natural)
+    assert ems_db.get_link(key, ems_db.LINK_FOLDER)      # stored lowercase
+
+    ems_db.remove_link(key, ems_db.LINK_FOLDER, natural)
+    assert ems_db.get_link(key, ems_db.LINK_FOLDER) is None
+
+
+def test_remove_link_normalizes_a_trello_url():
+    ems_db.upsert_job(display_name="Card Norm Job")
+    key = "card norm job"
+    ems_db.set_link(key, ems_db.LINK_TRELLO, "AbCd1234")
+    ems_db.remove_link(key, ems_db.LINK_TRELLO,
+                       "https://trello.com/c/AbCd1234/some-slug")
+    assert ems_db.get_link(key, ems_db.LINK_TRELLO) is None

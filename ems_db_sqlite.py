@@ -533,9 +533,18 @@ def set_link(canon_key_value: str, link_type: str, link_value: str, *,
 def remove_link(canon_key_value: str, link_type: str,
                 link_value: str = "") -> None:
     """Drop a link. Blank `link_value` removes ALL links of the
-    given type for the job (handy when nuking a stale type)."""
+    given type for the job (handy when nuking a stale type).
+
+    Strong-identifier values are normalized on the way IN by set_link, so
+    they must be normalized here too. Without it, removing a folder by its
+    natural mixed-case path compares against the stored lowercase form,
+    matches nothing, and returns as though it worked — which is how a
+    wrong folder stayed attached to a job after being "unpinned".
+    """
     if not (canon_key_value and link_type):
         return
+    if link_value and link_type in _STRONG_LINK_TYPES:
+        link_value = _norm_link(link_type, link_value)
     with _LOCK, _connect() as c:
         if link_value:
             c.execute("""

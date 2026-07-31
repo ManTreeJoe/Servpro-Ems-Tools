@@ -244,6 +244,8 @@ def remove_link(canon_key_value: str, link_type: str,
         return
     p = {"canon_key": f"eq.{canon_key_value}", "link_type": f"eq.{link_type}"}
     if link_value:
+        # Normalized on the way in by set_link — must match here or the
+        # delete silently removes nothing.
         p["link_value"] = f"eq.{_norm_link(link_type, link_value)}"
     _sb.rest("DELETE", "job_links", params=p)
 
