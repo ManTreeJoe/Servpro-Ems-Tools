@@ -585,13 +585,11 @@
         const btn = ev.currentTarget;
         btn.disabled = true;
         btn.textContent = "⬇ Pulling…";
-        // Tech pre-filled from whoever actually took the missing shots.
-        const uploaders = [...new Set(groups.map((g) => g.tech).filter(Boolean))];
-        let tech = "";
-        if (typeof window.pickImportTech === "function") {
-          tech = await window.pickImportTech({ client: who, techs: uploaders });
-          if (tech === null) { btn.disabled = false; btn.textContent = `⬇ Pull ${v.missing} missing`; return; }
-        }
+        // No tech prompt here. Each shoot carries its OWN tech box,
+        // pre-filled from whoever CompanyCam says took it — asking again
+        // for ONE name would both repeat the question and contradict the
+        // per-row answers, since a day can have two techs on one job.
+        const tech = "";
         let res;
         try {
           // Only the ticked shoots, each into the stage chosen for IT.
