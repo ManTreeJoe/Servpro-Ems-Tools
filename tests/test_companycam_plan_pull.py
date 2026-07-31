@@ -219,3 +219,59 @@ def test_forcing_an_empty_tech_falls_back_to_the_creator():
     """Clearing the box must not produce a nameless folder."""
     p = _photo("a1", DAY1, "Fernando Baca", [])
     assert cc.route_photo(p, tech="", force_tech=True)["box"].startswith("FB ")
+
+
+# ── id collisions: "we already have it" when we don't ─────────────────
+# Tokens used to be the id truncated to 8 chars, but live ids are 10
+# digits. On Gary Mongue 181 photos collapsed to 160 distinct tokens, so
+# verify reported "present 181, missing 0" while 37 photos had never been
+# downloaded — the failure was silent AND the dangerous way round.
+
+def test_ids_that_share_a_prefix_are_distinguishable():
+    a, b = {"id": "3415908719"}, {"id": "3415908711"}
+    assert cc.photo_id_token(a) != cc.photo_id_token(b)
+
+
+def test_a_photo_is_not_called_present_because_a_sibling_shares_its_prefix(
+        monkeypatch):
+    """The exact live failure: one file on disk, two photos whose ids share
+    an 8-char prefix. Neither may be assumed present."""
+    photos = [{"id": "3415908719", "captured_at": DAY1},
+              {"id": "3415908711", "captured_at": DAY1}]
+    monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
+    monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: {"34159087"})
+    monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
+
+    v = cc.verify_project("1", r"X:\job")
+    assert v["present"] == 0
+    assert v["missing"] == 2
+
+
+def test_a_legacy_filename_still_counts_as_present(monkeypatch):
+    """Files pulled before the fix carry an 8-char name. Requiring a full
+    id would call every one of them missing and re-download the lot."""
+    photos = [{"id": "3410341012", "captured_at": DAY1}]
+    monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
+    monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: {"34103410"})
+    monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
+    v = cc.verify_project("1", r"X:\job")
+    assert v["present"] == 1 and v["missing"] == 0
+
+
+def test_a_full_id_filename_counts_as_present(monkeypatch):
+    photos = [{"id": "3410341012", "captured_at": DAY1}]
+    monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
+    monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: {"3410341012"})
+    monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
+    v = cc.verify_project("1", r"X:\job")
+    assert v["present"] == 1 and v["missing"] == 0
+
+
+def test_a_legacy_file_is_not_counted_as_an_orphan(monkeypatch):
+    """extra_files means "deleted in CompanyCam after being pulled". An
+    8-char legacy name must not be mistaken for one."""
+    photos = [{"id": "3410341012", "captured_at": DAY1}]
+    monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
+    monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: {"34103410"})
+    monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
+    assert cc.verify_project("1", r"X:\job")["extra_files"] == 0

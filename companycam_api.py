@@ -587,11 +587,51 @@ def tech_date_box(photo, fallback="", *, force_tech=False):
 
 
 def photo_id_token(photo):
-    """The short id token embedded in a downloaded filename. Dedup keys on
-    THIS rather than the whole name: the name carries the photo's tags, and
-    tags get edited in CompanyCam after the fact, so matching whole names
-    would re-download every photo whose label changed."""
-    return (str(photo.get("id") or ""))[:8]
+    """The id token embedded in a downloaded filename. Dedup keys on THIS
+    rather than the whole name: the name carries the photo's tags, and tags
+    get edited in CompanyCam after the fact, so matching whole names would
+    re-download every photo whose label changed.
+
+    The FULL id, not a prefix. It used to be truncated to 8 characters,
+    but live ids are 10 digits — 3415908719 and 3415908611 both truncated
+    to a colliding token, and on Gary Mongue 181 photos collapsed to 160
+    distinct tokens. The effect was silent and the wrong way round: 21
+    photos that had never been downloaded were reported as already present
+    because a DIFFERENT photo shared their truncated token.
+    """
+    return str(photo.get("id") or "")
+
+
+_LEGACY_TOKEN_LEN = 8
+
+
+def _present_tokens(photos, have):
+    """Which photos the folder already holds, tolerating legacy names.
+
+    Files pulled before the truncation fix carry an 8-character prefix, so
+    a full-id comparison alone would call every one of them missing and
+    re-download the lot. A legacy token counts as a match only when it
+    identifies exactly ONE photo; when two photos share a prefix we cannot
+    tell which of them is on disk, so both are treated as missing.
+    Re-downloading a duplicate is recoverable — `dedupe_photos.py` exists —
+    whereas skipping a photo that was never pulled is not.
+    """
+    prefix_counts = {}
+    for p in photos:
+        pre = str(p.get("id") or "")[:_LEGACY_TOKEN_LEN].lower()
+        if pre:
+            prefix_counts[pre] = prefix_counts.get(pre, 0) + 1
+
+    present = set()
+    for p in photos:
+        pid = str(p.get("id") or "")
+        if pid.lower() in have:
+            present.add(pid)
+            continue
+        pre = pid[:_LEGACY_TOKEN_LEN].lower()
+        if pre and pre in have and prefix_counts.get(pre, 0) == 1:
+            present.add(pid)
+    return present
 
 
 def _photo_filename(photo, tech=""):
@@ -668,7 +708,10 @@ def _id_tokens_on_disk(dest_dir):
         for f in files:
             stem = os.path.splitext(f)[0]
             tok = stem.rsplit(" ", 1)[-1].strip().lower()
-            if len(tok) == 8 and tok.isalnum():
+            # 8 = legacy truncated token, 10 = a full CompanyCam id. An
+            # exact-8 test rejected every newly-pulled file, so the folder
+            # would have looked empty to the very check this fixes.
+            if 8 <= len(tok) <= 24 and tok.isalnum():
                 tokens.add(tok)
     return tokens
 
@@ -785,17 +828,20 @@ def verify_project(project_id, dest_dir):
     except Exception as ex:
         return {"ok": False, "error": str(ex)}
     have = _id_tokens_on_disk(dest_dir) if os.path.isdir(dest_dir) else set()
-    missing = [p for p in photos
-               if photo_id_token(p).lower() not in have]
+    present = _present_tokens(photos, have)
+    missing = [p for p in photos if str(p.get("id") or "") not in present]
+    known = {str(p.get("id") or "").lower() for p in photos}
+    known |= {str(p.get("id") or "")[:_LEGACY_TOKEN_LEN].lower()
+              for p in photos}
     return {"ok": True,
             "total": len(photos),
-            "present": len(photos) - len(missing),
+            "present": len(present),
             "missing": len(missing),
             "missing_photos": missing,
             # Tokens on disk that CompanyCam no longer has — a photo
-            # deleted in the app after it was pulled.
-            "extra_files": len(have - {photo_id_token(p).lower()
-                                       for p in photos})}
+            # deleted in the app after it was pulled. Legacy prefixes count
+            # as known, or every pre-fix file would look orphaned.
+            "extra_files": len(have - known)}
 
 
 def pull_missing_photos(project_id, dest_dir, **kw):
@@ -878,7 +924,10 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             existing.add(_f.lower())
             stem = os.path.splitext(_f)[0]
             tok = stem.rsplit(" ", 1)[-1].strip().lower()
-            if len(tok) == 8 and tok.isalnum():
+            # 8 = legacy truncated token, 10 = a full CompanyCam id. An
+            # exact-8 test rejected every newly-pulled file, so the folder
+            # would have looked empty to the very check this fixes.
+            if 8 <= len(tok) <= 24 and tok.isalnum():
                 existing_tokens.add(tok)
 
     if organize_by_tags:
@@ -911,8 +960,11 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             boxes_used[box] = boxes_used.get(box, 0) + 1
         photo_target = os.path.join(dest_dir, *r["parts"]) if r["parts"] \
             else dest_dir
+        # Full id, or a legacy 8-char name from before the truncation fix.
         tok = photo_id_token(p).lower()
-        if fname.lower() in existing or (tok and tok in existing_tokens):
+        legacy = tok[:_LEGACY_TOKEN_LEN]
+        if (fname.lower() in existing or (tok and tok in existing_tokens)
+                or (legacy and legacy in existing_tokens)):
             skipped += 1
         else:
             os.makedirs(photo_target, exist_ok=True)
