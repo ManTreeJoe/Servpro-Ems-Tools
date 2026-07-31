@@ -236,6 +236,14 @@ def _delete_job(db, key):
 
 def run(backend, tag):
     ems_db.use_backend(backend)
+    if backend == "supabase":
+        # The supabase backend is wrapped by ems_db_offline, which serves
+        # from the local SQLite mirror when the network drops. That is
+        # right for the app and wrong for this suite: during an outage it
+        # would compare SQLite against SQLite and cheerfully report the two
+        # backends identical without ever reaching Supabase.
+        import ems_db_offline
+        ems_db_offline.FALLBACK_ENABLED = False
     results, failures = {}, 0
     print(f"\n=== {backend} ===")
     for sc in SCENARIOS:

@@ -498,14 +498,32 @@ class Api:
     # stored in config, or shipped in the .exe.
 
     def supabase_status(self) -> dict:
-        """Configured / reachable / signed-in, for the Settings panel."""
+        """Configured / reachable / signed-in, plus anything waiting to
+        sync, for the Settings panel."""
         try:
             import supabase_client
             import ems_db
+            import ems_db_offline
             h = supabase_client.health()
             h["backend"] = ems_db.backend_name()
+            h["offline"] = ems_db_offline.status()
             h["ok"] = True
             return h
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def supabase_flush_queue(self) -> dict:
+        """Replay writes made while the shared database was unreachable."""
+        try:
+            import ems_db_offline
+            res = ems_db_offline.flush_queue()
+            if res["error"]:
+                return {"ok": False,
+                        "error": f"Sent {res['sent']}, then stopped: "
+                                 f"{res['error']}"}
+            return {"ok": True,
+                    "message": (f"Synced {res['sent']} change(s)."
+                                if res["sent"] else "Nothing waiting.")}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 

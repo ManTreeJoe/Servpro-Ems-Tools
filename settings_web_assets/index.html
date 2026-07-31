@@ -113,9 +113,15 @@
       </div>
     </div>
 
+    <div id="sb-queue" class="muted"
+         style="display:none;font-size:12px;margin-bottom:12px;
+                padding:8px 10px;border-left:3px solid var(--amber);
+                background:var(--surface-2);border-radius:0 6px 6px 0;"></div>
+
     <div style="display:flex;flex-wrap:wrap;gap:8px;">
       <button class="btn" id="sb-use-cloud">☁ Use the shared database</button>
       <button class="btn" id="sb-use-local">💾 Use the local database</button>
+      <button class="btn" id="sb-sync">🔄 Sync pending changes</button>
       <button class="btn" id="sb-sign-out">🚪 Sign out</button>
     </div>
     <div id="sb-msg" class="muted"
@@ -374,6 +380,12 @@ async function showOriginHelp(origin) {
     () => sbSetBackend("supabase"));
   document.getElementById("sb-use-local").addEventListener("click",
     () => sbSetBackend("sqlite"));
+  document.getElementById("sb-sync").addEventListener("click", async () => {
+    sbMsg("Syncing…");
+    const r = await pywebview.api.supabase_flush_queue();
+    sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
+    await refreshSupabase();
+  });
   document.getElementById("sb-sign-out").addEventListener("click", async () => {
     sbMsg("Signing out…");
     const r = await pywebview.api.supabase_sign_out();
@@ -439,6 +451,25 @@ async function refreshSupabase() {
          + "right now.</span>");
     box.style.borderLeftColor = cloud ? "var(--green)" : "var(--border)";
     signin.style.display = "none";
+  }
+
+  // Anything written while the shared database was unreachable. Shown
+  // whenever it's non-empty, not only while degraded: the queue outlives
+  // the outage, and a pending write nobody can see is a pending write
+  // nobody trusts.
+  const q = document.getElementById("sb-queue");
+  const off = s.offline || {};
+  if (off.queued > 0) {
+    q.style.display = "";
+    q.innerHTML = `<b>${off.queued}</b> change${off.queued === 1 ? "" : "s"} `
+      + "made while the shared database was unreachable, waiting to sync. "
+      + "They're already applied locally.";
+  } else if (off.degraded) {
+    q.style.display = "";
+    q.textContent = "Can't reach the shared database — working from the "
+      + "local copy. " + (off.last_error || "");
+  } else {
+    q.style.display = "none";
   }
 }
 

@@ -35,7 +35,10 @@ import importlib
 
 _BACKENDS = {
     "sqlite":   "ems_db_sqlite",
-    "supabase": "ems_db_supabase",
+    # Not ems_db_supabase directly: ems_db_offline wraps it so a dropped
+    # connection degrades to the local mirror instead of raising into the
+    # UI. It is a pass-through whenever the network is fine.
+    "supabase": "ems_db_offline",
 }
 _DEFAULT = "sqlite"
 
