@@ -382,3 +382,36 @@ def test_child_without_its_own_card_is_not_merged_with_the_clients(monkeypatch):
     assert r["synced"] is False
     assert r["card_id"] == ""
     assert r["values"]["claim_number"] == "U-9"
+
+
+# ── XA ID / WC Project ID ─────────────────────────────────────────────
+
+def test_xa_id_is_read_out_of_the_xa_link():
+    """The id is already in the URL (…detail.jsp?ddid=06YD7CD&…). Asking
+    someone to retype it — where a typo silently points at the wrong
+    assignment — would be a worse field than no field."""
+    assert js.xa_id_from_link(
+        "https://www.xactanalysis.com/apps/cxa/detail.jsp"
+        "?ddid=06YD7CD&xlink=false&src=#d_clientpolicy") == "06YD7CD"
+
+
+def test_a_link_without_an_id_yields_nothing():
+    assert js.xa_id_from_link("https://www.xactanalysis.com/apps/cxa/") == ""
+    assert js.xa_id_from_link("") == ""
+
+
+def test_a_typed_xa_id_is_not_overwritten_by_the_link():
+    """A hand-entered id beats one parsed from a URL that may point at a
+    superseded assignment."""
+    card = CARD + ("\n**LINKS**\n\nXactanalysis Id: MANUAL-1\n\n"
+                   "Ems Xactanalysis Link: https://x/detail.jsp?ddid=FROMLINK\n")
+    assert js.from_card(card)["xa_id"] == "MANUAL-1"
+
+
+def test_new_id_fields_are_appended_to_a_card_that_lacks_them():
+    """No live card has either key yet, so a save has to add the line
+    rather than quietly discard what was typed."""
+    vals = js.from_card(CARD)
+    vals["wc_project_id"] = "WC-4821"
+    out = js.render_desc(CARD, vals, changed_ids=["wc_project_id"])
+    assert "Workcenter Project Id: WC-4821" in out

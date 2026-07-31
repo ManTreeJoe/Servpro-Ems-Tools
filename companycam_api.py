@@ -378,6 +378,12 @@ def attach_tags(photos, *, cap=_TAG_FETCH_CAP):
     un-organized behaviour rather than erroring.
     """
     for i, p in enumerate(photos or ()):
+        # Already carrying tags — leave them. plan_pull attaches them to
+        # build the preview and the download then runs over the SAME
+        # photos, so without this every pull re-fetched all of them, and
+        # any tags a caller supplied were overwritten.
+        if p.get("tags"):
+            continue
         p["tags"] = photo_tags(p.get("id")) if i < cap else []
     return photos
 
@@ -532,7 +538,7 @@ def _download(url, dest_path, _max_retries=3):
     return dest_path
 
 
-def tech_label(photo, fallback=""):
+def tech_label(photo, fallback="", *, force=False):
     """Who shot this photo, as the folder/filename uses it.
 
     CompanyCam gives `creator_name` per photo, so unlike the zip path —
@@ -543,7 +549,15 @@ def tech_label(photo, fallback=""):
     Leads collapse to initials (Fernando Baca → FB), matching what the
     zip import writes; anyone without initials keeps their name.
     """
-    who = (photo.get("creator_name") or "").strip() or (fallback or "").strip()
+    # `force` is the user overriding it in the pull dialog. CompanyCam's
+    # creator is whoever's phone took the shot, which is not always who the
+    # folder should be filed under — a lead shooting on a helper's device,
+    # or an office account uploading a batch.
+    if force and (fallback or "").strip():
+        who = fallback.strip()
+    else:
+        who = ((photo.get("creator_name") or "").strip()
+               or (fallback or "").strip())
     if not who:
         return ""
     try:
@@ -566,9 +580,9 @@ def date_label(photo):
         return ""
 
 
-def tech_date_box(photo, fallback=""):
+def tech_date_box(photo, fallback="", *, force_tech=False):
     """'FB 07-30-2026' — the per-shoot folder, or "" when neither is known."""
-    return " ".join(x for x in (tech_label(photo, fallback),
+    return " ".join(x for x in (tech_label(photo, fallback, force=force_tech),
                                 date_label(photo)) if x).strip()
 
 
@@ -660,7 +674,7 @@ def _id_tokens_on_disk(dest_dir):
 
 
 def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
-                organize_by_tags=True):
+                organize_by_tags=True, force_tech=False):
     """Where ONE photo lands, as (relative parts, room, stage, box).
 
     Extracted from the download loop so the pull PREVIEW and the pull
@@ -678,7 +692,7 @@ def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
         stage = _safe_folder(stage)
         qualifier = _safe_folder(qualifier)
     stage_dir = stage or subfolder
-    box = tech_date_box(p, tech) if tech_date_folder else ""
+    box = tech_date_box(p, tech, force_tech=force_tech) if tech_date_folder else ""
     parts = [x for x in (stage_dir, box, room, qualifier) if x]
     return {"parts": parts, "room": room, "stage": stage_dir,
             "box": box, "qualifier": qualifier}
@@ -702,8 +716,25 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
     if not v.get("ok"):
         return v
 
+    missing = v.get("missing_photos") or []
+    if organize_by_tags:
+        # Tags come from a SEPARATE call per photo, so a photo list alone
+        # carries none. Without this the plan showed every shoot as
+        # "(no stage tag)" even when CompanyCam had them tagged Initial /
+        # Demo / Monitor — the preview claiming the job was untagged when
+        # it wasn't. Only the MISSING photos are fetched (the rest are
+        # already filed), and photo_tags caches, so the pull that follows
+        # costs nothing extra.
+        try:
+            attach_tags(missing)
+        except Exception:
+            pass          # untagged routing is a worse plan, not a broken one
+
     groups = {}
-    for p in v.get("missing_photos") or []:
+    for p in missing:
+        # No force_tech here on purpose: the preview shows the DEFAULT
+        # attribution (CompanyCam's creator per photo) and the user
+        # overrides it per row afterwards if it's wrong.
         r = route_photo(p, subfolder=subfolder, tech=tech,
                         tech_date_folder=tech_date_folder,
                         organize_by_tags=organize_by_tags)
@@ -782,7 +813,7 @@ def pull_missing_photos(project_id, dest_dir, **kw):
 def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                     subfolder="", advance_watermark=True, tech="",
                     organize_by_tags=True, tech_date_folder=True,
-                    only_ids=None):
+                    only_ids=None, force_tech=False):
     """Download NEW project photos into `dest_dir` and advance the per-
     project high-water mark.
 
@@ -859,7 +890,7 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
     downloaded, skipped, files, latest = 0, 0, [], since
     rooms_used, stages_used, boxes_used, untagged = {}, {}, {}, 0
     for p in photos:
-        fname = _photo_filename(p, tech_label(p, tech))
+        fname = _photo_filename(p, tech_label(p, tech, force=force_tech))
         # Room tag → subfolder under the stage, matching the zip import's
         # layout. No room tag means the photo stays at the stage level
         # rather than landing in an "Unsorted" bucket nobody looks in.

@@ -2487,10 +2487,15 @@ class Api(JobSettingsApi):
             stage = (g.get("stage") or "").strip()
             if stage.upper() == "AUTO":
                 stage = ""
+            # A tech typed on the row OVERRIDES CompanyCam's creator.
+            # The creator is whoever's phone took the shot, which isn't
+            # always who the folder should be filed under.
+            row_tech = (g.get("tech") or "").strip()
             try:
                 r = cc.pull_new_photos(
                     pid, pics, since_epoch=None, subfolder=stage,
-                    tech=(tech or ""), only_ids=ids,
+                    tech=(row_tech or tech or ""), only_ids=ids,
+                    force_tech=bool(row_tech),
                     # Never advance past shoots deliberately skipped —
                     # they'd fall behind the mark and go unpullable.
                     advance_watermark=False) or {}

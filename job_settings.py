@@ -80,6 +80,13 @@ FIELDS = [
     ("cause_of_loss",   PROPERTY,  "CAUSE OF LOSS",       "Cause of loss",   True),
     ("year_built",      PROPERTY,  "YEAR BUILT",          "Year built",      True),
 
+    # Identifiers, kept beside the links they belong to — the card template
+    # has no section for them and this is where anyone would look. Neither
+    # key exists on any live card yet; render_desc appends a missing field
+    # under its section rather than dropping it.
+    ("xa_id",           LINKS,     "XACTANALYSIS ID",        "XA ID",       True),
+    ("wc_project_id",   LINKS,     "WORKCENTER PROJECT ID",  "WC Project ID", True),
+
     ("link_xa",         LINKS,     "EMS XACTANALYSIS LINK",  "XactAnalysis", True),
     ("link_companycam", LINKS,     "COMPANYCAM LINK",        "CompanyCam",   True),
     ("link_docusketch", LINKS,     "DOCUSKETCH LINK",        "Docusketch",   True),
@@ -126,6 +133,22 @@ def schema():
 
 # ── reading the card ───────────────────────────────────────────────────
 
+_XA_ID_RE = re.compile(r"[?&]ddid=([A-Za-z0-9]+)", re.I)
+
+
+def xa_id_from_link(link):
+    """The assignment id embedded in an XactAnalysis URL.
+
+    Live links look like
+    `…/detail.jsp?ddid=06YD7CD&xlink=false&src=#d_clientpolicy`, so the id
+    is already on the card — asking someone to retype it, when it is sat
+    right there and a typo silently points at the wrong assignment, would
+    be a worse field than no field.
+    """
+    m = _XA_ID_RE.search(str(link or ""))
+    return m.group(1) if m else ""
+
+
 def from_card(desc):
     """Card description text -> {field_id: value}."""
     import trello_client as tc
@@ -133,6 +156,11 @@ def from_card(desc):
     out = {}
     for fid, section, key, _label, _core in FIELDS:
         out[fid] = ((parsed.get(section) or {}).get(key) or "").strip()
+    # Derive the XA id from the link when the card carries no explicit one.
+    # Never overwrite a value someone typed: a hand-entered id beats one
+    # parsed out of a URL that may point at a superseded assignment.
+    if not out.get("xa_id"):
+        out["xa_id"] = xa_id_from_link(out.get("link_xa"))
     return out
 
 

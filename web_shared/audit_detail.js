@@ -477,7 +477,12 @@
                    <option value="">— pick a stage —</option>
                    ${STAGES.map((st) => `<option value="${escA(ctx, st)}">${esc(ctx, st)}</option>`).join("")}
                  </select>`}
-            ${g.tech ? `<span style="color:var(--text-muted);"> · ${esc(ctx, g.tech)}</span>` : ""}
+            <input class="ccm-tech" data-i="${i}" type="text"
+                   value="${escA(ctx, g.tech || "")}" placeholder="tech"
+                   title="Who this gets filed under. Defaults to whoever CompanyCam says took it."
+                   style="width:62px;background:var(--surface-2);color:var(--text);
+                          border:1px solid var(--border);border-radius:5px;
+                          padding:3px 6px;font:inherit;font-size:12px;margin-left:6px;" />
             ${rooms ? `<div style="color:var(--text-muted);font-size:11px;margin-top:2px;">${rooms}</div>` : ""}</td>
           <td style="padding:6px 10px 6px 0;white-space:nowrap;vertical-align:top;">
             <b>${g.count}</b> photo${g.count === 1 ? "" : "s"}</td>
@@ -530,8 +535,10 @@
       // day of demo and a day of monitor land in different folders.
       const assignments = () => boxes().filter((b) => b.checked).map((b) => {
         const i = +b.dataset.i;
+        const t = overlay.querySelector(`.ccm-tech[data-i="${i}"]`);
         return {photo_ids: (groups[i] || {}).photo_ids || [],
-                stage: stageOf(i)};
+                stage: stageOf(i),
+                tech: t ? t.value.trim() : ""};
       });
       const needStage = () => boxes().filter((b) => b.checked)
         .some((b) => overlay.querySelector(`.ccm-stage[data-i="${b.dataset.i}"]`)
@@ -545,7 +552,10 @@
           const cell = overlay.querySelector(`.ccm-dest[data-i="${i}"]`);
           if (!cell) return;
           const st = stageOf(i);
-          const base = g.box || "";
+          const tEl = overlay.querySelector(`.ccm-tech[data-i="${i}"]`);
+          const t = tEl ? tEl.value.trim() : "";
+          // Rebuild the box from the typed tech so the preview follows it.
+          const base = t ? [t, g.date].filter(Boolean).join(" ") : (g.box || "");
           cell.textContent = st ? [st, base].filter(Boolean).join("\\")
                                 : (g.target || base || "(top level)");
         });
@@ -562,6 +572,8 @@
       };
       overlay.querySelectorAll(".ccm-stage").forEach(
         (sel) => sel.addEventListener("change", refreshCount));
+      overlay.querySelectorAll(".ccm-tech").forEach(
+        (inp) => inp.addEventListener("input", refreshCount));
       overlay.querySelector("#ccm-all")?.addEventListener("change", (e) => {
         boxes().forEach((b) => { b.checked = e.target.checked; });
         refreshCount();

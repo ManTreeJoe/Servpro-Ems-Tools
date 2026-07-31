@@ -168,3 +168,54 @@ def test_a_tagged_shoot_keeps_its_own_stage_over_the_fallback(monkeypatch):
     p = _photo("a1", DAY1, "ME", ["Kitchen", "Demo"])
     r = cc.route_photo(p, subfolder="Initial", tech="ME")
     assert r["stage"] == "Demo"
+
+
+# ── tags must actually be loaded, and the tech must be overridable ────
+
+def test_plan_loads_tags_before_grouping(monkeypatch):
+    """Tags come from a SEPARATE per-photo call, so a photo list alone
+    carries none. Without fetching them the plan showed every shoot as
+    "(no stage tag)" on jobs CompanyCam HAD tagged — the preview claiming
+    a job was untagged when it wasn't. Caught on Gary Mongue: 6 of his 9
+    shoots are tagged Post / Demo / Monitor."""
+    photos = [_photo("a1", DAY1, "ME", None), _photo("a2", DAY2, "ME", None)]
+    monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
+    monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: set())
+    monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
+    monkeypatch.setattr(cc, "photo_tags",
+                        lambda pid: ["Demo"] if pid == "a1" else ["Monitor"])
+
+    r = cc.plan_pull("1", r"X:\job\PICS")
+    stages = sorted(g["stage"] for g in r["groups"])
+    assert stages == ["Demo", "Monitor"]
+
+
+def test_a_broken_tag_fetch_still_produces_a_plan(monkeypatch):
+    """Untagged routing is a worse plan, not a broken one."""
+    photos = [_photo("a1", DAY1, "ME", None)]
+    monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
+    monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: set())
+    monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
+    monkeypatch.setattr(cc, "attach_tags",
+                        lambda ps, **kw: (_ for _ in ()).throw(OSError("down")))
+    r = cc.plan_pull("1", r"X:\job\PICS")
+    assert r["ok"] and len(r["groups"]) == 1
+
+
+def test_creator_wins_by_default():
+    """A mixed-crew day should attribute per photo, not per batch."""
+    p = _photo("a1", DAY1, "Fernando Baca", [])
+    assert cc.route_photo(p, tech="ML")["box"].startswith("FB ")
+
+
+def test_a_typed_tech_overrides_the_creator():
+    """CompanyCam's creator is whoever's phone took the shot — not always
+    who the folder should be filed under."""
+    p = _photo("a1", DAY1, "Fernando Baca", [])
+    assert cc.route_photo(p, tech="ML", force_tech=True)["box"].startswith("ML ")
+
+
+def test_forcing_an_empty_tech_falls_back_to_the_creator():
+    """Clearing the box must not produce a nameless folder."""
+    p = _photo("a1", DAY1, "Fernando Baca", [])
+    assert cc.route_photo(p, tech="", force_tech=True)["box"].startswith("FB ")
