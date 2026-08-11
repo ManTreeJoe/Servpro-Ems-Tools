@@ -107,8 +107,19 @@ def _items_for_section(raw_items, franchise_tags=None,
                 has_note = bool(notes_for_section[bare])
         except Exception:
             pass
+        # The client name with the sub + status suffixes peeled off, so
+        # the name filter can match on the NAME. Filtering the whole
+        # stored string meant "aaa" matched every AAA job and "pending"
+        # matched every pending one. wrap_item peels properly (longest
+        # variant wins, estimator names count as subs); a split on "-"
+        # would mangle "Garcia-Vargas" and "Testing/Clearance".
+        try:
+            base = (apa.wrap_item(text, highlighted) or {}).get("text") or text
+        except Exception:
+            base = text
         out.append({
             "text":        text,
+            "base":        base,
             "highlighted": bool(highlighted),
             "extended":    extended,
             "franchise":   franchise,
@@ -116,6 +127,40 @@ def _items_for_section(raw_items, franchise_tags=None,
             "has_note":    has_note,
         })
     return out
+
+
+def _restamp(text, highlighted, status):
+    """Rebuild an APA item's text with `status` in place of whatever it
+    carried. Returns the (text, highlighted) tuple write_doc expects.
+
+    Items are stored as `Base-Sub-Status`, so the status cannot just be
+    appended — the old one has to come off first or you get
+    `Brew, Brian - AAA-Testing/Clearance-extended-pending`. wrap_item
+    peels status and sub properly (longest variant wins, estimator names
+    count as subs), which a regex on "-" would not.
+
+    Highlight is re-derived, never carried: it is a function of status
+    (HIGHLIGHT_STATUSES), and a stale yellow row that no longer matches
+    its status is exactly the bug that used to drag finished jobs into
+    the next day.
+    """
+    if not (status or "").strip():
+        return (text, bool(highlighted))
+    try:
+        w = apa.wrap_item(text, highlighted) or {}
+    except Exception:
+        return (text, bool(highlighted))
+    base = (w.get("text") or text or "").strip()
+    if not base:
+        return (text, bool(highlighted))
+    sub = (w.get("sub") or "").strip()
+    out = base + (f"-{sub}" if sub else "") + f"-{status.strip()}"
+    try:
+        hi = status.strip().lower() in {
+            x.lower() for x in (apa.HIGHLIGHT_STATUSES or set())}
+    except Exception:
+        hi = bool(highlighted)
+    return (out, hi)
 
 
 def _doc_payload_for(date_obj):
@@ -1483,7 +1528,9 @@ class Api:
 
     # ── Phase 2: editing ─────────────────────────────────────────────
     def create_doc(self, date_iso: str = "",
-                    carry_forward: bool = True) -> dict:
+                    carry_forward: bool = True,
+                    reset_status: str = "pending",
+                    refresh_lanes: bool = True) -> dict:
         """Auto-create the APA .docx for `date_iso` (defaults to today).
 
         Mirrors the Tk panel's first-open auto-create flow:
@@ -1499,6 +1546,18 @@ class Api:
 
         `carry_forward=False` writes an empty doc — useful when the
         user explicitly wants to start fresh.
+
+        `reset_status` ("pending" by default) is the status every carried
+        item is stamped with on the new day. Yesterday's "extended" or
+        "pending upload" described yesterday — a fresh day starts every
+        surviving job pending again, which is what the board is for.
+        Pass "" to carry each item's status through unchanged.
+
+        `refresh_lanes` (on by default) re-checks Trello straight after
+        creating the doc, so carried items land in the section matching
+        the lane each card sits in TODAY rather than the one it was in
+        when it was last touched. It was a manual 🔄 button, which meant
+        a new day silently started with yesterday's routing.
         """
         try:
             d = (_dt.date.fromisoformat(date_iso) if date_iso
@@ -1545,7 +1604,8 @@ class Api:
                         if status in DONE_STATUSES:
                             continue   # uploaded — completed, don't carry
                         if status in CARRY_STATUSES or highlighted:
-                            sections[sec].append((text, bool(highlighted)))
+                            sections[sec].append(
+                                _restamp(text, highlighted, reset_status))
                             carried += 1
                 break  # stop at first prior doc
 
@@ -1555,8 +1615,22 @@ class Api:
         except Exception as ex:
             return {"ok": False,
                     "error": f"write_doc: {ex}"}
-        return {"ok": True, "created": True, "carried": carried,
-                "doc": _doc_payload_for(d)}
+        out = {"ok": True, "created": True, "carried": carried,
+               "doc": _doc_payload_for(d)}
+        # Re-route to today's Trello lanes. Best-effort: a Trello outage
+        # must not lose the doc we just wrote to the share.
+        if refresh_lanes and carried:
+            try:
+                res = self.refresh_doc_lanes(d.isoformat())
+                if res.get("ok"):
+                    out["lanes_moved"] = res.get("moved", 0)
+                    out["lanes_checked"] = res.get("checked", 0)
+                    out["doc"] = res.get("doc") or out["doc"]
+                else:
+                    out["lanes_error"] = res.get("error", "")
+            except Exception as ex:
+                out["lanes_error"] = f"{type(ex).__name__}: {ex}"
+        return out
 
     def refresh_doc_lanes(self, date_iso: str = "") -> dict:
         """Re-route every APA item into the section matching its Trello

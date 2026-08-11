@@ -31,7 +31,10 @@ def _run(tmp_path, prior_items):
     apa.doc_path_for_today = fake_path
     try:
         apa.write_doc(paths[yest], yest, prior_items)
-        res = apa_web.Api().create_doc(today.isoformat(), True)
+        # refresh_lanes=False: this exercises carry-forward, and the
+        # lane re-check is a live Trello round trip per item.
+        res = apa_web.Api().create_doc(today.isoformat(), True,
+                                       refresh_lanes=False)
         assert res.get("ok"), res
         return apa.parse_existing_doc(paths[today]) or {}
     finally:
@@ -52,9 +55,12 @@ def test_extended_carries_uploaded_dropped(tmp_path):
         ("Brown, Bob - SF-pending", True),          # pending → carry
     ]}
     out = _flat(_run(tmp_path, prior))
-    assert "Smith, John - AAA-extended" in out
-    assert "Kim, Lee - AAA-extended" in out
+    # A new day restamps every carried item back to pending (the status
+    # described YESTERDAY), so assert the job carried, not its old suffix.
+    assert "Smith, John - AAA-pending" in out
+    assert "Kim, Lee - AAA-pending" in out
     assert "Brown, Bob - SF-pending" in out
+    assert not any(t.endswith("-extended") for t in out)
     # The two uploaded jobs must NOT appear in the new doc.
     assert not any("uploaded" in t.lower() for t in out)
     assert "Doe, Jane - Mercury-uploaded" not in out

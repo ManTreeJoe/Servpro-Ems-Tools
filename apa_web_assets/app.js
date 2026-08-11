@@ -344,6 +344,33 @@ function renderDateNav() {
   );
 }
 
+// ── Name filter ────────────────────────────────────────────────────
+// The filter used to be `it.text.includes(q)` on the STORED string,
+// which is "Base-Sub-Status" — so "aaa" matched every AAA job, "pending"
+// matched every pending one, and "brian brew" matched nothing at all
+// because a substring cannot reorder words.
+//
+// Match the NAME (`it.base`, sub + status peeled server-side) token by
+// token, each as a prefix, in any order. "brew" finds Brew, "brian brew"
+// finds "Brew, Brian", "garcia var" finds Garcia-Vargas. EVERY token has
+// to land, so "brian brew" doesn't drag in every other Brian.
+function nameMatches(name, query) {
+  const norm = (x) => String(x || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ").trim();
+  const qt = norm(query).split(" ").filter(Boolean);
+  const nt = norm(name).split(" ").filter(Boolean);
+  if (!qt.length || !nt.length) return false;
+  return qt.every((t) => nt.some((n) => n.startsWith(t)));
+}
+
+// Falls back to the full stored text so a deliberate search for a status
+// or sub ("extended", "Testing/Clearance") still works — it just no
+// longer drowns out a name search.
+function itemMatches(it, query) {
+  return nameMatches(it.base || it.text, query)
+      || String(it.text || "").toLowerCase().includes(query);
+}
+
 function renderBoard() {
   const board = $("#board");
   const doc = state.doc;
@@ -362,9 +389,7 @@ function renderBoard() {
   let shownSections = 0;
 
   const html = doc.sections.map((s) => {
-    const filtered = q
-      ? s.items.filter((it) => it.text.toLowerCase().includes(q))
-      : s.items;
+    const filtered = q ? s.items.filter((it) => itemMatches(it, q)) : s.items;
     if (q && filtered.length === 0) {
       return `<section class="section hidden-by-filter"></section>`;
     }
