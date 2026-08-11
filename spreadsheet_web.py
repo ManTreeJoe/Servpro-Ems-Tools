@@ -14,7 +14,7 @@ from web_helpers import run_bg as _wh_run_bg
 # registry is never populated. The import only pulls in module-level
 # definitions — no Tk windows are created.
 try:
-    import spreadsheet_gui  # noqa: F401 — side-effect: wbr.register(...)
+    import workbook_specs  # noqa: F401 — registers the specs; NOT the Tk panel
 except Exception:
     pass
 # User-added workbooks (saved via spreadsheet_gui's "+ Add workbook"

@@ -1292,32 +1292,10 @@ class SpreadsheetApp(ToolPanel):
         threading.Thread(target=_bg, daemon=True).start()
 
 
-def _fmt_date_for_row(v):
-    """Shared date formatter used by spec row builders so all
-    workbooks render dates the same way."""
-    if isinstance(v, datetime):
-        return v.strftime("%m/%d/%y")
-    if isinstance(v, str):
-        return v[:10]
-    return str(v) if v not in (None, "") else ""
 
 
-def _snapshots_row_to_values(r):
-    """Convert a Snapshots-workbook row dict to the Treeview tuple
-    matching SNAPSHOTS_COLUMNS below."""
-    return (
-        r.get("_sheet") or "",
-        str(r.get("Name") or ""),
-        _fmt_date_for_row(r.get("Date Received")),
-        _fmt_date_for_row(r.get("Closing Date")),
-        r.get("Carrier") or "",
-        r.get("Claim#") or "",
-        r.get("Lead") or "",
-        r.get("ATP") or "",
-        r.get("CIF") or "",
-        r.get("CER") or "",
-        r.get("COS") or "",
-    )
+
+
 
 
 def _snapshots_search_blob(r):
@@ -1329,85 +1307,12 @@ def _snapshots_search_blob(r):
     ))
 
 
-SNAPSHOTS_COLUMNS = (
-    wbr.ColumnSpec("sheet",    "Tab",      90),
-    wbr.ColumnSpec("name",     "Name",     220),
-    wbr.ColumnSpec("received", "Received", 90),
-    wbr.ColumnSpec("closing",  "Closing",  90),
-    wbr.ColumnSpec("carrier",  "Carrier",  100),
-    wbr.ColumnSpec("claim",    "Claim#",   130),
-    wbr.ColumnSpec("lead",     "Lead",     90),
-    wbr.ColumnSpec("atp",      "ATP",      50),
-    wbr.ColumnSpec("cif",      "CIF",      50),
-    wbr.ColumnSpec("cer",      "CER",      50),
-    wbr.ColumnSpec("cos",      "COS",      50),
-)
 
-SNAPSHOTS_SPEC = wbr.WorkbookSpec(
-    key="snapshots",
-    label="Snapshots",
-    read_rows=sx.read_jobs,
-    workbook_path=sx.workbook_path,
-    sheets=("All", "NEW LOSS", "Completed", "Incomplete"),
-    columns=SNAPSHOTS_COLUMNS,
-    row_to_values=_snapshots_row_to_values,
-    tag_for_row=lambda r: r.get("_sheet") or None,
-    tag_colors={
-        "NEW LOSS":   WARN_BG,
-        "Completed":  SUCCESS_BG,
-        "Incomplete": DANGER_BG,
-    },
-    pending_count=sx.pending_count,
-    actions=(
-        wbr.ActionSpec(
-            label="↻ Sync backlog → spreadsheet",
-            kind="warn",
-            command_factory=lambda app: app._sync_backlog,
-            attr_name="_backlog_btn",
-            tooltip=("Re-audit every job in the year and write the "
-                     "results into the workbook (takes a few minutes)")),
-        wbr.ActionSpec(
-            label="🔄 Reconcile with Trello",
-            kind="send",
-            command_factory=lambda app: app._reconcile,
-            attr_name="_reconcile_btn",
-            tooltip=("Walk every row, look up the linked Trello card, "
-                     "and re-route to NEW LOSS / Completed / Incomplete "
-                     "based on the card's state. Excel must be closed.")),
-        wbr.ActionSpec(
-            label="🧹 Dedupe rows",
-            kind="secondary",
-            command_factory=lambda app: app._dedupe,
-            attr_name="_dedupe_btn",
-            tooltip=("Find rows whose Names match after case-folding, "
-                     "whitespace normalization, and comma-swap. "
-                     "Preview the plan, then merge into one keeper "
-                     "row each. Excel must be closed.")),
-        wbr.ActionSpec(
-            label="🔍 Cross-check Trello",
-            kind="secondary",
-            command_factory=lambda app: app._cross_check,
-            attr_name="_crosscheck_btn",
-            tooltip=("Walk every row, compare its sheet to where the "
-                     "pinned Trello card says it belongs, and show only "
-                     "the disagreements.")),
-        wbr.ActionSpec(
-            label="📝 Generate notes",
-            kind="secondary",
-            command_factory=lambda app: app._generate_notes,
-            attr_name="_notes_btn",
-            tooltip=("For every row whose Comment cell is blank, pull "
-                     "the latest Trello comments + 'needs:' list and "
-                     "show you a confirm dialog. You edit + save each "
-                     "or skip. Nothing writes without your OK.")),
-    ),
-)
 
 # Register at import. Future workbooks: add another `wbr.register(...)`
 # call from their own module (the launcher only needs to import that
 # module once before the panel is built — easiest path is to import it
 # from this file too).
-wbr.register(SNAPSHOTS_SPEC)
 
 
 # ── Disputes workbook spec ──────────────────────────────────────────────────
@@ -1415,100 +1320,14 @@ wbr.register(SNAPSHOTS_SPEC)
 # panel still builds even when the dispute workbook is on a path we
 # can't reach right now (server share offline, etc).
 
-def _disputes_read_rows(_year):
-    """Year arg is ignored — single workbook, not per-year.
-
-    Stamps a synthetic `_sheet` value on each row so the panel's
-    sheet-filter dropdown (`All / Open / Overdue / Needs ack /
-    Closed`) routes correctly. The Disputes workbook is single-sheet
-    in the file itself; the "sheets" tuple here is repurposed as
-    aging buckets, and the bucket is derived from the same tag logic
-    `_disputes_tag_for_row` uses for color."""
-    try:
-        import dispute_tracker as _dt
-    except Exception:
-        return []
-    rows = _dt.read_rows()
-    for r in rows:
-        tag = _disputes_tag_for_row(r)
-        if tag == "overdue":
-            r["_sheet"] = "Overdue"
-        elif tag == "needs_ack":
-            r["_sheet"] = "Needs ack"
-        elif tag == "closed":
-            r["_sheet"] = "Closed"
-        else:
-            r["_sheet"] = "Open"
-    return rows
 
 
-def _disputes_workbook_path(_year):
-    try:
-        import dispute_tracker as _dt
-        return _dt.path()
-    except Exception:
-        return ""
 
 
-def _disputes_row_to_values(r):
-    """Convert a Disputes row dict → Treeview tuple matching
-    DISPUTES_COLUMNS below. Order kept stable when this code changes."""
-    return (
-        str(r.get("status") or ""),
-        _fmt_date_for_row(r.get("received_date")),
-        str(r.get("claim") or ""),
-        str(r.get("insured") or ""),
-        str(r.get("carrier") or ""),
-        str(r.get("intake_source") or ""),
-        str(r.get("priority") or ""),
-        str(r.get("ack_email_sent") or ""),
-        str(r.get("assigned_estimator") or ""),
-        _fmt_date_for_row(r.get("assigned_date")),
-        _fmt_date_for_row(r.get("target_response_date")),
-        _fmt_date_for_row(r.get("next_follow_up_date")),
-        str(r.get("outcome") or ""),
-    )
 
 
-def _disputes_tag_for_row(r):
-    """Color tag — overdue > needs-ack > new > closed > default."""
-    status = (r.get("status") or "").strip().lower()
-    if status == "closed":
-        return "closed"
-    # Overdue?
-    tgt = r.get("target_response_date")
-    if tgt:
-        try:
-            import datetime as _dt
-            if isinstance(tgt, (_dt.datetime, _dt.date)):
-                d = (tgt.date()
-                      if isinstance(tgt, _dt.datetime) else tgt)
-            else:
-                d = _dt.datetime.fromisoformat(str(tgt)[:10]).date()
-            if d < _dt.date.today():
-                return "overdue"
-        except (ValueError, TypeError):
-            pass
-    if (r.get("ack_email_sent") or "").strip().lower() != "yes":
-        return "needs_ack"
-    return "open"
 
 
-DISPUTES_COLUMNS = (
-    wbr.ColumnSpec("status",     "Status",        110),
-    wbr.ColumnSpec("received",   "Received",      90),
-    wbr.ColumnSpec("claim",      "Claim #",       100),
-    wbr.ColumnSpec("insured",    "Insured",       200),
-    wbr.ColumnSpec("carrier",    "Carrier",       100),
-    wbr.ColumnSpec("intake",     "Intake",        70),
-    wbr.ColumnSpec("priority",   "Priority",      70),
-    wbr.ColumnSpec("ack",        "Ack?",          50),
-    wbr.ColumnSpec("estimator",  "Estimator",     90),
-    wbr.ColumnSpec("assigned",   "Assigned",      90),
-    wbr.ColumnSpec("target",     "Target",        90),
-    wbr.ColumnSpec("nextfu",     "Next Follow-Up", 100),
-    wbr.ColumnSpec("outcome",    "Outcome",       90),
-)
 
 
 def _open_dispute_tracker_panel(app):
@@ -1542,46 +1361,7 @@ def _refresh_disputes(app):
     return lambda: app._on_workbook_changed()
 
 
-DISPUTES_SPEC = wbr.WorkbookSpec(
-    key="disputes",
-    label="Disputes",
-    read_rows=_disputes_read_rows,
-    workbook_path=_disputes_workbook_path,
-    # Use logical filters as "sheets". The viewer doesn't actually
-    # split by sheet — Disputes is a single-sheet workbook — but the
-    # filter dropdown is the right place to expose these aging buckets.
-    sheets=("All", "Open", "Overdue", "Needs ack", "Closed"),
-    columns=DISPUTES_COLUMNS,
-    row_to_values=_disputes_row_to_values,
-    tag_for_row=_disputes_tag_for_row,
-    tag_colors={
-        "overdue":   DANGER_BG,
-        "needs_ack": WARN_BG,
-        "open":      SUCCESS_BG,
-        "closed":    "#EEEEEE",
-    },
-    pending_count=(lambda _year:
-        __import__("dispute_tracker").pending_count()),
-    actions=(
-        wbr.ActionSpec(
-            label="✎ Open Disputes panel",
-            kind="send",
-            command_factory=_open_dispute_tracker_panel,
-            attr_name="_open_disputes_btn",
-            tooltip=("Open the dedicated Dispute Tracker panel where "
-                     "rows are editable (statuses, dates, notes). "
-                     "This Spreadsheets viewer is read-only.")),
-        wbr.ActionSpec(
-            label="↻ Refresh",
-            kind="secondary",
-            command_factory=_refresh_disputes,
-            attr_name="_refresh_disputes_btn",
-            tooltip=("Re-read the Disputes workbook from disk so edits "
-                     "made in the dedicated panel show up here.")),
-    ),
-)
 
-wbr.register(DISPUTES_SPEC)
 
 
 # ── User-defined workbook auto-registration ─────────────────────────────────
@@ -1589,6 +1369,38 @@ wbr.register(DISPUTES_SPEC)
 # walks `config["user_workbooks"]` and registers each entry as a
 # WorkbookSpec via `wbr.register(...)`. Done after the hard-coded specs
 # so the built-ins always render first in the dropdown.
+# ── Workbook specs ────────────────────────────────────────────────────
+# The specs themselves live in workbook_specs, which is Tk-free, so the
+# WEB panel can populate the registry without importing this module.
+# Importing it here registers both; we then re-register Disputes with
+# the Tk-only action buttons attached. wbr.register overrides by key and
+# keeps the original order, so each panel gets the spec it can use.
+import dataclasses as _dc
+
+import workbook_specs as _wbs
+from workbook_specs import (  # noqa: F401 — kept importable for callers
+    SNAPSHOTS_COLUMNS, SNAPSHOTS_SPEC, DISPUTES_COLUMNS, DISPUTES_SPEC,
+    _fmt_date_for_row,
+)
+
+wbr.register(_dc.replace(_wbs.DISPUTES_SPEC, actions=(
+    wbr.ActionSpec(
+        label="✎ Open Disputes panel",
+        kind="send",
+        command_factory=_open_dispute_tracker_panel,
+        attr_name="_open_disputes_btn",
+        tooltip=("Open the dedicated Dispute Tracker panel where "
+                 "rows are editable (statuses, dates, notes). "
+                 "This Spreadsheets viewer is read-only.")),
+    wbr.ActionSpec(
+        label="↻ Refresh",
+        kind="secondary",
+        command_factory=_refresh_disputes,
+        attr_name="_refresh_disputes_btn",
+        tooltip=("Re-read the Disputes workbook from disk so edits "
+                 "made in the dedicated panel show up here.")),
+)))
+
 import user_workbooks as uwb       # noqa: E402  (intentional post-spec import)
 
 
@@ -1596,8 +1408,10 @@ def main(argv=None):
     import ctypes
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
         "Servpro.EMS.Spreadsheet")
-    run_standalone(SpreadsheetApp, geometry="1200x720",
-                    title="Spreadsheets")
+    # No `title=` — run_standalone has never accepted one, so this raised
+    # TypeError before the window could appear. The panel titles itself,
+    # and every other *_gui calls it the same way.
+    run_standalone(SpreadsheetApp, geometry="1200x720")
 
 
 if __name__ == "__main__":

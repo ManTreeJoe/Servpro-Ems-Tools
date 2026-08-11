@@ -28,12 +28,12 @@ HEAVY = ("customtkinter", "tkinter", "docx", "PIL", "openpyxl",
 # one is still exactly as dirty as recorded, so cleaning one up (or
 # making one worse) shows here.
 KNOWN_HEAVY = {
-    # The LAST Tk holdout. spreadsheet_gui registers its workbook specs as
-    # an import side effect (wbr.register at module scope), so the web
-    # panel imports the Tk module purely to populate the registry. The
-    # specs themselves are Tk-free; only their `actions` (Tk button
-    # factories the web panel never uses) are not.
-    "spreadsheet_web":   {"customtkinter", "tkinter", "PIL", "openpyxl", "lxml"},
+    # Was the last Tk holdout: spreadsheet_gui registered the workbook
+    # specs as an import side effect, so the web panel imported a Tk
+    # module purely to populate the registry. The specs moved to
+    # workbook_specs (Tk-free); spreadsheet_gui re-registers Disputes
+    # with its Tk `actions` attached. What's left is the xlsx reader.
+    "spreadsheet_web":   {"PIL", "openpyxl", "lxml"},
     # apa_web writes .docx run documents; docx is the panel's job.
     "apa_web":           {"docx", "lxml"},
     # disputes_web reads the dispute workbook via openpyxl.
@@ -101,6 +101,60 @@ def test_shared_modules_stay_light():
                 "daily_photos_logic"):
         got = _heavy_after_import(mod)
         assert not got, f"{mod} imports {sorted(got)} at module scope"
+
+
+def test_workbook_specs_registers_both_without_tk():
+    """The split that freed spreadsheet_web.
+
+    workbook_specs must (a) stay off the Tk stack and (b) actually
+    register — the panel renders an empty workbook dropdown otherwise,
+    because nothing else calls wbr.register. Both halves matter, so
+    assert them together rather than trusting the import to be enough.
+    """
+    out = subprocess.run(
+        [sys.executable, "-c", textwrap.dedent("""
+            import sys, json
+            import workbook_specs, workbook_registry as wbr
+            print(json.dumps({
+                "keys": [s.key for s in wbr.all_specs()],
+                "tk": sorted(m for m in ("tkinter", "customtkinter")
+                             if m in sys.modules),
+            }))
+        """)],
+        capture_output=True, text=True, timeout=120,
+        cwd=__import__("os").path.dirname(
+            __import__("os").path.dirname(__import__("os").path.abspath(__file__))))
+    assert out.returncode == 0, out.stderr[-500:]
+    import json
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    assert not got["tk"], f"workbook_specs pulled {got['tk']}"
+    assert "snapshots" in got["keys"] and "disputes" in got["keys"], got["keys"]
+
+
+def test_tk_panel_keeps_the_workbook_actions():
+    """spreadsheet_gui re-registers Disputes with its Tk button factories
+    attached. If that block moves above the action functions it defines,
+    it raises NameError; if it is dropped, the Tk panel silently loses
+    its buttons. Assert the actions survive the round-trip."""
+    import workbook_specs  # plain specs first, as the web panel sees them
+    import workbook_registry as wbr
+    assert not wbr.get("disputes").actions
+
+    out = subprocess.run(
+        [sys.executable, "-c", textwrap.dedent("""
+            import json, workbook_registry as wbr, spreadsheet_gui
+            print(json.dumps({s.key: [a.label for a in (s.actions or ())]
+                              for s in wbr.all_specs()}))
+        """)],
+        capture_output=True, text=True, timeout=180,
+        cwd=__import__("os").path.dirname(
+            __import__("os").path.dirname(__import__("os").path.abspath(__file__))))
+    if out.returncode != 0:
+        pytest.skip(f"spreadsheet_gui not importable here: {out.stderr[-300:]}")
+    import json
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    assert len(got.get("snapshots") or []) == 5, got.get("snapshots")
+    assert len(got.get("disputes") or []) == 2, got.get("disputes")
 
 
 def test_theme_does_not_pull_the_tk_stack():
