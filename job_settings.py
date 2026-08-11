@@ -419,11 +419,26 @@ def load(canon_key, child_name=""):
 
 
 def save(canon_key, values, child_name="", card_desc=""):
-    """Persist values and push the changed fields to the card.
+    """Persist values, then push the changed fields to the card.
 
-    Writes locally FIRST. If Trello is unreachable the local save still
-    stands and the push is reported as pending — losing the edit because a
-    network call failed would be the worst outcome.
+    THE DATABASE IS THE SOURCE OF TRUTH. Two things follow from that, and
+    both are load-bearing:
+
+    1. The local write happens FIRST — genuinely first, before any
+       network call.
+       It used to run at the end, after the push, so a crash or a hang
+       mid-push lost the edit entirely. The docstring claimed otherwise,
+       which is how it went unnoticed.
+
+    2. Where the Hub and the card disagree, the HUB WINS. That is the
+       point of a source of truth. But it is reported rather than silent:
+       `clobbered` lists fields where the card had been changed by
+       somebody else since our last sync and we overwrote them, so the
+       overwrite is visible instead of being discovered later.
+
+    If Trello is unreachable the local save still stands and the push is
+    reported as pending — losing the edit because a network call failed
+    would be the worst outcome.
     """
     import ems_db
     rec = _record(canon_key, child_name)
@@ -455,8 +470,14 @@ def save(canon_key, values, child_name="", card_desc=""):
     settings = {fid: values.get(fid, before.get(fid, "")) for fid in BY_ID}
     meta[_META_SETTINGS] = settings
 
+    # ── DB FIRST ──────────────────────────────────────────────────────
+    # Before the network is touched at all. The baseline is written again
+    # after a successful push (it can only advance to something we KNOW
+    # the card holds), but the values themselves are safe from here on.
+    _persist(canon_key, child_name, values, meta)
+
     card_id = _card_id(rec, canon_key, child_name)
-    pushed, push_error, wrote = False, "", []
+    pushed, push_error, wrote, clobbered = False, "", [], []
     if card_id:
         try:
             import trello_client as tc
@@ -473,6 +494,18 @@ def save(canon_key, values, child_name="", card_desc=""):
             # an unchanged value is never rewritten and its markdown lives.
             wrote = [fid for fid in settings
                      if (settings.get(fid) or "") != (on_card.get(fid) or "")]
+            # Which of those had somebody ELSE changed on the card since
+            # our last sync? The Hub still wins — that is what a source of
+            # truth means — but overwriting another person's edit without
+            # saying so is how a card quietly loses work.
+            base = stored_base(rec)
+            clobbered = [
+                {"id": fid, "label": BY_ID[fid][3],
+                 "was": (on_card.get(fid) or ""),
+                 "now": (settings.get(fid) or "")}
+                for fid in wrote
+                if base and (on_card.get(fid) or "") != (base.get(fid) or "")
+            ]
             if not wrote:
                 # Card already says what we do. Nothing to send, and the
                 # baseline is now known-good.
@@ -490,10 +523,14 @@ def save(canon_key, values, child_name="", card_desc=""):
         except Exception as ex:
             push_error = f"{type(ex).__name__}: {ex}"
 
-    _persist(canon_key, child_name, values, meta)
+    # Second write: only the baseline can have moved, and only when the
+    # push succeeded. Cheap, and it keeps the merge honest.
+    if pushed:
+        _persist(canon_key, child_name, values, meta)
     return {"ok": True, "changed": changed, "wrote_to_card": wrote,
             "pushed": pushed,
             "pending_push": bool(card_id and wrote and not pushed),
+            "clobbered": clobbered,
             "error": push_error}
 
 

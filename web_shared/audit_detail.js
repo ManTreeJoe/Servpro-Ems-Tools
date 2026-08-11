@@ -1601,6 +1601,18 @@
       }
       document.getElementById("ad-modal")?.remove();
       const n = (res.wrote_to_card || []).length;
+      // Somebody had changed these on the card since our last sync, and
+      // the Hub just overwrote them. The Hub winning is the intended
+      // rule — it is the source of truth — but doing it silently is not:
+      // you cannot put back what you never knew you replaced.
+      const clob = res.clobbered || [];
+      if (clob.length) {
+        setStatus(ctx,
+          `✓ Saved · ⚠ overwrote ${clob.length} field${clob.length === 1 ? "" : "s"} `
+          + `changed on the card: ${clob.map((c) => esc(ctx, c.label)).join(", ")}`,
+          "warn");
+        return;
+      }
       setStatus(ctx,
         res.pending_push
           ? `Saved here — ${n} field${n === 1 ? "" : "s"} still to reach Trello`
