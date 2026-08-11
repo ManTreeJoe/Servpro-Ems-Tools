@@ -760,9 +760,9 @@
       }
       if (M.showClaimFolders) M.showClaimFolders(row, folders);
     } else if (action === "od-contents") {
-      if (M.showOdContents) M.showOdContents(row, row.path || "");
+      (M.showOdContents || ((r, p) => defaultOdContents(ctx, r, p)))(row, row.path || "");
     } else if (action === "work-log") {
-      if (M.showWorkLog) M.showWorkLog(row);
+      (M.showWorkLog || ((r) => defaultWorkLog(ctx, r)))(row);
     } else if (action === "open-trello") {
       await pywebview.api.open_trello_card(row.trello_card_id);
     } else if (action === "open-xa") {
@@ -775,6 +775,11 @@
     } else if (action === "xa-note") {
       openXaNoteModal(row, ctx);
     } else if (action === "attachments") {
+      // Already falls back to the shared trello_attachments.js module,
+      // which both panels load — so this one is NOT renderer-specific.
+      // The argument is an OBJECT; the modal destructures {cardId,
+      // client, onAfter}, and passing positionally silently opens with
+      // no card.
       if (M.openAttachments) M.openAttachments(row);
       else window.openTrelloAttachmentsModal({ cardId: row.trello_card_id, client: row.client });
     } else if (action === "sp-import") {
@@ -1758,6 +1763,202 @@
       localStorage.setItem("pinSearch.excludedBoards",
                            JSON.stringify([...set]));
     } catch (_) { /* private mode — filter just won't be sticky */ }
+  }
+
+  // ── Shared fallbacks for three viewers that used to live only in the
+  //    Audit panel. They were reachable from the shared card but only
+  //    Audit injected them, so 📎 Attachments, 📁 OD contents and
+  //    📖 Job tracker were DEAD BUTTONS in Snapshot. Nothing about them
+  //    is audit-specific — they call api methods both windows have — so
+  //    they belong here, where neither renderer has to remember to wire
+  //    them and the gap cannot come back.
+
+  function defaultOdContents(ctx, row, startPath) {
+    if (!startPath) {
+      setStatus(ctx, "No OD folder resolved yet — use Find/Change folder first", "warn");
+      return;
+    }
+    document.getElementById("od-contents-modal")?.remove();
+    const stack = [];            // breadcrumb of parent paths
+    let curPath = startPath;
+    const fmtSize = (n) => {
+      if (!n) return "0 B";
+      const u = ["B", "KB", "MB", "GB"]; let i = 0, v = n;
+      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+      return (i === 0 ? v : v.toFixed(1)) + " " + u[i];
+    };
+    const wrap = document.createElement("div");
+    wrap.id = "od-contents-modal";
+    wrap.style.cssText = "position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
+    wrap.innerHTML = `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(620px,94vw);max-height:82vh;display:flex;flex-direction:column;overflow:hidden;">
+        <header style="padding:14px 18px;background:var(--surface);border-bottom:1px solid var(--border);">
+          <div style="font-size:14px;font-weight:600;">📁 OD contents · ${esc(ctx, row.client)}</div>
+          <div class="muted" id="od-crumb" style="font-size:11px;margin-top:2px;word-break:break-all;"></div>
+        </header>
+        <div id="od-list" style="padding:14px 18px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;">Loading…</div>
+        <footer style="padding:10px 18px;background:var(--surface);border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <button class="btn" id="od-up" style="visibility:hidden;">↑ Up</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn" id="od-open">📂 Open in Explorer</button>
+            <button class="btn" id="od-close">Close</button>
+          </div>
+        </footer>
+      </div>`;
+    document.body.appendChild(wrap);
+    const close = () => wrap.remove();
+    wrap.querySelector("#od-close").addEventListener("click", close);
+    wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+    const upBtn = wrap.querySelector("#od-up");
+    upBtn.addEventListener("click", () => { if (stack.length) { curPath = stack.pop(); load(); } });
+    wrap.querySelector("#od-open").addEventListener("click", async () => {
+      const ok = await pywebview.api.open_folder(curPath);
+      setStatus(ctx, ok ? `📁 Opened ${curPath}` : "Couldn't open folder", ok ? "ok" : "warn");
+    });
+    async function load() {
+      const listEl = wrap.querySelector("#od-list");
+      wrap.querySelector("#od-crumb").textContent = curPath;
+      upBtn.style.visibility = stack.length ? "visible" : "hidden";
+      listEl.textContent = "Loading…";
+      let r;
+      try { r = await pywebview.api.od_contents(curPath); }
+      catch (e) { listEl.textContent = "Error: " + e; return; }
+      if (!r || !r.ok) { listEl.textContent = (r && r.error) || "Couldn't read folder"; return; }
+      const folders = r.folders || [], files = r.files || [];
+      if (!folders.length && !files.length) {
+        listEl.innerHTML = '<div class="muted" style="padding:8px;">(empty folder)</div>';
+        return;
+      }
+      const foldersHtml = folders.map((f) => `
+        <button class="od-folder" data-path="${esc(ctx, f.path)}"
+          style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;font:inherit;color:var(--text);">
+          <span>📁</span><span style="flex:1;">${esc(ctx, f.name)}</span>
+          <span class="muted" style="font-size:11px;">Open ↘</span>
+        </button>`).join("");
+      const filesHtml = files.map((f) => `
+        <button class="od-file" data-path="${esc(ctx, f.path)}"
+          style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;background:transparent;border:1px solid transparent;border-radius:6px;cursor:pointer;font:inherit;color:var(--text);">
+          <span>📄</span><span style="flex:1;">${esc(ctx, f.name)}</span>
+          <span class="muted" style="font-size:11px;">${fmtSize(f.size)}</span>
+          <span title="${f.cloud_only ? "Online-only (not downloaded)" : "Downloaded to this PC"}" style="font-size:12px;">${f.cloud_only ? "☁" : "✓"}</span>
+        </button>`).join("");
+      listEl.innerHTML =
+        (folders.length ? `<div class="muted" style="font-size:10px;letter-spacing:.05em;">FOLDERS · ${folders.length}</div>${foldersHtml}` : "") +
+        (files.length ? `<div class="muted" style="font-size:10px;letter-spacing:.05em;margin-top:8px;">FILES · ${files.length}</div>${filesHtml}` : "");
+      listEl.querySelectorAll(".od-folder").forEach((b) =>
+        b.addEventListener("click", () => { stack.push(curPath); curPath = b.dataset.path; load(); }));
+      listEl.querySelectorAll(".od-file").forEach((b) =>
+        b.addEventListener("click", async () => {
+          const ok = await pywebview.api.open_file(b.dataset.path);
+          if (!ok) setStatus(ctx, "Couldn't open file", "warn");
+        }));
+    }
+    load();
+  }
+
+  function defaultWorkLog(ctx, row) {
+    if (!row.client) { setStatus(ctx, "No client on this row", "warn"); return; }
+    document.getElementById("worklog-modal")?.remove();
+    const wrap = document.createElement("div");
+    wrap.id = "worklog-modal";
+    wrap.style.cssText = "position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
+    wrap.innerHTML = `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(600px,94vw);max-height:82vh;display:flex;flex-direction:column;overflow:hidden;">
+        <header style="padding:14px 18px;background:var(--surface);border-bottom:1px solid var(--border);">
+          <div style="font-size:14px;font-weight:600;">📖 Job tracker · ${esc(ctx, tc(ctx, row.client))}</div>
+          <div class="muted" id="wl-sub" style="font-size:11px;margin-top:2px;">compiling activity + uploads…</div>
+        </header>
+        <div id="wl-list" style="padding:14px 18px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;">
+          <div class="muted" style="padding:8px;">⏳ Scanning run docs + Trello…</div>
+        </div>
+        <footer style="padding:10px 18px;background:var(--surface);border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <span class="muted" id="wl-saved" style="font-size:11px;"></span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn" id="wl-save" disabled>💾 Save as doc</button>
+            <button class="btn" id="wl-close">Close</button>
+          </div>
+        </footer>
+      </div>`;
+    document.body.appendChild(wrap);
+    const close = () => wrap.remove();
+    wrap.querySelector("#wl-close").addEventListener("click", close);
+    wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+    const saveBtn = wrap.querySelector("#wl-save");
+    saveBtn.addEventListener("click", async () => {
+      saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+      const r = await pywebview.api.save_job_work_log(row.client);
+      if (r && r.ok) {
+        wrap.querySelector("#wl-saved").textContent = "saved · opening…";
+        await pywebview.api.open_file(r.path);
+        setStatus(ctx, "📖 Job tracker saved & opened", "ok");
+      } else {
+        setStatus(ctx, (r && r.error) || "Couldn't save tracker", "warn");
+      }
+      saveBtn.disabled = false; saveBtn.textContent = "💾 Save as doc";
+    });
+    (async () => {
+      const listEl = wrap.querySelector("#wl-list");
+      let r;
+      try { r = await pywebview.api.job_work_log(row.client); }
+      catch (e) { listEl.textContent = "Error: " + e; return; }
+      if (!r || !r.ok) { listEl.textContent = (r && r.error) || "Couldn't build tracker"; return; }
+      const timeline = r.timeline || [];
+      const a = r.activity_count || 0, u = r.upload_count || 0;
+      wrap.querySelector("#wl-sub").textContent = timeline.length
+        ? `${a} activity · ${u} upload${u === 1 ? "" : "s"} — newest first`
+        : "no activity or uploads found";
+      if (r.saved_path) wrap.querySelector("#wl-saved").textContent = "saved doc exists";
+      saveBtn.disabled = false;
+      if (!timeline.length) {
+        listEl.innerHTML = '<div class="muted" style="padding:8px;">No run-doc activity or Trello uploads for this job yet.</div>';
+        return;
+      }
+      listEl.innerHTML = timeline.map((h) => {
+        if (h.kind === "upload") {
+          const who = h.uploader ? `<span style="color:var(--green);">${esc(ctx, h.uploader)}</span>` : '<span class="muted">unknown</span>';
+          return `
+            <div style="display:flex;gap:10px;align-items:baseline;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:transparent;" title="${esc(ctx, h.file || "")}">
+              <span style="min-width:58px;font-variant-numeric:tabular-nums;font-weight:600;font-size:12px;">${esc(ctx, h.date_str || "—")}</span>
+              <span style="flex:1;font-size:13px;">${h.is_image ? "📷" : "📎"} ${esc(ctx, h.file || "(file)")}</span>
+              <span style="font-size:11px;">⬆ ${who}</span>
+            </div>`;
+        }
+        const techs = (h.techs || []).length
+          ? `<span style="font-size:11px;color:var(--act-monitor,#4A9EFF);">👷 ${esc(ctx, h.techs.join(", "))}</span>`
+          : "";
+        const slot = h.time_slot ? `<span class="muted" style="font-size:10px;">${esc(ctx, h.time_slot)}</span>` : "";
+        // The full run-doc line is the "note" — show it collapsed, expand
+        // on click, but only when it actually adds detail beyond the work
+        // summary (recognized stages: work="Demo", note=the whole line).
+        const noteText = (h.raw || "").trim();
+        const hasNote = noteText && noteText !== (h.work || "").trim();
+        const caret = hasNote
+          ? `<span class="wl-caret" style="cursor:pointer;user-select:none;font-size:10px;color:var(--text-muted);width:10px;">▸</span>`
+          : `<span style="width:10px;display:inline-block;"></span>`;
+        return `
+          <div class="wl-entry">
+            <div class="wl-head" style="display:flex;gap:8px;align-items:baseline;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);${hasNote ? "cursor:pointer;" : ""}">
+              ${caret}
+              <span style="min-width:52px;font-variant-numeric:tabular-nums;font-weight:600;font-size:12px;">${esc(ctx, h.date_str || "—")}</span>
+              <span style="flex:1;font-size:13px;">🔧 ${esc(ctx, h.work || "—")} ${slot}</span>
+              ${techs}
+            </div>
+            ${hasNote ? `<div class="wl-note" style="display:none;font-size:12px;color:var(--text-muted);white-space:pre-wrap;padding:6px 10px 8px 30px;">📝 ${esc(ctx, noteText)}</div>` : ""}
+          </div>`;
+      }).join("");
+      // Click an entry with a note to expand/collapse the run-doc detail.
+      listEl.querySelectorAll(".wl-entry").forEach((el) => {
+        const note = el.querySelector(".wl-note");
+        const caret = el.querySelector(".wl-caret");
+        const head = el.querySelector(".wl-head");
+        if (!note || !caret || !head) return;
+        head.addEventListener("click", () => {
+          const open = note.style.display !== "none";
+          note.style.display = open ? "none" : "";
+          caret.textContent = open ? "▸" : "▾";
+        });
+      });
+    })();
   }
 
   // ── 🗒 Job log comment ─────────────────────────────────────────────

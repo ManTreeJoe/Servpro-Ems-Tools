@@ -611,6 +611,15 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().post_initial_email_comment(card_id, sent_to, note)
     def set_clipboard(self, text):
         return self._aw().set_clipboard(text)
+    # 📁 OD contents + 📖 Job tracker. The shared card has always had
+    # buttons for both, but these three were never proxied, so in
+    # Snapshot they opened a viewer that could not read anything.
+    def od_contents(self, path):
+        return self._aw().od_contents(path)
+    def job_work_log(self, client):
+        return self._aw().job_work_log(client)
+    def save_job_work_log(self, client):
+        return self._aw().save_job_work_log(client)
     def list_activity_stages(self):
         return self._aw().list_activity_stages()
     def job_log_options(self, client=""):

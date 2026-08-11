@@ -709,6 +709,12 @@ async function startNew(client = "", cardId = "") {
   // Ensure at least one empty row in each table so the user can start typing
   if (!$("#subs-body").children.length) addRow("subs", {});
   if (!$("#logs-body").children.length) addRow("logs", {});
+
+  // Audit the job as soon as it loads. The audit is what tells you what
+  // the snapshot is missing, so waiting for a button press meant the
+  // form was filled in before anyone looked. Fire-and-forget: it paints
+  // into its own subview and must not hold up the form.
+  if (client) { runSnapshotAudit().catch(() => {}); }
   // Capture the (pre-filled) starting state so a switch-away before the
   // first keystroke still restores it. Blank forms save nothing.
   saveSnapshotDraft();
