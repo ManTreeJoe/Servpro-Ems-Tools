@@ -103,6 +103,65 @@ def test_shared_modules_stay_light():
         assert not got, f"{mod} imports {sorted(got)} at module scope"
 
 
+def test_shared_logic_never_reaches_into_a_tk_module():
+    """Import-time cleanliness is not enough — the reach-ins that keep
+    coming back are LAZY ones, `from <x>_gui import helper` inside a
+    function. They cost nothing at import and the whole Tk stack the
+    first time a user hits that code path, so no import test catches
+    them. Three were live before this test existed:
+
+      sp_enrich   -> multi_unit_gui   (every multi-unit enrichment)
+      hygiene_web -> hygiene_gui      (every per-tab rescan)
+      sharepoint's recent-folder walk lived in sp_recent_audit, a
+      tkinter dialog module, and audit_web called into it.
+
+    Worse, two of those sat inside `try/except Exception: return None`,
+    so a failed import did not raise — it silently stopped detecting
+    units. Scan the AST for imports at ANY depth.
+    """
+    import ast
+    import os
+
+    scripts = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tk_modules = {
+        n[:-3] for n in os.listdir(scripts) if n.endswith("_gui.py")
+    } | {"tkinter", "customtkinter", "tool_panel", "ui_buttons",
+         "sp_recent_audit", "initial_upload_queue", "job_widgets",
+         "process_card_dialog"}
+
+    # Modules that are pure logic by contract and are reachable from the
+    # web app at runtime. Adding one here is a promise, not a formality.
+    pure = ["audit_logic", "audit_export", "run_doc", "sp_enrich",
+            "stages", "sharepoint", "multi_unit_logic", "hygiene_tabs",
+            "daily_photos_logic", "workbook_specs", "state_hub",
+            "hygiene_scan_worker", "trello_hygiene", "ems_db"]
+
+    bad = []
+    for mod in pure:
+        path = os.path.join(scripts, mod + ".py")
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [a.name.split(".")[0] for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module.split(".")[0]]
+            else:
+                continue
+            for nm in names:
+                if nm in tk_modules:
+                    bad.append(f"{mod}.py:{node.lineno} imports {nm}")
+
+    assert not bad, (
+        "Pure-logic modules reaching into the Tk stack:\n  "
+        + "\n  ".join(bad)
+        + "\n\nMove the helper into the logic module and let the Tk "
+          "module re-export it — don't import the panel to borrow a "
+          "function.")
+
+
 def test_workbook_specs_registers_both_without_tk():
     """The split that freed spreadsheet_web.
 

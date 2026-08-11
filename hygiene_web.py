@@ -14,6 +14,7 @@ import webview
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path: sys.path.insert(0, _HERE)
 
+import hygiene_tabs as _htabs
 import persistence
 from web_helpers import jsonify as _jsonify, run_bg as _wh_run_bg
 
@@ -1081,13 +1082,7 @@ class Api:
                 # The legacy path web was using ran 3-5min on the same
                 # boards and saturated the UI thread with progress
                 # round-trips along the way.
-                tab_flags = {}
-                if tab_key:
-                    try:
-                        from hygiene_gui import _scan_flags_for_tab
-                        tab_flags = _scan_flags_for_tab(tab_key) or {}
-                    except Exception:
-                        tab_flags = {}
+                tab_flags = _htabs.scan_flags_for_tab(tab_key) if tab_key else {}
                 # _scan_flags_for_tab returns {'hygiene', 'handoff',
                 # 'closeout', 'xa_gaps', 'ipr', 'any_workspace', ...}
                 # — translate to scan_workspace's include_* kwargs.
@@ -1231,22 +1226,12 @@ _TK_SECTIONS = (
     ("anomalies",         "🚨", "Anomalous jobs",                "3+× the historical median for their stage."),
 )
 
-# (tab_key, label, section_keys_tuple)
-_TABS_DEF = (
-    ("action",  "🔴 Action Needed",
-     ("wc_audit_due", "weekly", "estimates", "eq_on_site", "lost_job",
-      "adjuster_pending", "xa_inquiries", "disputes", "concerns", "ipr",
-      "xa_apology", "docusketch_needed", "docusketch",
-      "docusign", "docusign_resends", "missing_items")),
-    ("quality", "⚠ Trello quality",
-     ("hygiene", "handoff", "closeout", "stalled", "anomalies",
-      "open_jobs")),
-    ("stale",   "📝 Stale notes",
-     ("xa_gaps",)),
-)
-_TABS_PAYLOAD = [{"key": k, "label": lbl, "sections": list(secs)}
-                 for k, lbl, secs in _TABS_DEF]
-_SECTION_TO_TAB = {sk: t[0] for t in _TABS_DEF for sk in t[2]}
+# (tab_key, label, section_keys_tuple) — defined in hygiene_tabs. This
+# file kept its own copy alongside hygiene_gui's and the two drifted;
+# see that module for what went missing on the Tk side.
+_TABS_DEF = _htabs.TABS
+_TABS_PAYLOAD = _htabs.TABS_PAYLOAD
+_SECTION_TO_TAB = _htabs.SECTION_TO_TAB
 
 
 # ── Priority-dashboard display sections ──────────────────────────────

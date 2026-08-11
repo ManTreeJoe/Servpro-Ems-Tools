@@ -17,6 +17,41 @@ import audit_logic
 import config
 import persistence as per
 
+
+# Unit-folder name pattern. Matches the variants seen on disk:
+#   "Unit 1017", "Unit 1416", "UNIT #216", "Unit 2216 2-19-26",
+#   "Unit 1611(KRYSTAL) - 3.23.26", "Apt 207", "Apartment 12B".
+# The 'unit'/'apt'/'apartment' anchor is required at the start of the
+# folder name (with optional leading whitespace) and a digit must
+# appear right after the prefix + separators. Tightened with the digit
+# anchor so "United Restoration" or "Apartments LLC" won't false-match.
+#
+# Lived in multi_unit_gui until sp_enrich — which runs on every
+# SharePoint enrichment, including from the web panels — was found
+# importing the Tk module for it inside a `try/except: return None`.
+# A failed import there did not raise; it silently stopped detecting
+# units, which is the worst shape a failure can take here.
+_UNIT_FOLDER_RE = re.compile(
+    r"^\s*(?:unit|apt|apartment)\b[\s#:_-]*(?P<num>\d+)",
+    re.IGNORECASE)
+
+
+def _is_unit_folder(name: str) -> bool:
+    return bool(_UNIT_FOLDER_RE.match(name or ""))
+
+
+def _unit_number(name: str) -> int:
+    """Return the unit number for sorting, or a large sentinel for
+    unparseable rows (those sort to the bottom)."""
+    m = _UNIT_FOLDER_RE.match(name or "")
+    if not m:
+        return 10**9
+    try:
+        return int(m.group("num"))
+    except ValueError:
+        return 10**9
+
+
 _UNIT_WORD_TOKEN_RE = re.compile(
     r"(?:unit|apt|apartment|suite|ste)\b[\s#:_-]*(?P<num>\d+)",
     re.IGNORECASE)

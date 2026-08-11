@@ -7,7 +7,7 @@ Tk UI and external callers are unaffected. See EMS_Tk_Extraction_Plan.md.
 
 Phase 1c slice 2b: PICS/unit resolution helpers + SP-manifest helpers +
 `enrich_with_sharepoint`. Multi-unit folder parsing is imported lazily from
-multi_unit_gui inside the functions to avoid an import cycle.
+multi_unit_logic inside the functions to avoid an import cycle.
 """
 from __future__ import annotations
 
@@ -87,9 +87,11 @@ def _resolve_all_pics_folders(job_path):
     # 3 levels deep — Action Property Management → Villaigo → Unit 101)
     # gets its own PICS variants appended after the parent's. Label
     # uses the relative path so nested units stay disambiguated.
-    # Lazy import avoids a multi_unit_gui → run_audit_gui cycle.
+    # multi_unit_logic holds the definition; multi_unit_gui only
+    # re-exports it, so importing it here loaded the whole Tk stack on
+    # every enrichment of a multi-unit job.
     try:
-        from multi_unit_gui import list_unit_subfolders
+        from multi_unit_logic import list_unit_subfolders
         unit_subs = list_unit_subfolders(job_path)
     except Exception:
         unit_subs = []
@@ -251,7 +253,7 @@ def _unit_segment_from_pics_path(job_path, pics_path):
     if not rel or rel in (".", ".."):
         return None
     try:
-        from multi_unit_gui import _UNIT_FOLDER_RE
+        from multi_unit_logic import _UNIT_FOLDER_RE
     except Exception:
         return None
     for seg in rel.split(os.sep):
@@ -270,7 +272,7 @@ def _unit_num_from_pics_path(job_path, pics_path):
     if not seg:
         return None
     try:
-        from multi_unit_gui import _UNIT_FOLDER_RE
+        from multi_unit_logic import _UNIT_FOLDER_RE
     except Exception:
         return None
     m = _UNIT_FOLDER_RE.match(seg)

@@ -127,14 +127,10 @@ def run(tab_key: str = "", mode: str = "full") -> int:
                   flush=True)
 
         # Translate tab_key to include_* flags (same as the in-process
-        # version did).
-        tab_flags = {}
-        if tab_key:
-            try:
-                from hygiene_gui import _scan_flags_for_tab
-                tab_flags = _scan_flags_for_tab(tab_key) or {}
-            except Exception:
-                tab_flags = {}
+        # version did). This used to pull hygiene_gui — a tkinter module
+        # — into a headless worker for one pure dict.
+        import hygiene_tabs as _htabs
+        tab_flags = _htabs.scan_flags_for_tab(tab_key) if tab_key else {}
 
         # Parse the mode. "minimal" / "full" stay simple presets;
         # comma-list mode gives the user surgical control for

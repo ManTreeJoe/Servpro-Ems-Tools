@@ -38,71 +38,10 @@ _WINDOW_DAYS = 7
 
 # ── Folder enumeration with mtime ──────────────────────────────────────────
 
-def _folder_mtime(path):
-    """Return the most recent mtime among the folder itself and its
-    immediate file children. Recursing into subfolders would catch
-    deeply-nested updates but adds 10× walk cost on a Files-On-Demand
-    tree — top-level scan is enough for the "did anything change in
-    this job folder lately?" question we're answering."""
-    if not path or not os.path.isdir(path):
-        return 0.0
-    try:
-        latest = os.path.getmtime(path)
-    except OSError:
-        latest = 0.0
-    try:
-        with os.scandir(path) as it:
-            for e in it:
-                try:
-                    if e.is_file(follow_symlinks=False):
-                        m = e.stat(follow_symlinks=False).st_mtime
-                        if m > latest:
-                            latest = m
-                except OSError:
-                    continue
-    except OSError:
-        pass
-    return latest
-
-
-def _list_recent_sp_folders(start_ts, end_ts):
-    """Return a list of {path, name, tech, mtime, age_days} dicts for
-    every job-level SP folder modified between the given timestamps
-    (inclusive on both ends).
-
-    Tech-root and month-archive entries are excluded — they're
-    organizational shells, never jobs. Falls back to an empty list on
-    any IO failure rather than blowing up the dialog.
-    """
-    out = []
-    try:
-        index = sharepoint.build_sharepoint_folder_index()
-    except Exception:
-        index = []
-    now_ts = datetime.now().timestamp()
-    for entry in index:
-        if entry.get("is_tech_root") or entry.get("is_month_archive"):
-            continue
-        path = entry.get("path") or ""
-        if not path:
-            continue
-        mt = _folder_mtime(path)
-        if mt < start_ts or mt > end_ts:
-            continue
-        try:
-            tech = sharepoint._infer_tech(path)
-        except Exception:
-            tech = ""
-        age_days = max(0.0, (now_ts - mt) / 86400.0)
-        out.append({
-            "path":     path,
-            "name":     entry.get("name", ""),
-            "tech":     tech,
-            "mtime":    mt,
-            "age_days": age_days,
-        })
-    out.sort(key=lambda r: -r["mtime"])
-    return out
+# _folder_mtime / _list_recent_sp_folders moved to sharepoint (their
+# natural home — they only use its index + tech helpers) so audit_web
+# can call them without loading Tk. Re-exported unchanged.
+from sharepoint import _folder_mtime, _list_recent_sp_folders  # noqa: E402,F401
 
 
 # ── OD-side resolution + diff ──────────────────────────────────────────────
@@ -268,10 +207,11 @@ def _count_missing_in_od(sp_path, od_path):
             except Exception:
                 continue
     # Also consult the SP-import manifest so renamed-on-import files
-    # don't show as missing. We import this lazily — not every caller
-    # has run_audit_gui imported, and we don't want a hard dep.
+    # don't show as missing. Both helpers live in sp_enrich; this used
+    # to import them from run_audit_gui, which re-exports them — and
+    # loaded the whole Tk stack to do it.
     try:
-        from run_audit_gui import _read_sp_manifest_originals, _resolve_all_pics_folders
+        from sp_enrich import _read_sp_manifest_originals, _resolve_all_pics_folders
         for label, p, _n in _resolve_all_pics_folders(od_path):
             try:
                 od_names |= _read_sp_manifest_originals(p)

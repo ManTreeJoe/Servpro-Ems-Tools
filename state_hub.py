@@ -75,7 +75,7 @@ class StateHub:
         cached = self._cache.get(key)
         if cached is not None:
             return cached
-        from run_audit_gui import parse_run_doc as _parse
+        from run_doc import parse_run_doc as _parse
         result = _parse(norm)
         self._cache.set(key, result, watch_path=norm)
         return result

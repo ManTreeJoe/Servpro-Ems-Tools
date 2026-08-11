@@ -63,16 +63,11 @@ _CFG = config.load()
 _AUDIT_BASE = _CFG.get("audit_base", "")
 
 
-# Unit-folder name pattern. Matches the variants seen on disk:
-#   "Unit 1017", "Unit 1416", "UNIT #216", "Unit 2216 2-19-26",
-#   "Unit 1611(KRYSTAL) - 3.23.26", "Apt 207", "Apartment 12B".
-# The 'unit'/'apt'/'apartment' anchor is required at the start of the
-# folder name (with optional leading whitespace) and a digit must
-# appear right after the prefix + separators. Tightened with the digit
-# anchor so "United Restoration" or "Apartments LLC" won't false-match.
-_UNIT_FOLDER_RE = re.compile(
-    r"^\s*(?:unit|apt|apartment)\b[\s#:_-]*(?P<num>\d+)",
-    re.IGNORECASE)
+# Unit-folder name pattern + its two helpers moved to multi_unit_logic
+# (sp_enrich needed them without Tk); re-exported here unchanged.
+from multi_unit_logic import (          # noqa: F401,E402 — re-exported
+    _UNIT_FOLDER_RE, _is_unit_folder, _unit_number,
+)
 
 # Looser pattern for parsing units OUT OF arbitrary text — SP folder
 # names, zip filenames, run-doc activity strings. Doesn't require the
@@ -86,20 +81,6 @@ _UNIT_FOLDER_RE = re.compile(
 # outright by the {1,4}\b anchor.
 
 
-def _is_unit_folder(name: str) -> bool:
-    return bool(_UNIT_FOLDER_RE.match(name or ""))
-
-
-def _unit_number(name: str) -> int:
-    """Return the unit number for sorting, or a large sentinel for
-    unparseable rows (those sort to the bottom)."""
-    m = _UNIT_FOLDER_RE.match(name or "")
-    if not m:
-        return 10**9
-    try:
-        return int(m.group("num"))
-    except ValueError:
-        return 10**9
 
 
 

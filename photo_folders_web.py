@@ -243,14 +243,17 @@ class Api:
     def find_od_for_sp_name(self, sp_folder_name: str) -> str:
         """Resolve the OneDrive job folder for a SharePoint folder
         name (e.g. 'Smith 5-22-26 Demo' → 'X:\\IE_Public\\2026 Jobs\\Smith').
-        Mirrors daily_photos_gui._find_od_folder_for_client. Used by
-        the 📁 OD button per row in the cleanup dialog."""
+        Used by the 📁 OD button per row in the cleanup dialog.
+
+        Both helpers moved to daily_photos_logic; this call site still
+        reached into daily_photos_gui, so the first press of that button
+        loaded the whole Tk stack to run two pure functions."""
         try:
-            import daily_photos_gui as _dpg
-            client = _dpg._client_from_sp_name(sp_folder_name) or ""
+            import daily_photos_logic as _dpl
+            client = _dpl._client_from_sp_name(sp_folder_name) or ""
             if not client:
                 return ""
-            return _dpg._find_od_folder_for_client(client) or ""
+            return _dpl._find_od_folder_for_client(client) or ""
         except Exception:
             return ""
 

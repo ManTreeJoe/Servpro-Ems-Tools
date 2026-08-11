@@ -204,7 +204,7 @@ def list_image_locations_in_tree(path):
 
 
 def _strip_long_prefix(p):
-    """Drop the `\\?\` long-path prefix when present so the path
+    r"""Drop the `\\?\` long-path prefix when present so the path
     round-trips to plain os.path / shutil callers cleanly."""
     if not p:
         return p
@@ -1141,3 +1141,82 @@ def find_sharepoint_folders_for_client(client, run_date=None,
             overrides_out.append(rec)
 
     return overrides_out + auto_matches
+
+
+# ══ Recent-folder enumeration ════════════════════════════════
+# Moved here from sp_recent_audit (a tkinter dialog module) because
+# audit_web's SP Recent mode calls _list_recent_sp_folders and was
+# loading the whole Tk stack to reach it. Both functions only ever
+# used os + datetime + this module's own index/tech helpers.
+# sp_recent_audit re-exports them, so the Tk dialog is unaffected.
+from datetime import datetime as _dt_datetime  # noqa: E402
+
+
+def _folder_mtime(path):
+    """Return the most recent mtime among the folder itself and its
+    immediate file children. Recursing into subfolders would catch
+    deeply-nested updates but adds 10× walk cost on a Files-On-Demand
+    tree — top-level scan is enough for the "did anything change in
+    this job folder lately?" question we're answering."""
+    if not path or not os.path.isdir(path):
+        return 0.0
+    try:
+        latest = os.path.getmtime(path)
+    except OSError:
+        latest = 0.0
+    try:
+        with os.scandir(path) as it:
+            for e in it:
+                try:
+                    if e.is_file(follow_symlinks=False):
+                        m = e.stat(follow_symlinks=False).st_mtime
+                        if m > latest:
+                            latest = m
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return latest
+
+
+def _list_recent_sp_folders(start_ts, end_ts):
+    """Return a list of {path, name, tech, mtime, age_days} dicts for
+    every job-level SP folder modified between the given timestamps
+    (inclusive on both ends).
+
+    Tech-root and month-archive entries are excluded — they're
+    organizational shells, never jobs. Falls back to an empty list on
+    any IO failure rather than blowing up the dialog.
+    """
+    out = []
+    # Unqualified — this function now lives in the module it used to
+    # call through, and `sharepoint.` here would be a NameError that the
+    # except below would silently turn into "no recent folders".
+    try:
+        index = build_sharepoint_folder_index()
+    except Exception:
+        index = []
+    now_ts = _dt_datetime.now().timestamp()
+    for entry in index:
+        if entry.get("is_tech_root") or entry.get("is_month_archive"):
+            continue
+        path = entry.get("path") or ""
+        if not path:
+            continue
+        mt = _folder_mtime(path)
+        if mt < start_ts or mt > end_ts:
+            continue
+        try:
+            tech = _infer_tech(path)
+        except Exception:
+            tech = ""
+        age_days = max(0.0, (now_ts - mt) / 86400.0)
+        out.append({
+            "path":     path,
+            "name":     entry.get("name", ""),
+            "tech":     tech,
+            "mtime":    mt,
+            "age_days": age_days,
+        })
+    out.sort(key=lambda r: -r["mtime"])
+    return out

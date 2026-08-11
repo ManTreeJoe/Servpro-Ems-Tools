@@ -34,6 +34,7 @@ _INSURED_FROM_SUBJECT_RE = re.compile(
     r"Insured:\s*([^\r\n]+)", re.IGNORECASE)
 
 import config as _config
+import hygiene_tabs as _htabs
 
 from theme import (
     GREEN, GREEN_DARK, WHITE, BG, TEXT_DARK, TEXT_GRAY, TEXT_MUTED,
@@ -288,90 +289,16 @@ _SECTIONS = (
 )
 
 
-# Tab groupings — collapses 8 stacked sections into 3 navigable tabs.
-# Keep tab keys stable; persistence stores the user's last-selected tab.
-# Each entry: (tab_key, display_label, tuple_of_section_keys).
-_TABS = (
-    ("action",  "🔴 Action Needed",
-     ("wc_audit_due", "weekly", "estimates", "adjuster_pending",
-      "disputes", "concerns", "ipr", "xa_apology",
-      "docusketch_needed", "docusketch",
-      "docusign", "docusign_resends", "missing_items")),
-    ("quality", "⚠ Trello quality",
-     ("hygiene", "handoff", "closeout", "stalled", "anomalies",
-      "open_jobs")),
-    ("stale",   "📝 Stale notes",
-     ("xa_gaps",)),
-)
-_DEFAULT_TAB = _TABS[0][0]
-_TAB_KEYS = {t[0] for t in _TABS}
-_SECTION_TO_TAB = {sk: t[0] for t in _TABS for sk in t[2]}
-
-# Short label for the Re-scan button (without icons / parens). Lets us
-# write "↻ Re-scan Trello quality" instead of "↻ Re-scan ⚠ Trello quality".
-_TAB_BUTTON_LABELS = {
-    "action":  "Action items",
-    "quality": "Trello quality",
-    "stale":   "Stale notes",
-}
-
-
-def _tab_section_keys(tab_key):
-    """Return the section keys owned by a tab (empty tuple if unknown)."""
-    for t_key, _label, sec_keys in _TABS:
-        if t_key == tab_key:
-            return sec_keys
-    return ()
-
-
-def _scan_flags_for_tab(tab):
-    """Return the include-flag dict that drives _start_scan's bg thread.
-
-    `tab=None` (full pass) keeps the original behavior — every section,
-    every email walk. Per-tab variants skip the work the tab doesn't
-    need. The dict has these keys:
-
-      hygiene/handoff/closeout/xa_gaps/ipr — passed straight through
-        to scan_workspace's include_* flags.
-      any_workspace                       — False short-circuits the
-        scan_workspace call entirely (stale tab pulls from email).
-      ar_followup                         — whether to refresh xa_apology.
-      xa_gaps_only                        — special path for the stale
-        tab that bypasses the Trello walk.
-    """
-    if tab is None:
-        return dict(
-            hygiene=True, handoff=True, closeout=True,
-            xa_gaps=True, ipr=True, estimates=True, weekly=True,
-            any_workspace=True, ar_followup=True,
-            xa_gaps_only=False)
-    if tab == "action":
-        return dict(
-            hygiene=True,   # for customer_complaint rule + email scan
-            handoff=False, closeout=False,
-            xa_gaps=False,  ipr=True, estimates=True, weekly=True,
-            any_workspace=True, ar_followup=True,
-            xa_gaps_only=False)
-    if tab == "quality":
-        return dict(
-            hygiene=True,   # for non-complaint rules
-            handoff=True,   closeout=True,
-            xa_gaps=False,  ipr=False, estimates=False, weekly=False,
-            any_workspace=True, ar_followup=False,
-            xa_gaps_only=False)
-    if tab == "stale":
-        return dict(
-            hygiene=False, handoff=False, closeout=False,
-            xa_gaps=True,  ipr=False, estimates=False, weekly=False,
-            any_workspace=False, ar_followup=False,
-            xa_gaps_only=True)
-    # Unknown tab → fall back to full scan rather than no-op so the user
-    # never gets a silently-empty result.
-    return dict(
-        hygiene=True, handoff=True, closeout=True,
-        xa_gaps=True, ipr=True, estimates=True, weekly=True,
-        any_workspace=True, ar_followup=True,
-        xa_gaps_only=False)
+# Tab groupings live in hygiene_tabs — the web panel had its own copy
+# and they drifted (see that module). These aliases keep the local
+# names so the rest of this file reads unchanged.
+_TABS = _htabs.TABS
+_DEFAULT_TAB = _htabs.DEFAULT_TAB
+_TAB_KEYS = _htabs.TAB_KEYS
+_SECTION_TO_TAB = _htabs.SECTION_TO_TAB
+_TAB_BUTTON_LABELS = _htabs.TAB_BUTTON_LABELS
+_tab_section_keys = _htabs.tab_section_keys
+_scan_flags_for_tab = _htabs.scan_flags_for_tab
 
 
 # Per-rule severity → row accent color

@@ -2148,7 +2148,7 @@ class InitialUploadApp(ToolPanel):
             return cached
         try:
             from datetime import datetime as _dt
-            from run_audit_gui import _find_run_doc_for_date, parse_run_doc
+            from run_doc import _find_run_doc_for_date, parse_run_doc
             path = _find_run_doc_for_date(_dt.today())
             if not path:
                 self._today_jobs_cache = []
@@ -2265,7 +2265,7 @@ class InitialUploadApp(ToolPanel):
         client = (card.get("client") or "").strip()
         today_str = _dt.date.today().strftime("%m-%d-%Y")
         try:
-            from run_audit_gui import _activity_labels_from_run_doc
+            from run_doc import _activity_labels_from_run_doc
             labels = _activity_labels_from_run_doc(today_str, client)
         except Exception:
             labels = []
