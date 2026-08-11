@@ -26,6 +26,11 @@ window.addEventListener("import:progress", (e) => {
 });
 
 window.addEventListener("pywebviewready", async () => {
+  // Only the Today/Tracked tab is restored. `state.view` also covers the
+  // "gen" form, and reopening the panel into a half-filled new-snapshot
+  // form would be worse than forgetting.
+  await PanelState.init("snapshot");
+
   $("#view-list-btn").addEventListener("click", () => switchTo("list"));
   $("#view-gen-btn").addEventListener("click", () => startNew());
   $("#refresh-btn").addEventListener("click", loadList);
@@ -68,6 +73,8 @@ window.addEventListener("pywebviewready", async () => {
   // Snapshot list-view tabs (Today vs Tracked)
   document.querySelectorAll("#snap-tabs .tab-btn").forEach((b) =>
     b.addEventListener("click", () => snapshotShowTab(b.dataset.tab)));
+  const savedTab = PanelState.get("tab", "");
+  if (savedTab === "tracked") snapshotShowTab("tracked");
   // Tracked tab — filter + sheet selector + refresh + open Excel
   $("#tracked-search")?.addEventListener("input", (e) => {
     trackedState.search = e.target.value; renderTracked();
@@ -245,6 +252,7 @@ async function loadList() {
 
 // ── Tab switching ───────────────────────────────────────────────
 function snapshotShowTab(tab) {
+  try { PanelState.set({ tab }); } catch (_) { /* optional */ }
   document.querySelectorAll("#snap-tabs .tab-btn").forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === tab));
   $("#tab-today").classList.toggle("hidden", tab !== "today");

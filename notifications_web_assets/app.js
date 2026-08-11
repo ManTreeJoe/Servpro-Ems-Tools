@@ -82,6 +82,8 @@ function wire() {
       const b = el.dataset.toggle;
       if (state.collapsed.has(b)) state.collapsed.delete(b);
       else state.collapsed.add(b);
+      // Set isn't JSON-serialisable — store the array.
+      PanelState.set({ collapsed: [...state.collapsed] });
       el.closest(".board-group").classList.toggle("collapsed");
     });
   });
@@ -122,10 +124,17 @@ async function load() {
             res.unread ? "" : "ok");
 }
 
-window.addEventListener("pywebviewready", () => {
+window.addEventListener("pywebviewready", async () => {
+  await PanelState.init("notifications");
+  state.unreadOnly = !!PanelState.get("unreadOnly", false);
+  // Stored as an array; the panel works in a Set.
+  state.collapsed = new Set(PanelState.get("collapsed", []) || []);
+  const _uo = $("#unread-only"); if (_uo) _uo.checked = state.unreadOnly;
+
   $("#refresh-btn").addEventListener("click", load);
   $("#unread-only").addEventListener("change", (e) => {
     state.unreadOnly = e.target.checked;
+    PanelState.set({ unreadOnly: state.unreadOnly });
     load();
   });
   $("#mark-all-btn").addEventListener("click", async () => {

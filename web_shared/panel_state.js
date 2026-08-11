@@ -88,10 +88,20 @@
   // Scroll position of a list, remembered under one key. Restored on the
   // next frame because the rows are usually rendered in the same tick and
   // scrollTop cannot be set past a height that doesn't exist yet.
+  //
+  // Pass `document.scrollingElement` for a page that scrolls as a whole:
+  // it exposes scrollTop, but the scroll EVENT fires on window, not on
+  // the element, so the listener has to go somewhere else.
+  function _scrollTarget(el) {
+    return (el === document.scrollingElement ||
+            el === document.documentElement ||
+            el === document.body) ? window : el;
+  }
+
   function bindScroll(el, key) {
     if (!el) return;
     key = key || "scroll";
-    el.addEventListener("scroll", () => {
+    _scrollTarget(el).addEventListener("scroll", () => {
       set({ [key]: Math.round(el.scrollTop) });
     }, { passive: true });
   }

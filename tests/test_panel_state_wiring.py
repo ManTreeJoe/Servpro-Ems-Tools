@@ -17,8 +17,21 @@ import pytest
 
 _SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Panels wired so far. Adding a panel here without wiring it fails.
-WIRED = ["audit", "hygiene", "pipeline"]
+# Every panel with view state worth remembering. Adding one here without
+# wiring it fails, which is the point — this list is the contract.
+WIRED = [
+    "audit",          # tab + flagged/all filter
+    "hygiene",        # tile, search, board filter, open-jobs toggle
+    "pipeline",       # board|stages, board tab, stage chip, search
+    "disputes",       # status chip, search, sort column + direction
+    "job_notes",      # search
+    "notifications",  # unread-only, collapsed boards
+    "snapshot",       # Today|Tracked tab
+    "spreadsheet",    # active workbook
+    "wc_audit",       # category tab under review
+    "photo_folders",  # day offset
+    "kpi",            # scroll position (it has no other view state)
+]
 
 
 def _read(*parts):
@@ -90,16 +103,24 @@ def test_panel_initialises_with_its_own_key(panel):
         f"{panel} never calls PanelState.init(\"{panel}\")"
 
 
+# bindScroll/restoreScroll are the save/restore pair for a panel whose
+# only "where I was" is scroll position (kpi has no tabs or filters at
+# all), so they count.
+_SAVES = ("PanelState.set(", "PanelState.bindScroll(")
+_RESTORES = ("PanelState.get(", "PanelState.restoreScroll(")
+
+
 @pytest.mark.parametrize("panel", WIRED)
 def test_panel_saves_something(panel):
     js = _panel_js(panel)
-    assert "PanelState.set(" in js, f"{panel} restores but never saves"
+    assert any(t in js for t in _SAVES), f"{panel} restores but never saves"
 
 
 @pytest.mark.parametrize("panel", WIRED)
 def test_panel_restores_something(panel):
     js = _panel_js(panel)
-    assert "PanelState.get(" in js, f"{panel} saves but never restores"
+    assert any(t in js for t in _RESTORES), \
+        f"{panel} saves but never restores"
 
 
 def test_cache_bust_bumped_where_the_script_is_loaded():

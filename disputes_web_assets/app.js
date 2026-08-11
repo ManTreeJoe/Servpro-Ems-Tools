@@ -5,6 +5,14 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 window.addEventListener("pywebviewready", async () => {
+  // Restore the view you left: status chip, search text and sort.
+  await PanelState.init("disputes");
+  state.status   = PanelState.get("status", state.status);
+  state.search   = PanelState.get("search", "");
+  state.sort_key = PanelState.get("sort_key", state.sort_key);
+  state.sort_dir = PanelState.get("sort_dir", state.sort_dir);
+  const _sb = $("#search-box"); if (_sb) _sb.value = state.search;
+
   $("#refresh-btn").addEventListener("click", load);
   $("#open-excel-btn").addEventListener("click", () => pywebview.api.open_workbook());
   $("#location-btn").addEventListener("click", openLocationModal);
@@ -40,6 +48,7 @@ window.addEventListener("pywebviewready", async () => {
   });
   $("#search-box").addEventListener("input", (e) => {
     state.search = e.target.value;
+    PanelState.set({ search: state.search });
     render();
   });
   $$("#tbl thead th[data-sort]").forEach((th) =>
@@ -70,6 +79,7 @@ function renderChips() {
   ).join("");
   $$(".filter").forEach((b) => b.addEventListener("click", () => {
     state.status = b.dataset.status;
+    PanelState.set({ status: state.status });
     renderChips();
     render();
   }));
@@ -145,6 +155,7 @@ function render() {
 function sortBy(k) {
   if (state.sort_key === k) state.sort_dir = state.sort_dir === "asc" ? "desc" : "asc";
   else { state.sort_key = k; state.sort_dir = "asc"; }
+  PanelState.set({ sort_key: state.sort_key, sort_dir: state.sort_dir });
   render();
 }
 

@@ -5,6 +5,7 @@
 <title>Spreadsheets — Linguar Hub</title>
 <link rel="stylesheet" href="theme.css" />
 <script src="../web_shared/iframe_shim.js?v=20260731j"></script>
+<script src="../web_shared/panel_state.js?v=20260811a"></script>
 <script src="../web_shared/util.js?v=20260731j"></script>
 <script src="../web_shared/keyboard.js?v=20260731j"></script>
 <script src="../web_shared/toast_log.js?v=20260731j"></script>
@@ -123,11 +124,18 @@ function esc(s) {
 }
 
 window.addEventListener("pywebviewready", async () => {
+  await PanelState.init("spreadsheet");
   state.workbooks = await pywebview.api.workbooks() || [];
   renderList();
-  // Auto-open the first available workbook so the viewer isn't blank
+  // Reopen the workbook you were last in; fall back to the first
+  // available one so the viewer isn't blank. Guarded on `exists` — a
+  // remembered workbook whose file has since moved must not leave the
+  // panel showing a load error on every open.
+  const saved = PanelState.get("active", "");
+  const savedWb = saved && state.workbooks.find((w) => w.key === saved && w.exists);
   const first = state.workbooks.find((w) => w.exists);
-  if (first) openWorkbook(first.key);
+  const target = savedWb || first;
+  if (target) openWorkbook(target.key);
   // Topbar utility buttons (existing)
   $("#dedupe-btn").addEventListener("click", onDedupe);
   $("#recon-btn").addEventListener("click", onRecon);
@@ -202,6 +210,7 @@ function renderList() {
 async function openWorkbook(key) {
   if (!key) return;
   state.active = key;
+  PanelState.set({ active: key });
   renderList();
   $("#viewer-body").innerHTML = `<div class="empty">Loading rows…</div>`;
   let view;

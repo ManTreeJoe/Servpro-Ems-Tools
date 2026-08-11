@@ -42,6 +42,11 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 // ── Boot ─────────────────────────────────────────────────────────
 window.addEventListener("pywebviewready", async () => {
+  // KPI has no tabs or filters — the only "where I was" it has is
+  // how far down the tables you had scrolled.
+  await PanelState.init("kpi");
+  PanelState.bindScroll(document.scrollingElement);
+
   $("#refresh-btn").addEventListener("click", () => refresh(true));
   await refresh(false);
 });
@@ -78,6 +83,12 @@ function renderAll() {
   $("#last-refresh").textContent = state.last_refresh
     ? `Refreshed ${fmtTime(state.last_refresh)}`
     : "—";
+  // Only meaningful once the tables have height — restoring before the
+  // rows exist clamps scrollTop to 0.
+  if (!renderAll._restored) {
+    renderAll._restored = true;
+    try { PanelState.restoreScroll(document.scrollingElement); } catch (_) { /**/ }
+  }
 }
 
 // ── Right now ────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <script src="../web_shared/iframe_shim.js?v=20260731j"></script>
+<script src="../web_shared/panel_state.js?v=20260811a"></script>
 <script src="../web_shared/util.js?v=20260731j"></script>
 <meta charset="UTF-8" />
 <title>Photo Folders — Linguar Hub</title>
@@ -161,6 +162,12 @@ const $ = (s) => document.querySelector(s);
 const state = { jobs: [], selected: new Map(), dayOffset: 0, loadSeq: 0 };
 
 window.addEventListener("pywebviewready", async () => {
+  // Remember the day you were on. It's an OFFSET from today, not a date,
+  // so "yesterday" still means yesterday tomorrow — and 📅 Today is one
+  // click away when you want back.
+  await PanelState.init("photo_folders");
+  state.dayOffset = Number(PanelState.get("dayOffset", 0)) || 0;
+
   // Wrapped, not passed bare: a bare handler hands load() the click Event
   // as its `seq` argument, which never equals state.loadSeq, so every
   // refresh would discard its own result.
@@ -192,6 +199,7 @@ window.addEventListener("pywebviewready", async () => {
 async function walkDay(delta) {
   if (delta === 0) state.dayOffset = 0;
   else state.dayOffset = (state.dayOffset || 0) + delta;
+  PanelState.set({ dayOffset: state.dayOffset });
   // One ticket for the whole day-change, so the label and the rows can
   // never end up from different days. Taken here rather than inside each
   // call — otherwise load() would issue a newer ticket than the label

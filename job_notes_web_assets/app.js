@@ -4,11 +4,19 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 window.addEventListener("pywebviewready", async () => {
+  await PanelState.init("job_notes");
+  state.search = PanelState.get("search", "");
+  const _sb = $("#search-box"); if (_sb) _sb.value = state.search;
+
   $("#refresh-btn").addEventListener("click", load);
   $("#compose-btn").addEventListener("click", () => openComposeModal());
   $("#open-folder-btn").addEventListener("click",
     () => pywebview.api.open_notes_folder());
-  $("#search-box").addEventListener("input", (e) => { state.search = e.target.value; renderList(); });
+  $("#search-box").addEventListener("input", (e) => {
+    state.search = e.target.value;
+    PanelState.set({ search: state.search });
+    renderList();
+  });
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT") return;
     if (e.key === "/") { $("#search-box").focus(); e.preventDefault(); return; }

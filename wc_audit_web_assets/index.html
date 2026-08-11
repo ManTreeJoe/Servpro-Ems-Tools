@@ -5,6 +5,7 @@
 <title>WC Audit — Linguar Hub</title>
 <link rel="stylesheet" href="theme.css" />
 <script src="../web_shared/iframe_shim.js?v=20260731j"></script>
+<script src="../web_shared/panel_state.js?v=20260811a"></script>
 <script src="../web_shared/util.js?v=20260731j"></script>
 <script src="../web_shared/keyboard.js?v=20260731j"></script>
 <script src="../web_shared/toast_log.js?v=20260731j"></script>
@@ -88,9 +89,19 @@
 <script>
 "use strict";
 const state = { cats: [], activeCat: "", lastResult: null };
+
+// The tab you were last reviewing, but only when the run you just loaded
+// still has that category — the tabs are rebuilt per classified file, so
+// a remembered key can easily not exist any more.
+function _preferredCat() {
+  const want = PanelState.get("activeCat", "");
+  return (want && state.cats.some((c) => c.key === want)) ? want : "";
+}
 const $ = (s) => document.querySelector(s);
 
 window.addEventListener("pywebviewready", async () => {
+  await PanelState.init("wc_audit");
+
   $("#run-btn").addEventListener("click", pickAndRun);
   $("#load-btn").addEventListener("click", pickAndLoad);
   $("#save-btn").addEventListener("click", saveAndSend);
@@ -216,7 +227,8 @@ async function pickAndLoad() {
   }));
   // Pick the first non-empty tab so the user sees rows immediately.
   // Falls back to the first tab in the list when every count is 0.
-  state.activeCat = (state.cats.find((c) => c.count > 0)?.key)
+  state.activeCat = _preferredCat()
+                    || (state.cats.find((c) => c.count > 0)?.key)
                     || state.cats[0]?.key || "";
   renderTabs();
   // Reveal the row card — same step onClassifyDone takes. Without
@@ -277,7 +289,7 @@ async function onClassifyDone(ev) {
   // Convert by_cat dict to counts for the stats display
   renderCounts(d.by_cat || {});
   state.cats = d.categories || [];
-  state.activeCat = state.cats[0]?.key || "";
+  state.activeCat = _preferredCat() || state.cats[0]?.key || "";
   renderTabs();
   await renderRowsForCat(state.activeCat);
   $("#rows-card").style.display = "block";
@@ -294,6 +306,7 @@ function renderTabs() {
   document.querySelectorAll(".tab").forEach((b) =>
     b.addEventListener("click", async () => {
       state.activeCat = b.dataset.cat;
+      PanelState.set({ activeCat: state.activeCat });
       renderTabs();
       await renderRowsForCat(state.activeCat);
     }));
