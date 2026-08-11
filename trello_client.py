@@ -219,7 +219,7 @@ def list_boards(*, exclude_quality: bool = False):
     return out
 
 
-def find_cards_by_name(query, *, max_results=20):
+def find_cards_by_name(query, *, max_results=20, with_lists=True):
     """Search included boards for cards matching `query`. Uses Trello's
     full-text search (fuzzy, handles Last/First reorders), then filters
     by board id so results from excluded boards never leak in.
@@ -246,13 +246,19 @@ def find_cards_by_name(query, *, max_results=20):
         return []
     # Per-board list-name lookup, lazily cached so multiple cards from
     # the same board only cost one extra API call.
+    #
+    # `with_lists=False` skips it entirely. It is one request PER DISTINCT
+    # BOARD on top of the search, which is most of the cost — a search
+    # spanning all nine boards took 11.5s, versus well under a second for
+    # the /search alone. The card picker shows the board, not the lane,
+    # so it opts out and stays usable as a search-as-you-type box.
     list_cache = {}
     out = []
     for c in cards:
         if c.get("closed"):
             continue
         bid = c.get("idBoard")
-        if bid not in list_cache:
+        if bid not in list_cache and with_lists:
             try:
                 lists = _call(f"/boards/{bid}/lists",
                               params={"fields": "id,name"})
@@ -260,13 +266,14 @@ def find_cards_by_name(query, *, max_results=20):
             except Exception:
                 list_cache[bid] = {}
         lid = c.get("idList")
+        lists_for_board = list_cache.get(bid) or {}
         out.append({
             "board":     board_index.get(bid, "(unknown)"),
             "card_id":   c["id"],
             "name":      c.get("name", ""),
             "url":       c.get("shortUrl", ""),
             "list_id":   lid,
-            "list_name": list_cache[bid].get(lid, ""),
+            "list_name": lists_for_board.get(lid, ""),
         })
     return out
 

@@ -6528,15 +6528,35 @@ class Api(JobSettingsApi, CompanyCamApi):
         come back as 20 LOGS cards and the live job would never be in
         the list to promote.
         """
-        if not query or len(query.strip()) < 2:
-            return []
-        try:
-            import trello_client as tc
-            hits = tc.find_cards_by_name(query.strip(), max_results=60) or []
-        except Exception:
+        query = (query or "").strip()
+        if len(query) < 2:
             return []
 
+        import card_search as cs
         import trello_boards as tb
+
+        # Local first — it answers instantly and, unlike Trello, matches
+        # PARTIAL words. Trello's /search is whole-word and its wildcard
+        # is unreliable (garcia* works, garci* / smit* / mongu* don't), so
+        # typing a few letters used to return nothing at all.
+        local = cs.search_local(query)
+
+        # Trello is ALWAYS consulted, on the no-lists fast path.
+        #
+        # Skipping it when the local index looked sufficient was wrong:
+        # job_lifecycle was last synced 2026-06-24 and holds 54 WORK IN
+        # PROGRESS cards against 212 live, so trusting it hid three out of
+        # four ACTIVE jobs — the exact opposite of ranking active work
+        # first. `with_lists=False` drops the per-board /lists calls that
+        # made this take 11.5s; the picker shows the board, not the lane.
+        try:
+            import trello_client as tc
+            remote = tc.find_cards_by_name(query, max_results=60,
+                                           with_lists=False) or []
+        except Exception:
+            remote = []          # offline / rate-limited — local still works
+
+        hits = cs.merge(local, remote, query)
         wanted = {tb.normalize(b) for b in (boards or []) if b}
         out = []
         for h in hits:
@@ -6551,9 +6571,14 @@ class Api(JobSettingsApi, CompanyCamApi):
                 "tier":      tb.tier(board),
                 "lane":      h.get("list_name") or h.get("lane") or "",
                 "short_url": h.get("url") or h.get("shortUrl") or "",
+                "score":     round(float(h.get("_score") or 0), 3),
             })
-        # Stable sort: Trello's relevance order survives inside a board.
-        out.sort(key=lambda r: tb.sort_key(r["board"]))
+        # Best match FIRST within each tier. Sorting on the tier alone
+        # floated a poor match to the top whenever its board happened to
+        # be active — searching "david smith" put a card that merely
+        # mentions the words above the actual Smith, David card.
+        out.sort(key=lambda r: (tb.sort_key(r["board"]), -r["score"],
+                                r["name"].casefold()))
         return out[:25]
 
     def list_search_boards(self) -> dict:
