@@ -25,6 +25,9 @@ const state = {
                            // clearing the box (✕ Clear results empties them)
   oneoffTried: "",         // last term we auto-ran a one-off for (avoid repeats)
   oneoffRunning: false,    // guard against overlapping auto one-off audits
+  dayOffset: 0,            // 0 = today, -1 = yesterday …
+  auditForDay: undefined,  // which day the in-flight audit was started for
+  queuedAudit: null,       // a day picked while an audit was running
 };
 
 // Commercial-parent groups (e.g. "Menifee Union School District") the
@@ -496,19 +499,53 @@ async function walkDay(delta) {
   await refreshDayLabel();
   // If audit was already run for today's offset, immediately re-run
   // for the new day so the user sees fresh data after clicking.
-  await runAuditFiltered(true);
+  requestAudit(true);
 }
 
 async function refreshDayLabel() {
-  const r = await pywebview.api.find_run_doc_for(state.dayOffset || 0);
+  const want = state.dayOffset || 0;
+  const r = await pywebview.api.find_run_doc_for(want);
+  // Clicking through days fast means several of these are in flight; only
+  // the one for the day still selected may paint.
+  if ((state.dayOffset || 0) !== want) return;
   $("#audit-date-label").textContent = r.date_label || "—";
   $("#open-doc-btn").disabled = !r.exists;
   $("#open-doc-btn").style.opacity = r.exists ? "1" : "0.5";
 }
 
+// Ask for an audit of the CURRENT day, coping with one already running.
+//
+// runAuditFiltered used to just `return` when state.loading was set. So
+// changing day mid-run moved dayOffset and the label, silently dropped the
+// request, and then the in-flight run finished and rendered the OLD day.
+// Nothing ever re-requested, so the day you picked never loaded — you had
+// to leave the tab and come back. Now the request is remembered and fired
+// when the running one reports back.
+function requestAudit(useCache) {
+  if (state.loading) {
+    state.queuedAudit = { useCache, day: state.dayOffset || 0 };
+    $("#loading-label").textContent = "Switching day…";
+    return;
+  }
+  runAuditFiltered(useCache);
+}
+
+// Called from onAuditDone once the in-flight run has released state.loading.
+function _drainQueuedAudit() {
+  const q = state.queuedAudit;
+  if (!q) return false;
+  state.queuedAudit = null;
+  runAuditFiltered(q.useCache);
+  return true;
+}
+
 async function runAuditFiltered(useCache) {
-  if (state.loading) return;
+  if (state.loading) { state.queuedAudit = { useCache, day: state.dayOffset || 0 }; return; }
   state.loading = true;
+  // Remember which day this run is FOR, so a result that arrives after you
+  // have moved on can be recognised as stale instead of overwriting the
+  // rows for the day now on screen.
+  state.auditForDay = state.dayOffset || 0;
   $("#run-btn").disabled = true;
   $("#rerun-btn").disabled = true;
   $("#loading-label").textContent = "Auditing…";
@@ -528,6 +565,10 @@ async function runAuditFiltered(useCache) {
       $("#loading-state").classList.add("hidden");
       $("#run-btn").disabled = false;
       $("#rerun-btn").disabled = false;
+      // The backend refuses while its own run is in flight. Retry rather
+      // than strand the day: without this the request is lost the same way
+      // the old client-side guard lost it.
+      if (_drainQueuedAudit()) return;
       setStatus(res.reason || "Couldn't start audit", "warn");
     }
   } catch (ex) {
@@ -536,6 +577,7 @@ async function runAuditFiltered(useCache) {
     $("#loading-state").classList.add("hidden");
     $("#run-btn").disabled = false;
     $("#rerun-btn").disabled = false;
+    _drainQueuedAudit();
   }
 }
 
@@ -1817,6 +1859,16 @@ function onAuditDone(ev) {
   $("#loading-state").classList.add("hidden");
   $("#run-btn").disabled = false;
   $("#rerun-btn").disabled = false;
+  // You changed day while this was running: these rows are for the day you
+  // left. Drop them and run the day now on screen — rendering them first
+  // would flash the wrong day's jobs.
+  const staleDay = state.auditForDay !== undefined &&
+                   state.auditForDay !== (state.dayOffset || 0);
+  if (state.queuedAudit || staleDay) {
+    if (!state.queuedAudit) state.queuedAudit = { useCache: true, day: state.dayOffset || 0 };
+    _drainQueuedAudit();
+    return;
+  }
   if (!ok) {
     setStatus(`Audit failed: ${error || "unknown"}`, "error");
     return;

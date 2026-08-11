@@ -151,10 +151,20 @@
 const $ = (s) => document.querySelector(s);
 // state.selected: Map of client → Set(tech names selected)
 // state.dayOffset: 0 = today, -1 = yesterday, etc.
-const state = { jobs: [], selected: new Map(), dayOffset: 0 };
+// state.loadSeq: every day-load takes a ticket. find_run_doc_for and
+// today_jobs are both slow (run-doc parse + folder scan), so clicking ⏭
+// while a day was still loading left two requests in flight — and whichever
+// landed LAST won, usually the older slower one. The label showed the new
+// day while the rows stayed on the old one, and since dayOffset had already
+// moved nothing ever re-requested, so that day never loaded. A response
+// whose ticket is no longer current is now dropped.
+const state = { jobs: [], selected: new Map(), dayOffset: 0, loadSeq: 0 };
 
 window.addEventListener("pywebviewready", async () => {
-  $("#refresh-btn").addEventListener("click", load);
+  // Wrapped, not passed bare: a bare handler hands load() the click Event
+  // as its `seq` argument, which never equals state.loadSeq, so every
+  // refresh would discard its own result.
+  $("#refresh-btn").addEventListener("click", () => load());
   $("#create-btn").addEventListener("click", create);
   $("#cleanup-empty-btn").addEventListener("click", openCleanupEmptyModal);
   $("#day-prev").addEventListener("click", () => walkDay(-1));
@@ -182,12 +192,21 @@ window.addEventListener("pywebviewready", async () => {
 async function walkDay(delta) {
   if (delta === 0) state.dayOffset = 0;
   else state.dayOffset = (state.dayOffset || 0) + delta;
-  await refreshDayLabel();
-  await load();
+  // One ticket for the whole day-change, so the label and the rows can
+  // never end up from different days. Taken here rather than inside each
+  // call — otherwise load() would issue a newer ticket than the label
+  // fetch it is paired with.
+  const seq = ++state.loadSeq;
+  $("#day-meta").textContent = "Loading…";
+  await refreshDayLabel(seq);
+  await load(seq);
 }
 
-async function refreshDayLabel() {
-  const r = await pywebview.api.find_run_doc_for(state.dayOffset);
+async function refreshDayLabel(seq) {
+  if (seq === undefined) seq = ++state.loadSeq;
+  const offset = state.dayOffset;
+  const r = await pywebview.api.find_run_doc_for(offset);
+  if (seq !== state.loadSeq) return;      // a newer day was picked
   if (!r?.ok) {
     $("#audit-date-label").textContent = "—";
     $("#day-meta").textContent = "";
@@ -203,8 +222,12 @@ async function refreshDayLabel() {
         : `${state.dayOffset} day${state.dayOffset === 1 ? "" : "s"} ahead`);
 }
 
-async function load() {
+async function load(seq) {
+  // Called bare by the 🔄 Refresh button too — take a ticket so a refresh
+  // mid-day-change can't resurrect the day you just left.
+  if (seq === undefined) seq = ++state.loadSeq;
   const data = await pywebview.api.today_jobs(state.dayOffset);
+  if (seq !== state.loadSeq) return;      // a newer day was picked
   if (!data?.ok) {
     $("#rows").innerHTML = `<div class="muted" style="padding:40px;text-align:center;">${esc(data?.error || "no data")}</div>`;
     $("#run-date-label").textContent = data?.date_label || "";
