@@ -45,3 +45,7 @@ build_*.txt
 .claude/
 .agents/
 skills-lock.json
+
+# Build output — the shipped folder is 108 MB and is rebuilt from the spec.
+/dist/
+/build/

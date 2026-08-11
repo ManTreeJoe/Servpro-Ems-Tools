@@ -764,6 +764,14 @@ def main(argv=None):
         return
     _ensure_root_index()
     import paths as _paths
+    # Dated copies of state.json / ems_jobs.db / config.json before the
+    # app touches any of them. Threaded, and swallows everything — a
+    # backup that can break startup is worse than no backup.
+    try:
+        import data_backup
+        data_backup.start_background()
+    except Exception:
+        pass
     api = HomeApi()
     win = webview.create_window(
         title=("Linguar Hub — TRIAL" if getattr(_paths, "IS_TRIAL", False)
