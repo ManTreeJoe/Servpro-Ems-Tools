@@ -133,9 +133,25 @@ def _job(row):
 def upsert_job(*, display_name: str, claim_number: str = "",
                carrier: str = "", loss_type: str = "", year=None,
                status: str = "", date_received: str = "",
-               department: str = "", metadata: dict | None = None) -> str:
+               department: str = "", metadata: dict | None = None,
+               **crm) -> str:
     """Insert or update, with the SQLite backend's partial-update rule: a
-    blank value never overwrites an existing non-blank one."""
+    blank value never overwrites an existing non-blank one.
+
+    v6 CRM fields come through **crm and share the sqlite column list, so
+    the two backends cannot drift on which fields exist."""
+    from ems_db_sqlite import CRM_COLUMNS, _TEXT_COLUMNS
+    unknown = set(crm) - set(CRM_COLUMNS)
+    if unknown:
+        raise TypeError(
+            f"upsert_job() got unexpected keyword(s): {sorted(unknown)}")
+    supplied = dict(crm)
+    supplied.update({
+        "claim_number": claim_number, "carrier": carrier,
+        "loss_type": loss_type, "status": status,
+        "date_received": date_received,
+    })
+
     key = canon_key(display_name)
     if not key:
         raise ValueError("display_name must canonicalize to a non-empty key")
@@ -143,29 +159,27 @@ def upsert_job(*, display_name: str, claim_number: str = "",
     existing = _one("jobs", canon_key=f"eq.{key}", select="*")
     md_json = json.dumps(metadata) if metadata else None
     if existing is None:
-        _sb.rest("POST", "jobs", body={
-            "canon_key": key, "display_name": display_name,
-            "claim_number": claim_number or None, "carrier": carrier or None,
-            "loss_type": loss_type or None, "year": year,
-            "status": status or None, "date_received": date_received or None,
+        body = {
+            "canon_key": key, "display_name": display_name, "year": year,
             "first_seen_at": now, "last_seen_at": now,
             "metadata_json": md_json,
             "department": (department or "").strip() or None,
-        }, prefer="resolution=merge-duplicates")
+        }
+        for col in _TEXT_COLUMNS:
+            body[col] = supplied.get(col) or None
+        _sb.rest("POST", "jobs", body=body,
+                 prefer="resolution=merge-duplicates")
         return key
     patch = {
         "display_name":  display_name or existing.get("display_name"),
-        "claim_number":  claim_number or existing.get("claim_number"),
-        "carrier":       carrier or existing.get("carrier"),
-        "loss_type":     loss_type or existing.get("loss_type"),
         "year":          year if year is not None else existing.get("year"),
-        "status":        status or existing.get("status"),
-        "date_received": date_received or existing.get("date_received"),
         "last_seen_at":  now,
         "metadata_json": md_json or existing.get("metadata_json"),
         "department":    ((department or "").strip()
                           or existing.get("department") or None),
     }
+    for col in _TEXT_COLUMNS:
+        patch[col] = supplied.get(col) or existing.get(col)
     _sb.rest("PATCH", "jobs", params={"canon_key": f"eq.{key}"}, body=patch)
     return key
 

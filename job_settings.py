@@ -105,14 +105,31 @@ FIELDS = [
 
 BY_ID = {f[0]: f for f in FIELDS}
 
-# The four with real columns on `jobs`. Everything else lives in
-# metadata_json beside them — the columns existed and were never filled,
-# so this finally uses them rather than adding more.
+# Fields backed by a real column on `jobs` (schema v6). Everything else —
+# the long free text: field/office notes, scope, additional contacts —
+# stays in metadata_json, where nobody needs to filter on it.
+#
+# Only four of these had columns before v6; the rest sat in the JSON blob
+# and so could not be filtered, grouped or reported on. The field id and
+# the column name match except where the card's wording differs from the
+# column's ("cause of loss" is the loss_type column).
 COLUMN_FIELDS = {
-    "carrier":       "carrier",
-    "claim_number":  "claim_number",
-    "cause_of_loss": "loss_type",
-    "date_received": "date_received",
+    "carrier":        "carrier",
+    "claim_number":   "claim_number",
+    "cause_of_loss":  "loss_type",
+    "date_received":  "date_received",
+    # v6
+    "address":        "address",
+    "phone":          "phone",
+    "email":          "email",
+    "adjuster_name":  "adjuster_name",
+    "adjuster_email": "adjuster_email",
+    "adjuster_phone": "adjuster_phone",
+    "agent_name":     "agent_name",
+    "deductible":     "deductible",
+    "date_of_loss":   "date_of_loss",
+    "xa_id":          "xa_id",
+    "wc_project_id":  "wc_project_id",
 }
 
 _META_SETTINGS = "settings"     # current values not backed by a column

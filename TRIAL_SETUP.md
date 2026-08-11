@@ -14,7 +14,7 @@ something isn't working.
 
 | Table | Rows | What it holds |
 |---|---|---|
-| `jobs` | 418 | One row per **client**. Identity + department. |
+| `jobs` | 418 | One row per **client**. Identity, department, and the v6 job record — address, phone, email, carrier, claim #, adjuster name/email/phone, agent, deductible, date of loss, date received, cause of loss, XA id, WorkCenter project id. |
 | `job_aliases` | 452 | Every spelling that means the same client. |
 | `job_links` | 709 | `folder_path` (352), `trello_card` (351), `companycam_project` (6). |
 | `job_children` | 139 | Units (55), sub-jobs (76), claims (9) under a client. |
@@ -23,8 +23,16 @@ something isn't working.
 
 **Not** shared: `state.json` and its sidecar caches (resolved issues,
 closeout ledger, missing items, tracker state) are still per-machine.
-Job *facts* — claim number, carrier, loss type — still live in the
-Trello card description, not here: those columns are ~0% populated.
+
+Job facts are now IN the database rather than only on the Trello card —
+`backfill_job_facts.py` filled 292 of the 301 carded jobs from their card
+descriptions. Coverage: address 292, date of loss 276, phone 264, carrier
+241, claim # 222, adjuster 210, adjuster email 190, deductible 104, XA id
+77. `wc_project_id` is 0 — it isn't on any card yet, so it gets typed
+into ⚙ Job info (or added to the card) as jobs come through.
+
+Re-run `backfill_job_facts.py --dry` any time; it only ever fills blanks
+and never overwrites a value someone corrected by hand.
 
 ---
 
@@ -36,6 +44,12 @@ Trello card description, not here: those columns are ~0% populated.
    a row in `app_user_departments` they sign in fine and see *nothing* —
    that's RLS working, not a bug.
 3. Confirm: the last query in that file lists each email and department.
+4. ⚠ **SQL editor → run `supabase/005_crm_columns.sql` BEFORE anyone
+   switches to the shared backend.** It adds the v6 job-record columns.
+   Until it runs, saving a job against the cloud fails with a PostgREST
+   400 on the first missing column. `trial_preflight.py` blocks on this,
+   so you'll see it before it bites. Then push the backfilled values up
+   with `python migrate_to_supabase.py`.
 
 ## On each PC
 

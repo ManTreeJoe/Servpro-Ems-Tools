@@ -70,7 +70,35 @@ from persistence import _canon_pin_key as _canon_pin_key_persistence
 # place when they need to back the suite up or migrate machines.
 DB_PATH = _paths.data("ems_jobs.db")
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
+
+# ── v6: the job record people actually ask questions about ──────────────
+#
+# These 30-odd facts have always been parsed off the Trello card by
+# `job_settings`, but only four of them (claim_number, carrier, loss_type,
+# date_received) had columns — the rest went into `metadata_json`, where
+# nothing can filter, group or report on them. "Every AAA claim", "every
+# job for this adjuster", "losses in July" were all unanswerable against a
+# JSON blob.
+#
+# Text columns, deliberately, including the dates: the card holds whatever
+# the office typed ("7/2/26", "07-02-2026"), and coercing that to DATE
+# would reject rows rather than store what we were told. Normalising is a
+# later, separate job.
+#
+# `metadata_json` keeps the long free text (field/office notes, scope) and
+# the `trello_base` merge baseline.
+CRM_COLUMNS = (
+    "address", "phone", "email",
+    "adjuster_name", "adjuster_email", "adjuster_phone",
+    "agent_name", "deductible", "date_of_loss",
+    "xa_id", "wc_project_id",
+)
+
+# Every text column on `jobs` that follows the partial-update rule.
+_TEXT_COLUMNS = (
+    "claim_number", "carrier", "loss_type", "status", "date_received",
+) + CRM_COLUMNS
 
 
 
@@ -287,6 +315,10 @@ def _init_schema():
             # Trello card of its own, so the Hub is the only place that
             # record can live.
             "ALTER TABLE job_children ADD COLUMN metadata_json TEXT",
+        ) + tuple(
+            # v6: promote the queryable job facts out of metadata_json.
+            f"ALTER TABLE jobs ADD COLUMN {col} TEXT"
+            for col in CRM_COLUMNS
         ):
             try:
                 c.execute(col_sql)
@@ -312,6 +344,20 @@ def reset_db_path(new_path: str) -> None:
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
+
+
+def _row_get(row, col, default=""):
+    """sqlite3.Row lookup that tolerates a missing column.
+
+    `_init_schema` adds the v6 columns on open, but a row read through an
+    older connection (or a test fixture built from a v5 file) won't have
+    them, and Row raises IndexError rather than returning None.
+    """
+    try:
+        val = row[col]
+    except (IndexError, KeyError):
+        return default
+    return default if val is None else val
 
 
 def _row_to_dict(row) -> dict:
@@ -396,7 +442,8 @@ def upsert_job(*, display_name: str,
                 status: str = "",
                 date_received: str = "",
                 department: str = "",
-                metadata: dict | None = None) -> str:
+                metadata: dict | None = None,
+                **crm) -> str:
     """Insert or update a job, keyed on `canon_key(display_name)`.
 
     Fields are partial-update: a blank value passed in does NOT
@@ -404,8 +451,24 @@ def upsert_job(*, display_name: str,
     refresh display_name + status without nuking the loss_type a
     different tool already filled in.
 
+    The v6 CRM fields (`CRM_COLUMNS` — address, adjuster_*, date_of_loss,
+    xa_id, wc_project_id …) are accepted as keywords too and follow the
+    exact same rule. They are taken via **crm rather than eleven more
+    named parameters so the column list has ONE definition; an unknown
+    keyword still raises, so a typo can't silently vanish.
+
     Returns the canon_key.
     """
+    unknown = set(crm) - set(CRM_COLUMNS)
+    if unknown:
+        raise TypeError(
+            f"upsert_job() got unexpected keyword(s): {sorted(unknown)}")
+    supplied = dict(crm)
+    supplied.update({
+        "claim_number": claim_number, "carrier": carrier,
+        "loss_type": loss_type, "status": status,
+        "date_received": date_received,
+    })
     key = canon_key(display_name)
     if not key:
         raise ValueError("display_name must canonicalize to a non-empty key")
@@ -424,32 +487,31 @@ def upsert_job(*, display_name: str,
         existing = c.execute(
             "SELECT * FROM jobs WHERE canon_key = ?", (key,)).fetchone()
         if existing is None:
-            c.execute("""
-                INSERT INTO jobs
-                    (canon_key, display_name, claim_number, carrier,
-                     loss_type, year, status, date_received,
-                     first_seen_at, last_seen_at, metadata_json,
-                     parent_canon, unit_number, department)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (key, display_name, claim_number, carrier, loss_type,
-                  year, status, date_received, now, now, md_json,
-                  parent_canon_value, unit_num,
-                  (department or "").strip() or None))
+            cols = ["canon_key", "display_name", "year", "first_seen_at",
+                    "last_seen_at", "metadata_json", "parent_canon",
+                    "unit_number", "department"] + list(_TEXT_COLUMNS)
+            vals = [key, display_name, year, now, now, md_json,
+                    parent_canon_value, unit_num,
+                    (department or "").strip() or None]
+            vals += [supplied.get(col) or "" for col in _TEXT_COLUMNS]
+            c.execute(
+                f"INSERT INTO jobs ({', '.join(cols)}) "
+                f"VALUES ({', '.join('?' * len(cols))})", vals)
         else:
             # Partial-update: only overwrite columns the caller actually
             # supplied (non-empty). display_name is always overwritten
             # so casing/spacing fixes propagate.
             new_vals = {
                 "display_name":  display_name or existing["display_name"],
-                "claim_number":  claim_number or existing["claim_number"],
-                "carrier":       carrier      or existing["carrier"],
-                "loss_type":     loss_type    or existing["loss_type"],
                 "year":          year         if year is not None else existing["year"],
-                "status":        status       or existing["status"],
-                "date_received": date_received or existing["date_received"],
                 "last_seen_at":  now,
                 "metadata_json": md_json      or existing["metadata_json"],
             }
+            # Same rule for every text column, driven off the one list —
+            # hand-writing them was how the four original columns stayed
+            # the only four for as long as they did.
+            for col in _TEXT_COLUMNS:
+                new_vals[col] = supplied.get(col) or _row_get(existing, col)
             # Re-detect on every upsert: if the display_name changed
             # (e.g. a rename in Trello), the parent/unit derivation
             # should follow. Partial-update rule: keep the existing
@@ -461,19 +523,15 @@ def upsert_job(*, display_name: str,
             # is an explicit set_department(overwrite=True).
             new_dept = ((department or "").strip()
                         or existing["department"] or None)
-            c.execute("""
-                UPDATE jobs SET
-                    display_name=?, claim_number=?, carrier=?, loss_type=?,
-                    year=?, status=?, date_received=?, last_seen_at=?,
-                    metadata_json=?, parent_canon=?, unit_number=?,
-                    department=?
-                WHERE canon_key=?
-            """, (new_vals["display_name"], new_vals["claim_number"],
-                  new_vals["carrier"], new_vals["loss_type"],
-                  new_vals["year"], new_vals["status"],
-                  new_vals["date_received"], new_vals["last_seen_at"],
-                  new_vals["metadata_json"], new_parent, new_unit,
-                  new_dept, key))
+            set_cols = (["display_name", "year", "last_seen_at",
+                         "metadata_json"] + list(_TEXT_COLUMNS))
+            c.execute(
+                "UPDATE jobs SET "
+                + ", ".join(f"{c_}=?" for c_ in set_cols)
+                + ", parent_canon=?, unit_number=?, department=? "
+                  "WHERE canon_key=?",
+                [new_vals[c_] for c_ in set_cols]
+                + [new_parent, new_unit, new_dept, key])
         c.commit()
     return key
 

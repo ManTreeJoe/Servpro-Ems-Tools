@@ -134,6 +134,24 @@ def main():
     except Exception as ex:
         check("Read shared jobs", FAIL, f"{type(ex).__name__}: {ex}")
 
+    # ── 4b. Cloud schema is up to date ────────────────────────────────
+    # The v6 CRM columns are added by supabase/005_crm_columns.sql, which
+    # only a human can run (DDL needs the SQL editor). If the app writes a
+    # job before that runs, PostgREST rejects the whole row with a 400 on
+    # the first unknown column — so catch it here rather than on a save.
+    try:
+        import ems_db_sqlite as _sq
+        probe = ",".join(_sq.CRM_COLUMNS)
+        sb.rest("GET", "jobs", params={"select": probe, "limit": "1"})
+        check("Shared DB schema (v6)", OK, "CRM columns present")
+    except Exception as ex:
+        missing = str(ex)
+        check("Shared DB schema (v6)", FAIL,
+              missing.strip()[:70],
+              "Run supabase/005_crm_columns.sql in the Supabase SQL "
+              "editor BEFORE using the shared backend — job saves will "
+              "fail on every missing column until you do.")
+
     # ── 5. Backend switch ─────────────────────────────────────────────
     backend = (cfg.get("ems_db_backend") or "sqlite").strip().lower()
     if backend == "supabase":
