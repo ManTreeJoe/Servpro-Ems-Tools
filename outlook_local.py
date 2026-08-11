@@ -171,16 +171,25 @@ def _sender(item) -> dict:
 
 
 def _body_preview(item, limit: int = 255) -> str:
+    """First `limit` characters of the body, newlines flattened.
+    `limit=0` means the whole thing.
+
+    255 matches Graph's bodyPreview and is the right default for display
+    — but it is not enough to READ a machine-generated mail. A DocuSketch
+    delivery notice spends its first ~250 characters on tracking URLs and
+    only then reaches "Project name <the job>", so a caller that parses
+    bodies has to ask for more. See `list_recent_messages(body_limit=)`.
+    """
     body = _safe_get(item, "Body", "") or ""
     body = body.replace("\r\n", " ").replace("\n", " ").strip()
-    return body[:limit]
+    return body[:limit] if limit else body
 
 
 def _entry_id(item) -> str:
     return _safe_get(item, "EntryID", "")
 
 
-def _to_dict(item) -> dict:
+def _to_dict(item, body_limit: int = 255) -> dict:
     """One MailItem → Graph-shaped message dict."""
     received = _normalize_dt(_safe_get(item, "ReceivedTime", None))
     received_iso = (received.isoformat(timespec="seconds") + "Z"
@@ -191,7 +200,7 @@ def _to_dict(item) -> dict:
         "from":             _sender(item),
         "toRecipients":     _recipients(item),
         "receivedDateTime": received_iso,
-        "bodyPreview":      _body_preview(item),
+        "bodyPreview":      _body_preview(item, body_limit),
         "hasAttachments":   bool(_safe_get(item, "Attachments", None)
                                   and item.Attachments.Count > 0),
         # webLink is a Graph-only field. COM can't generate one, but we
@@ -206,7 +215,8 @@ def _to_dict(item) -> dict:
 
 def list_recent_messages(*, folder: str = "inbox",
                           since: _dt.datetime | None = None,
-                          top: int = 50) -> list[dict]:
+                          top: int = 50,
+                          body_limit: int = 255) -> list[dict]:
     """Return up to `top` most-recent mail items from `folder`. `since`
     filters to items with ReceivedTime >= since (naive UTC). Output is
     sorted newest-first.
@@ -239,7 +249,7 @@ def list_recent_messages(*, folder: str = "inbox",
             # cutoff, everything below is also too old.
             break
         try:
-            out.append(_to_dict(item))
+            out.append(_to_dict(item, body_limit=body_limit))
         except Exception:
             # One bad item shouldn't poison the whole scan.
             continue
