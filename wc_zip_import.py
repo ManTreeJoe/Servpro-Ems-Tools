@@ -27,13 +27,15 @@ from __future__ import annotations
 
 import os
 import re
-import tkinter as tk
 import webbrowser
 
-from theme import (
-    BG, GREEN, GREEN_DARK, WHITE, TEXT_DARK, TEXT_GRAY,
-    SURFACE_2, LINK_FG, NEUTRAL_HOVER,
-)
+# tkinter + theme are imported INSIDE the three dialog functions below,
+# not here. Everything else in this module is pure (zip discovery,
+# grouping, extraction, HEIC conversion, room organising) and is called
+# by the web panels — audit_web imports this module just for
+# find_wc_zips + the filename patterns. At module scope the theme import
+# pulls in customtkinter and PIL, which cost ~400ms of startup that a
+# web panel never gets any use out of.
 
 
 # Workcenter export filenames — "documents.zip" / "documents (1).zip" for
@@ -186,6 +188,11 @@ def prompt_for_wc_zip(parent, *, workcenter_url: str = "",
     Pure UI — does not touch the filesystem or trigger any imports
     beyond the optional file-picker. Caller decides what to do with
     the return."""
+    import tkinter as tk
+    from theme import (
+        BG, GREEN, GREEN_DARK, WHITE, TEXT_DARK, TEXT_GRAY,
+        SURFACE_2, LINK_FG, NEUTRAL_HOVER,
+    )
     dlg = tk.Toplevel(parent)
     dlg.title("Workcenter Import")
     dlg.resizable(False, False)
@@ -566,6 +573,8 @@ def pick_zip_group(parent, groups: list[tuple[str, list[str]]],
     if len(groups) == 1:
         return groups[0]
 
+    import tkinter as tk
+    from theme import BG, GREEN, GREEN_DARK, WHITE, TEXT_DARK, SURFACE_2
     pick_dlg = tk.Toplevel(parent)
     pick_dlg.title(f"Select {label} zip")
     pick_dlg.resizable(False, False)

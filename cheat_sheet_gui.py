@@ -34,41 +34,11 @@ _ICON    = paths.resource("wrench.ico")
 
 
 # ── Markdown parsing ─────────────────────────────────────────────────────────
-
-def parse_markdown(path):
-    """
-    Returns: list of {title, subsections}
-    where each subsection is {title, lines}
-    Sections split on ## headings; subsections on ###.
-    Content above the first ## becomes an 'Overview' section.
-    """
-    if not os.path.isfile(path):
-        return []
-    with open(path, encoding="utf-8") as f:
-        raw = f.read()
-
-    sections = []
-    cur_sec  = {"title": "Overview", "subsections": [{"title": "", "lines": []}]}
-
-    for line in raw.splitlines():
-        if line.startswith("# "):
-            # Top-level title — skip; we use window title instead
-            continue
-        if line.startswith("## "):
-            # New section
-            if any(sub["lines"] or sub["title"] for sub in cur_sec["subsections"]):
-                sections.append(cur_sec)
-            cur_sec = {"title": line[3:].strip(),
-                       "subsections": [{"title": "", "lines": []}]}
-            continue
-        if line.startswith("### "):
-            cur_sec["subsections"].append({"title": line[4:].strip(), "lines": []})
-            continue
-        cur_sec["subsections"][-1]["lines"].append(line)
-
-    if any(sub["lines"] or sub["title"] for sub in cur_sec["subsections"]):
-        sections.append(cur_sec)
-    return sections
+# Lives in cheat_sheet_logic so the web panel can parse the sheet
+# without importing this Tk module. Re-exported here so existing
+# callers of cheat_sheet_gui.parse_markdown keep working — one
+# definition, imported, never a second copy.
+from cheat_sheet_logic import parse_markdown  # noqa: F401
 
 
 # ── GUI ──────────────────────────────────────────────────────────────────────

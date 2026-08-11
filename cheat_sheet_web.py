@@ -6,7 +6,7 @@ import webview
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path: sys.path.insert(0, _HERE)
 
-import cheat_sheet_gui as cs
+import cheat_sheet_logic as cs   # pure parser; NOT the Tk panel
 import paths
 
 ASSETS_DIR = os.path.join(_HERE, "cheat_sheet_web_assets")

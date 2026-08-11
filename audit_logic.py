@@ -4,7 +4,6 @@ import re
 import threading
 import time as _time
 from datetime import date, datetime, timedelta
-from docx.oxml.ns import qn
 
 
 # ── Year-folder listing cache (TTL'd) ──────────────────────────────────────
@@ -206,6 +205,11 @@ def para_is_struck(para):
     for paragraphs whose strike formatting lives at the run-level rather
     than the rPr element.
     """
+    # Imported here, not at module scope: `from docx.oxml.ns import qn`
+    # pulls the whole python-docx package (and lxml) in, and audit_logic
+    # is imported by every web panel. Run-doc parsing is the only thing
+    # that needs it, so the panels shouldn't pay for it on startup.
+    from docx.oxml.ns import qn
     for run in para.runs:
         rpr = run._r.find(qn('w:rPr'))
         if rpr is not None:

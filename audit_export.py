@@ -1,20 +1,15 @@
-"""Shared audit PDF export — job picker + PDF generator."""
+"""Shared audit PDF export — job picker + PDF generator.
+
+tkinter/theme/ui_buttons (the job picker) and reportlab (the PDF) are
+imported inside the two functions that need them, NOT here. The backlog
+half of this module is pure JSON bookkeeping, and that is the only part
+most callers want — `kpi_metrics` imports this module solely for
+`load_audit_backlog`. At module scope the Tk and reportlab imports cost
+the KPI panel ~500ms of load time it gets no use out of.
+"""
 import os
 import json as _json
-import tkinter as tk
-from tkinter import messagebox
 from datetime import datetime, timedelta, date as _date
-from theme import BG, WHITE, GREEN, GREEN_DARK, TEXT_DARK, BORDER, FLAG_RED
-from ui_buttons import done_button
-import theme as _theme
-
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
-from reportlab.platypus import (SimpleDocTemplate, Paragraph,
-                                 Spacer, Table, TableStyle)
 
 import paths
 
@@ -273,11 +268,24 @@ def _write_backlog_md(jobs, now=None):
 
 
 # ── Colours ──────────────────────────────────────────────────────────────────
-_GREEN  = colors.Color(0/255,   166/255,  81/255)
-_RED    = colors.Color(192/255,  57/255,  43/255)
-_ORANGE = colors.Color(230/255, 126/255,  34/255)
-_LGRAY  = colors.Color(0.93, 0.93, 0.93)
-_DGRAY  = colors.Color(0.5,  0.5,  0.5)
+# Built on first use rather than at import: each one is a
+# reportlab.lib.colors.Color, and evaluating them here is what forced
+# reportlab to load for every importer of this module.
+_PDF_COLOURS = {}
+
+
+def _colours():
+    """{name: Color} for the PDF builder, memoised."""
+    if not _PDF_COLOURS:
+        from reportlab.lib import colors
+        _PDF_COLOURS.update(
+            GREEN=colors.Color(0 / 255, 166 / 255, 81 / 255),
+            RED=colors.Color(192 / 255, 57 / 255, 43 / 255),
+            ORANGE=colors.Color(230 / 255, 126 / 255, 34 / 255),
+            LGRAY=colors.Color(0.93, 0.93, 0.93),
+            DGRAY=colors.Color(0.5, 0.5, 0.5),
+        )
+    return _PDF_COLOURS
 
 # ── Markdown log ─────────────────────────────────────────────────────────────
 
@@ -371,6 +379,12 @@ def write_audit_md(results, run_date="", source="", trello_notes=""):
 
 def open_export_window(parent, results, run_date="", on_close=None):
     """Open job-selection dialog then generate the PDF."""
+    import tkinter as tk
+    from tkinter import messagebox
+    from theme import (BG, WHITE, GREEN, GREEN_DARK, TEXT_DARK, BORDER,
+                       FLAG_RED)
+    from ui_buttons import done_button
+    import theme as _theme
     if not results:
         messagebox.showinfo("Nothing to Export", "No jobs to export.", parent=parent)
         if on_close:
@@ -507,6 +521,15 @@ def open_export_window(parent, results, run_date="", on_close=None):
 # ── PDF builder ───────────────────────────────────────────────────────────────
 
 def _build_pdf(results, run_date, out_path):
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph,
+                                    Spacer, Table, TableStyle)
+    _C = _colours()
+
     today_str = datetime.today().strftime("%B %d, %Y")
     styles    = getSampleStyleSheet()
 
@@ -523,11 +546,11 @@ def _build_pdf(results, run_date, out_path):
     job_s    = _style("J",  fontSize=10, fontName="Helvetica-Bold",
                       textColor=colors.Color(0.1, 0.1, 0.1))
     issue_s  = _style("I",  fontSize=9,  fontName="Helvetica",
-                      textColor=_RED,    leftIndent=14, spaceAfter=2)
+                      textColor=_C["RED"],    leftIndent=14, spaceAfter=2)
     aging_s  = _style("A",  fontSize=9,  fontName="Helvetica",
-                      textColor=_ORANGE, leftIndent=14, spaceAfter=2)
+                      textColor=_C["ORANGE"], leftIndent=14, spaceAfter=2)
     ok_s     = _style("O",  fontSize=9,  fontName="Helvetica",
-                      textColor=_GREEN,  leftIndent=14)
+                      textColor=_C["GREEN"],  leftIndent=14)
 
     doc = SimpleDocTemplate(
         out_path, pagesize=letter,
@@ -545,7 +568,7 @@ def _build_pdf(results, run_date, out_path):
             sub_s)],
     ], colWidths=[7*inch])
     hdr.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0), (-1,-1), _GREEN),
+        ("BACKGROUND",    (0,0), (-1,-1), _C["GREEN"]),
         ("TOPPADDING",    (0,0), (-1,0),  14),
         ("BOTTOMPADDING", (0,-1), (-1,-1), 14),
         ("LEFTPADDING",   (0,0), (-1,-1), 16),
@@ -561,14 +584,14 @@ def _build_pdf(results, run_date, out_path):
     summ = Table([[
         Paragraph(f"<b>{len(flagged)}</b> Flagged",
                   _style("SF", fontSize=12, fontName="Helvetica-Bold",
-                         textColor=_RED, alignment=TA_CENTER)),
+                         textColor=_C["RED"], alignment=TA_CENTER)),
         Paragraph(f"<b>{len(ok)}</b> OK",
                   _style("SO", fontSize=12, fontName="Helvetica-Bold",
-                         textColor=_GREEN, alignment=TA_CENTER)),
+                         textColor=_C["GREEN"], alignment=TA_CENTER)),
     ]], colWidths=[3.5*inch, 3.5*inch])
     summ.setStyle(TableStyle([
-        ("BOX",           (0,0), (-1,-1), 0.5, _LGRAY),
-        ("INNERGRID",     (0,0), (-1,-1), 0.5, _LGRAY),
+        ("BOX",           (0,0), (-1,-1), 0.5, _C["LGRAY"]),
+        ("INNERGRID",     (0,0), (-1,-1), 0.5, _C["LGRAY"]),
         ("TOPPADDING",    (0,0), (-1,-1), 8),
         ("BOTTOMPADDING", (0,0), (-1,-1), 8),
         ("BACKGROUND",    (0,0), (0,0), colors.Color(1, 0.95, 0.95)),
@@ -580,7 +603,7 @@ def _build_pdf(results, run_date, out_path):
     # ── Job block helper ─────────────────────────────────────────────────────
     def _job_block(r):
         badge = "FLAG" if r["flagged"] else " OK "
-        bc    = _RED if r["flagged"] else _GREEN
+        bc    = _C["RED"] if r["flagged"] else _C["GREEN"]
 
         name = r["client"]
         if r.get("folder") and r["folder"].lower() != r["client"].lower():
@@ -601,7 +624,7 @@ def _build_pdf(results, run_date, out_path):
             ("RIGHTPADDING",  (0,0), (-1,-1), 4),
             ("TOPPADDING",    (0,0), (-1,-1), 5),
             ("BOTTOMPADDING", (0,0), (-1,-1), 5),
-            ("BACKGROUND",    (0,0), (-1,-1), _LGRAY),
+            ("BACKGROUND",    (0,0), (-1,-1), _C["LGRAY"]),
             ("BOX",           (0,0), (-1,-1), 0.5, colors.Color(0.8,0.8,0.8)),
         ]))
 
@@ -630,14 +653,14 @@ def _build_pdf(results, run_date, out_path):
 
     # ── Sections ─────────────────────────────────────────────────────────────
     if flagged:
-        sec = sec_s.clone("SF2"); sec.textColor = _RED
+        sec = sec_s.clone("SF2"); sec.textColor = _C["RED"]
         story.append(Paragraph("Flagged Jobs", sec))
         for r in flagged:
             story.extend(_job_block(r))
         story.append(Spacer(1, 0.12*inch))
 
     if ok:
-        sec = sec_s.clone("SO2"); sec.textColor = _GREEN
+        sec = sec_s.clone("SO2"); sec.textColor = _C["GREEN"]
         story.append(Paragraph("OK Jobs", sec))
         for r in ok:
             story.extend(_job_block(r))
@@ -646,7 +669,7 @@ def _build_pdf(results, run_date, out_path):
     def _footer(canvas, doc):
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
-        canvas.setFillColor(_DGRAY)
+        canvas.setFillColor(_C["DGRAY"])
         canvas.drawString(0.75*inch, 0.38*inch,
             f"SERVPRO EMS Audit  ·  {today_str}  ·  Confidential")
         canvas.drawRightString(7.75*inch, 0.38*inch, f"Page {doc.page}")
