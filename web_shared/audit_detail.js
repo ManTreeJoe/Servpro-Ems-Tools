@@ -463,6 +463,19 @@
   // before anything downloads. Reached when the watermark says "nothing
   // new" but the folder is actually short — a cleared folder, a failed
   // download, or photos removed by hand.
+  // A shoot spanning several rooms lands in a subfolder PER ROOM —
+  // route_photo builds <stage>\<tech date>\<room>. Showing only the
+  // shared prefix would imply one folder, so the split is spelled out.
+  // (The prefix itself used to be one arbitrary room, which was worse:
+  // it named a folder most of the photos were not going to.)
+  function roomSplit(ctx, g) {
+    const rooms = (g.rooms || []).filter(([r]) => r && r !== "(no room tag)");
+    if (rooms.length < 2) return "";
+    return `<div style="margin-top:2px;">` + rooms.map(([r, n]) =>
+      `<div>└ ${esc(ctx, r)} <span style="opacity:.7;">${n}</span></div>`
+    ).join("") + `</div>`;
+  }
+
   function ccMissingModal(row, ctx, v) {
     return new Promise((resolve) => {
       if (!window.openModal) { resolve(null); return; }
@@ -509,7 +522,7 @@
             <b>${g.count}</b> photo${g.count === 1 ? "" : "s"}</td>
           <td class="ccm-dest" data-i="${i}"
               style="padding:6px 0;color:var(--text-muted);font-size:11px;vertical-align:top;">
-            ${esc(ctx, g.target || "(top level)")}</td>
+            ${esc(ctx, g.target || "(top level)")}${roomSplit(ctx, g)}</td>
         </tr>`;
       }).join("");
       const extraNote = v.extra_files

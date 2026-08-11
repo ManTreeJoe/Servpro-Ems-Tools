@@ -899,12 +899,23 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
                         organize_by_tags=organize_by_tags)
         parts, room, stage, box = r["parts"], r["room"], r["stage"], r["box"]
         key = (stage, box)
+        # `target` is the part of the path every photo in this shoot
+        # SHARES — stage + tech-date box. It deliberately stops before
+        # the room.
+        #
+        # It used to be the full `parts` of whichever photo happened to
+        # be first, room included, so a shoot spanning three rooms
+        # advertised one of them: Kavuri's 66 photos previewed as
+        # "Initial\FB 07-22-2026\Downstairs" while 31 of them were going
+        # to Kitchen. route_photo exists precisely so the preview and the
+        # download cannot disagree, and this threw that away. The rooms
+        # are listed separately, with counts.
         g = groups.setdefault(key, {
             "stage": stage or "(no stage tag)",
             "box": box,
             "date": date_label(p),
             "tech": tech_label(p, tech),
-            "target": os.path.join(*parts) if parts else "",
+            "target": os.path.join(*[x for x in (stage, box) if x]),
             "count": 0, "rooms": {}, "photo_ids": [],
         })
         g["count"] += 1
