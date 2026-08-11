@@ -130,3 +130,16 @@ def test_launch_wires_the_backup_in():
     import home_web
     src = inspect.getsource(home_web.main)
     assert "data_backup" in src and "start_background" in src
+
+
+# ── the log must not be the suite's scratch pad ────────────────────────
+def test_the_suite_logs_somewhere_disposable():
+    """536 lines of fixture noise in the real ems.log is what hid four
+    genuine "state.json write failed" errors."""
+    import ems_log
+    p = ems_log.log_path().replace("/", "\\").lower()
+    assert r"appdata\roaming\linguar hub" not in p, (
+        f"tests are logging to the production log: {ems_log.log_path()}")
+    ems_log.warn("test", "canary")
+    with open(ems_log.log_path(), encoding="utf-8") as f:
+        assert "canary" in f.read()

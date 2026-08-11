@@ -65,6 +65,21 @@ def log_path():
     return _LOG_PATH
 
 
+def reset_log_path(new_path):
+    """Point the log somewhere else at runtime (for tests).
+
+    The suite used to write straight into the REAL `%APPDATA%\\Linguar
+    Hub\\ems.log` — 536 lines of it, carrying fixture ids like `card-abc`
+    and `zzconf-…` plus ~900 warnings from deliberately-failing cases.
+    That noise is what buried the four genuine `state.json write failed`
+    errors sitting in the same file, which is the entire reason the log
+    exists. Production code should never call this.
+    """
+    global _LOG_PATH
+    _LOG_PATH = new_path
+    return _LOG_PATH
+
+
 def clear():
     """Truncate the active log so the recent-errors count resets to 0.
     Keeps any .bak rotation so the prior log isn't lost."""

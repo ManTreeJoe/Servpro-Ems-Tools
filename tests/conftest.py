@@ -35,6 +35,31 @@ def _isolate_job_db(tmp_path_factory):
         _db.reset_db_path(live)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_log(tmp_path_factory):
+    """Keep the suite out of the real ems.log.
+
+    It was writing straight into `%APPDATA%\\Linguar Hub\\ems.log`: 536
+    lines carrying fixture ids (`card-abc`, `zzconf-…`), plus ~900
+    warnings from cases that fail on purpose — `rebrand migration failed
+    (No space left on device)` is pytest simulating a failed copy, not a
+    real disk problem. All of that buried the four genuine
+    `state.json write failed: Access is denied` errors in the same file,
+    which is the one thing the log is for.
+
+    Autouse + session-scoped, like the job-DB isolation above, so a test
+    added later doesn't have to know it logs.
+    """
+    import ems_log
+    live = ems_log.log_path()
+    ems_log.reset_log_path(
+        str(tmp_path_factory.mktemp("emslog") / "ems.log"))
+    try:
+        yield ems_log.log_path()
+    finally:
+        ems_log.reset_log_path(live)
+
+
 @pytest.fixture(scope="session")
 def tk_root():
     """Single Tk root shared across the whole test session.
