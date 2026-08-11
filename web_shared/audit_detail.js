@@ -242,6 +242,8 @@
           <button class="action-btn" data-action="comment" ${hasPin ? "" : "disabled"}>💬 Comment</button>
           <button class="action-btn" data-action="initial-email" ${hasPin ? "" : "disabled"}
                   title="Draft the Initial Inspection email from the card's notes, copy it, open XactAnalysis, then log it on the card">✉ Initial email</button>
+          <button class="action-btn" data-action="job-log-comment" ${hasPin ? "" : "disabled"}
+                  title="Post the dated job-log comment — pick what happened and who was there">🗒 Job log comment</button>
           <button class="action-btn" data-action="docusketch" ${hasPin ? "" : "disabled"}>📐 Docusketch</button>
           <button class="action-btn" data-action="request-items">📨 Request items</button>
           <button class="action-btn" data-action="add-note" title="Add a tracked to-do note for this job">📝 Note</button>
@@ -906,6 +908,8 @@
       openPinModal(row, ctx);                     // shared — real persisted pin
     } else if (action === "initial-email") {
       openInitialEmailModal(row, ctx);
+    } else if (action === "job-log-comment") {
+      openJobLogModal(row, ctx);
     } else if (action === "comment") {
       if (M.openComment) M.openComment(row);
     } else if (action === "docusketch") {
@@ -1754,6 +1758,133 @@
       localStorage.setItem("pinSearch.excludedBoards",
                            JSON.stringify([...set]));
     } catch (_) { /* private mode — filter just won't be sticky */ }
+  }
+
+  // ── 🗒 Job log comment ─────────────────────────────────────────────
+  //     Monday 5/4/26
+  //
+  //     Contents/Demo - Wendy/Priscilla/Vince
+  //
+  // Pick what happened and who was there. Leads render as initials and
+  // everyone else as their first name — the backend decides that from
+  // the roster, so the dialog never has to know who is a lead.
+  async function openJobLogModal(row, ctx) {
+    const cardId = row.trello_card_id || "";
+    if (!cardId) {
+      setStatus(ctx, "Pin a Trello card first", "warn");
+      openPinModal(row, ctx);
+      return;
+    }
+    const wrap = mkModal({
+      title: "🗒 Job log comment",
+      sub:   `Client: ${row.client}`,
+      body: `<div id="jl-body" class="muted" style="padding:12px 0;">Loading…</div>`,
+    });
+    let opts;
+    try { opts = await pywebview.api.job_log_options(row.client); }
+    catch (ex) { opts = { ok: false, error: String(ex) }; }
+    const bodyEl = wrap.querySelector("#jl-body");
+    if (!bodyEl) return;
+    if (!opts || !opts.ok) {
+      bodyEl.innerHTML = `<div style="color:var(--red);">${esc(ctx, (opts && opts.error) || "Couldn't load")}</div>`;
+      return;
+    }
+    const acts = opts.activities || [];
+    const techs = opts.techs || [];
+    const leads = techs.filter((t) => t.lead);
+    const today = _todayIso();
+
+    bodyEl.className = "";
+    bodyEl.innerHTML = `
+      <label class="modal-lbl">What happened</label>
+      <div id="jl-acts" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">
+        ${acts.map((a) => `<button type="button" class="action-btn jl-act"
+             data-act="${escA(ctx, a)}">${esc(ctx, a)}</button>`).join("")}
+      </div>
+      <label class="modal-lbl">Who was there
+        <span class="muted" style="font-weight:400;">— leads show as initials</span></label>
+      <div id="jl-techs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">
+        ${techs.map((t) => `<button type="button" class="action-btn jl-tech${t.on_today ? " on" : ""}"
+             data-name="${escA(ctx, t.name)}" title="${t.lead ? "Lead" : "Helper"}${t.on_today ? " · on today's run doc" : ""}"
+             >${esc(ctx, t.label)}${t.on_today ? " •" : ""}</button>`).join("")}
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <label class="modal-lbl" for="jl-date">Date</label>
+        <input type="date" id="jl-date" class="search" style="width:auto;" value="${escA(ctx, today)}"/>
+        <label class="modal-lbl" for="jl-lead" title="Adds a second 'Monitor - <lead>' line. Ignored on a Monitor day.">Lead also monitored</label>
+        <select id="jl-lead" class="search" style="width:auto;">
+          <option value="">— no —</option>
+          ${leads.map((t) => `<option value="${escA(ctx, t.name)}">${esc(ctx, t.label)}</option>`).join("")}
+        </select>
+      </div>
+      <pre id="jl-preview" class="activity-preview">…</pre>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn modal-close">Cancel</button>
+        <button class="btn" id="jl-copy">📋 Copy</button>
+        <button class="btn btn-primary" id="jl-post">💬 Post to Trello</button>
+      </div>`;
+    if (!document.getElementById("jl-css")) {
+      const st = document.createElement("style");
+      st.id = "jl-css";
+      st.textContent =
+        ".jl-act.on,.jl-tech.on{background:var(--green);color:#FFF;border-color:var(--green);}";
+      document.head.appendChild(st);
+    }
+
+    const sel = (q) => Array.from(wrap.querySelectorAll(q));
+    const chosenActs = () => sel(".jl-act.on").map((b) => b.dataset.act);
+    const chosenTechs = () => sel(".jl-tech.on").map((b) => b.dataset.name);
+    const prev = wrap.querySelector("#jl-preview");
+    let current = "";
+
+    async function refresh() {
+      const a = chosenActs();
+      if (!a.length) {
+        current = "";
+        prev.textContent = "Pick what happened…";
+        return;
+      }
+      let r;
+      try {
+        r = await pywebview.api.job_log_comment_text(
+          a, chosenTechs(), wrap.querySelector("#jl-date").value,
+          wrap.querySelector("#jl-lead").value);
+      } catch (_) { r = null; }
+      current = (r && r.ok) ? r.text : "";
+      prev.textContent = current || `(${(r && r.error) || "couldn't build"})`;
+    }
+    // Toggle buttons rather than checkboxes: picking three techs is two
+    // taps each otherwise, and this is a several-times-a-day job.
+    sel(".jl-act, .jl-tech").forEach((b) =>
+      b.addEventListener("click", () => { b.classList.toggle("on"); refresh(); }));
+    ["#jl-date", "#jl-lead"].forEach((q) =>
+      wrap.querySelector(q).addEventListener("change", refresh));
+    await refresh();
+
+    wrap.querySelector("#jl-copy").addEventListener("click", async () => {
+      if (!current) { setStatus(ctx, "Nothing to copy yet", "warn"); return; }
+      const ok = await copyText(ctx, current);
+      setStatus(ctx, ok ? "📋 Copied" : "Copy failed", ok ? "ok" : "error");
+    });
+    wrap.querySelector("#jl-post").addEventListener("click", async () => {
+      const a = chosenActs();
+      if (!a.length) { setStatus(ctx, "Pick what happened first", "warn"); return; }
+      const btn = wrap.querySelector("#jl-post");
+      btn.disabled = true;
+      let r;
+      try {
+        r = await pywebview.api.post_job_log_comment(
+          cardId, a, chosenTechs(), wrap.querySelector("#jl-date").value,
+          wrap.querySelector("#jl-lead").value);
+      } catch (ex) { r = { ok: false, error: String(ex) }; }
+      btn.disabled = false;
+      if (r && r.ok) {
+        wrap.remove();
+        setStatus(ctx, `💬 Posted: ${String(r.text || "").replace(/\n+/g, " · ")}`, "ok");
+      } else {
+        setStatus(ctx, `Post failed: ${(r && r.error) || "?"}`, "error");
+      }
+    });
   }
 
   // ── ✉ Initial Inspection email ────────────────────────────────────

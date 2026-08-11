@@ -2,10 +2,15 @@
 post_activity_comment) and its stage picker.
 
 The point of building the text in Python is that the preview shown in the
-card and the string actually posted to Trello are the SAME string. These
-tests pin the exact handwritten shape:
+card and the string actually posted to Trello are the SAME string.
 
-    Saturday 08/01
+The format was unified onto `job_log` on 2026-08-11: one activity and one
+tech is just the single-row case of the job-log comment, and having two
+builders meant the same day could reach a card written two ways —
+"Saturday 08/01" from here and "Monday 5/4/26" from the job-log dialog.
+The office's format is the latter.
+
+    Saturday 8/1/26
 
     Monitor - ME
 """
@@ -32,24 +37,25 @@ def api():
 def test_exact_handwritten_shape(api):
     r = api.activity_comment_text("Monitor", "ME", "2026-08-01")
     assert r["ok"]
-    assert r["text"] == "Saturday 08/01\n\nMonitor - ME"
+    assert r["text"] == "Saturday 8/1/26\n\nMonitor - ME"
 
 
-def test_month_and_day_are_zero_padded(api):
-    # "08/01", not "8/1" — %-d/%-m aren't portable to Windows anyway.
+def test_date_is_unpadded_and_carries_the_year(api):
+    # "1/5/26", not "01/05" — this is how the office writes it. %-m is
+    # not portable to Windows, so the padding comes off by hand.
     r = api.activity_comment_text("Demo", "ME", "2026-01-05")
-    assert r["text"].startswith("Monday 01/05\n\n")
+    assert r["text"].startswith("Monday 1/5/26\n\n")
 
 
 def test_no_tech_drops_the_dash(api):
     r = api.activity_comment_text("Monitor", "", "2026-08-01")
-    assert r["text"] == "Saturday 08/01\n\nMonitor"
+    assert r["text"] == "Saturday 8/1/26\n\nMonitor"
 
 
 def test_stage_is_required(api):
     r = api.activity_comment_text("", "ME", "2026-08-01")
     assert not r["ok"]
-    assert "stage" in r["error"]
+    assert "activity" in r["error"]
 
 
 def test_blank_date_is_today(api):
@@ -114,7 +120,7 @@ def test_post_sends_the_previewed_string_verbatim(api, monkeypatch):
                                   "2026-08-01")
     assert r["ok"]
     assert sent["card"] == "card123"
-    assert sent["text"] == preview["text"] == "Saturday 08/01\n\nMonitor - ME"
+    assert sent["text"] == preview["text"] == "Saturday 8/1/26\n\nMonitor - ME"
 
 
 def test_post_surfaces_a_trello_failure(api, monkeypatch):

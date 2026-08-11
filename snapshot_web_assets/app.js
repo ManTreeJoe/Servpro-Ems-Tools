@@ -356,8 +356,34 @@ function renderTracked() {
       <td>${yesNo(r.scope)}</td>
       <td>${yesNo(r.final_photos)}</td>
       <td>${fmtDate(r.closing)}</td>
-      <td style="text-align:right;"><button class="btn tracked-edit" data-name="${esc(r.name)}" title="Edit values / move to another sheet" style="padding:2px 8px;font-size:12px;">✎</button></td>
+      <td style="text-align:right;white-space:nowrap;"><button class="btn tracked-copy" data-name="${esc(r.name)}" title="Copy this row (tab-separated — pastes straight into Excel)" style="padding:2px 8px;font-size:12px;">📋</button> <button class="btn tracked-edit" data-name="${esc(r.name)}" title="Edit values / move to another sheet" style="padding:2px 8px;font-size:12px;">✎</button></td>
     </tr>`).join("");
+  // 📋 Copy — the row as tab-separated text, which pastes straight into
+  // Excel as cells rather than one blob. Values are the FORMATTED ones
+  // on screen, so what lands matches what you were looking at.
+  tbody.querySelectorAll(".tracked-copy").forEach((b) =>
+    b.addEventListener("click", async (e) => {
+      e.stopPropagation();                      // don't open the Trello card
+      const tr = b.closest("tr");
+      if (!tr) return;
+      const cells = Array.from(tr.querySelectorAll("td"))
+        .slice(0, -1)                           // drop the actions column
+        .map((td) => td.textContent.replace(/\s+/g, " ").trim())
+        .map((t) => (t === "—" ? "" : t));      // an em-dash means empty
+      const line = cells.join("\t");
+      let ok = false;
+      try {
+        const r = await pywebview.api.set_clipboard(line);
+        ok = !!(r && (r.ok || r === true));
+      } catch (_) { ok = false; }
+      if (!ok) {
+        try { await navigator.clipboard.writeText(line); ok = true; }
+        catch (_) { ok = false; }
+      }
+      setStatus(ok ? `📋 Copied ${b.dataset.name}` : "Copy failed",
+                ok ? "ok" : "error");
+    }));
+
   // ✎ Edit — open the per-row editor (stop the row's open-Trello click).
   tbody.querySelectorAll(".tracked-edit").forEach((b) =>
     b.addEventListener("click", (e) => {

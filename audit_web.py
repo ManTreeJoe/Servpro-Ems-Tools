@@ -3081,43 +3081,106 @@ class Api(JobSettingsApi, CompanyCamApi):
 
     def activity_comment_text(self, stage: str, tech: str,
                               date_iso: str = "") -> dict:
-        """The dated activity comment, in the shape the office already
-        writes by hand:
+        """One activity, one tech — the single-row form of the job log.
 
-            Saturday 08/01
-
-            Monitor - ME
-
-        Built here rather than in JS so the Trello comment and anything
-        else that logs the same visit cannot drift in wording. `date_iso`
-        defaults to today.
-
-        The tech is written as roster INITIALS ("ME", not "Mark E") —
-        that is the handwritten form, and the picker hands us full names.
-        Same `initials_for_name(...) or tech` fallback the CompanyCam
-        import uses, so a helper with no roster entry keeps their name
-        rather than vanishing.
+        Delegates to `job_log` so there is ONE definition of the format.
+        This used to render its own "Saturday 08/01" header while the
+        job-log dialog rendered "Monday 5/4/26"; two comment builders
+        meant the same day could reach a card written two ways.
         """
-        stage = (stage or "").strip()
-        tech = (tech or "").strip()
-        if not stage:
-            return {"ok": False, "error": "stage required"}
-        if tech:
-            try:
-                tech = audit_logic.initials_for_name(tech) or tech
-            except Exception:
-                pass
+        return self.job_log_comment_text([stage], [tech], date_iso)
+
+    def job_log_comment_text(self, activities, techs,
+                             date_iso: str = "",
+                             monitor_lead: str = "") -> dict:
+        """The dated job-log comment:
+
+            Monday 5/4/26
+
+            Contents/Demo - Wendy/Priscilla/Vince
+
+        Leads are written as initials and everyone else keeps their
+        first name — see `job_log.tech_label`. `monitor_lead` adds a
+        second "Monitor - <lead>" line for a lead who monitored on a day
+        whose log is something else; it is ignored on a monitor day so
+        nobody appears twice.
+        """
+        import job_log
+        return job_log.comment_text(activities, techs, date_iso,
+                                    monitor_lead)
+
+    def post_job_log_comment(self, card_id: str, activities, techs,
+                             date_iso: str = "",
+                             monitor_lead: str = "") -> dict:
+        """Post the job-log comment to a card."""
+        built = self.job_log_comment_text(activities, techs, date_iso,
+                                          monitor_lead)
+        if not built.get("ok"):
+            return built
+        if not card_id:
+            return {"ok": False, "error": "no Trello card pinned"}
         try:
-            d = (_dt.date.fromisoformat(date_iso) if date_iso
-                 else _dt.date.today())
-        except ValueError:
-            d = _dt.date.today()
-        # Zero-padded: %-d/%-m aren't portable to Windows, and the
-        # handwritten form is "08/01" anyway, not "8/1".
-        head = f"{d.strftime('%A')} {d.strftime('%m/%d')}"
-        body = f"{stage} - {tech}" if tech else stage
-        return {"ok": True, "text": f"{head}\n\n{body}",
-                "stage": stage, "tech": tech, "date": d.isoformat()}
+            import trello_client as tc
+            tc.post_comment(card_id, built["text"])
+            return {"ok": True, "text": built["text"]}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def job_log_options(self, client: str = "") -> dict:
+        """Activities + the tech roster for the job-log dialog, with
+        each tech's label and whether they're a lead.
+
+        Techs already on today's run-doc row for this client come back
+        `on_today` so the dialog can pre-tick them — most days the log
+        is exactly who the run doc says was going."""
+        import job_log
+        acts, techs = [], []
+        try:
+            import stages as _stages
+            acts = list(_stages.LABELS)
+        except Exception:
+            acts = []
+        # The activities the office logs that aren't inspection stages.
+        for extra in ("Contents", "Pack Out", "Pack Back", "Equipment Pull"):
+            if extra not in acts:
+                acts.append(extra)
+        on_today = set()
+        try:
+            want = (client or "").strip().lower()
+            for row in (self._last_rows or []):
+                if (row.get("client") or "").strip().lower() == want:
+                    for t in (row.get("techs") or []):
+                        on_today.add(str(t).strip().casefold())
+        except Exception:
+            pass
+        try:
+            for name in (self.list_techs() or {}).get("techs") or []:
+                label = job_log.tech_label(name)
+                techs.append({
+                    "name": name, "label": label,
+                    "lead": bool(label and label != name),
+                    "on_today": name.strip().casefold() in on_today,
+                })
+        except Exception:
+            pass
+        return {"ok": True, "activities": acts, "techs": techs}
+
+    def set_clipboard(self, text) -> bool:
+        """Put text on the clipboard via the Win32 path.
+
+        The shared detail card has always tried `api.set_clipboard`
+        first and fallen back to `navigator.clipboard`, but neither the
+        audit nor the snapshot window ever defined it — so every copy in
+        the app took the fallback. Only quickimport had it.
+        `web_helpers.set_clipboard_text` writes the actual bytes and
+        relinquishes ownership, which is also what keeps Windows from
+        hanging on the next paste (see the Tk delayed-rendering note).
+        """
+        try:
+            import web_helpers
+            return bool(web_helpers.set_clipboard_text(text or ""))
+        except Exception:
+            return False
 
     def list_activity_stages(self) -> dict:
         """Stage labels for the activity-comment picker, in timeline

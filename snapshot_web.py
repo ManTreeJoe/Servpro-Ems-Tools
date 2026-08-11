@@ -609,8 +609,20 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().compose_initial_email(fields, opts)
     def post_initial_email_comment(self, card_id, sent_to="", note=""):
         return self._aw().post_initial_email_comment(card_id, sent_to, note)
+    def set_clipboard(self, text):
+        return self._aw().set_clipboard(text)
     def list_activity_stages(self):
         return self._aw().list_activity_stages()
+    def job_log_options(self, client=""):
+        return self._aw().job_log_options(client)
+    def job_log_comment_text(self, activities, techs, date_iso="",
+                             monitor_lead=""):
+        return self._aw().job_log_comment_text(activities, techs, date_iso,
+                                               monitor_lead)
+    def post_job_log_comment(self, card_id, activities, techs, date_iso="",
+                             monitor_lead=""):
+        return self._aw().post_job_log_comment(card_id, activities, techs,
+                                               date_iso, monitor_lead)
     def activity_comment_text(self, stage, tech, date_iso=""):
         return self._aw().activity_comment_text(stage, tech, date_iso)
     def post_activity_comment(self, card_id, stage, tech, date_iso=""):
