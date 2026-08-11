@@ -1736,6 +1736,22 @@
     });
   }
 
+  // Board filter is remembered per user — the office searches the same
+  // few boards all day, and re-ticking them every time is the kind of
+  // friction that makes people stop using the filter at all.
+  function _loadExcludedBoards() {
+    try {
+      const raw = localStorage.getItem("pinSearch.excludedBoards");
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch (_) { return new Set(); }
+  }
+  function _saveExcludedBoards(set) {
+    try {
+      localStorage.setItem("pinSearch.excludedBoards",
+                           JSON.stringify([...set]));
+    } catch (_) { /* private mode — filter just won't be sticky */ }
+  }
+
   // ── 📌 Pin Trello card modal (shared — real persisted pin) ─────────
   function openPinModal(row, ctx) {
     const wrap = mkModal({
@@ -1745,6 +1761,13 @@
         <input id="pin-q" class="search" type="search" autocomplete="off"
                placeholder="🔎 Search Trello cards by name…"
                value="${escA(ctx, row.client)}" style="width:100%;" />
+        <div style="margin-top:6px;">
+          <button class="action-btn" id="pin-filter-toggle"
+                  title="Choose which Trello boards to search">▸ Boards</button>
+          <span class="muted" id="pin-filter-summary" style="font-size:11px;margin-left:6px;"></span>
+        </div>
+        <div id="pin-filter" style="display:none;margin-top:6px;padding:8px 10px;
+             border:1px solid var(--border);border-radius:6px;"></div>
         <div id="pin-results" class="target-list" style="margin-top:10px;"></div>
         ${row.trello_card_id ? `
           <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
@@ -1756,23 +1779,108 @@
     });
     const q = wrap.querySelector("#pin-q");
     const results = wrap.querySelector("#pin-results");
+    const filterBox = wrap.querySelector("#pin-filter");
+    const filterBtn = wrap.querySelector("#pin-filter-toggle");
+    const filterSum = wrap.querySelector("#pin-filter-summary");
     let timer = null;
+    let allBoards = [];      // [{name, tier, active}]
+    let excluded = _loadExcludedBoards();
+
+    function selectedBoards() {
+      // [] means "everything" — don't send a list the backend would
+      // treat as a filter when nothing is actually unticked.
+      const on = allBoards.filter((b) => !excluded.has(b.name));
+      return on.length === allBoards.length ? [] : on.map((b) => b.name);
+    }
+    function paintSummary() {
+      if (!allBoards.length) { filterSum.textContent = ""; return; }
+      const off = allBoards.filter((b) => excluded.has(b.name)).length;
+      filterSum.textContent = off ? `${allBoards.length - off} of ${allBoards.length} boards`
+                                  : "all boards";
+    }
+    function paintFilter() {
+      const group = (tier, label) => {
+        const rows = allBoards.filter((b) => b.tier === tier);
+        if (!rows.length) return "";
+        return `
+          <div style="margin-bottom:6px;">
+            <div class="muted" style="font-size:11px;text-transform:uppercase;
+                 letter-spacing:.04em;margin-bottom:3px;">${label}</div>
+            ${rows.map((b) => `
+              <label style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+                <input type="checkbox" data-board="${escA(ctx, b.name)}"
+                       ${excluded.has(b.name) ? "" : "checked"} />
+                <span>${esc(ctx, b.name)}</span>
+              </label>`).join("")}
+          </div>`;
+      };
+      filterBox.innerHTML =
+        group("active", "Active work") +
+        group("archive", "Logs &amp; AR") +
+        `<div style="margin-top:6px;display:flex;gap:6px;">
+           <button class="action-btn" data-preset="active">Active only</button>
+           <button class="action-btn" data-preset="all">All</button>
+         </div>`;
+      filterBox.querySelectorAll("input[data-board]").forEach((cb) =>
+        cb.addEventListener("change", () => {
+          if (cb.checked) excluded.delete(cb.dataset.board);
+          else excluded.add(cb.dataset.board);
+          _saveExcludedBoards(excluded);
+          paintSummary(); doSearch();
+        }));
+      filterBox.querySelectorAll("button[data-preset]").forEach((b) =>
+        b.addEventListener("click", () => {
+          excluded = b.dataset.preset === "active"
+            ? new Set(allBoards.filter((x) => x.tier === "archive").map((x) => x.name))
+            : new Set();
+          _saveExcludedBoards(excluded);
+          paintFilter(); paintSummary(); doSearch();
+        }));
+    }
+    filterBtn.addEventListener("click", () => {
+      const open = filterBox.style.display !== "none";
+      filterBox.style.display = open ? "none" : "block";
+      filterBtn.textContent = open ? "▸ Boards" : "▾ Boards";
+    });
+    (async () => {
+      try {
+        const r = await pywebview.api.list_search_boards();
+        allBoards = (r && r.boards) || [];
+      } catch (_) { allBoards = []; }
+      // Drop remembered names for boards that no longer exist, or the
+      // summary counts a board the user can't see.
+      const live = new Set(allBoards.map((b) => b.name));
+      [...excluded].forEach((n) => { if (!live.has(n)) excluded.delete(n); });
+      paintFilter(); paintSummary();
+    })();
+
     async function doSearch() {
       const text = q.value.trim();
       if (text.length < 2) { results.innerHTML = ""; return; }
       results.innerHTML = `<div class="target-row" style="opacity:.6;padding:6px 10px;">Searching…</div>`;
-      const hits = await pywebview.api.search_trello(text) || [];
+      const hits = await pywebview.api.search_trello(text, selectedBoards()) || [];
       if (!hits.length) {
         results.innerHTML = `<div class="target-row" style="opacity:.6;padding:6px 10px;">No matches</div>`;
         return;
       }
-      results.innerHTML = hits.map((h) => `
+      // Backend already ordered active-first; mark where archive starts
+      // so it reads as two groups rather than one flat list.
+      let seenArchive = false;
+      results.innerHTML = hits.map((h) => {
+        let divider = "";
+        if (h.tier === "archive" && !seenArchive) {
+          seenArchive = true;
+          divider = `<div class="muted" style="font-size:11px;text-transform:uppercase;
+                      letter-spacing:.04em;margin:8px 0 4px;">Logs &amp; AR</div>`;
+        }
+        return divider + `
         <div class="target-row" data-card="${escA(ctx, h.card_id)}"
-             style="display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;cursor:pointer;">
+             style="display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;cursor:pointer;${h.tier === "archive" ? "opacity:.72;" : ""}">
           <span>📌</span>
           <span class="name" style="flex:1;font-weight:600;">${esc(ctx, h.name)}</span>
-          <span class="miss muted" style="font-size:11px;">${esc(ctx, h.lane || h.board || "")}</span>
-        </div>`).join("");
+          <span class="miss muted" style="font-size:11px;">${esc(ctx, h.board || "")}${h.lane ? " · " + esc(ctx, h.lane) : ""}</span>
+        </div>`;
+      }).join("");
       results.querySelectorAll(".target-row[data-card]").forEach((r2) =>
         r2.addEventListener("click", async () => {
           const res = await pywebview.api.pin_trello(row.client, r2.dataset.card);

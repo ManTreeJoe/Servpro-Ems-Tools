@@ -6504,30 +6504,69 @@ class Api(JobSettingsApi, CompanyCamApi):
         return res
 
     # ── Phase 2: Pin Trello card ─────────────────────────────────────
-    def search_trello(self, query: str) -> list[dict]:
-        """Trello card search by name. Returns up to 20 matches with
-        just the fields the picker needs. Empty list on any error.
+    def search_trello(self, query: str, boards: list | None = None) -> list[dict]:
+        """Trello card search by name, LIVE work first.
 
         Reads `card_id` (the key `find_cards_by_name` actually
         publishes) — previously read `h.get("id")` which is always
         missing in that helper's return shape, so every hit had an
         empty card_id and the pin call rejected with 'missing client
         or card_id'.
+
+        Results are ordered by `trello_boards.sort_key`, so cards from
+        the boards the office actually works come before THE LOGS and
+        the AR BOARD. Those two hold 2,480 of the cards — in Trello's
+        own relevance order they buried live jobs by sheer volume.
+        Archived hits are still returned, just after: pinning a finished
+        job is exactly when you go looking for one.
+
+        `boards` optionally restricts the search to those board names
+        (the filter UI passes the ticked ones). Empty/None = all.
+
+        The fetch limit is raised well above the 20 shown because the
+        cap applies BEFORE tiering — with 20, a common surname could
+        come back as 20 LOGS cards and the live job would never be in
+        the list to promote.
         """
         if not query or len(query.strip()) < 2:
             return []
         try:
             import trello_client as tc
-            hits = tc.find_cards_by_name(query.strip()) or []
+            hits = tc.find_cards_by_name(query.strip(), max_results=60) or []
         except Exception:
             return []
-        return [{
-            "card_id":   h.get("card_id") or h.get("id") or "",
-            "name":      h.get("name") or "",
-            "board":     h.get("board") or h.get("board_name") or h.get("idBoard") or "",
-            "lane":      h.get("list_name") or h.get("lane") or "",
-            "short_url": h.get("url") or h.get("shortUrl") or "",
-        } for h in hits[:20]]
+
+        import trello_boards as tb
+        wanted = {tb.normalize(b) for b in (boards or []) if b}
+        out = []
+        for h in hits:
+            board = (h.get("board") or h.get("board_name")
+                     or h.get("idBoard") or "")
+            if wanted and tb.normalize(board) not in wanted:
+                continue
+            out.append({
+                "card_id":   h.get("card_id") or h.get("id") or "",
+                "name":      h.get("name") or "",
+                "board":     board,
+                "tier":      tb.tier(board),
+                "lane":      h.get("list_name") or h.get("lane") or "",
+                "short_url": h.get("url") or h.get("shortUrl") or "",
+            })
+        # Stable sort: Trello's relevance order survives inside a board.
+        out.sort(key=lambda r: tb.sort_key(r["board"]))
+        return out[:25]
+
+    def list_search_boards(self) -> dict:
+        """Boards the card search covers, tagged active/archive, for the
+        filter UI. Excluded boards never appear — `list_boards` has
+        already applied `trello_boards_exclude`."""
+        try:
+            import trello_client as tc
+            import trello_boards as tb
+            names = [b.get("name") or "" for b in (tc.list_boards() or [])]
+            return {"ok": True, "boards": tb.classify(names)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "boards": []}
 
     def request_docusketch(self, client: str, card_id: str = "") -> dict:
         """Post the canonical Docusketch request comment on the

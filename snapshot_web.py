@@ -877,8 +877,10 @@ class Api(JobSettingsApi, CompanyCamApi):
     def delete_closeout_item(self, checklist_id, item_id):
         return self._aw().delete_closeout_item(checklist_id, item_id)
     # Pin proxies (Audit's real pin) — used by the shared pin modal.
-    def search_trello(self, text):
-        return self._aw().search_trello(text)
+    def search_trello(self, text, boards=None):
+        return self._aw().search_trello(text, boards)
+    def list_search_boards(self):
+        return self._aw().list_search_boards()
     def pin_trello(self, client, card_id):
         return self._aw().pin_trello(client, card_id)
     def unpin_trello(self, client):
