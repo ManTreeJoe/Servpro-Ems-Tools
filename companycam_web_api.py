@@ -95,6 +95,16 @@ class CompanyCamApi:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    def companycam_configured(self) -> dict:
+        """Whether a CompanyCam token is set — lets a panel hide a
+        CompanyCam option entirely rather than offer one that can only
+        fail (the New Loss dialog uses this)."""
+        try:
+            import companycam_api as cc
+            return {"ok": True, "configured": bool(cc.is_configured())}
+        except Exception as ex:
+            return {"ok": False, "configured": False, "error": str(ex)}
+
     def companycam_pin(self, client: str, project_id: str,
                        card_id: str = "") -> dict:
         """Remember a manually-picked CompanyCam project for a job so every

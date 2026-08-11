@@ -2123,7 +2123,8 @@ class Api(JobSettingsApi, CompanyCamApi):
     def create_new_loss(self, fields: dict, child: str = "",
                         second_claim: bool = False,
                         promote_first: bool = False,
-                        make_folder: bool = True) -> dict:
+                        make_folder: bool = True,
+                        make_companycam: bool = False) -> dict:
         """Clone the matching template into the intake list, fill it, and
         (by default) create the job folder.
 
@@ -2131,6 +2132,13 @@ class Api(JobSettingsApi, CompanyCamApi):
         several claims or units has several cards but ONE client folder,
         so the two aren't one-to-one. A folder failure never fails the
         card — the card is the part that can't be redone by hand.
+
+        `make_companycam` also creates the CompanyCam project now and
+        pins its id, instead of leaving it to be fuzzy-matched by name
+        later (projects are named by the INSURED, run-doc names often
+        aren't — that match is the part that fails). OFF by default: it
+        posts a record every tech can see. Like the folder, it never
+        fails the card.
         """
         try:
             import new_loss_intake as nli
@@ -2138,7 +2146,9 @@ class Api(JobSettingsApi, CompanyCamApi):
             res = nli.create_new_loss(fields, fields.get("loss_type"))
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
-        if res.get("ok") and make_folder:
+        if not res.get("ok"):
+            return res
+        if make_folder:
             try:
                 folder = nli.create_folder(
                     fields, child=child, second_claim=bool(second_claim),
@@ -2146,6 +2156,17 @@ class Api(JobSettingsApi, CompanyCamApi):
             except Exception as ex:
                 folder = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
             res["folder"] = folder
+        if make_companycam:
+            try:
+                res["companycam"] = nli.create_companycam_project(
+                    fields,
+                    card_name=res.get("name") or "",
+                    trello_card=res.get("card_id") or "",
+                    folder_path=(res.get("folder") or {}).get("path") or "",
+                    confirm_create=True)
+            except Exception as ex:
+                res["companycam"] = {"ok": False,
+                                     "error": f"{type(ex).__name__}: {ex}"}
         return res
 
     # ── P0: XactAnalysis quick link from right-click menu ────────────

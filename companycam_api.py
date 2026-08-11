@@ -281,6 +281,122 @@ def find_project_id(name, address_hint="", *, use_graph=True,
     return pid
 
 
+# ── Creating projects ───────────────────────────────────────────────────
+
+_STATE_ZIP_RE = re.compile(r"^([A-Za-z]{2})\.?\s+(\d{5}(?:-\d{4})?)$")
+
+
+def split_address(one_line):
+    """Split the single address line the intake email gives us into the
+    parts CompanyCam wants.
+
+        "1234 Elm St, Menifee, CA 92584"
+          -> street_address_1 "1234 Elm St", city "Menifee",
+             state "CA", postal_code "92584"
+
+    Deliberately conservative: anything it can't confidently split stays
+    in `street_address_1`. A wrong city on the project is worse than a
+    blank one, because the address is what breaks same-name ties in
+    `find_project`.
+    """
+    raw = (one_line or "").strip().rstrip(",")
+    out = {"street_address_1": "", "city": "", "state": "",
+           "postal_code": "", "country": "US"}
+    if not raw:
+        return out
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if len(parts) == 1:
+        out["street_address_1"] = parts[0]
+        return out
+    # Trailing part is usually "CA 92584" — or just a state, or just a zip.
+    tail = parts[-1]
+    m = _STATE_ZIP_RE.match(tail)
+    if m:
+        out["state"], out["postal_code"] = m.group(1).upper(), m.group(2)
+        parts = parts[:-1]
+    elif re.fullmatch(r"\d{5}(?:-\d{4})?", tail):
+        out["postal_code"] = tail
+        parts = parts[:-1]
+    elif re.fullmatch(r"[A-Za-z]{2}\.?", tail):
+        out["state"] = tail.rstrip(".").upper()
+        parts = parts[:-1]
+    if len(parts) >= 2:
+        out["city"] = parts[-1]
+        out["street_address_1"] = ", ".join(parts[:-1])
+    elif parts:
+        out["street_address_1"] = parts[0]
+    return out
+
+
+def create_project(name, *, address="", contact_name="", contact_email="",
+                   contact_phone="", street="", city="", state="",
+                   postal_code=""):
+    """Create a CompanyCam project and return the shaped project dict.
+
+    Body fields sit at the TOP level — CompanyCam does NOT wrap them in a
+    "project" key (verified against docs.companycam.com/reference/
+    createproject). Every field is optional API-side, but we require a
+    name: an unnamed project is exactly the thing nobody can match later.
+
+    Pass either a one-line `address` (what the assignment email gives)
+    or the structured parts; explicit parts win.
+
+    This WRITES to CompanyCam, and for us the write is ONE-WAY: verified
+    live 2026-08-11, our token creates fine (201) but gets 403 on
+    DELETE /projects/{id}, and `status`/`archived` are read-only on PUT.
+    Nothing here can undo a create. Callers must treat it as an
+    operator-confirmed action, not something that fires on a code path
+    by accident — see `new_loss_intake.create_companycam_project`, which
+    checks for an existing project by the same name first.
+    """
+    name = (name or "").strip()
+    if not name:
+        return {"ok": False, "error": "project name required"}
+
+    addr = split_address(address)
+    if street:      addr["street_address_1"] = street
+    if city:        addr["city"] = city
+    if state:       addr["state"] = state
+    if postal_code: addr["postal_code"] = postal_code
+
+    body = {"name": name}
+    if any(addr.get(k) for k in
+           ("street_address_1", "city", "state", "postal_code")):
+        body["address"] = {k: v for k, v in addr.items() if v}
+    # primary_contact.name is required BY the API whenever the object is
+    # present, so only send the block when we actually have a name.
+    if (contact_name or "").strip():
+        contact = {"name": contact_name.strip()}
+        if (contact_email or "").strip():
+            contact["email"] = contact_email.strip()
+        if (contact_phone or "").strip():
+            contact["phone_number"] = contact_phone.strip()
+        body["primary_contact"] = contact
+
+    try:
+        proj = _call("/projects", method="POST", data=body)
+    except urllib.request.HTTPError as ex:
+        # 401/403 here is the answer to "does this token have write
+        # scope?" — surface it plainly rather than as a stack trace.
+        detail = ""
+        try:
+            detail = (ex.read() or b"").decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        if ex.code in (401, 403):
+            return {"ok": False, "code": ex.code, "scope": False,
+                    "error": f"CompanyCam refused the write ({ex.code}). "
+                             f"The API token is read-only. {detail}".strip()}
+        return {"ok": False, "code": ex.code,
+                "error": f"CompanyCam create failed ({ex.code}): {detail}"}
+    except Exception as ex:
+        return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    if not isinstance(proj, dict) or not proj.get("id"):
+        return {"ok": False, "error": "CompanyCam returned no project id"}
+    return {"ok": True, "project": _shape(proj)}
+
+
 # ── Photos ──────────────────────────────────────────────────────────────
 
 _IMG_EXT_BY_CT = {

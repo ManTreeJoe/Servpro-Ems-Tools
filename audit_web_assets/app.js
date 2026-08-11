@@ -4843,6 +4843,14 @@ function openNewLossModal() {
 
       ${NL_FIELD_GROUPS.map(groupBlock).join("")}
 
+      <label id="nl-cc-row" style="display:none;align-items:center;gap:6px;
+             margin-top:14px;font-size:12px;">
+        <input type="checkbox" id="nl-make-companycam" />
+        <span>Also create the <b>CompanyCam project</b> now and pin it
+              <span class="muted">— so photos don't have to be matched by
+              name later</span></span>
+      </label>
+
       <div class="modal-footer" style="margin-top:16px;display:flex;gap:8px;align-items:center;">
         <span id="nl-status" style="flex:1;font-size:11px;"></span>
         <button class="btn modal-close">Cancel</button>
@@ -4940,6 +4948,18 @@ function openNewLossModal() {
     } catch (e) { /* non-fatal */ }
   })();
 
+  // Only offer the CompanyCam option when a token is actually set —
+  // otherwise it's a checkbox whose only outcome is an error.
+  (async () => {
+    try {
+      const c = await pywebview.api.companycam_configured();
+      if (c?.configured) {
+        const row = $$("#nl-cc-row");
+        if (row) row.style.display = "flex";
+      }
+    } catch (e) { /* leave it hidden */ }
+  })();
+
   $$("#nl-parse").addEventListener("click", async () => {
     const text = $$("#nl-paste").value.trim();
     if (!text) { $$("#nl-parse-status").textContent = "Paste the email first"; return; }
@@ -4981,7 +5001,9 @@ function openNewLossModal() {
       // the card, which is the part that can't be redone by hand.
       ($$("#nl-child-name")?.value || "").trim(),
       !!$$("#nl-second-claim")?.checked,
-      !!$$("#nl-promote")?.checked);
+      !!$$("#nl-promote")?.checked,
+      true,                                   // make_folder
+      !!$$("#nl-make-companycam")?.checked);
     if (!res?.ok) {
       btn.disabled = false;
       $$("#nl-status").innerHTML = `<span style="color:var(--red);">${escapeHtml(res?.error || "Create failed")}</span>`;
@@ -4992,8 +5014,19 @@ function openNewLossModal() {
     const folderNote = f.ok
       ? ` · 📁 ${f.mode === "child" ? f.child : "new folder"}`
       : (f.error ? ` · ⚠ folder: ${f.error}` : "");
-    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom)${folderNote}. ${res.url || ""}`,
-              f.error ? "warn" : "ok");
+    // Distinguish "created it" from "one already existed and we pinned
+    // it" — the second is the normal case for a job someone started in
+    // the CompanyCam app first, and reads as a no-op otherwise.
+    const cc = res.companycam;
+    let ccNote = "";
+    if (cc) {
+      ccNote = cc.ok
+        ? (cc.created ? " · 📷 CompanyCam project created + pinned"
+                      : " · 📷 CompanyCam project already existed — pinned")
+        : ` · ⚠ CompanyCam: ${cc.error || "failed"}`;
+    }
+    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom)${folderNote}${ccNote}. ${res.url || ""}`,
+              (f.error || (cc && !cc.ok)) ? "warn" : "ok");
     if (typeof runAudit === "function") { try { runAudit(true); } catch (e) {} }
   });
 }

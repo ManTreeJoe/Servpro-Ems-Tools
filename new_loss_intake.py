@@ -274,6 +274,106 @@ def create_folder(fields, *, child="", second_claim=False,
     return res
 
 
+def create_companycam_project(fields, *, card_name="", trello_card="",
+                              folder_path="", confirm_create=False):
+    """Create the job's CompanyCam project AT INTAKE and pin it.
+
+    Today the project is found LATER by fuzzy name match — and that match
+    is the part that fails, because CompanyCam projects are named by the
+    INSURED while our run-doc names are often junk like "Lastname/POC".
+    Creating it here and pinning the id means nothing ever has to guess.
+
+    `confirm_create` is required to actually create. Without it this only
+    LOOKS — it reports the existing project when one already matches, or
+    `would_create` with the name/address it would use.
+
+    ⚠ A create here is ONE-WAY for us. Verified live 2026-08-11: our
+    token can POST /projects (201) but gets **403 on DELETE**, and
+    `status` / `archived` are read-only on PUT. So a wrong project can
+    only be cleaned up by a human in the CompanyCam app. That is why
+    this refuses to duplicate and why the caller must opt in explicitly.
+
+    Returns {ok, created, project, pinned, ...} or {ok:False, error}.
+    """
+    import companycam_api as cc
+
+    if not cc.is_configured():
+        return {"ok": False, "error": "CompanyCam API token not configured."}
+
+    fields = dict(fields or {})
+    insured = (fields.get("insured_name") or "").strip()
+    name = (card_name or insured or suggest_card_name(fields)).strip()
+    if not name:
+        return {"ok": False, "error": "No insured name to name the project."}
+    address = (fields.get("address") or "").strip()
+
+    # Don't create a second project for a job that already has one — an
+    # existing pin, then a name lookup. CompanyCam happily accepts
+    # duplicate names, and a duplicate is worse than no project: photos
+    # split across two and neither looks wrong.
+    try:
+        import ems_db
+        job = ems_db.find_job_by_name(name) or (
+            ems_db.find_job_by_name(insured) if insured else None)
+        if job:
+            pinned = ems_db.get_link(job["canon_key"], ems_db.LINK_COMPANYCAM)
+            if pinned:
+                return {"ok": True, "created": False, "pinned": True,
+                        "project": {"id": pinned},
+                        "reason": "already pinned to this job"}
+    except Exception:
+        pass
+
+    existing = cc.find_project(name, address_hint=address)
+    if existing.get("ok") and existing.get("match"):
+        match = existing["match"]
+        return {"ok": True, "created": False,
+                "project": match,
+                "pinned": _pin_companycam(name, match["id"],
+                                          trello_card=trello_card,
+                                          folder_path=folder_path),
+                "reason": "a CompanyCam project already matches this name"}
+
+    if not confirm_create:
+        return {"ok": True, "created": False, "would_create": True,
+                "name": name, "address": cc.split_address(address),
+                "candidates": existing.get("candidates") or [],
+                "reason": "confirm_create not set — nothing was created"}
+
+    res = cc.create_project(
+        name,
+        address=address,
+        contact_name=insured,
+        contact_email=(fields.get("email") or "").strip(),
+        contact_phone=(fields.get("phone") or "").strip(),
+    )
+    if not res.get("ok"):
+        return res
+    proj = res["project"]
+    return {"ok": True, "created": True, "project": proj,
+            "pinned": _pin_companycam(name, proj["id"],
+                                      trello_card=trello_card,
+                                      folder_path=folder_path)}
+
+
+def _pin_companycam(name, project_id, *, trello_card="", folder_path=""):
+    """Tie the project id to the job in the shared graph so every tool
+    sees it. `resolve_and_link` treats the id as a strong identifier, so
+    passing the Trello card / folder alongside binds all three to ONE
+    job rather than creating a second identity for the same loss."""
+    if not (name and project_id):
+        return False
+    try:
+        import ems_db
+        ems_db.resolve_and_link(
+            name, companycam_project=str(project_id),
+            trello_card=trello_card or "", folder_path=folder_path or "",
+            create=True, source="new_loss")
+        return True
+    except Exception:
+        return False
+
+
 def create_new_loss(fields, loss_type=None, *, pin=True):
     """Clone the chosen template into the intake list (bottom), fill its desc
     from `fields`, name it, and (optionally) pin it to the insured so the audit
