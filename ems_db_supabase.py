@@ -222,16 +222,32 @@ def _is_primary_job_key(key: str) -> bool:
 # ── aliases ─────────────────────────────────────────────────────────────
 
 def add_alias(canon_key_value: str, alias: str, *,
-              source: str = "manual") -> None:
+              source: str = "manual", force: bool = False) -> bool:
+    """Mirror of the sqlite guard — an alias may only ever name ONE job.
+    Refuses a second claimant so a fuzzy matcher's wrong guess can't
+    silently overwrite an established mapping. Keep the two in step:
+    whichever backend is active has to reject the same writes.
+    `force=True` is for deliberate folding (merge_jobs / reconcile)."""
     if not (canon_key_value and alias):
-        return
+        return False
     ac = canon_key(alias)
     if not ac or ac == canon_key_value:
-        return
+        return False
+    if not force:
+        # Already another job's canon_key?
+        other = _one("jobs", canon_key=f"eq.{ac}", select="canon_key")
+        if other is not None and other.get("canon_key") != canon_key_value:
+            return False
+        # Already an alias of another job?
+        for r in _rows("job_aliases", alias_canon=f"eq.{ac}",
+                       select="canon_key", limit=5):
+            if r.get("canon_key") != canon_key_value:
+                return False
     _sb.rest("POST", "job_aliases", body={
         "canon_key": canon_key_value, "alias": alias, "alias_canon": ac,
         "source": source, "added_at": _now_iso(),
     }, prefer="resolution=merge-duplicates")
+    return True
 
 
 def get_aliases(canon_key_value: str) -> list:
@@ -699,14 +715,17 @@ def merge_jobs(into_key: str, from_keys) -> dict:
             skipped.append(fk)
             continue
         for a in _rows("job_aliases", canon_key=f"eq.{fk}", select="*"):
-            add_alias(into_key, a["alias"], source=a.get("source") or "merge")
+            # force: the loser's rows are still here (deleted next line),
+            # so the ambiguity guard would refuse every one of them.
+            add_alias(into_key, a["alias"], source=a.get("source") or "merge",
+                      force=True)
         _sb.rest("DELETE", "job_aliases", params={"canon_key": f"eq.{fk}"})
         for l in _rows("job_links", canon_key=f"eq.{fk}", select="*"):
             set_link(into_key, l["link_type"], l["link_value"],
                      added_by=l.get("added_by") or "merge")
         _sb.rest("DELETE", "job_links", params={"canon_key": f"eq.{fk}"})
         if row.get("display_name"):
-            add_alias(into_key, row["display_name"], source="merge")
+            add_alias(into_key, row["display_name"], source="merge", force=True)
         _sb.rest("DELETE", "jobs", params={"canon_key": f"eq.{fk}"})
         merged += 1
     out = {"merged": merged}

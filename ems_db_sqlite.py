@@ -479,23 +479,52 @@ def upsert_job(*, display_name: str,
 
 
 def add_alias(canon_key_value: str, alias: str, *,
-              source: str = "manual") -> None:
+              source: str = "manual", force: bool = False) -> bool:
     """Record a name variant for a job. Idempotent — re-adding the
     same alias is a no-op. The alias's own canonicalization is
-    indexed so `find_job_by_name` can match either form."""
+    indexed so `find_job_by_name` can match either form.
+
+    Returns True if the alias is recorded (or already was), False if it
+    was REFUSED for creating ambiguity — see below.
+
+    An alias may only ever name ONE job. Callers include fuzzy matchers
+    (CompanyCam project names, Trello pins) that guess, and a wrong
+    guess used to be written silently: "David Smith" got attached to
+    `bernardo, froilan-aaa` while a real `Smith, David - Mercury`
+    existed, so `find_job_by_name` picked between them on rowid order.
+    Refusing the second claimant keeps the first, established mapping —
+    a name we already resolved beats a later automated guess.
+
+    `force=True` skips the check. It is for FOLDING — merge_jobs and
+    reconcile deliberately pull one job's spellings onto another, and
+    there the "conflict" is the whole point. Guessers must never set it.
+    """
     if not canon_key_value or not alias:
-        return
+        return False
     alias_canon = canon_key(alias)
     if not alias_canon or alias_canon == canon_key_value:
         # Self-alias (same canon as the primary) is meaningless to store.
-        return
+        return False
     with _LOCK, _connect() as c:
+        # Already claimed by a different job — either as that job's own
+        # canon_key, or as an alias someone recorded earlier.
+        taken = None if force else c.execute("""
+            SELECT canon_key FROM jobs WHERE canon_key = ? AND canon_key <> ?
+            UNION
+            SELECT canon_key FROM job_aliases
+             WHERE alias_canon = ? AND canon_key <> ?
+            LIMIT 1
+        """, (alias_canon, canon_key_value,
+              alias_canon, canon_key_value)).fetchone()
+        if taken is not None:
+            return False
         c.execute("""
             INSERT OR IGNORE INTO job_aliases
                 (canon_key, alias, alias_canon, source, added_at)
             VALUES (?, ?, ?, ?, ?)
         """, (canon_key_value, alias, alias_canon, source, _now_iso()))
         c.commit()
+    return True
 
 
 def set_link(canon_key_value: str, link_type: str, link_value: str, *,
@@ -780,10 +809,17 @@ def find_job_by_name(name: str, *, department: str = "") -> dict | None:
         row = c.execute(
             "SELECT * FROM jobs WHERE canon_key=?", (key,)).fetchone()
         if row is None:
+            # Oldest alias wins. `add_alias` now refuses to create a
+            # second claimant, but rows predating that guard are still
+            # in the DB — and a bare LIMIT 1 resolved them on rowid
+            # order, i.e. differently depending on insert history. The
+            # earliest mapping is the one recorded before any later
+            # fuzzy matcher guessed at the same name.
             row = c.execute("""
                 SELECT j.* FROM jobs j
                 JOIN job_aliases a ON a.canon_key = j.canon_key
                 WHERE a.alias_canon = ?
+                ORDER BY a.added_at ASC, a.canon_key ASC
                 LIMIT 1
             """, (key,)).fetchone()
         if row is not None and dept:
@@ -1438,7 +1474,10 @@ def import_db(path: str, *, mode: str = "upsert") -> dict:
                 metadata=j.get("metadata") or None,
             )
             for alias in (j.get("aliases") or []):
-                add_alias(key, alias, source="import")
+                # force: an export is already-reconciled state. Applying
+                # the guard on restore would silently drop aliases and
+                # give you back something other than what you backed up.
+                add_alias(key, alias, source="import", force=True)
                 aliases_count += 1
             for link in (j.get("links") or []):
                 lt = link.get("type") or ""

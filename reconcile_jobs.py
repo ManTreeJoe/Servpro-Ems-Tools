@@ -116,7 +116,10 @@ def reconcile(dry_run=True, name_cache=None, progress=False):
             ems_db.set_link(into_key, ems_db.LINK_TRELLO, cid,
                             added_by="reconcile")
         for k in keys:
-            ems_db.add_alias(into_key, k, source="reconcile")
+            # force: these spellings are still live job rows until
+            # merge_jobs runs below, so the ambiguity guard in add_alias
+            # would refuse the very folding this loop exists to do.
+            ems_db.add_alias(into_key, k, source="reconcile", force=True)
             fp = folders.get(k)
             if fp:
                 ems_db.set_link(into_key, ems_db.LINK_FOLDER, fp,
