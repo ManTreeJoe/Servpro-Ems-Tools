@@ -127,9 +127,13 @@ window.addEventListener("pywebviewready", async () => {
   $("#export-all-btn").addEventListener("click", () => exportPdf("all"));
   $("#archive-month-btn").addEventListener("click", openArchiveMonthModal);
   $("#copy-xa-apology-btn").addEventListener("click", copyXaApologyNote);
-  $$(".filter").forEach((b) =>
-    b.addEventListener("click", () => setFilter(b.dataset.filter))
-  );
+  $$(".filter").forEach((b) => {
+    b.addEventListener("click", () => setFilter(b.dataset.filter));
+    // Paint the restored filter onto the buttons. state.filter is set from
+    // the saved panel state before this runs, and without this the list
+    // would be filtered while every button still looked like "All".
+    b.classList.toggle("active", b.dataset.filter === state.filter);
+  });
   // SP stats tile = one-click filter to "Has SP". Clicking again
   // returns to All. Mirrors the way the Flagged tile would feel if
   // it were clickable.
@@ -210,10 +214,14 @@ window.addEventListener("pywebviewready", async () => {
   if (!_focus && !state.userSwitchedMode) {
     let landing = "search";
     try {
-      const st = await pywebview.api.get_ui_state("audit");
+      // PanelState caches the whole panel record, so the filter restore
+      // below costs no extra round trip.
+      const st = await PanelState.init("audit");
       if (st && ["search", "daily", "starred"].includes(st.mode)) {
         landing = st.mode;
       }
+      const savedFilter = PanelState.get("filter", "");
+      if (savedFilter) state.filter = savedFilter;
     } catch (_) { /* no saved tab — Search is the default */ }
     // Chrome only: the data load below paints once, under the right tab.
     if (!state.userSwitchedMode) applyModeChrome(landing);
@@ -2662,6 +2670,9 @@ function filterRows() {
 
 function setFilter(value) {
   state.filter = value;
+  // Remembered across visits — setting "flagged" and finding it back on
+  // "all" every time you return is the whole complaint.
+  try { PanelState.set({ filter: value }); } catch (_) { /* optional */ }
   $$(".filter").forEach((b) => {
     b.classList.toggle("active", b.dataset.filter === value);
   });

@@ -65,13 +65,28 @@ const SECTION_ACTIONS = {
 };
 
 window.addEventListener("pywebviewready", async () => {
+  // Restore the view you left: active tile, search text, board filter and
+  // the open-jobs toggle. Panels are torn down on navigate, so without
+  // this every trip back through Hygiene reset all four.
+  await PanelState.init("hygiene");
+  state.active        = PanelState.get("active", state.active);
+  state.search        = PanelState.get("search", "");
+  state.board         = PanelState.get("board", "");
+  state.showOpenJobs  = !!PanelState.get("showOpenJobs", false);
+  const _sb = $("#search-box"); if (_sb) _sb.value = state.search;
+  const _oj = $("#show-open-jobs"); if (_oj) _oj.checked = state.showOpenJobs;
+
   $("#scan-btn").addEventListener("click", () => runScan(false));
   $("#scan-min-btn").addEventListener("click", () => runScan(true));
   $("#cancel-btn").addEventListener("click", async () => { await api().cancel_scan(); });
   $("#xa-scan-btn").addEventListener("click", runXaScan);
   $("#diag-btn").addEventListener("click", openDiag);
-  $("#search-box").addEventListener("input", (e) => { state.search = e.target.value; renderFeed(); });
-  $("#board-filter").addEventListener("change", (e) => { state.board = e.target.value; renderFeed(); });
+  $("#search-box").addEventListener("input", (e) => {
+    state.search = e.target.value; PanelState.set({ search: state.search }); renderFeed();
+  });
+  $("#board-filter").addEventListener("change", (e) => {
+    state.board = e.target.value; PanelState.set({ board: state.board }); renderFeed();
+  });
   $("#show-open-jobs").addEventListener("change", onToggleOpenJobs);
   window.addEventListener("hygiene:scan-progress", (ev) => {
     const d = ev.detail || {};
@@ -87,6 +102,9 @@ window.addEventListener("pywebviewready", async () => {
     await load();
   });
   await loadBoards();
+  // loadBoards populates the <select>; only now can the saved value stick.
+  const _bf = $("#board-filter");
+  if (_bf && state.board) _bf.value = state.board;
   await load();
 });
 
@@ -161,6 +179,7 @@ function renderTiles() {
   tiles.innerHTML = html;
   $$(".tile").forEach((t) => t.addEventListener("click", () => {
     state.active = t.dataset.key;
+    PanelState.set({ active: state.active });
     // Switching tiles drops the previous tile's paged-in extras.
     state.extra = []; state.sectionOffset = {};
     renderTiles(); renderFeed();
@@ -307,6 +326,7 @@ async function doAction(r, idx, el) {
 // ── Open-jobs toggle (demoted from a tile to an opt-in list) ─────────
 async function onToggleOpenJobs(e) {
   state.showOpenJobs = e.target.checked;
+  PanelState.set({ showOpenJobs: state.showOpenJobs });
   if (state.showOpenJobs && !state.openJobs.length) await fetchOpenJobs();
   renderFeed();
 }

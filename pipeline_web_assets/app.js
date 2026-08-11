@@ -34,6 +34,15 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 // ── Boot ─────────────────────────────────────────────────────────
 window.addEventListener("pywebviewready", async () => {
+  // Restore the view you left — board vs stages, which board tab, the
+  // stage chip and the search box. The panel is destroyed on navigate,
+  // so all four reset on every visit before this.
+  await PanelState.init("pipeline");
+  state.view           = PanelState.get("view", state.view);
+  state.activeBoardKey = PanelState.get("activeBoardKey", null);
+  state.active_stage   = PanelState.get("active_stage", state.active_stage);
+  state.search         = PanelState.get("search", "");
+
   $("#view-board-btn").addEventListener("click", () => setView("board"));
   $("#view-stages-btn").addEventListener("click", () => setView("stages"));
   $("#refresh-btn").addEventListener("click", () => loadBoard(true));
@@ -67,6 +76,7 @@ window.addEventListener("pywebviewready", async () => {
 function setView(v) {
   if (state.view === v) return;
   state.view = v;
+  PanelState.set({ view: v });
   $("#view-board-btn").classList.toggle("active", v === "board");
   $("#view-stages-btn").classList.toggle("active", v === "stages");
   $("#board-view").classList.toggle("hidden", v !== "board");
@@ -166,6 +176,7 @@ function renderBoard() {
   root.querySelectorAll("[data-board-tab]").forEach((b) =>
     b.addEventListener("click", () => {
       state.activeBoardKey = b.dataset.boardTab;
+      PanelState.set({ activeBoardKey: state.activeBoardKey });
       renderBoard();
     }));
   // Per-board ↻ refresh.
@@ -439,7 +450,9 @@ function renderChips() {
     </button>`).join("");
   nav.querySelectorAll(".chip").forEach((b) =>
     b.addEventListener("click", () => {
-      state.active_stage = b.dataset.stage; renderChips(); renderTable();
+      state.active_stage = b.dataset.stage;
+      PanelState.set({ active_stage: state.active_stage });
+      renderChips(); renderTable();
     }));
 }
 
@@ -499,6 +512,7 @@ function renderRow(r) {
 let searchTimer = null;
 function onSearchInput(ev) {
   state.search = ev.target.value;
+  PanelState.set({ search: state.search });
   if (searchTimer) clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
     if (state.view === "board") renderBoard();
