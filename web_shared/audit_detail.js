@@ -277,6 +277,10 @@
           <span id="cat-class-out" class="muted" style="float:right;margin:2px 8px 0 0;font-weight:600;"></span></h3>
         <div id="all-cl-body"></div>
       </section>` : ""}
+      ${hasPin ? `<section class="detail-section cl-collapsible cl-collapsed" id="activity-log">
+        <h3>📆 Activity comment <span class="muted" id="activity-log-status"></span></h3>
+        <div id="activity-log-body"></div>
+      </section>` : ""}
     `;
   }
 
@@ -317,7 +321,7 @@
     // Trello checklists — each section collapsible, collapsed by default.
     // Trello info section collapsible (each checklist collapses individually
     // inside #all-cl — handled in loadAllChecklists).
-    ["trello-info"].forEach((id) => {
+    ["trello-info", "activity-log"].forEach((id) => {
       const sec = container.querySelector("#" + id);
       if (!sec) return;
       sec.classList.add("cl-collapsible", "cl-collapsed");
@@ -344,6 +348,7 @@
     const hasPin = !!r.trello_card_id;
     if (hasPin) loadTrelloInfo(r, ctx);
     if (hasPin) loadAllChecklists(r, ctx);   // every checklist on the card
+    if (hasPin) loadActivityLog(r, ctx);
     decorateIssueListsWithCheckboxes(r, ctx);
 
     const trelloBtn = container.querySelector('.action-btn[data-action="open-trello"]');
@@ -1105,6 +1110,150 @@
     });
   }
 
+  // ── Async section: 📆 Activity comment ────────────────────────────
+  // The dated visit comment the office already writes by hand:
+  //
+  //     Saturday 08/01
+  //
+  //     Monitor - ME
+  //
+  // The TEXT is built by the backend (`activity_comment_text`), never
+  // here — the preview and the thing that actually gets posted have to
+  // be the same string, and a second formatter in JS is how they drift.
+  // So the preview is a real round-trip, not a local guess.
+
+  // Local YYYY-MM-DD. `toISOString()` is UTC, which reads as yesterday
+  // for anyone west of Greenwich after 4pm — the whole point of this
+  // comment is the date, so it can't be off by one.
+  function _todayIso() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  function _lastUsed(key, fallback) {
+    try { return localStorage.getItem("activityLog." + key) || fallback; }
+    catch (_) { return fallback; }
+  }
+  function _rememberUsed(key, val) {
+    try { localStorage.setItem("activityLog." + key, String(val || "")); }
+    catch (_) { /* private mode — the picker just won't be sticky */ }
+  }
+
+  async function loadActivityLog(row, ctx) {
+    const sec = document.getElementById("activity-log");
+    const bodyEl = document.getElementById("activity-log-body");
+    if (!sec || !bodyEl) return;
+    const cardId = row.trello_card_id || "";
+    if (!cardId) { sec.remove(); return; }
+
+    let stages = [], techs = [];
+    try {
+      const r = await pywebview.api.list_activity_stages();
+      stages = (r && r.stages) || [];
+    } catch (_) { /* fall through to the empty-stage guard below */ }
+    try {
+      const r = await pywebview.api.list_techs();
+      techs = (r && r.techs) || [];
+    } catch (_) { /* tech is optional — the comment is valid without it */ }
+    // The card may have been re-rendered while we were awaiting.
+    if (document.getElementById("activity-log-body") !== bodyEl) return;
+    if (!stages.length) {
+      bodyEl.innerHTML =
+        `<div class="muted">Couldn't read the stage list.</div>`;
+      return;
+    }
+
+    const lastStage = _lastUsed("stage", "Monitor");
+    const lastTech = _lastUsed("tech", "");
+    bodyEl.innerHTML = `
+      <div class="activity-row">
+        <label class="modal-lbl" for="act-stage">Stage</label>
+        <select id="act-stage" class="search">
+          ${stages.map((s) => `<option value="${escA(ctx, s)}"${
+            s === lastStage ? " selected" : ""}>${esc(ctx, s)}</option>`).join("")}
+        </select>
+        <label class="modal-lbl" for="act-tech">Tech</label>
+        <select id="act-tech" class="search">
+          <option value="">(none)</option>
+          ${techs.map((t) => `<option value="${escA(ctx, t)}"${
+            t === lastTech ? " selected" : ""}>${esc(ctx, t)}</option>`).join("")}
+        </select>
+        <label class="modal-lbl" for="act-date">Date</label>
+        <input type="date" id="act-date" class="search" value="${escA(ctx, _todayIso())}"/>
+      </div>
+      <pre id="act-preview" class="activity-preview">…</pre>
+      <div class="canned-comments">
+        <button class="action-btn" id="act-post"
+                title="Post this comment to the pinned Trello card">💬 Post to Trello</button>
+        <button class="action-btn" id="act-copy"
+                title="Copy the comment text instead of posting it">📋 Copy</button>
+      </div>`;
+
+    if (!document.getElementById("activity-log-css")) {
+      const st = document.createElement("style");
+      st.id = "activity-log-css";
+      st.textContent =
+        "#activity-log .activity-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}" +
+        "#activity-log .activity-row .modal-lbl{margin:0 0 0 4px;}" +
+        "#activity-log .activity-row select,#activity-log .activity-row input{" +
+        "width:auto;min-width:120px;}" +
+        "#activity-log .activity-preview{white-space:pre-wrap;margin:8px 0 6px;" +
+        "padding:8px 10px;border:1px solid var(--border);border-radius:6px;" +
+        "background:var(--bg,#1b1b1b);font-size:12px;line-height:1.45;}";
+      document.head.appendChild(st);
+    }
+
+    const stageEl = bodyEl.querySelector("#act-stage");
+    const techEl = bodyEl.querySelector("#act-tech");
+    const dateEl = bodyEl.querySelector("#act-date");
+    const prevEl = bodyEl.querySelector("#act-preview");
+    const postEl = bodyEl.querySelector("#act-post");
+    const copyEl = bodyEl.querySelector("#act-copy");
+    // Dropdowns inside a scrolling detail pane: scrolling with one open
+    // otherwise silently changes the value (see the UI-preferences note).
+    [stageEl, techEl].forEach((el) => {
+      el.addEventListener("wheel", (e) => { e.preventDefault(); }, { passive: false });
+    });
+
+    let current = "";
+    async function refresh() {
+      let r;
+      try {
+        r = await pywebview.api.activity_comment_text(
+          stageEl.value, techEl.value, dateEl.value);
+      } catch (_) { r = null; }
+      if (document.getElementById("act-preview") !== prevEl) return;
+      current = (r && r.ok) ? r.text : "";
+      prevEl.textContent = current || `(${(r && r.error) || "couldn't build"})`;
+      postEl.disabled = !current;
+      copyEl.disabled = !current;
+    }
+    [stageEl, techEl, dateEl].forEach((el) =>
+      el.addEventListener("change", () => {
+        _rememberUsed("stage", stageEl.value);
+        _rememberUsed("tech", techEl.value);
+        refresh();
+      }));
+    await refresh();
+
+    postEl.addEventListener("click", async () => {
+      postEl.disabled = true;
+      let r;
+      try {
+        r = await pywebview.api.post_activity_comment(
+          cardId, stageEl.value, techEl.value, dateEl.value);
+      } catch (ex) { r = { ok: false, error: String(ex) }; }
+      postEl.disabled = false;
+      setStatus(ctx, (r && r.ok)
+        ? `💬 Posted: ${String(r.text || "").replace(/\n+/g, " · ")}`
+        : `Post failed: ${(r && r.error) || "?"}`, (r && r.ok) ? "ok" : "error");
+    });
+    copyEl.addEventListener("click", async () => {
+      const ok = await copyText(ctx, current);
+      setStatus(ctx, ok ? "📋 Copied" : "Copy failed", ok ? "ok" : "error");
+    });
+  }
+
   // ── Async section: 📥 Initial checklist + canned comments (port) ───
   async function loadInitialChecklists(row, ctx) {
     const sec = document.getElementById("initial-cl");
@@ -1699,6 +1848,7 @@
     wireDetail,
     detailAction,
     loadTrelloInfo,
+    loadActivityLog,
     loadInProgressChecklist,
     loadInitialChecklists,
     loadCloseoutChecklist,

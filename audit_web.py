@@ -3070,11 +3070,22 @@ class Api(JobSettingsApi, CompanyCamApi):
         Built here rather than in JS so the Trello comment and anything
         else that logs the same visit cannot drift in wording. `date_iso`
         defaults to today.
+
+        The tech is written as roster INITIALS ("ME", not "Mark E") —
+        that is the handwritten form, and the picker hands us full names.
+        Same `initials_for_name(...) or tech` fallback the CompanyCam
+        import uses, so a helper with no roster entry keeps their name
+        rather than vanishing.
         """
         stage = (stage or "").strip()
         tech = (tech or "").strip()
         if not stage:
             return {"ok": False, "error": "stage required"}
+        if tech:
+            try:
+                tech = audit_logic.initials_for_name(tech) or tech
+            except Exception:
+                pass
         try:
             d = (_dt.date.fromisoformat(date_iso) if date_iso
                  else _dt.date.today())
@@ -3086,6 +3097,16 @@ class Api(JobSettingsApi, CompanyCamApi):
         body = f"{stage} - {tech}" if tech else stage
         return {"ok": True, "text": f"{head}\n\n{body}",
                 "stage": stage, "tech": tech, "date": d.isoformat()}
+
+    def list_activity_stages(self) -> dict:
+        """Stage labels for the activity-comment picker, in timeline
+        order. Read from `stages.LABELS` rather than hardcoded in JS so
+        adding a stage there shows up here without a second edit."""
+        try:
+            import stages as _stages
+            return {"ok": True, "stages": list(_stages.LABELS)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "stages": []}
 
     def post_activity_comment(self, card_id: str, stage: str, tech: str,
                               date_iso: str = "") -> dict:

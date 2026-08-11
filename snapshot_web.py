@@ -603,6 +603,12 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().toggle_checklist_item(card_id, item_id, want)
     def post_canned(self, card_id, kind):
         return self._aw().post_canned(card_id, kind)
+    def list_activity_stages(self):
+        return self._aw().list_activity_stages()
+    def activity_comment_text(self, stage, tech, date_iso=""):
+        return self._aw().activity_comment_text(stage, tech, date_iso)
+    def post_activity_comment(self, card_id, stage, tech, date_iso=""):
+        return self._aw().post_activity_comment(card_id, stage, tech, date_iso)
     def get_initial_cat_class(self, client, card_id=""):
         return self._aw().get_initial_cat_class(client, card_id)
     def import_initial_notes(self, client, card_id=""):
