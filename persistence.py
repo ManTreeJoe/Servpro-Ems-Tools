@@ -124,8 +124,8 @@ def _read_from_disk():
         data["property_groups"] = {}
     if not isinstance(data.get("dismissed_card_warnings"), dict):
         data["dismissed_card_warnings"] = {}
-    if not isinstance(data.get("hygiene_scan_cache"), dict):
-        data["hygiene_scan_cache"] = {}
+    # hygiene_scan_cache is a sidecar file now — deliberately NOT
+    # defaulted here, or every load would put the key back in state.json.
     if not isinstance(data.get("estimate_requests"), dict):
         data["estimate_requests"] = {}
     if not isinstance(data.get("estimator_trello_handles"), dict):
@@ -311,11 +311,110 @@ def _save(state):
                 pass
 
 
+# ── Sidecar caches ─────────────────────────────────────────────────────────
+#
+# Three keys were 85% of state.json (5.6 MB of 6.6): xa_email_bodies
+# (3.1 MB of cached Graph message bodies), hygiene_scan_cache (~1 MB of
+# the last scan's rows) and dispute_email_seen (a 5,000-id dedupe list).
+#
+# That mattered far beyond disk space. `_save()` deepcopies the whole
+# state and re-encodes it with indent=2 on EVERY mutation anywhere in the
+# app — ticking one checkbox rewrote 5.9 MB. A single 13-job audit spent
+# ~3.4s of pure CPU on 8 of those writes, before any network work.
+#
+# All three are regenerable caches, so they get their own files and a
+# normal save touches ~800 KB. Each sidecar is written only when its own
+# value changes, so the audit's state writes no longer touch them at all.
+_SIDECAR_FILES = {
+    "xa_email_bodies":    "cache_xa_email_bodies.json",
+    "hygiene_scan_cache": "cache_hygiene_scan.json",
+    "dispute_email_seen": "cache_dispute_email_seen.json",
+}
+_SIDECAR_LOCK = threading.Lock()
+_SIDECAR_CACHE = {}    # key -> (value, mtime_when_read)
+
+
+def _sidecar_path(key):
+    return paths.data(_SIDECAR_FILES[key])
+
+
+def _sidecar_load(key, default=None):
+    """Read one sidecar, mtime-cached like the main state.
+
+    Migration: a key still living in state.json is adopted on first read.
+    The sidecar is written BEFORE the key is dropped from state, so a
+    failure anywhere leaves the original value exactly where it was.
+    """
+    path = _sidecar_path(key)
+    with _SIDECAR_LOCK:
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = None
+        hit = _SIDECAR_CACHE.get(key)
+        if hit is not None and hit[1] == mtime and mtime is not None:
+            return hit[0]
+        if mtime is not None:
+            try:
+                with open(path, encoding="utf-8") as f:
+                    val = json.load(f)
+                _SIDECAR_CACHE[key] = (val, mtime)
+                return val
+            except (OSError, ValueError):
+                pass    # unreadable/corrupt cache → fall through, rebuild
+    # No sidecar yet. Adopt the value out of state.json if it's there.
+    state = _load()
+    if key in state:
+        legacy = state[key]
+        if legacy not in (None, {}, []):
+            _sidecar_save(key, legacy)
+            with _CACHE_LOCK:
+                fresh = _CACHE if _CACHE is not None else state
+            fresh.pop(key, None)
+            _save(fresh)
+            return legacy
+        state.pop(key, None)
+    return default
+
+
+def _sidecar_save(key, value):
+    """Atomic write of one sidecar. Never raises — these are caches, and
+    losing one costs a re-fetch, not data."""
+    import uuid as _uuid
+    path = _sidecar_path(key)
+    tmp = path + f".tmp-{_uuid.uuid4().hex[:8]}"
+    with _SIDECAR_LOCK:
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(value, f, default=_json_default)
+            os.replace(tmp, path)
+            try:
+                _SIDECAR_CACHE[key] = (value, os.path.getmtime(path))
+            except OSError:
+                _SIDECAR_CACHE.pop(key, None)
+        except (OSError, ValueError, TypeError) as ex:
+            try:
+                import ems_log
+                ems_log.error("persistence", f"{key} cache write failed: {ex}")
+            except Exception:
+                pass
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
 def get(key, default=None):
+    if key in _SIDECAR_FILES:
+        val = _sidecar_load(key, default)
+        return default if val is None else val
     return _load().get(key, default)
 
 
 def set_value(key, value):
+    if key in _SIDECAR_FILES:
+        _sidecar_save(key, value)
+        return
     state = _load()
     state[key] = value
     _save(state)
@@ -2012,7 +2111,7 @@ def get_hygiene_scan_cache(max_age_minutes=30):
     valid (a scan that found nothing) — only a missing/stale entry
     returns None.
     """
-    raw = _load().get("hygiene_scan_cache") or {}
+    raw = get("hygiene_scan_cache") or {}       # sidecar, not state.json
     if not isinstance(raw, dict) or not raw.get("ts"):
         return None
     try:
@@ -2046,9 +2145,8 @@ def set_hygiene_scan_cache(hygiene, closeout, *, xa_apology=None,
     """Persist the latest scan results. Lists are coerced to plain JSON-
     serializable shapes by virtue of being passed through json.dump on
     save — callers don't need to flatten."""
-    state = _load()
     from datetime import timezone as _tz
-    state["hygiene_scan_cache"] = {
+    set_value("hygiene_scan_cache", {          # sidecar, not state.json
         "ts": datetime.now(_tz.utc).replace(tzinfo=None).isoformat(
             timespec="seconds"),
         "hygiene":    list(hygiene or []),
@@ -2058,8 +2156,7 @@ def set_hygiene_scan_cache(hygiene, closeout, *, xa_apology=None,
         "ipr":        list(ipr or []),
         "estimates":  list(estimates or []),
         "weekly":     list(weekly or []),
-    }
-    _save(state)
+    })
 
 
 # ── Estimate-request SLA tracker ──────────────────────────────────────────
@@ -2373,10 +2470,7 @@ def find_property_for_folder(folder):
 
 
 def clear_hygiene_scan_cache():
-    state = _load()
-    if "hygiene_scan_cache" in state:
-        state["hygiene_scan_cache"] = {}
-        _save(state)
+    set_value("hygiene_scan_cache", {})        # sidecar, not state.json
 
 
 # ── Trello card warning dismissals (hygiene + handoff snoozing) ────────────
