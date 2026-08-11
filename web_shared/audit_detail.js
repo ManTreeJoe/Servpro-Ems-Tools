@@ -240,6 +240,8 @@
         </div>
         <div class="action-row">
           <button class="action-btn" data-action="comment" ${hasPin ? "" : "disabled"}>💬 Comment</button>
+          <button class="action-btn" data-action="initial-email" ${hasPin ? "" : "disabled"}
+                  title="Draft the Initial Inspection email from the card's notes, copy it, open XactAnalysis, then log it on the card">✉ Initial email</button>
           <button class="action-btn" data-action="docusketch" ${hasPin ? "" : "disabled"}>📐 Docusketch</button>
           <button class="action-btn" data-action="request-items">📨 Request items</button>
           <button class="action-btn" data-action="add-note" title="Add a tracked to-do note for this job">📝 Note</button>
@@ -902,6 +904,8 @@
       if (M.openFindFolder) M.openFindFolder(row);
     } else if (action === "pin-card") {
       openPinModal(row, ctx);                     // shared — real persisted pin
+    } else if (action === "initial-email") {
+      openInitialEmailModal(row, ctx);
     } else if (action === "comment") {
       if (M.openComment) M.openComment(row);
     } else if (action === "docusketch") {
@@ -1750,6 +1754,151 @@
       localStorage.setItem("pinSearch.excludedBoards",
                            JSON.stringify([...set]));
     } catch (_) { /* private mode — filter just won't be sticky */ }
+  }
+
+  // ── ✉ Initial Inspection email ────────────────────────────────────
+  // Drafted from the tech's notes on the card, edited here, copied, then
+  // XactAnalysis opens and the send is logged back to Trello.
+  //
+  // The TEXT is composed in Python on every change, never assembled in
+  // JS. The office sends these sentences to adjusters verbatim on every
+  // claim; a second renderer here would eventually word one of them
+  // differently from the other, and nobody would notice which was which.
+  async function openInitialEmailModal(row, ctx) {
+    const cardId = row.trello_card_id || "";
+    if (!cardId) {
+      setStatus(ctx, "Pin a Trello card first", "warn");
+      openPinModal(row, ctx);
+      return;
+    }
+    const wrap = mkModal({
+      title: "✉ Initial Inspection email",
+      sub:   `Client: ${row.client}`,
+      body: `<div id="ie-body" class="muted" style="padding:14px 0;">Reading the card's notes…</div>`,
+    });
+
+    let draft;
+    try { draft = await pywebview.api.initial_email_draft(row.client, cardId); }
+    catch (ex) { draft = { ok: false, error: String(ex) }; }
+    const bodyEl = wrap.querySelector("#ie-body");
+    if (!bodyEl) return;                       // closed while loading
+    if (!draft || !draft.ok) {
+      bodyEl.innerHTML = `<div style="color:var(--red);">${esc(ctx, (draft && draft.error) || "Couldn't draft")}</div>`;
+      return;
+    }
+
+    const opt = (id, label, checked) => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
+        <input type="checkbox" id="${id}" ${checked ? "checked" : ""}/> ${label}
+      </label>`;
+    bodyEl.className = "";
+    bodyEl.innerHTML = `
+      ${draft.found_notes ? "" : `<div style="color:var(--amber);font-size:12px;margin-bottom:8px;">
+        No initial-inspection notes found on this card — the draft is a blank template.</div>`}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+        <label class="modal-lbl" for="ie-greeting">Greeting</label>
+        <select id="ie-greeting" class="search" style="width:auto;">
+          <option>Good Morning,</option><option>Good Afternoon,</option>
+        </select>
+        <label class="modal-lbl" for="ie-sup">Supervisor</label>
+        <input id="ie-sup" class="search" style="width:150px;" value="${escA(ctx, draft.supervisor || "")}"/>
+        <label class="modal-lbl" for="ie-rate">Equip $/day</label>
+        <input id="ie-rate" class="search" style="width:90px;" placeholder="$85.26"/>
+        <label class="modal-lbl" for="ie-crews">Crews start</label>
+        <input id="ie-crews" class="search" style="width:110px;" placeholder="6/30/26"/>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+        ${opt("ie-tl", "TL inventory", true)}
+        ${opt("ie-pod", "POD required", false)}
+        ${opt("ie-dry", "3-day dry time exceeded", true)}
+        ${opt("ie-esl", "ESL exceeded", true)}
+        ${opt("ie-cln", "CLN affected areas", false)}
+        ${opt("ie-amp", "Anti-microbial", false)}
+      </div>
+      <div id="ie-missing" class="muted" style="font-size:11px;margin-bottom:4px;"></div>
+      <textarea id="ie-text" class="modal-textarea" rows="18"
+                style="width:100%;font-family:'Cascadia Mono',Consolas,monospace;font-size:12px;"></textarea>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+        <button class="btn modal-close">Close</button>
+        <button class="btn" id="ie-copy">📋 Copy</button>
+        <button class="btn btn-primary" id="ie-go">📋 Copy + open XA</button>
+      </div>`;
+
+    const ta = wrap.querySelector("#ie-text");
+    const missEl = wrap.querySelector("#ie-missing");
+    let dirty = false;                          // user typed — stop re-rendering
+    ta.addEventListener("input", () => { dirty = true; });
+
+    function currentOpts() {
+      const services = [];
+      if (wrap.querySelector("#ie-cln").checked) services.push("CLN of the affected areas");
+      if (wrap.querySelector("#ie-amp").checked) services.push("Application of Anti-microbial to the affected areas");
+      return {
+        greeting: wrap.querySelector("#ie-greeting").value,
+        supervisor: wrap.querySelector("#ie-sup").value,
+        equipment_rate: wrap.querySelector("#ie-rate").value,
+        crews_date: wrap.querySelector("#ie-crews").value,
+        extras: {
+          tl_inventory: wrap.querySelector("#ie-tl").checked,
+          pod: wrap.querySelector("#ie-pod").checked,
+          dry_time_exceeded: wrap.querySelector("#ie-dry").checked,
+          esl_exceeded: wrap.querySelector("#ie-esl").checked,
+          services,
+        },
+      };
+    }
+    function paint(text, placeholders) {
+      ta.value = text || "";
+      const miss = placeholders || [];
+      missEl.innerHTML = miss.length
+        ? `⚠ still to fill in: ${miss.map((m) => esc(ctx, m)).join(", ")}`
+        : "✓ nothing left bracketed";
+      missEl.style.color = miss.length ? "var(--amber)" : "var(--text-muted)";
+    }
+    async function rerender() {
+      if (dirty) return;      // never clobber the operator's own edits
+      let r;
+      try {
+        r = await pywebview.api.compose_initial_email(draft.fields, currentOpts());
+      } catch (_) { return; }
+      if (r && r.ok) paint(r.text, r.placeholders);
+    }
+    paint(draft.text, draft.placeholders);
+    // The draft came back without the operator's options applied; run
+    // once so the checkbox defaults are reflected before they touch it.
+    rerender();
+    wrap.querySelectorAll("#ie-body input, #ie-body select").forEach((el) => {
+      if (el === ta) return;
+      el.addEventListener("change", rerender);
+      el.addEventListener("input", rerender);
+    });
+
+    async function copyAndLog(openXa) {
+      const text = ta.value;
+      const ok = await copyText(ctx, text);
+      if (!ok) { setStatus(ctx, "Copy failed", "error"); return; }
+      if (!openXa) { setStatus(ctx, "📋 Copied", "ok"); return; }
+      let opened = false;
+      try { opened = await pywebview.api.open_xa_link(row.client, cardId); }
+      catch (_) { opened = false; }
+      // Log only once XA actually opened — that's the point the email is
+      // genuinely on its way, and a comment claiming otherwise is worse
+      // than no comment.
+      if (!opened) {
+        setStatus(ctx, "📋 Copied — no XA link on this card, nothing logged", "warn");
+        return;
+      }
+      let res;
+      try { res = await pywebview.api.post_initial_email_comment(cardId, "XactAnalysis"); }
+      catch (ex) { res = { ok: false, error: String(ex) }; }
+      wrap.remove();
+      setStatus(ctx, (res && res.ok)
+        ? "📋 Copied · XA opened · logged on the card"
+        : `📋 Copied · XA opened · log failed: ${(res && res.error) || "?"}`,
+        (res && res.ok) ? "ok" : "warn");
+    }
+    wrap.querySelector("#ie-copy").addEventListener("click", () => copyAndLog(false));
+    wrap.querySelector("#ie-go").addEventListener("click", () => copyAndLog(true));
   }
 
   // ── 📌 Pin Trello card modal (shared — real persisted pin) ─────────

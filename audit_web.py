@@ -3144,6 +3144,127 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def initial_email_draft(self, client: str, card_id: str = "") -> dict:
+        """Draft the Initial Inspection email from the card's own notes.
+
+        Everything the office retypes for this email is already in the
+        tech's initial-inspection notes on the card, so this pre-fills
+        from them and leaves only what the notes cannot answer —
+        equipment day rate, crew return date, greeting.
+
+        Returns {ok, text, fields, placeholders, ...}. `placeholders`
+        are the [BRACKETS] still unfilled, so the dialog can show what
+        needs attention before this goes to an adjuster.
+        """
+        try:
+            import initial_email as ie
+            import initial_notes_parser as inp
+            import trello_client as tc
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        cid = (card_id or "").strip() or (
+            persistence.get_trello_card_id(client) or "")
+        if not cid:
+            return {"ok": False, "error": "no pinned Trello card"}
+        try:
+            comments = tc.get_all_comments(cid) or []
+        except Exception as ex:
+            return {"ok": False, "error": f"comment fetch failed: {ex}"}
+        joined = "\n".join((a.get("data") or {}).get("text", "")
+                           for a in comments)
+        blocks = inp.parse_initial_inspection_notes(joined) or []
+        fields = blocks[0] if blocks else {}
+
+        # Job facts come from the v6 columns, so year built doesn't have
+        # to be retyped either.
+        try:
+            import ems_db
+            job = ems_db.find_job_by_name(client) or {}
+        except Exception:
+            job = {}
+        try:
+            import config as _cfg
+            franchise = _cfg.franchise_name()
+        except Exception:
+            franchise = ""
+        supervisor = self._supervisor_for(client, fields)
+
+        draft = ie.compose(
+            fields, franchise=franchise, supervisor=supervisor,
+            year_built=(job.get("year_built") or ""),
+            walkthrough_url=(fields.get("Video Taken") or ""))
+        return {
+            "ok": True, "card_id": cid, "text": draft, "fields": fields,
+            "placeholders": ie.missing_placeholders(draft),
+            "found_notes": bool(blocks), "supervisor": supervisor,
+        }
+
+    def _supervisor_for(self, client: str, fields: dict) -> str:
+        """Who ran the inspection. The notes rarely name them, so fall
+        back to the tech on this client's run-doc row."""
+        for key in ("Supervisor", "Inspector", "Tech"):
+            val = (fields or {}).get(key)
+            if (val or "").strip():
+                return str(val).strip()
+        try:
+            want = (client or "").strip().lower()
+            for row in (self._last_rows or []):
+                if (row.get("client") or "").strip().lower() == want:
+                    techs = [str(t) for t in (row.get("techs") or []) if t]
+                    if techs:
+                        return ", ".join(techs)
+        except Exception:
+            pass
+        return ""
+
+    def compose_initial_email(self, fields: dict, opts: dict) -> dict:
+        """Re-render the draft after the operator edits the options.
+
+        The dialog's toggles and fields round-trip through here rather
+        than being applied in JS, so the wording has exactly one
+        definition and the copy button and the preview cannot disagree.
+        """
+        try:
+            import initial_email as ie
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        o = dict(opts or {})
+        text = ie.compose(
+            dict(fields or {}),
+            franchise=o.get("franchise", ""),
+            supervisor=o.get("supervisor", ""),
+            greeting=o.get("greeting") or "Good Morning,",
+            year_built=o.get("year_built", ""),
+            equipment_rate=o.get("equipment_rate", ""),
+            crews_date=o.get("crews_date", ""),
+            walkthrough_url=o.get("walkthrough_url", ""),
+            extras=o.get("extras") or {})
+        return {"ok": True, "text": text,
+                "placeholders": ie.missing_placeholders(text)}
+
+    def post_initial_email_comment(self, card_id: str, sent_to: str = "",
+                                    note: str = "") -> dict:
+        """Log on the card that the initial email went out.
+
+        Fired once the draft is copied and the XA link opens — the point
+        it has actually been sent. This is the record the office already
+        keeps by hand.
+        """
+        if not card_id:
+            return {"ok": False, "error": "no Trello card pinned"}
+        body = "Initial Inspection email sent to XactAnalysis"
+        who = (sent_to or "").strip()
+        if who:
+            body += f" / {who}"
+        if (note or "").strip():
+            body += "\n\n" + note.strip()
+        try:
+            import trello_client as tc
+            tc.post_comment(card_id, body)
+            return {"ok": True, "text": body}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def post_canned(self, card_id: str, key: str) -> dict:
         """Post a canned intake comment to a Trello card — folded in from
         the IUQ. `key` is 'ipr' or 'upload'."""
