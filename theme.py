@@ -680,4 +680,14 @@ def fade_in_toplevel(top, *, ms: int = MOTION_SLOW):
 
 # Install the active palette at import time so plain `from theme import BG`
 # returns the right value before any explicit call to apply_appearance.
-apply_appearance()
+#
+# Palette ONLY — deliberately not the full apply_appearance(). That
+# function also tells customtkinter which mode to match, and its own
+# comment says the CTk import is lazy "because theme.py is imported by
+# modules that don't otherwise pull in CTk". Calling it here defeated
+# exactly that: every importer of theme — including web panels that
+# never create a widget — loaded tkinter, customtkinter and PIL.
+#
+# Tk contexts still get the CTk half: ctk_helpers calls apply_appearance()
+# on import, and it is imported by every Tk panel and by nothing else.
+_install(_PALETTES.get(current_mode(), _PALETTES["dark"]))

@@ -13,7 +13,7 @@ import webview
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path: sys.path.insert(0, _HERE)
 
-import daily_photos_gui as dp
+import daily_photos_logic as dp   # pure helpers; NOT the Tk panel
 
 ASSETS_DIR = os.path.join(_HERE, "photo_folders_web_assets")
 INDEX_HTML = os.path.join(ASSETS_DIR, "index.html")

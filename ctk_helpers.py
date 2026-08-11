@@ -51,6 +51,14 @@ import theme as _theme
 FONT_FAMILY  = _theme.FONT_FAMILY      # body — Segoe UI Variable
 FONT_DISPLAY = _theme.FONT_DISPLAY     # headings — Fraunces (fallback Georgia)
 
+# Tell customtkinter which appearance mode to match. This lives HERE, not
+# at the bottom of theme.py, because theme is imported by web panels that
+# never create a widget — running it there dragged tkinter, customtkinter
+# and PIL into every one of them. This module already imports CTk and is
+# imported by every Tk panel and by nothing else, so it is the right home
+# for the Tk half of the theme.
+_theme.apply_appearance()
+
 
 def font(size=10, weight="normal"):
     """Build a CTkFont for body text. Centralized so panels can't

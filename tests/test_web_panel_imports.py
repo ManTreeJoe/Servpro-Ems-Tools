@@ -28,15 +28,12 @@ HEAVY = ("customtkinter", "tkinter", "docx", "PIL", "openpyxl",
 # one is still exactly as dirty as recorded, so cleaning one up (or
 # making one worse) shows here.
 KNOWN_HEAVY = {
-    # spreadsheet_gui registers its workbook specs as an import side
-    # effect (wbr.register), so the Tk module has to load. Fixing this
-    # means moving registration out of the GUI module.
+    # The LAST Tk holdout. spreadsheet_gui registers its workbook specs as
+    # an import side effect (wbr.register at module scope), so the web
+    # panel imports the Tk module purely to populate the registry. The
+    # specs themselves are Tk-free; only their `actions` (Tk button
+    # factories the web panel never uses) are not.
     "spreadsheet_web":   {"customtkinter", "tkinter", "PIL", "openpyxl", "lxml"},
-    # daily_photos_gui owns _photo_folder_path / make_folders plus the
-    # helper cluster they need (_TECH_INITIALS, _date_variants,
-    # _client_match_tokens, _resolve_tech_root_folder). Extracting that
-    # cluster is a real refactor, not a moved import.
-    "photo_folders_web": {"customtkinter", "tkinter", "PIL"},
     # apa_web writes .docx run documents; docx is the panel's job.
     "apa_web":           {"docx", "lxml"},
     # disputes_web reads the dispute workbook via openpyxl.
@@ -47,6 +44,9 @@ CLEAN = [
     "audit_web", "snapshot_web", "home_web", "hygiene_web", "job_notes_web",
     "kpi_web", "multi_unit_web", "notifications_web", "pipeline_web",
     "quickimport_web", "settings_web", "wc_audit_web", "cheat_sheet_web",
+    # Was Tk-heavy until the helper cluster moved to daily_photos_logic
+    # and theme stopped calling apply_appearance() at import.
+    "photo_folders_web",
 ]
 
 _PROBE = textwrap.dedent("""
@@ -91,11 +91,36 @@ def test_known_heavy_panels_are_not_getting_worse(mod):
 
 
 def test_shared_modules_stay_light():
-    """The three shared modules that caused this in the first place.
+    """The shared modules that caused this in the first place.
 
-    audit_logic and audit_export are imported by most panels; wc_zip_import
-    is imported by audit_web for two regexes and a directory scan.
+    audit_logic and audit_export are imported by most panels;
+    wc_zip_import by audit_web for two regexes and a directory scan;
+    daily_photos_logic is the pure half split out of daily_photos_gui.
     """
-    for mod in ("audit_logic", "audit_export", "wc_zip_import"):
+    for mod in ("audit_logic", "audit_export", "wc_zip_import",
+                "daily_photos_logic"):
         got = _heavy_after_import(mod)
         assert not got, f"{mod} imports {sorted(got)} at module scope"
+
+
+def test_theme_does_not_pull_the_tk_stack():
+    """`theme` is imported for colour constants by panels that never
+    create a widget, and it is the single biggest lever here — it was
+    dragging tkinter + customtkinter + PIL into all of them.
+
+    Its CTk import was already written to be lazy; the module then
+    CALLED apply_appearance() at the bottom, which made it eager anyway.
+    The Tk half lives in ctk_helpers now.
+    """
+    assert not _heavy_after_import("theme")
+
+
+def test_ctk_helpers_still_applies_the_appearance():
+    """The Tk side must keep matching the palette. ctk_helpers is
+    imported by every Tk panel and by nothing else, so it is where the
+    CTk half belongs — but only if it actually runs."""
+    import inspect
+
+    import ctk_helpers
+    src = inspect.getsource(ctk_helpers)
+    assert "apply_appearance()" in src
