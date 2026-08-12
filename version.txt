@@ -1,6 +1,6 @@
 {
-  "version": "1.3.1",
+  "version": "1.3.2",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.3.1/Linguar-Hub-Setup-1.3.1.exe",
-  "notes": "Log a call on the job card, timestamped. Card checklists match Trello's order and split by role. Carrier names tidy up as you type, with N/A and Pending. CompanyCam stops re-offering photos you already have and pulls in the background. Pinning a subfolder works again. Searched jobs stay on Recent."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.3.2/Linguar-Hub-Setup-1.3.2.exe",
+  "notes": "Typing in a dialog no longer triggers shortcuts. The Trello hover card no longer sticks. Untagged CompanyCam shoots suggest a stage from that day's run doc. Log a call on the job card, timestamped."
 }

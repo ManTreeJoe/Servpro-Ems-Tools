@@ -2539,7 +2539,15 @@ function buildAuditDetailCtx() {
         renderAll();
       } else { renderDetail(); }
     },
-    attachTrelloHover: (btn, cardId) => attachTrelloHoverPopover(btn, cardId),
+    // The SHARED module, not a local copy. This used to call a private
+    // duplicate with none of its defences — no pointer-events:none, no
+    // hide on scroll/click/blur, no liveness check — which is why the
+    // hover card kept getting stranded on the detail pane even after the
+    // shared one was hardened. The list rows already used the shared one,
+    // so the same popover behaved two different ways on one screen.
+    attachTrelloHover: (btn, cardId) => {
+      if (window.attachTrelloHover) window.attachTrelloHover(btn, cardId);
+    },
   };
 }
 
@@ -5501,45 +5509,3 @@ async function openMatchDiagnostic(row) {
 // Trello button for ~400ms fires a backend lookup; the popover
 // shows card name / lane / board / last-activity / labels. Cached
 // by the backend so re-hovers within a minute don't re-fetch.
-function attachTrelloHoverPopover(el, cardId) {
-  let timer = null, popover = null, fetched = null;
-  function hide() {
-    if (timer) { clearTimeout(timer); timer = null; }
-    if (popover) { popover.remove(); popover = null; }
-  }
-  async function show() {
-    if (!fetched) {
-      try {
-        fetched = await pywebview.api.trello_card_hover(cardId);
-      } catch (_) { fetched = { ok: false }; }
-    }
-    if (!fetched?.ok || popover) return;
-    popover = document.createElement("div");
-    popover.style.cssText = `
-      position:fixed; z-index:400; background:var(--surface);
-      border:1px solid var(--border); border-radius:6px;
-      padding:10px 14px; font-size:12px; max-width:340px;
-      box-shadow:0 6px 20px rgba(0,0,0,.5);`;
-    popover.innerHTML = `
-      <div style="font-weight:600;font-size:13px;margin-bottom:4px;">${escapeHtml(fetched.name || "(no name)")}</div>
-      <div style="font-size:11px;color:var(--text-muted);">
-        ${escapeHtml(fetched.lane || "—")}${fetched.board ? " · " + escapeHtml(fetched.board) : ""}
-      </div>
-      ${fetched.last_activity ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Last activity: ${escapeHtml(fetched.last_activity)}</div>` : ""}
-      ${(fetched.labels || []).filter(Boolean).length
-        ? `<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;">
-             ${fetched.labels.filter(Boolean).map((l) => `<span style="background:var(--chip-bg);color:var(--text-muted);padding:1px 7px;border-radius:3px;font-size:10px;">${escapeHtml(l)}</span>`).join("")}
-           </div>` : ""}
-    `;
-    document.body.appendChild(popover);
-    // Position above-right of the anchor, clamp to viewport
-    const rect = el.getBoundingClientRect();
-    popover.style.top  = (rect.top - popover.offsetHeight - 6) + "px";
-    popover.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 360)) + "px";
-  }
-  el.addEventListener("mouseenter", () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(show, 400);
-  });
-  el.addEventListener("mouseleave", hide);
-}
