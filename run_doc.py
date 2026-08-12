@@ -145,23 +145,34 @@ def _find_run_doc_for_date(d):
     return None
 
 
-def _activity_labels_from_run_doc(folder_date_str, client_name):
-    """Return the raw activity labels (e.g. ['Demo', 'Mold Prep']) for a
-    client on a given folder-date, by locating that day's run-doc and
-    matching the client row. Used by the IUQ/audit PICS-subfolder
-    resolver to decide where photos land. Returns [] when no run-doc or
-    matching client is found."""
+# PICS stage folders, mirroring web_shared/stage_picker.js PICS_STAGES.
+# A suggestion is only worth making if it names a folder that actually
+# exists, so anything detect_activity expects which ISN'T one of these
+# (Contents, Pack-out) is dropped rather than offered.
+_PICS_STAGES = (
+    "Initial", "Reinspection", "Demo", "Mold Prep", "Post Mold Prep",
+    "Mold", "Abatement", "Monitor", "Post", "Equipment",
+)
+
+
+def _run_doc_activity_info(folder_date_str, client_name):
+    """`detect_activity` output for a client on a folder-date, or None.
+
+    Shared by the label lookup and the stage suggester so both find the
+    client the same way — two matchers would eventually disagree about
+    which run-doc line belongs to which job.
+    """
     if not folder_date_str or not client_name:
-        return []
+        return None
     d = _parse_folder_date(folder_date_str)
     if not d:
-        return []
+        return None
     try:
         doc_path = _find_run_doc_for_date(d)
     except Exception:
         doc_path = None
     if not doc_path:
-        return []
+        return None
     try:
         from state_hub import hub as _hub
         jobs, _date = _hub.parse_run_doc(doc_path)
@@ -184,15 +195,50 @@ def _activity_labels_from_run_doc(folder_date_str, client_name):
                 matched = j
                 break
     if matched is None:
-        return []
+        return None
     try:
-        info = detect_activity(
+        return detect_activity(
             matched.get("raw") or "",
             section=matched.get("section"),
             new_loss=matched.get("new_loss"))
-        return list(info.get("labels") or [])
     except Exception:
-        return []
+        return None
+
+
+def suggest_pics_stage(folder_date_str, client_name):
+    """The PICS stage this client's run-doc line implies for that day.
+
+    CompanyCam routes photos by their own tags, but plenty arrive
+    untagged — and then someone has to remember what that visit was and
+    pick a stage by hand, days later. The run doc already recorded what
+    was scheduled, so this answers it from the day's own record.
+
+    Returns "" when there's no run doc, no matching client, or the
+    activity maps to no real PICS folder. A wrong guess files photos
+    where nobody would look for them, so "no idea" has to stay sayable.
+    """
+    info = _run_doc_activity_info(folder_date_str, client_name)
+    if not info:
+        return ""
+    for folder in (info.get("expected") or []):
+        if folder in _PICS_STAGES:
+            return folder
+    # Monitor carries no expected folder (it needs no photos) but IS a
+    # real stage — a monitor visit that did produce photos belongs there.
+    for label in (info.get("labels") or []):
+        if label in _PICS_STAGES:
+            return label
+    return ""
+
+
+def _activity_labels_from_run_doc(folder_date_str, client_name):
+    """Return the raw activity labels (e.g. ['Demo', 'Mold Prep']) for a
+    client on a given folder-date, by locating that day's run-doc and
+    matching the client row. Used by the IUQ/audit PICS-subfolder
+    resolver to decide where photos land. Returns [] when no run-doc or
+    matching client is found."""
+    info = _run_doc_activity_info(folder_date_str, client_name)
+    return list((info or {}).get("labels") or [])
 
 
 def _composed_folder_lookup(run_date, *, base=None, expand_map=None):

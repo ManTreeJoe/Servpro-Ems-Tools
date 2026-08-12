@@ -330,9 +330,45 @@ class CompanyCamApi:
             r = cc.plan_pull(pid, pics, subfolder=stage, tech=(tech or ""))
             if r.get("ok"):
                 r["pics"] = pics
+                self._suggest_stages_from_run_doc(client, r.get("groups"))
             return r
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def _suggest_stages_from_run_doc(self, client: str, groups) -> None:
+        """Fill `suggested_stage` on every shoot CompanyCam left untagged,
+        from what the run doc says that client was scheduled for that day.
+
+        Untagged shoots otherwise put the whole job on the user to
+        remember — days later, for a visit they may not have been on. The
+        run doc recorded it at the time.
+
+        Advisory only: it pre-selects a dropdown the user can change. It
+        is never applied on its own, because filing photos under the wrong
+        stage hides them somewhere nobody looks. Best-effort throughout —
+        a missing run doc must not break the pull.
+        """
+        if not groups:
+            return
+        try:
+            import run_doc
+        except Exception:
+            return
+        cache = {}
+        for g in groups:
+            if (g.get("stage") or "") not in ("", "(no stage tag)"):
+                continue          # CompanyCam already said what this is
+            day = (g.get("date") or "").strip()
+            if not day:
+                continue
+            if day not in cache:
+                try:
+                    cache[day] = run_doc.suggest_pics_stage(day, client) or ""
+                except Exception:
+                    cache[day] = ""
+            if cache[day]:
+                g["suggested_stage"] = cache[day]
+                g["suggested_from"] = "run doc"
 
     def companycam_pull_assigned(self, client: str, assignments: list,
                                  tech: str = "", card_id: str = "") -> dict:

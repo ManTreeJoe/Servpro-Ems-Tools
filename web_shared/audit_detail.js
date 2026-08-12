@@ -553,8 +553,12 @@
                                 border:1px solid var(--border);border-radius:5px;
                                 padding:3px 6px;font:inherit;font-size:12px;">
                    <option value="">— pick a stage —</option>
-                   ${STAGES.map((st) => `<option value="${escA(ctx, st)}">${esc(ctx, st)}</option>`).join("")}
-                 </select>`}
+                   ${STAGES.map((st) => `<option value="${escA(ctx, st)}"${
+                     st === g.suggested_stage ? " selected" : ""}>${esc(ctx, st)}</option>`).join("")}
+                 </select>${g.suggested_stage ? `
+                 <span title="Suggested from the run doc for ${escA(ctx, g.date || "that day")} — change it if the visit was something else"
+                       style="font-size:10px;color:var(--accent,#4c9aff);margin-left:5px;white-space:nowrap;">
+                   from run doc</span>` : ""}`}
             <input class="ccm-tech" data-i="${i}" type="text"
                    value="${escA(ctx, g.tech || "")}" placeholder="tech"
                    title="Who this gets filed under. Defaults to whoever CompanyCam says took it."
