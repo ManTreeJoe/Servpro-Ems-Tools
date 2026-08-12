@@ -667,32 +667,75 @@
         // for ONE name would both repeat the question and contradict the
         // per-row answers, since a day can have two techs on one job.
         const tech = "";
-        let res;
+        // Downloading is minutes of someone else's API. Hand it to a
+        // background thread and give the panel back straight away — the
+        // result arrives as an event, so nothing is lost by not waiting.
+        let started;
         try {
-          // Only the ticked shoots, each into the stage chosen for IT.
-          res = await pywebview.api.companycam_pull_assigned(
+          started = await pywebview.api.companycam_pull_assigned_bg(
             row.client, assignments(), tech || "", row.trello_card_id || "");
         } catch (e) {
           setStatus(ctx, "CompanyCam pull failed: " + e, "error");
           finish(null); return;
         }
-        finish(res);
-        if (!res || !res.ok) { setStatus(ctx, "CompanyCam: " + ((res && res.error) || "?"), "warn"); return; }
-        const p = res.pulled || 0;
-        // res.error is set when a group partly or wholly failed. Ignoring
-        // it reported a clean "✓ Pulled 0" for a pull that had actually
-        // errored — folders created, no photos, no explanation.
-        if (res.error) {
-          setStatus(ctx, p ? `Pulled ${p}, but some failed — ${res.error}`
-                           : `Pull failed — ${res.error}`, "warn");
-        } else {
-          setStatus(ctx, p ? `✓ Pulled ${p} photo${p === 1 ? "" : "s"}`
-                           : "Nothing pulled — everything was already there",
-                    p ? "ok" : "");
+        if (!started || !started.ok) {
+          setStatus(ctx, "CompanyCam: " + ((started && started.error) || "?"), "warn");
+          finish(null); return;
         }
-        if (ctx.reauditAndRerender) ctx.reauditAndRerender(row.client);
+        finish(started);   // closes the modal
+        const n = started.total || 0;
+        setStatus(ctx, `⬇ Pulling ${n} photo${n === 1 ? "" : "s"} in the background…`, "");
+        watchCcPull(row.client, ctx);
       });
     });
+  }
+
+  // ── Background CompanyCam pull — progress + result ────────────────
+  // The pull runs on a thread now, so the outcome arrives as an event
+  // rather than a return value. Reporting is deliberately identical to
+  // the old inline path: same messages, same re-audit, just not blocking.
+  const _ccWatching = new Set();
+
+  function watchCcPull(client, ctx) {
+    // One listener per job. Pulling two jobs at once is fine — each has
+    // its own watcher and ignores the other's events.
+    if (_ccWatching.has(client)) return;
+    _ccWatching.add(client);
+
+    const onProgress = (e) => {
+      const d = (e && e.detail) || {};
+      if (d.client !== client) return;
+      setStatus(ctx, `⬇ Pulling ${d.stage || "photos"} — shoot ${d.i}/${d.n}`
+                     + (d.total ? ` (${d.done}/${d.total} photos)` : ""), "");
+    };
+    const onDone = (e) => {
+      const res = (e && e.detail) || {};
+      if (res.client !== client) return;
+      window.removeEventListener("companycam:pull-progress", onProgress);
+      window.removeEventListener("companycam:pull-done", onDone);
+      _ccWatching.delete(client);
+
+      if (!res.ok) {
+        setStatus(ctx, "CompanyCam: " + (res.error || "?"), "warn");
+        return;
+      }
+      const p = res.pulled || 0;
+      // res.error is set when a group partly or wholly failed. Ignoring
+      // it reported a clean "✓ Pulled 0" for a pull that had actually
+      // errored — folders created, no photos, no explanation.
+      if (res.error) {
+        setStatus(ctx, p ? `Pulled ${p}, but some failed — ${res.error}`
+                         : `Pull failed — ${res.error}`, "warn");
+      } else {
+        setStatus(ctx, p ? `✓ Pulled ${p} photo${p === 1 ? "" : "s"}`
+                         : "Nothing pulled — everything was already there",
+                  p ? "ok" : "");
+      }
+      if (ctx.reauditAndRerender) ctx.reauditAndRerender(client);
+    };
+
+    window.addEventListener("companycam:pull-progress", onProgress);
+    window.addEventListener("companycam:pull-done", onDone);
   }
 
   function ccManualPick(row, ctx, defaultQuery) {

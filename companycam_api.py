@@ -721,7 +721,37 @@ def photo_id_token(photo):
 _LEGACY_TOKEN_LEN = 8
 
 
-def _present_tokens(photos, have):
+_STAMP_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})")
+
+
+def capture_stamp(photo):
+    """A photo's capture time in the exact form `_photo_filename` writes
+    into the name ("2026-08-06 11-44-21"), or "" when unknown."""
+    import datetime as _dt
+    cap = photo.get("captured_at")
+    try:
+        if cap is None:
+            return ""
+        return _dt.datetime.fromtimestamp(int(cap)).strftime(
+            "%Y-%m-%d %H-%M-%S")
+    except (TypeError, ValueError, OSError, OverflowError):
+        return ""
+
+
+def _capture_stamps_on_disk(dest_dir):
+    """Every capture timestamp already embedded in a filename under
+    `dest_dir`. Pulled names carry it, so this costs no downloads and no
+    EXIF read."""
+    stamps = set()
+    for _root, _dirs, files in os.walk(dest_dir):
+        for f in files:
+            m = _STAMP_RE.search(f)
+            if m:
+                stamps.add(m.group(1))
+    return stamps
+
+
+def _present_tokens(photos, have, stamps=None):
     """Which photos the folder already holds, tolerating legacy names.
 
     Files pulled before the truncation fix carry an 8-character prefix, so
@@ -731,12 +761,30 @@ def _present_tokens(photos, have):
     tell which of them is on disk, so both are treated as missing.
     Re-downloading a duplicate is recoverable — `dedupe_photos.py` exists —
     whereas skipping a photo that was never pulled is not.
+
+    That collision rule is right, but on its own it never RESOLVED: a pair
+    of photos sharing a prefix stayed "missing" on every pull, so the same
+    shoot came back pre-checked forever and each pull dropped another copy
+    on disk. One real job had six Initial photos doing exactly this —
+    three colliding pairs, every one of them already filed.
+
+    So a collision now gets a second chance on CAPTURE TIME, which pulled
+    filenames already embed. What the truncated prefix could not separate,
+    the timestamp can, and it needs no download to do it. The same
+    uniqueness guard applies: a stamp only counts when it identifies
+    exactly one photo, so a burst of shots sharing a second still errs
+    toward re-downloading.
     """
+    stamps = stamps or set()
     prefix_counts = {}
+    stamp_counts = {}
     for p in photos:
         pre = str(p.get("id") or "")[:_LEGACY_TOKEN_LEN].lower()
         if pre:
             prefix_counts[pre] = prefix_counts.get(pre, 0) + 1
+        st = capture_stamp(p)
+        if st:
+            stamp_counts[st] = stamp_counts.get(st, 0) + 1
 
     present = set()
     for p in photos:
@@ -746,6 +794,10 @@ def _present_tokens(photos, have):
             continue
         pre = pid[:_LEGACY_TOKEN_LEN].lower()
         if pre and pre in have and prefix_counts.get(pre, 0) == 1:
+            present.add(pid)
+            continue
+        st = capture_stamp(p)
+        if st and st in stamps and stamp_counts.get(st, 0) == 1:
             present.add(pid)
     return present
 
@@ -954,8 +1006,10 @@ def verify_project(project_id, dest_dir):
         photos = list_project_photos(pid)
     except Exception as ex:
         return {"ok": False, "error": str(ex)}
-    have = _id_tokens_on_disk(dest_dir) if os.path.isdir(dest_dir) else set()
-    present = _present_tokens(photos, have)
+    on_disk = os.path.isdir(dest_dir)
+    have = _id_tokens_on_disk(dest_dir) if on_disk else set()
+    stamps = _capture_stamps_on_disk(dest_dir) if on_disk else set()
+    present = _present_tokens(photos, have, stamps)
     missing = [p for p in photos if str(p.get("id") or "") not in present]
     known = {str(p.get("id") or "").lower() for p in photos}
     known |= {str(p.get("id") or "")[:_LEGACY_TOKEN_LEN].lower()

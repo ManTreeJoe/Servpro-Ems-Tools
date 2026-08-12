@@ -373,6 +373,75 @@ class CompanyCamApi:
         return {"ok": True, "pulled": pulled, "skipped": skipped,
                 "pics": pics, "error": "; ".join(errors)}
 
+    def _cc_emit(self, event: str, payload: dict) -> None:
+        """Push a CustomEvent to the panel. Best-effort — a pull must never
+        fail because the window it was launched from has gone away.
+
+        Deliberately uses the instance-free `_emit_js_all` rather than
+        `self._emit`: Snapshot's Api has no `_emit` at all, and a
+        per-instance emit silently no-ops when `self._window` is None,
+        which would strand the UI on "Pulling…" with no completion event
+        ever arriving. `_emit_js_all` targets every open window and
+        forwards into the content iframe, where the listeners actually
+        live — the same reason `do_import` uses it.
+        """
+        import json as _json
+        js = ("window.dispatchEvent(new CustomEvent(" + _json.dumps(event)
+              + ", {detail: " + _json.dumps(payload) + "}));")
+        try:
+            import audit_web
+            audit_web._emit_js_all(js)
+        except Exception:
+            pass
+
+    def companycam_pull_assigned_bg(self, client: str, assignments: list,
+                                    tech: str = "", card_id: str = "") -> dict:
+        """Start the pull on a background thread and return immediately.
+
+        A pull is minutes of downloading over someone else's API. Awaiting
+        it held the dialog open and the panel unusable for the whole time,
+        behind a button that said "Pulling…" and gave no idea how far along
+        it was. The work is identical; only the waiting changes.
+
+        Progress arrives as `companycam:pull-progress` events (one per
+        shoot) and a final `companycam:pull-done` carrying exactly what
+        `companycam_pull_assigned` returns, so the UI reports the outcome
+        the same either way.
+        """
+        if not client:
+            return {"ok": False, "error": "no client"}
+        groups = [g for g in (assignments or []) if (g or {}).get("photo_ids")]
+        if not groups:
+            return {"ok": False, "error": "nothing selected"}
+        total = sum(len(g.get("photo_ids") or []) for g in groups)
+
+        def _run():
+            done = 0
+            try:
+                # One event per SHOOT, not per photo: enough to show
+                # movement without a message per download.
+                for i, g in enumerate(groups, 1):
+                    self._cc_emit("companycam:pull-progress", {
+                        "client": client, "i": i, "n": len(groups),
+                        "stage": (g.get("stage") or "").strip() or "untagged",
+                        "done": done, "total": total,
+                    })
+                    done += len(g.get("photo_ids") or [])
+                res = self.companycam_pull_assigned(
+                    client, groups, tech, card_id) or {}
+            except Exception as ex:
+                res = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+            res["client"] = client
+            self._cc_emit("companycam:pull-done", res)
+
+        try:
+            from web_helpers import run_bg
+            run_bg(_run)
+        except Exception as ex:
+            return {"ok": False, "error": f"couldn't start: {ex}"}
+        return {"ok": True, "started": True, "groups": len(groups),
+                "total": total}
+
     def companycam_pull_groups(self, client: str, photo_ids: list,
                                tech: str = "", card_id: str = "",
                                dest_subfolder: str = "") -> dict:
