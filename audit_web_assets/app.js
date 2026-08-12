@@ -3993,6 +3993,23 @@ function openDocuSignModal(r) {
   });
 }
 
+// ── Guarded folder pin ──────────────────────────────────────────
+// Every pin goes through here. The backend refuses — with needs_confirm —
+// when the folder's name belongs to somebody else, so the one case worth
+// interrupting (pinning a job into another client's folder, which then
+// silently steers every later import) gets a second look. Everything else
+// pins on the first call exactly as before.
+async function pinFolderGuarded(client, path) {
+  let res = await pywebview.api.set_folder_path(client, path);
+  if (res?.needs_confirm) {
+    if (!window.confirm(`${res.warning}\n\nPin it anyway?`)) {
+      return { ok: false, cancelled: true };
+    }
+    res = await pywebview.api.set_folder_path(client, path, true);
+  }
+  return res;
+}
+
 // ── Find / Change folder modal (P0) ─────────────────────────────
 async function openFindFolderModal(row) {
   // Pre-fetch the list of year folders so the scope dropdown can
@@ -4060,7 +4077,8 @@ async function openFindFolderModal(row) {
   // Pin a folder path and close — shared by candidate rows, subfolder
   // rows, and the "✓ Use this folder" button.
   const selectFolder = async (path, label) => {
-    const res = await pywebview.api.set_folder_path(row.client, path);
+    const res = await pinFolderGuarded(row.client, path);
+    if (res?.cancelled) { setStatus("Pin cancelled", "warn"); return; }
     if (!res?.ok) { setStatus(`Set failed: ${res?.error || "?"}`, "error"); return; }
     closeOverlay();
     const re = await pywebview.api.reaudit_one(row.client);
@@ -5416,7 +5434,8 @@ async function openMatchDiagnostic(row) {
     b.addEventListener("click", async (e) => {
       e.stopPropagation();
       const path = b.closest(".target-row").dataset.path;
-      const res2 = await pywebview.api.set_folder_path(row.client, path);
+      const res2 = await pinFolderGuarded(row.client, path);
+      if (res2?.cancelled) { setStatus("Pin cancelled", "warn"); return; }
       if (res2?.ok) {
         setStatus(`📌 Pinned ${path}`, "ok");
         closeOverlay();

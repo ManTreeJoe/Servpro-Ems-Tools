@@ -165,3 +165,93 @@ def norm_name(s: str) -> str:
 def norm_tokens(s: str, min_len: int = 2) -> set:
     """Return the set of length-``min_len``+ tokens after ``norm_name``."""
     return {t for t in norm_name(s).split() if len(t) >= min_len}
+
+
+# Folder words that carry no identity — every job has them, so a folder
+# sharing only these with a client name tells us nothing about whose
+# folder it is. "2nd Claim" matching "(2nd Claim)" is the exact trap that
+# pinned a 2026 Neely job into a 2025 Alvarez folder.
+_PIN_STRUCTURAL_TOKENS = {
+    "nd", "rd", "th", "st", "claim", "claims", "job", "jobs", "fire",
+    "unit", "apt", "suite", "bldg", "building", "second", "third",
+    "fourth", "pics", "docs", "photos", "new", "old", "copy", "final",
+    "initial", "contents", "demo", "the", "and",
+}
+
+
+def _identity_tokens(s: str) -> set:
+    """Name tokens with structural folder words removed — what's left is
+    what actually identifies a person or business."""
+    return {t for t in norm_tokens(s, 2) if t not in _PIN_STRUCTURAL_TOKENS}
+
+
+def _tokens_akin(a: str, b: str) -> bool:
+    """True when two identity tokens are the same name give or take a
+    spelling wobble ("neely"/"neeley", "gonzalez"/"gonzales"). Exact match
+    first; near-match only for tokens long enough that a high similarity
+    ratio isn't coincidence."""
+    if a == b:
+        return True
+    if len(a) < 4 or len(b) < 4:
+        return False
+    import difflib
+    return difflib.SequenceMatcher(None, a, b).ratio() >= 0.85
+
+
+def _looks_like_address(seg: str) -> bool:
+    """True for folders filed as a street address ("10882 Cochran Ave").
+    These are legitimately-filed folders that carry no personal name, so
+    their words must not be read as evidence of a DIFFERENT client."""
+    import re as _re
+    return bool(_re.match(r"^\s*\d{2,6}\s+\w", seg or ""))
+
+
+def _is_year_folder(seg: str) -> bool:
+    """True for the year buckets the share is organised by ("2026 Jobs",
+    "2025 LA Fire Jobs"). These and everything above them are structure,
+    not identity."""
+    import re as _re
+    return bool(_re.search(r"(?:19|20)\d{2}", seg or ""))
+
+
+def folder_pin_mismatch(client: str, path: str, depth: int = 3) -> str:
+    """Return a human-readable warning when `path` looks like it belongs to
+    a DIFFERENT client than `client`, or "" when the pin looks plausible.
+
+    This is a WARNING, not a verdict — legitimately-filed folders can carry
+    no name at all (address-only folders, commercial jobs filed under a
+    business name), so callers must let the user confirm and proceed rather
+    than blocking the pin. It exists to catch the opposite case: a folder
+    whose name clearly belongs to somebody else, which is otherwise
+    invisible until months of photos have landed in the wrong job.
+
+    Matching walks up from the pinned folder and stops at the year bucket
+    ("2026 Jobs"), so neither the year nor the share root above it
+    ("x:\\ie_public" — whose own words would match a client named "Public")
+    can launder a match. At most `depth` segments are read.
+    """
+    if not client or not path:
+        return ""
+    want = _identity_tokens(client)
+    if not want:
+        return ""
+
+    import os as _os
+    segs = [s for s in _os.path.normpath(path).replace("/", _os.sep)
+            .split(_os.sep) if s.strip()]
+    have = set()
+    for seg in reversed(segs[-depth:] if depth else segs):
+        if _is_year_folder(seg) or seg.endswith(":"):
+            break
+        if _looks_like_address(seg):
+            continue
+        have |= _identity_tokens(seg)
+    # A folder chain with no identity tokens at all (address-only, bare
+    # "Unit 5") can't be judged — stay quiet rather than cry wolf.
+    if not have:
+        return ""
+    if any(_tokens_akin(w, h) for w in want for h in have):
+        return ""
+    return (f"That folder looks like it belongs to someone else. "
+            f"\u201c{_os.path.basename(_os.path.normpath(path))}\u201d "
+            f"shares no name with \u201c{client}\u201d.")

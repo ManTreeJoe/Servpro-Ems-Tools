@@ -4673,14 +4673,29 @@ class Api(JobSettingsApi, CompanyCamApi):
                 "year_folders": [f["name"] for f in scan],
                 "candidates": candidates}
 
-    def set_folder_path(self, client: str, path: str) -> dict:
+    def set_folder_path(self, client: str, path: str,
+                        confirm: bool = False) -> dict:
         """Persist a sticky folder override for `client`. Used when
         the user picks from the Find Folder dialog OR overrides an
-        auto-resolved folder via the right-click 'Change folder'."""
+        auto-resolved folder via the right-click 'Change folder'.
+
+        When the chosen folder carries a name that belongs to somebody
+        else, this returns `needs_confirm` instead of pinning; the caller
+        re-sends with `confirm=True` once the user has seen the warning.
+        A pin is sticky and silent — every later import, audit and photo
+        drop follows it — so a wrong one is expensive to notice and
+        expensive to unwind.
+        """
         if not client or not path:
             return {"ok": False, "error": "client + path required"}
         if not os.path.isdir(path):
             return {"ok": False, "error": "path doesn't exist"}
+        if not confirm:
+            from web_helpers import folder_pin_mismatch
+            warn = folder_pin_mismatch(client, path)
+            if warn:
+                return {"ok": False, "needs_confirm": True,
+                        "warning": warn, "path": path, "client": client}
         try:
             persistence.set_folder_path(client, path)
         except Exception as ex:
