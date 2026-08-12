@@ -3098,8 +3098,27 @@ async function runOneoffFromSearch(term, skipCanon, folderPath) {
       const seen = new Set(fresh.map(rowKey));
       const kept = (state.oneoffHits || []).filter((h) => !seen.has(rowKey(h)));
       state.oneoffHits = fresh.concat(kept).slice(0, ONEOFF_MAX);
+      // The job you picked is now ON the tab, so the term that found it has
+      // done its work — and it's also a FILTER, so leaving it there hides
+      // every other job you pulled up. Clear it: the box is ready for the
+      // next name and the tab shows everything you're holding.
+      // oneoffTried too, or re-typing the same name is treated as a repeat
+      // and silently does nothing.
+      state.search = "";
+      state.oneoffTried = "";
+      const sb = $("#search-box");
+      if (sb) sb.value = "";
+      hideSuggestions();
+      // Land ON the job just audited. The removed "Audit one" dialog did
+      // this; without it you clear the box and lose track of which of the
+      // held rows is the one you just pulled up.
+      const landed = res.row || fresh[0];
+      if (landed) state.selected_client = rowKey(landed);
       renderList();
       renderDetail();
+      if (landed && typeof scrollSelectedIntoView === "function") {
+        scrollSelectedIntoView();
+      }
       const held = state.oneoffHits.length;
       setStatus(
         `🔍 ${firstLast(res.canonical)}`
