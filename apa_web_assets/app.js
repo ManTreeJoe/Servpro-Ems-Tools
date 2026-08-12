@@ -1569,6 +1569,11 @@ async function createTodayDoc() {
     setStatus(res.note || "Doc already existed", "warn");
   }
   await loadDate(state.active_date);
+  // Ask about the carried jobs Trello couldn't place — after loadDate,
+  // so state.doc is the doc the modal will be editing.
+  if (res.created && res.unrouted?.length) {
+    await openCarryPlacementModal(res.unrouted);
+  }
 }
 
 // ── Refresh lanes from Trello (new-day cleanup) ─────────────────
@@ -1587,11 +1592,115 @@ async function refreshLanesFromTrello() {
     return;
   }
   if (res.doc) { state.doc = res.doc; renderBoard(); }
+  const stuck = res.unrouted?.length || 0;
   setStatus(
-    res.moved
+    (res.moved
       ? `🔄 Moved ${res.moved} item${res.moved !== 1 ? "s" : ""} to match Trello lanes (${res.checked} pinned checked)`
-      : `🔄 All ${res.checked} pinned items already in the right section`,
+      : `🔄 All ${res.checked} pinned items already in the right section`)
+    + (stuck ? ` · ${stuck} couldn't be placed` : ""),
     "ok");
+  // Manual refresh: offer the same placement prompt rather than leaving
+  // the user to hunt for which ones Trello couldn't route.
+  if (stuck) await openCarryPlacementModal(res.unrouted);
+}
+
+// ── "Where should these go?" — carry-forward placement ──────────
+// Trello lanes place most carried jobs on their own. The rest — no
+// pinned card, no readable lane, or a lane that maps to no section —
+// used to stay silently in yesterday's section, which nobody notices
+// until the job is filed wrong. Ask instead, once, at the moment the
+// day rolls over.
+const UNROUTED_REASONS = {
+  no_card:       "no Trello card pinned",
+  no_lane:       "card pinned, but Trello gave no lane",
+  unmapped_lane: "its lane doesn't map to an APA section",
+};
+
+async function openCarryPlacementModal(unrouted) {
+  if (!Array.isArray(unrouted) || !unrouted.length) return;
+  if (!state.doc) return;
+
+  // Valid targets: whatever this doc actually has, plus the configured
+  // order — a section the user can't see isn't a useful choice.
+  let sections = [];
+  try {
+    const order = await pywebview.api.section_order();
+    if (Array.isArray(order)) sections = order.slice();
+  } catch (_) { /* fall through to the doc's own sections */ }
+  const docSections = (state.doc.sections || []).map((s) => s.name);
+  docSections.forEach((n) => { if (!sections.includes(n)) sections.push(n); });
+  if (!sections.length) return;
+
+  const w = document.createElement("div");
+  w.id = "apa-place-modal";
+  w.style.cssText = "position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;";
+  w.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(720px,94vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
+      <header style="padding:16px 20px;background:var(--surface);border-bottom:1px solid var(--border);">
+        <div style="font-size:15px;font-weight:600;">📍 Where should these jobs go?</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+          Carried over from the prior day. Trello couldn't place
+          ${unrouted.length} of them — they're sitting where they were yesterday.
+        </div>
+      </header>
+      <div style="padding:14px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+        ${unrouted.map((u, i) => `
+          <div style="display:grid;grid-template-columns:1fr 230px;gap:10px;align-items:center;
+                      padding:8px 10px;background:var(--surface-2);border-radius:6px;">
+            <div style="min-width:0;">
+              <div style="font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                   title="${escapeAttr(u.text || "")}">${escapeHtml(u.text || "")}</div>
+              <div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;">
+                ${escapeHtml(UNROUTED_REASONS[u.reason] || u.reason || "")}
+              </div>
+            </div>
+            <select class="search ap-sel" data-ix="${i}">
+              ${sections.map((s) =>
+                `<option value="${escapeAttr(s)}" ${s === u.section ? "selected" : ""}>${escapeHtml(s)}</option>`
+              ).join("")}
+            </select>
+          </div>`).join("")}
+      </div>
+      <footer style="padding:12px 20px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;align-items:center;">
+        <span style="font-size:11px;color:var(--text-muted);margin-right:auto;">
+          Leave a row unchanged to keep it where it is
+        </span>
+        <button class="btn" id="ap-skip">Leave them</button>
+        <button class="btn btn-primary" id="ap-go">Place jobs</button>
+      </footer>
+    </div>`;
+  document.body.appendChild(w);
+  const close = () => w.remove();
+  w.addEventListener("click", (e) => { if (e.target === w) close(); });
+  document.getElementById("ap-skip").addEventListener("click", close);
+
+  document.getElementById("ap-go").addEventListener("click", async () => {
+    const moves = [];
+    w.querySelectorAll(".ap-sel").forEach((sel) => {
+      const u = unrouted[Number(sel.dataset.ix)];
+      if (u && sel.value && sel.value !== u.section) {
+        moves.push({ from: u.section, to: sel.value, text: u.text });
+      }
+    });
+    close();
+    if (!moves.length) { setStatus("Left all carried jobs in place", "warn"); return; }
+    // Move in local state, then reuse the normal whole-doc save.
+    let applied = 0;
+    for (const mv of moves) {
+      const src = (state.doc.sections || []).find((s) => s.name === mv.from);
+      if (!src) continue;
+      const ix = src.items.findIndex((it) => it.text === mv.text);
+      if (ix < 0) continue;
+      const [item] = src.items.splice(ix, 1);
+      let dst = (state.doc.sections || []).find((s) => s.name === mv.to);
+      if (!dst) { dst = { name: mv.to, items: [] }; state.doc.sections.push(dst); }
+      dst.items.push(item);
+      applied += 1;
+    }
+    if (!applied) { setStatus("Nothing to move — the doc changed underneath", "warn"); return; }
+    await saveDoc();
+    setStatus(`📍 Placed ${applied} carried job${applied !== 1 ? "s" : ""}`, "ok");
+  });
 }
 
 // ── APA right-click context menu (Tk parity) ────────────────────

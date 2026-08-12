@@ -1625,6 +1625,10 @@ class Api:
                 if res.get("ok"):
                     out["lanes_moved"] = res.get("moved", 0)
                     out["lanes_checked"] = res.get("checked", 0)
+                    # The jobs Trello couldn't place. A new day is exactly
+                    # when the user should be asked where these go —
+                    # otherwise they sit in yesterday's section unnoticed.
+                    out["unrouted"] = res.get("unrouted") or []
                     out["doc"] = res.get("doc") or out["doc"]
                 else:
                     out["lanes_error"] = res.get("error", "")
@@ -1642,9 +1646,17 @@ class Api:
         each job actually is in Trello.
 
         Items with no pinned card, an unresolvable lane, or a lane that
-        doesn't map to an APA section stay exactly where they are.
+        doesn't map to an APA section stay exactly where they are — and
+        are reported in `unrouted` so the caller can ASK where they go
+        rather than leaving them sitting in yesterday's section, which is
+        invisible until someone notices the job is filed wrong.
+
         Preserves each item's text + highlight. Returns
-        {ok, moved, checked, doc}.
+        {ok, moved, checked, doc, unrouted}, where each unrouted entry is
+        {text, section, reason} and reason is one of:
+          no_card        — nothing pinned, so there's no lane to read
+          no_lane        — pinned, but Trello didn't give us a lane
+          unmapped_lane  — lane read, but it maps to no APA section
         """
         try:
             d = (_dt.date.fromisoformat(date_iso) if date_iso
@@ -1670,18 +1682,22 @@ class Api:
             new_sections.setdefault(sec, [])
         moved = 0
         checked = 0
+        unrouted = []
         _lane_cache = {}     # card_id → lane name (one fetch per card)
         for sec, items in parsed.items():
             for text, highlighted in items:
                 dest = sec
                 cid = ""
+                reason = ""
                 try:
                     bare = apa.strip_status_from_text(text or "").strip()
                     key = apa._franchise_key(bare) if bare else ""
                     cid = (_per.get_trello_card_id(key) or "") if key else ""
                 except Exception:
                     cid = ""
-                if cid:
+                if not cid:
+                    reason = "no_card"
+                else:
                     checked += 1
                     lane = _lane_cache.get(cid)
                     if lane is None:
@@ -1690,15 +1706,22 @@ class Api:
                         except Exception:
                             lane = ""
                         _lane_cache[cid] = lane
-                    if lane:
+                    if not lane:
+                        reason = "no_lane"
+                    else:
                         try:
                             suggested = self._suggest_section_for_lane(lane)
                         except Exception:
                             suggested = ""
-                        if (suggested and suggested in valid_sections
-                                and suggested != sec):
-                            dest = suggested
-                            moved += 1
+                        if suggested and suggested in valid_sections:
+                            if suggested != sec:
+                                dest = suggested
+                                moved += 1
+                        else:
+                            reason = "unmapped_lane"
+                if reason:
+                    unrouted.append({"text": text, "section": sec,
+                                     "reason": reason})
                 new_sections.setdefault(dest, []).append(
                     (text, bool(highlighted)))
 
@@ -1707,7 +1730,7 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"write: {ex}"}
         return {"ok": True, "moved": moved, "checked": checked,
-                "doc": _doc_payload_for(d)}
+                "unrouted": unrouted, "doc": _doc_payload_for(d)}
 
     def save_doc(self, date_iso: str, sections: list) -> dict:
         """Persist edits to the APA doc for `date_iso`. `sections` is
