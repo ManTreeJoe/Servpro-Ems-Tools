@@ -1500,6 +1500,17 @@
               // Showing it plain would read as "this unit says Mercury",
               // and the user couldn't tell what typing here would override.
               const inh = inherited.has(f.id);
+              // Suggestions, never a whitelist — a datalist keeps the
+              // field free text, so a carrier nobody has seen before
+              // still types straight through. `group` shows as the
+              // secondary label, which is how a TPA is told apart from
+              // an insurer without a second field.
+              const listId = f.options?.length ? `ji-list-${f.id}` : "";
+              const datalist = listId ? `
+                <datalist id="${_escapeAttr(listId)}">
+                  ${f.options.map((o) => `<option value="${_escapeAttr(o.value)}"${
+                    o.group ? ` label="${_escapeAttr(o.group)}"` : ""}></option>`).join("")}
+                </datalist>` : "";
               return `
               <label style="display:block;font-size:11px;color:var(--text-muted);">
                 ${_escapeHtml(f.label)}${inh
@@ -1507,10 +1518,12 @@
                   : ""}
                 <input class="ji-f" data-fid="${_escapeAttr(f.id)}" type="text"
                        value="${_escapeAttr(vals[f.id] || "")}"
+                       ${listId ? `list="${_escapeAttr(listId)}"` : ""}
                        style="width:100%;margin-top:3px;background:var(--surface-2);
                               color:${inh ? "var(--text-muted)" : "var(--text)"};
                               border:1px solid ${inh ? "transparent" : "var(--border)"};
                               border-radius:6px;padding:6px 8px;font-size:12.5px;" />
+                ${datalist}
               </label>`; }).join("")}
           </div>
         </div>`).join("");

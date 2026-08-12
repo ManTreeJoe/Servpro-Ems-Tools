@@ -140,11 +140,23 @@ _KV_RE      = re.compile(r"^([A-Za-z][^:]{0,40}):\s*(.*)$")
 
 
 def schema():
-    """Field list for the UI, grouped and flagged core/collapsed."""
+    """Field list for the UI, grouped and flagged core/collapsed.
+
+    `options` (when present) are SUGGESTIONS, not a whitelist — the field
+    stays free text so a carrier nobody has seen before still types
+    through.
+    """
     out = []
     for fid, section, key, label, core in FIELDS:
-        out.append({"id": fid, "section": section, "key": key,
-                    "label": label, "core": core})
+        f = {"id": fid, "section": section, "key": key,
+             "label": label, "core": core}
+        if fid == "carrier":
+            try:
+                import carriers
+                f["options"] = carriers.options()
+            except Exception:
+                pass
+        out.append(f)
     return out
 
 
@@ -447,6 +459,15 @@ def save(canon_key, values, child_name="", card_desc=""):
 
     values = {k: (v or "").strip() for k, v in (values or {}).items()
               if k in BY_ID}
+    # Canonicalize the carrier on the way in, so "state farm" and
+    # "State Farm" stop being two carriers. Unknown names pass through
+    # untouched — see carriers.normalize.
+    if "carrier" in values:
+        try:
+            import carriers
+            values["carrier"] = carriers.normalize(values["carrier"])
+        except Exception:
+            pass
     meta = _meta_of(rec)
 
     if child_name:
