@@ -362,9 +362,35 @@
         scroller = scroller.parentElement;
       }
       scroller = scroller || container;
-      const onScroll = () => head.classList.toggle("shrunk", (scroller.scrollTop || 0) > 24);
-      scroller.addEventListener("scroll", onScroll);
-      onScroll();
+      // Hysteresis, not a single threshold. Shrinking hides the tech row
+      // and tightens the padding, which SHORTENS the content — that drops
+      // scrollTop back under a one-value threshold, which un-shrinks the
+      // header, which lengthens the content again. Parking the scroll
+      // anywhere near that point made the header flip between the two
+      // states forever. Growing back now happens far below the point it
+      // shrinks at, so the dead band is wider than the height the toggle
+      // itself removes and no resting position can satisfy both.
+      const SHRINK_AT = 48;
+      const GROW_AT = 8;
+      let shrunk = false;
+      let ticking = false;
+      const apply = () => {
+        ticking = false;
+        const y = scroller.scrollTop || 0;
+        if (!shrunk && y > SHRINK_AT) shrunk = true;
+        else if (shrunk && y < GROW_AT) shrunk = false;
+        else return;                    // inside the band — leave it be
+        head.classList.toggle("shrunk", shrunk);
+      };
+      // Coalesce to one write per frame; a scroll event per pixel doing
+      // layout-affecting class writes is its own source of jitter.
+      const onScroll = () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(apply);
+      };
+      scroller.addEventListener("scroll", onScroll, { passive: true });
+      apply();
     }
     const hasPin = !!r.trello_card_id;
     if (hasPin) loadTrelloInfo(r, ctx);
