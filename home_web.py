@@ -802,7 +802,11 @@ def _invalidate_scoped_caches():
     switch kept serving the previous department's folder roots."""
     try:
         import cache_bust
-        cache_bust.invalidate_all("department switch")
+        # keep_path_keyed: the year index and parsed run-docs are keyed by
+        # absolute path, and the two franchises have entirely different
+        # roots, so neither can serve the other's entry. Re-scanning the
+        # share on every switch was the slow part of going back and forth.
+        cache_bust.invalidate_all("department switch", keep_path_keyed=True)
     except Exception:
         pass
 

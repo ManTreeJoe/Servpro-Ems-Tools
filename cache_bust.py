@@ -18,6 +18,10 @@ here is the user can't change their settings at all.
 """
 
 # (module_name, attribute) pairs — each a no-arg invalidator.
+#
+# Everything here is keyed by NAME or by nothing at all, so an entry made
+# under one department is indistinguishable from one made under the other.
+# These must always be dropped.
 _INVALIDATORS = (
     # Trello board / list / member ids, all resolved by NAME in the active
     # workspace. Stale ones serve the other department's boards.
@@ -27,8 +31,6 @@ _INVALIDATORS = (
     ("ems_db",          "invalidate_department_cache"),
     # which storage backend is live (sqlite / supabase)
     ("ems_db",          "invalidate_backend"),
-    # per-year folder listing, keyed off audit_base
-    ("audit_logic",     "invalidate_year_index_cache"),
     # CompanyCam photo tags — cheap to refetch, and the token may have changed
     ("companycam_api",  "invalidate_tag_cache"),
     # type-ahead index (job names + aliases) built from the job index, so a
@@ -36,11 +38,33 @@ _INVALIDATORS = (
     ("job_search",      "invalidate_cache"),
 )
 
+# Caches keyed by ABSOLUTE PATH. IE and OC resolve to entirely different
+# roots (X:\IE_Public vs the OC OneDrive) for both audit_base and runs_dir,
+# so a key made under one department can never be read back under the
+# other — the path itself is the separator. Dropping these on a department
+# switch therefore protects nothing and costs a full re-scan of the network
+# share, which is the expensive part of coming back to a franchise.
+#
+# They ARE still dropped on a settings save, where the roots themselves can
+# change under a key that stays the same shape.
+_PATH_KEYED_INVALIDATORS = (
+    # per-year folder listing, keyed off the year-folder path (5-min TTL)
+    ("audit_logic",     "invalidate_year_index_cache"),
+)
 
-def invalidate_all(reason: str = "") -> dict:
-    """Drop every derived cache. Returns {cleared: [...], failed: [...]}."""
+
+def invalidate_all(reason: str = "", *, keep_path_keyed: bool = False) -> dict:
+    """Drop every derived cache. Returns {cleared: [...], failed: [...]}.
+
+    `keep_path_keyed` spares the path-keyed caches above — set by the
+    department switch, which cannot be served a stale entry from the other
+    franchise because their roots differ.
+    """
     cleared, failed = [], []
-    for mod_name, fn_name in _INVALIDATORS:
+    todo = list(_INVALIDATORS)
+    if not keep_path_keyed:
+        todo += list(_PATH_KEYED_INVALIDATORS)
+    for mod_name, fn_name in todo:
         try:
             mod = __import__(mod_name)
             fn = getattr(mod, fn_name, None)
@@ -50,12 +74,15 @@ def invalidate_all(reason: str = "") -> dict:
         except Exception as ex:
             failed.append(f"{mod_name}.{fn_name}: {type(ex).__name__}")
     # state_hub caches parsed run-docs; it has no invalidator of its own.
-    try:
-        from state_hub import hub as _hub
-        _hub._cache.clear()
-        cleared.append("state_hub")
-    except Exception as ex:
-        failed.append(f"state_hub: {type(ex).__name__}")
+    # Keyed by ("parse_run_doc", normalised path) and mtime-checked on read,
+    # so it is path-keyed twice over — spared for the same reason.
+    if not keep_path_keyed:
+        try:
+            from state_hub import hub as _hub
+            _hub._cache.clear()
+            cleared.append("state_hub")
+        except Exception as ex:
+            failed.append(f"state_hub: {type(ex).__name__}")
     # config itself is mtime-cached, but a save within the same second can
     # land on an unchanged mtime, so force the next read to re-parse.
     try:
