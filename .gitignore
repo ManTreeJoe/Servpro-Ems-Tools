@@ -49,3 +49,7 @@ skills-lock.json
 # Build output — the shipped folder is 108 MB and is rebuilt from the spec.
 /dist/
 /build/
+
+# Side-path builds used when the app is running and holds dist/
+dist_next/
+build_next/
