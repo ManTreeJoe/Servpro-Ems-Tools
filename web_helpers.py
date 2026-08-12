@@ -176,6 +176,12 @@ _PIN_STRUCTURAL_TOKENS = {
     "unit", "apt", "suite", "bldg", "building", "second", "third",
     "fourth", "pics", "docs", "photos", "new", "old", "copy", "final",
     "initial", "contents", "demo", "the", "and",
+    # Standard job-folder scaffolding. A pin onto one of these is normal
+    # — they are exactly the subfolders someone drills into — and none of
+    # them says anything about WHOSE job it is.
+    "ems", "doc", "document", "documents", "pictures", "images", "img",
+    "mitigation", "monitor", "monitoring", "equipment", "eq", "misc",
+    "paperwork", "forms", "before", "after", "during", "progress",
 }
 
 
@@ -214,7 +220,7 @@ def _is_year_folder(seg: str) -> bool:
     return bool(_re.search(r"(?:19|20)\d{2}", seg or ""))
 
 
-def folder_pin_mismatch(client: str, path: str, depth: int = 3) -> str:
+def folder_pin_mismatch(client: str, path: str, depth: int = 12) -> str:
     """Return a human-readable warning when `path` looks like it belongs to
     a DIFFERENT client than `client`, or "" when the pin looks plausible.
 
@@ -228,7 +234,13 @@ def folder_pin_mismatch(client: str, path: str, depth: int = 3) -> str:
     Matching walks up from the pinned folder and stops at the year bucket
     ("2026 Jobs"), so neither the year nor the share root above it
     ("x:\\ie_public" — whose own words would match a client named "Public")
-    can launder a match. At most `depth` segments are read.
+    can launder a match.
+
+    It keeps walking past scaffolding folders rather than giving up: a
+    pin onto `<client>\\EMS\\PICS\\Initial` is a perfectly normal thing to
+    do, and stopping three levels down would never reach the client name
+    and would flag it as somebody else's folder. `depth` is only a
+    runaway guard — the year bucket is the real stop.
     """
     if not client or not path:
         return ""

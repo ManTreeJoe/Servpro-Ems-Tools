@@ -4009,10 +4009,42 @@ function openDocuSignModal(r) {
 // interrupting (pinning a job into another client's folder, which then
 // silently steers every later import) gets a second look. Everything else
 // pins on the first call exactly as before.
+// Deliberately NOT window.confirm: pywebview's backends don't reliably
+// implement it, and a confirm that returns undefined reads as "cancel" —
+// which would silently refuse the pin and look exactly like the folder
+// not being accepted. This is an in-app modal, so it also matches every
+// other dialog in the panel.
+function confirmPin(warning) {
+  return new Promise((resolve) => {
+    if (!window.openModal) { resolve(true); return; }  // never block on a missing modal
+    const overlay = window.openModal({
+      title: "📌 Pin this folder?",
+      sub: "It doesn't look like this job's folder",
+      width: 520,
+      id: "pin-confirm-overlay",
+      body: `
+        <div style="font-size:12.5px;line-height:1.5;">${escapeHtml(warning || "")}</div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">
+          Commercial jobs filed under a business name, and address-only folders,
+          legitimately don't match — pin anyway if this is right.
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+          <button class="btn modal-close">Cancel</button>
+          <button class="btn btn-primary" id="pin-yes">Pin anyway</button>
+        </div>`,
+      onClose: () => resolve(false),
+    });
+    overlay.querySelector("#pin-yes")?.addEventListener("click", () => {
+      resolve(true);
+      try { window.closeModal("pin-confirm-overlay"); } catch (_) { overlay.remove(); }
+    });
+  });
+}
+
 async function pinFolderGuarded(client, path) {
   let res = await pywebview.api.set_folder_path(client, path);
   if (res?.needs_confirm) {
-    if (!window.confirm(`${res.warning}\n\nPin it anyway?`)) {
+    if (!(await confirmPin(res.warning))) {
       return { ok: false, cancelled: true };
     }
     res = await pywebview.api.set_folder_path(client, path, true);

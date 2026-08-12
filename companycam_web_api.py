@@ -144,7 +144,17 @@ class CompanyCamApi:
             return {"ok": False, "error": str(ex)}
 
     def _cc_pics_dir(self, client: str) -> str:
-        """The job's PICS folder, or "" when the job folder isn't resolved."""
+        """The job's PICS folder, or "" when the job folder isn't resolved.
+
+        The pinned path is NOT always the job root. Pinning a subfolder is
+        how an unknown job gets attached by hand, and appending EMS\\PICS
+        to a path that already ends in one built
+        `…\\EMS\\PICS\\EMS\\PICS` — which was then returned WITHOUT
+        checking it exists, so every photo read as missing and a pull
+        would have filed them into a folder nobody would ever look in.
+
+        So: if the pin is already inside a PICS tree, use that PICS root.
+        """
         import config as _cfg
         base = (_cfg.load() or {}).get("audit_base") or ""
         try:
@@ -160,11 +170,23 @@ class CompanyCamApi:
                 path = ""
         if not path or not os.path.isdir(path):
             return ""
+
+        # Already in a PICS tree? Walk back up to the PICS root itself —
+        # pulls organise into <stage>\<tech date>\<room> BELOW it, so
+        # anything deeper would nest a second layout inside the first.
+        parts = os.path.normpath(path).split(os.sep)
+        for i in range(len(parts) - 1, -1, -1):
+            if parts[i].strip().upper() == "PICS":
+                return os.sep.join(parts[:i + 1])
+
         pics = os.path.join(path, "EMS", "PICS")
-        if not os.path.isdir(pics):
-            alt = os.path.join(path, "PICS")
-            if os.path.isdir(alt):
-                return alt
+        if os.path.isdir(pics):
+            return pics
+        alt = os.path.join(path, "PICS")
+        if os.path.isdir(alt):
+            return alt
+        # Neither exists yet — a first pull legitimately creates one, so
+        # hand back the intended path rather than refusing.
         return pics
 
     def companycam_verify(self, client: str, card_id: str = "") -> dict:
