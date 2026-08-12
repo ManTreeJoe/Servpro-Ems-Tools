@@ -82,7 +82,6 @@ window.addEventListener("pywebviewready", async () => {
   $("#day-next").addEventListener("click", () => walkDay(+1));
   $("#open-doc-btn").addEventListener("click",
     () => pywebview.api.open_run_doc(state.dayOffset || 0));
-  $("#audit-one-btn").addEventListener("click", () => openAuditOneDialog());
   $("#new-loss-btn")?.addEventListener("click", () => openNewLossModal());
   $("#usage-btn")?.addEventListener("click", () => openUsagePanel());
   $("#overview-btn")?.addEventListener("click", () => openOverviewPanel());
@@ -587,213 +586,6 @@ async function runAuditFiltered(useCache) {
     $("#rerun-btn").disabled = false;
     _drainQueuedAudit();
   }
-}
-
-// ── Audit One Job dialog (P0) ───────────────────────────────────
-// Type a name → show candidate jobs (run-doc / pinned card / year
-// folder) → the user CONFIRMS the right one before auditing. Replaces
-// the old "grab the single top fuzzy match and audit it" behavior so a
-// weak/partial match no longer silently audits the wrong job.
-function openAuditOneDialog() {
-  const overlay = createOverlay({
-    title: "🔍 Audit one job",
-    sub:   "Type a client name, then pick the matching job to audit.",
-    body: `
-      <label class="modal-lbl">Client name</label>
-      <div style="display:flex;gap:8px;">
-        <input id="ao-name" class="search" type="text" autocomplete="off"
-               style="flex:1;" placeholder="Last, First or Last name…" />
-        <button class="btn btn-primary" id="ao-find">🔎 Find</button>
-      </div>
-      <div id="ao-status" class="muted" style="margin-top:10px;"></div>
-      <div id="ao-list" class="target-list" style="margin-top:8px; max-height:320px;"></div>
-      <div class="modal-footer">
-        <button class="btn modal-close" id="ao-cancel">Cancel</button>
-      </div>`,
-  });
-
-  const nameEl   = overlay.querySelector("#ao-name");
-  bindTitleCaseInput(nameEl);
-  const findBtn  = overlay.querySelector("#ao-find");
-  const statusEl = overlay.querySelector("#ao-status");
-  const listEl   = overlay.querySelector("#ao-list");
-  let lastScope  = "";       // "" = current year, "all" = every year
-  let widened    = false;    // already searched all years?
-
-  const sourceBadge = (src) => {
-    const map = {
-      run:    ["📋", "On run-doc", "var(--act-monitor,#4A9EFF)"],
-      pin:    ["📌", "Pinned",     "var(--green,#3FB950)"],
-      folder: ["📁", "Folder",     "var(--text-muted)"],
-    };
-    const [icon, label, color] = map[src] || ["•", src, "var(--text-muted)"];
-    return `<span style="font-size:10px;font-weight:600;color:${color};white-space:nowrap;">${icon} ${label}</span>`;
-  };
-
-  // Audit a confirmed candidate (skipCanon=true) or the raw typed
-  // string (skipCanon=false → old auto-resolve fallback).
-  const auditChosen = async (name, path, skipCanon) => {
-    statusEl.textContent = `Auditing ${name}…`;
-    listEl.innerHTML = "";
-    findBtn.disabled = true;
-    const res = await pywebview.api.audit_one_job(name, path || "", !!skipCanon);
-    if (!res?.ok) {
-      setStatus(`Audit failed: ${res?.error || "?"}`, "error");
-      statusEl.textContent = `Audit failed: ${res?.error || "?"}`;
-      findBtn.disabled = false;
-      return;
-    }
-    closeOverlay();
-    // One-off results live in their own mode/list — switch over so the
-    // user lands on the freshly-audited row.
-    await switchMode("search");
-    state.selected_client = rowKey(res.row);
-    renderAll();
-    if ((res.count || 1) > 1) {
-      setStatus(
-        `🔍 Audited ${firstLast(res.canonical)} — ${res.count} claims/sub-jobs added below`,
-        "ok");
-    } else {
-      setStatus(
-        `🔍 Audited ${res.row.client} — ${res.row.flagged ? `${res.row.total_missing} missing` : "clean ✓"}`,
-        res.row.flagged ? "warn" : "ok");
-    }
-  };
-
-  // All source chips for a combined row (a job matched on run-doc AND
-  // pinned AND folder shows all three).
-  const sourceChips = (c) => {
-    const srcs = (c.sources && c.sources.length) ? c.sources : [c.source];
-    return srcs.map(sourceBadge).join(" ");
-  };
-
-  // Cardless job → offer a Trello card, THEN audit. 1 match → Attach/Skip;
-  // several → pick-list; none → audit anyway. (Q4/Q5)
-  const offerCardThenAudit = async (c) => {
-    statusEl.textContent = `Looking for a Trello card for ${c.name}…`;
-    let cards = [];
-    try {
-      const sres = await pywebview.api.suggest_card_for(c.name);
-      cards = (sres && sres.cards) || [];
-    } catch (_) { cards = []; }
-    if (!cards.length) { auditChosen(c.name, c.path, true); return; }
-    const one = cards.length === 1;
-    statusEl.textContent = `Attach a card to ${c.name}?`;
-    listEl.innerHTML = `
-      <div class="muted" style="margin-bottom:6px;">${one
-        ? "Found a matching Trello card — attach it?"
-        : `Found ${cards.length} possible cards — pick one to attach:`}</div>
-      ${cards.map((cd, i) => `
-        <div class="target-row ao-card" data-i="${i}" style="cursor:pointer;">
-          <span>📎</span>
-          <div style="flex:1;min-width:0;">
-            <div class="name">${escapeHtml(cd.name)}</div>
-            <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(cd.board || "")}${cd.list_name ? " · " + escapeHtml(cd.list_name) : ""}</div>
-          </div>
-          <span style="font-size:10px;font-weight:600;color:var(--green,#3FB950);white-space:nowrap;">📎 Attach</span>
-        </div>`).join("")}
-      <div class="target-row ao-skipcard" style="cursor:pointer;opacity:0.85;">
-        <span>⏭</span>
-        <div style="flex:1;"><div class="name">Skip — audit without a card</div></div>
-      </div>`;
-    listEl.querySelectorAll(".ao-card").forEach((el) => {
-      el.addEventListener("click", async () => {
-        const cd = cards[parseInt(el.dataset.i, 10)];
-        try { await pywebview.api.pin_trello(c.name, cd.card_id); } catch (_) {}
-        auditChosen(c.name, c.path, true);
-      });
-    });
-    listEl.querySelector(".ao-skipcard")?.addEventListener("click", () =>
-      auditChosen(c.name, c.path, true));
-  };
-
-  const pickCandidate = (c) => {
-    if (!c.has_card) { offerCardThenAudit(c); return; }
-    auditChosen(c.name, c.path, true);
-  };
-
-  // 🔗 Merge — permanently fold the duplicate spellings into one job.
-  const mergeCandidate = async (c) => {
-    statusEl.textContent = `Merging ${c.variants.length} spellings into ${c.name}…`;
-    let res;
-    try { res = await pywebview.api.merge_candidates(c.name, c.variants); }
-    catch (ex) { res = { ok: false, error: String(ex) }; }
-    if (!res?.ok) { statusEl.textContent = `Merge failed: ${res?.error || "?"}`; return; }
-    setStatus(`🔗 Merged ${res.dropped} duplicate${res.dropped === 1 ? "" : "s"} into ${c.name}`, "ok");
-    doFind(lastScope);   // re-list — dupes gone, one clean row
-  };
-
-  const renderCandidates = (cands, typed) => {
-    const rows = cands.map((c, i) => `
-      <div class="target-row ao-cand" data-i="${i}" style="cursor:pointer;">
-        <span>${(c.sources || []).includes("run") ? "📋" : (c.source === "folder" ? "📁" : (c.source === "pin" ? "📌" : "📋"))}</span>
-        <div style="flex:1;min-width:0;">
-          <div class="name">${escapeHtml(titleCase(c.label || c.name))}</div>
-          <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(c.detail || "")}${(!c.has_card && !c.path) ? " · no folder/card yet" : ""}</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          ${sourceChips(c)}
-          ${c.mergeable ? `<button class="ao-merge btn" data-i="${i}" style="font-size:10px;padding:2px 8px;" title="Fold ${c.variants.length} duplicate spellings into one job">🔗 Merge ${c.variants.length}</button>` : ""}
-        </div>
-      </div>`).join("");
-    // Widen-scope row — only when we're still on the current year.
-    const moreRow = (!widened && lastScope === "")
-      ? `<div class="target-row ao-more" style="cursor:pointer;">
-           <span>🗂</span>
-           <div style="flex:1;"><div class="name">Search all years + fire jobs…</div></div>
-         </div>`
-      : "";
-    // Fallback row — audit exactly what was typed (old auto-resolve).
-    const rawRow = `
-      <div class="target-row ao-raw" style="cursor:pointer;opacity:0.85;">
-        <span>⌨</span>
-        <div style="flex:1;min-width:0;">
-          <div class="name">Audit “${escapeHtml(typed)}” as typed</div>
-          <div style="font-size:10px;color:var(--text-muted);">Skip the picker — auto-resolve like before</div>
-        </div>
-      </div>`;
-    listEl.innerHTML = rows + moreRow + rawRow;
-
-    listEl.querySelectorAll(".ao-cand").forEach((el) => {
-      el.addEventListener("click", (ev) => {
-        if (ev.target.closest(".ao-merge")) return;   // merge handled below
-        pickCandidate(cands[parseInt(el.dataset.i, 10)]);
-      });
-    });
-    listEl.querySelectorAll(".ao-merge").forEach((el) => {
-      el.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        mergeCandidate(cands[parseInt(el.dataset.i, 10)]);
-      });
-    });
-    listEl.querySelector(".ao-more")?.addEventListener("click", () => doFind("all"));
-    listEl.querySelector(".ao-raw")?.addEventListener("click", () =>
-      auditChosen(typed, "", false));
-  };
-
-  const doFind = async (scope) => {
-    const typed = nameEl.value.trim();
-    if (!typed) { nameEl.focus(); return; }
-    lastScope = scope || "";
-    if (scope === "all") widened = true;
-    findBtn.disabled = false;
-    statusEl.textContent = "Searching…";
-    listEl.innerHTML = "";
-    const res = await pywebview.api.list_audit_candidates(typed, lastScope);
-    if (!res?.ok) { statusEl.textContent = `Search failed: ${res?.error || "?"}`; return; }
-    const cands = res.candidates || [];
-    statusEl.textContent = cands.length
-      ? `${cands.length} match${cands.length !== 1 ? "es" : ""} — pick the right one:`
-      : (widened ? `No matches anywhere for “${typed}”.`
-                 : `No current-year matches for “${typed}”.`);
-    renderCandidates(cands, typed);
-  };
-
-  findBtn.addEventListener("click", () => doFind(""));
-  nameEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") doFind("");
-  });
-  nameEl.focus();
 }
 
 // ── Incoming downloads panel ─────────────────────────────────────
@@ -3050,18 +2842,27 @@ async function showSuggestions(q) {
   renderSuggestions(q, rows);
 }
 
-function renderSuggestions(q, rows) {
-  $("#suggest-box")?.remove();
+// Create (or reuse) the dropdown under the search box. Reused rather than
+// recreated so the deep picker below can repaint in place — rebuilding it
+// mid-flow would drop the listeners the picker just wired.
+function ensureSuggestBox() {
   const box = $("#search-box");
-  if (!box) return;
+  if (!box) return null;
+  let el = $("#suggest-box");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "suggest-box";
+    el.className = "suggest-box";
+    ($("#search-wrap") || box.parentNode).appendChild(el);
+  }
+  return el;
+}
 
-  const wrap = $("#search-wrap") || box.parentNode;
-  const el = document.createElement("div");
-  el.id = "suggest-box";
-  el.className = "suggest-box";
+function renderSuggestions(q, rows) {
+  const el = ensureSuggestBox();
+  if (!el) return;
   if (!rows.length) {
-    el.innerHTML = `<div class="suggest-empty">No job matches “${escapeHtml(q)}”`
-      + `<button class="btn suggest-force" id="sg-force">🔍 Search folders anyway</button></div>`;
+    el.innerHTML = `<div class="suggest-empty">No job matches “${escapeHtml(q)}”</div>`;
   } else {
     const KIND = { unit: "🏢 unit", claim: "📄 claim", subjob: "🔧 sub-job" };
     el.innerHTML = rows.map((r, i) => {
@@ -3079,14 +2880,33 @@ function renderSuggestions(q, rows) {
         + kind + why + dept + `</div>`;
     }).join("");
   }
-  wrap.appendChild(el);
+  // Type-ahead is a DB read, so it can't see a job that has a folder but
+  // no row yet, and it carries no variant/card data. This row is the way
+  // down to the authoritative scan.
+  el.insertAdjacentHTML("beforeend",
+    `<div class="suggest-row sg-deep" tabindex="0">`
+    + `<span>🗂</span>`
+    + `<span class="suggest-name">Search folders — all years, merge, attach a card…</span>`
+    + `</div>`);
 
-  el.querySelectorAll(".suggest-row").forEach((row) => {
+  bindSuggestKeys(el);
+  el.querySelectorAll(".suggest-row[data-i]").forEach((row) => {
     row.addEventListener("click", () => pickSuggestion(rows[+row.dataset.i]));
+  });
+  const deep = el.querySelector(".sg-deep");
+  deep?.addEventListener("click", () => runDeepPicker(q, ""));
+  deep?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") runDeepPicker(q, "");
+  });
+}
+
+// Arrow/Escape movement, shared by the type-ahead and the deep picker so
+// both lists navigate the same way.
+function bindSuggestKeys(el) {
+  el.querySelectorAll(".suggest-row").forEach((row) => {
     row.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { pickSuggestion(rows[+row.dataset.i]); return; }
       if (e.key === "Escape") { hideSuggestions(); $("#search-box")?.focus(); return; }
-      const all = Array.from(document.querySelectorAll(".suggest-row"));
+      const all = Array.from(el.querySelectorAll(".suggest-row"));
       const i = all.indexOf(row);
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -3097,10 +2917,147 @@ function renderSuggestions(q, rows) {
       }
     });
   });
-  $("#sg-force")?.addEventListener("click", () => {
-    hideSuggestions();
-    runOneoffFromSearch(q);
+}
+
+// ── Deep candidate picker ────────────────────────────────────────────
+// Was the "🔍 Audit one" toolbar dialog. Same three sources (run-doc,
+// pinned cards, year folders) and the same confirm-before-auditing rule,
+// reached from Search instead of a button of its own — so there's one
+// place to look up a job rather than two that half-overlapped.
+//
+// list_audit_candidates hits disk, so it stays behind a deliberate click;
+// the type-ahead above remains a pure DB read safe to run on keystrokes.
+
+function auditCandidateIcon(c) {
+  const srcs = (c.sources && c.sources.length) ? c.sources : [c.source];
+  if (srcs.includes("run")) return "📋";
+  if (srcs.includes("pin")) return "📌";
+  return srcs.includes("folder") ? "📁" : "•";
+}
+
+// skip_canon=true — the user just told us which job this is, so don't
+// re-fuzz the name. A child carries its own folder; pass it so the audit
+// pins THAT folder instead of resolving back to the parent client.
+async function auditCandidate(c) {
+  hideSuggestions();
+  await runOneoffFromSearch(c.name, true, c.path || "");
+}
+
+// Cardless job → offer a Trello card, THEN audit. 1 match → attach/skip;
+// several → pick-list; none → audit anyway.
+async function offerCardThenAudit(host, c) {
+  host.innerHTML = `<div class="suggest-empty">Looking for a Trello card for ${escapeHtml(c.name)}…</div>`;
+  let cards = [];
+  try {
+    const sres = await pywebview.api.suggest_card_for(c.name);
+    cards = (sres && sres.cards) || [];
+  } catch (_) { cards = []; }
+  if (!cards.length) { auditCandidate(c); return; }
+  host.innerHTML =
+    `<div class="suggest-empty">${cards.length === 1
+      ? "Found a matching Trello card — attach it?"
+      : `Found ${cards.length} possible cards — pick one:`}</div>`
+    + cards.map((cd, i) => `
+        <div class="suggest-row sg-card" data-i="${i}" tabindex="0">
+          <span>📎</span>
+          <span class="suggest-name">${escapeHtml(cd.name)}</span>
+          <span class="suggest-dept">${escapeHtml(cd.board || "")}${cd.list_name ? " · " + escapeHtml(cd.list_name) : ""}</span>
+        </div>`).join("")
+    + `<div class="suggest-row sg-skipcard" tabindex="0"><span>⏭</span>`
+    + `<span class="suggest-name">Skip — audit without a card</span></div>`;
+  bindSuggestKeys(host);
+  host.querySelectorAll(".sg-card").forEach((el) => {
+    el.addEventListener("click", async () => {
+      const cd = cards[+el.dataset.i];
+      try { await pywebview.api.pin_trello(c.name, cd.card_id); } catch (_) {}
+      auditCandidate(c);
+    });
   });
+  host.querySelector(".sg-skipcard")?.addEventListener("click",
+    () => auditCandidate(c));
+}
+
+function renderAuditCandidates(host, cands, typed, widened) {
+  const head = cands.length
+    ? `${cands.length} match${cands.length !== 1 ? "es" : ""} — pick the right one:`
+    : (widened ? `No matches anywhere for “${escapeHtml(typed)}”.`
+               : `No current-year matches for “${escapeHtml(typed)}”.`);
+  const rows = cands.map((c, i) => `
+    <div class="suggest-row sg-cand" data-i="${i}" tabindex="0">
+      <span>${auditCandidateIcon(c)}</span>
+      <span class="suggest-name">${escapeHtml(titleCase(c.label || c.name))}</span>
+      ${c.detail ? `<span class="suggest-dept">${escapeHtml(c.detail)}</span>` : ""}
+      ${(!c.has_card && !c.path) ? `<span class="suggest-why">no folder/card</span>` : ""}
+      ${c.mergeable ? `<button class="btn sg-merge" data-i="${i}"
+          style="font-size:10px;padding:2px 8px;flex:none;"
+          title="Fold ${c.variants.length} duplicate spellings into one job">🔗 ${c.variants.length}</button>` : ""}
+    </div>`).join("");
+  // Widen only while we're still on the current year.
+  const moreRow = !widened
+    ? `<div class="suggest-row sg-more" tabindex="0"><span>🗂</span>
+         <span class="suggest-name">Search all years + fire jobs…</span></div>`
+    : "";
+  // The old auto-resolve, kept as an explicit choice rather than the
+  // default — picking the top fuzzy match silently audits the wrong job.
+  const rawRow = `
+    <div class="suggest-row sg-raw" tabindex="0" style="opacity:.85;">
+      <span>⌨</span>
+      <span class="suggest-name">Audit “${escapeHtml(typed)}” as typed</span>
+      <span class="suggest-why">auto-resolve</span>
+    </div>`;
+  host.innerHTML = `<div class="suggest-empty">${head}</div>`
+    + rows + moreRow + rawRow;
+
+  bindSuggestKeys(host);
+  host.querySelectorAll(".sg-cand").forEach((el) => {
+    el.addEventListener("click", (ev) => {
+      if (ev.target.closest(".sg-merge")) return;   // merge handled below
+      const c = cands[+el.dataset.i];
+      if (!c.has_card) { offerCardThenAudit(host, c); return; }
+      auditCandidate(c);
+    });
+  });
+  host.querySelectorAll(".sg-merge").forEach((el) => {
+    el.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const c = cands[+el.dataset.i];
+      host.innerHTML = `<div class="suggest-empty">Merging ${c.variants.length} spellings into ${escapeHtml(c.name)}…</div>`;
+      let res;
+      try { res = await pywebview.api.merge_candidates(c.name, c.variants); }
+      catch (ex) { res = { ok: false, error: String(ex) }; }
+      if (!res?.ok) {
+        host.innerHTML = `<div class="suggest-empty">Merge failed: ${escapeHtml(res?.error || "?")}</div>`;
+        return;
+      }
+      setStatus(`🔗 Merged ${res.dropped} duplicate${res.dropped === 1 ? "" : "s"} into ${c.name}`, "ok");
+      runDeepPicker(typed, widened ? "all" : "");   // re-list — dupes gone
+    });
+  });
+  host.querySelector(".sg-more")?.addEventListener("click",
+    () => runDeepPicker(typed, "all"));
+  host.querySelector(".sg-raw")?.addEventListener("click", () => {
+    hideSuggestions();
+    runOneoffFromSearch(typed);
+  });
+}
+
+async function runDeepPicker(typed, scope) {
+  const t = (typed || "").trim();
+  if (!t) return;
+  const host = ensureSuggestBox();
+  if (!host) return;
+  // Cancel any in-flight type-ahead so its results can't repaint over the
+  // picker after the slower scan has already drawn.
+  state.suggestSeq = (state.suggestSeq || 0) + 1;
+  host.innerHTML = `<div class="suggest-empty">Searching ${scope === "all" ? "all years" : "folders"} for “${escapeHtml(t)}”…</div>`;
+  let res;
+  try { res = await pywebview.api.list_audit_candidates(t, scope || ""); }
+  catch (ex) { res = { ok: false, error: String(ex) }; }
+  if (!res?.ok) {
+    host.innerHTML = `<div class="suggest-empty">Search failed: ${escapeHtml(res?.error || "?")}</div>`;
+    return;
+  }
+  renderAuditCandidates(host, res.candidates || [], t, scope === "all");
 }
 
 // The pick is where the real work starts: we already know the canonical
