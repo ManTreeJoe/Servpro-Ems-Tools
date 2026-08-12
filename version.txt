@@ -1,6 +1,6 @@
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.3.0/Linguar-Hub-Setup-1.3.0.exe",
-  "notes": "Carrier names tidy up as you type, with N/A and Pending when there's no carrier yet. Card checklists now match Trello's order and split by role. Searched jobs stay on Recent instead of showing up in the Daily Run. Moving a tracked snapshot between sheets sticks. APA asks where carried-over jobs should go. Jobs remember what they used to be called."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.3.1/Linguar-Hub-Setup-1.3.1.exe",
+  "notes": "Log a call on the job card, timestamped. Card checklists match Trello's order and split by role. Carrier names tidy up as you type, with N/A and Pending. CompanyCam stops re-offering photos you already have and pulls in the background. Pinning a subfolder works again. Searched jobs stay on Recent."
 }
