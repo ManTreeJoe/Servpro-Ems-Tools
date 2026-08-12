@@ -339,11 +339,38 @@ class HomeApi:
     # un-prefixed HomeApi, so no per-panel wiring is needed — a new panel
     # gets persistence by calling get_ui_state/set_ui_state with its key.
 
+    @staticmethod
+    def _ui_state_key(panel: str) -> str:
+        """Storage key for a panel's UI state, scoped to the active
+        department.
+
+        Saved state is mostly ABOUT JOBS — the selected row, the search
+        term, the filter, which tab. None of that survives a franchise
+        change with its meaning intact, so a single shared key meant
+        switching IE→OC restored IE's selection into OC's board and read
+        as the panel being wrong. Scoping also gives each franchise its
+        own place to come back to, which is the point: switch away, switch
+        back, land where you left off.
+        """
+        panel = (panel or "").strip()
+        try:
+            import config
+            dept = (config.active_department() or "").strip()
+        except Exception:
+            dept = ""
+        return f"{dept}:{panel}" if dept else panel
+
     def get_ui_state(self, panel: str) -> dict:
         """Saved UI state for one panel ({} when nothing is stored)."""
         try:
             all_state = persistence.get("ui_state") or {}
-            val = all_state.get((panel or "").strip())
+            val = all_state.get(self._ui_state_key(panel))
+            # Fall back to the pre-scoping key so nobody's remembered
+            # position is thrown away by the upgrade. Read-only: the next
+            # write lands under the scoped key and the legacy one is left
+            # for whichever department claims it first.
+            if not isinstance(val, dict):
+                val = all_state.get((panel or "").strip())
             return val if isinstance(val, dict) else {}
         except Exception:
             return {}
@@ -358,10 +385,16 @@ class HomeApi:
         if not panel or not isinstance(patch, dict):
             return {"ok": False, "error": "panel and patch required"}
         try:
+            key = self._ui_state_key(panel)
             all_state = dict(persistence.get("ui_state") or {})
-            cur = dict(all_state.get(panel) or {})
+            cur = dict(all_state.get(key) or {})
+            if not cur:
+                # Seed from the legacy unscoped entry so the first write
+                # after the upgrade doesn't drop the other remembered
+                # fields this patch isn't touching.
+                cur = dict(all_state.get(panel) or {})
             cur.update(patch)
-            all_state[panel] = cur
+            all_state[key] = cur
             persistence.set_value("ui_state", all_state)
             return {"ok": True}
         except Exception as ex:

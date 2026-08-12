@@ -116,10 +116,18 @@ def test_ui_state_rejects_bad_input(api):
 
 def test_ui_state_stays_local(api):
     """This is per-user preference, not a team fact: it must live in
-    state.json and never reach the shared job index."""
+    state.json and never reach the shared job index.
+
+    Keyed by whatever entry ends in the panel name — the store scopes by
+    department (`<dept>:audit`), and that prefix is not what this is
+    guarding. See test_ui_state_per_department.py for the scoping itself.
+    """
     api.set_ui_state("audit", {"mode": "daily"})
     raw = json.loads(open(persistence._STATE_PATH, encoding="utf-8").read())
-    assert raw["ui_state"]["audit"]["mode"] == "daily"
+    entries = [v for k, v in raw["ui_state"].items()
+               if k == "audit" or k.endswith(":audit")]
+    assert entries, f"audit state not in state.json: {list(raw['ui_state'])}"
+    assert entries[0]["mode"] == "daily"
 
 
 # ── the race guard, asserted against the shipped JS ─────────────────────
