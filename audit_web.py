@@ -3126,6 +3126,35 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def call_note_text(self, body: str, time_text: str = "",
+                       date_iso: str = "") -> dict:
+        """Preview the timestamped contact note. Built in Python so the
+        preview and the posted string are the same object — see
+        `call_note`."""
+        import call_note
+        return call_note.build(body, time_text=time_text, date_iso=date_iso)
+
+    def call_note_phrases(self) -> dict:
+        """The one-click shorthand the office already uses (LVM, etc.)."""
+        import call_note
+        return {"ok": True, "phrases": list(call_note.QUICK_PHRASES),
+                "now": call_note.stamp()}
+
+    def post_call_note(self, card_id: str, body: str,
+                       time_text: str = "", date_iso: str = "") -> dict:
+        """Post the timestamped contact note to a card."""
+        built = self.call_note_text(body, time_text, date_iso)
+        if not built.get("ok"):
+            return built
+        if not card_id:
+            return {"ok": False, "error": "no Trello card pinned"}
+        try:
+            import trello_client as tc
+            tc.post_comment(card_id, built["text"])
+            return {"ok": True, "text": built["text"]}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def job_log_options(self, client: str = "") -> dict:
         """Activities + the tech roster for the job-log dialog, with
         each tech's label and whether they're a lead.

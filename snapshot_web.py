@@ -636,6 +636,12 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().activity_comment_text(stage, tech, date_iso)
     def post_activity_comment(self, card_id, stage, tech, date_iso=""):
         return self._aw().post_activity_comment(card_id, stage, tech, date_iso)
+    def call_note_text(self, body, time_text="", date_iso=""):
+        return self._aw().call_note_text(body, time_text, date_iso)
+    def call_note_phrases(self):
+        return self._aw().call_note_phrases()
+    def post_call_note(self, card_id, body, time_text="", date_iso=""):
+        return self._aw().post_call_note(card_id, body, time_text, date_iso)
     def get_initial_cat_class(self, client, card_id=""):
         return self._aw().get_initial_cat_class(client, card_id)
     def import_initial_notes(self, client, card_id=""):

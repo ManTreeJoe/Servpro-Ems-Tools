@@ -246,6 +246,8 @@
                   title="Post the dated job-log comment — pick what happened and who was there">🗒 Job log comment</button>
           <button class="action-btn" data-action="activity-comment" ${hasPin ? "" : "disabled"}
                   title="Post the dated visit comment — pick the stage and who was there">📆 Activity comment</button>
+          <button class="action-btn" data-action="call-note" ${hasPin ? "" : "disabled"}
+                  title="Log a call or contact on the card, timestamped">📞 Call note</button>
           <button class="action-btn" data-action="docusketch" ${hasPin ? "" : "disabled"}>📐 Docusketch</button>
           <button class="action-btn" data-action="request-items">📨 Request items</button>
           <button class="action-btn" data-action="add-note" title="Add a tracked to-do note for this job">📝 Note</button>
@@ -1015,6 +1017,8 @@
       openJobLogModal(row, ctx);
     } else if (action === "activity-comment") {
       openActivityCommentModal(row, ctx);
+    } else if (action === "call-note") {
+      openCallNoteModal(row, ctx);
     } else if (action === "comment") {
       if (M.openComment) M.openComment(row);
     } else if (action === "docusketch") {
@@ -1399,6 +1403,121 @@
   function _rememberUsed(key, val) {
     try { localStorage.setItem("activityLog." + key, String(val || "")); }
     catch (_) { /* private mode — the picker just won't be sticky */ }
+  }
+
+  // ── 📞 Call note ───────────────────────────────────────────────────
+  // The timestamped contact note the office already writes by hand:
+  //
+  //     11:05 8/12/2026
+  //     Called Insured to collect email.
+  //     LVM
+  //
+  // The string is built by the backend (`call_note_text`), never here —
+  // the preview and the thing that actually posts have to be the same
+  // string, and a second formatter in JS is how they drift.
+  async function openCallNoteModal(row, ctx) {
+    if (!row || !row.trello_card_id) return;
+    let phrases = [];
+    try {
+      const r = await pywebview.api.call_note_phrases();
+      phrases = (r && r.phrases) || [];
+    } catch (_) { /* chips are a convenience, not a requirement */ }
+
+    mkModal({
+      title: "📞 Call note",
+      sub: _firstLast(row.display_name || tc(ctx, row.client)),
+      width: 560,
+      body: `
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:10px;">
+          <label style="flex:0 0 110px;font-size:11px;color:var(--text-muted);">
+            Time
+            <input id="cn-time" class="search" type="text" placeholder="now"
+                   style="width:100%;margin-top:3px;" />
+          </label>
+          <label style="flex:0 0 150px;font-size:11px;color:var(--text-muted);">
+            Date
+            <input id="cn-date" class="search" type="date"
+                   style="width:100%;margin-top:3px;" />
+          </label>
+          <div style="flex:1;font-size:10.5px;color:var(--text-muted);padding-bottom:6px;">
+            Leave blank for right now
+          </div>
+        </div>
+        <label style="font-size:11px;color:var(--text-muted);">What happened
+          <textarea id="cn-body" rows="4" class="search"
+                    placeholder="Called Insured to collect email."
+                    style="width:100%;margin-top:3px;resize:vertical;"></textarea>
+        </label>
+        ${phrases.length ? `
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;">
+            ${phrases.map((p) =>
+              `<button class="action-btn cn-chip" type="button"
+                       data-p="${escA(ctx, p)}">${esc(ctx, p)}</button>`).join("")}
+          </div>` : ""}
+        <div style="margin-top:12px;font-size:11px;color:var(--text-muted);">Preview</div>
+        <pre id="cn-preview" style="margin:4px 0 0;padding:8px 10px;background:var(--surface-2);
+             border-radius:6px;font-size:12px;white-space:pre-wrap;min-height:38px;"></pre>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+          <span id="cn-msg" style="margin-right:auto;font-size:11.5px;
+                color:var(--text-muted);align-self:center;"></span>
+          <button class="btn modal-close">Cancel</button>
+          <button class="btn btn-primary" id="cn-post">Post to Trello</button>
+        </div>`,
+    });
+
+    const bodyEl = document.getElementById("cn-body");
+    const timeEl = document.getElementById("cn-time");
+    const dateEl = document.getElementById("cn-date");
+    const prevEl = document.getElementById("cn-preview");
+    const msgEl = document.getElementById("cn-msg");
+
+    // Preview is a real round-trip to the builder, so what you read is
+    // literally what will be posted.
+    let timer = null;
+    const refresh = async () => {
+      const text = (bodyEl.value || "").trim();
+      if (!text) { prevEl.textContent = ""; return; }
+      let r;
+      try {
+        r = await pywebview.api.call_note_text(
+          text, timeEl.value || "", dateEl.value || "");
+      } catch (e) { return; }
+      prevEl.textContent = (r && r.ok) ? r.text : ((r && r.error) || "");
+    };
+    const queue = () => { clearTimeout(timer); timer = setTimeout(refresh, 150); };
+    [bodyEl, timeEl, dateEl].forEach((el) => el.addEventListener("input", queue));
+
+    document.querySelectorAll(".cn-chip").forEach((b) => {
+      b.addEventListener("click", () => {
+        // Append on its own line — these are usually the outcome ("LVM")
+        // sitting under what was attempted.
+        const cur = bodyEl.value.replace(/\s+$/, "");
+        bodyEl.value = (cur ? cur + "\n" : "") + b.dataset.p;
+        bodyEl.focus();
+        refresh();
+      });
+    });
+
+    document.getElementById("cn-post").addEventListener("click", async (ev) => {
+      const btn = ev.currentTarget;
+      const text = (bodyEl.value || "").trim();
+      if (!text) { msgEl.textContent = "Nothing to log yet"; return; }
+      btn.disabled = true; msgEl.textContent = "Posting…";
+      let r;
+      try {
+        r = await pywebview.api.post_call_note(
+          row.trello_card_id, text, timeEl.value || "", dateEl.value || "");
+      } catch (e) { r = { ok: false, error: String(e) }; }
+      if (!r || !r.ok) {
+        btn.disabled = false;
+        msgEl.textContent = "Failed: " + ((r && r.error) || "?");
+        return;
+      }
+      document.getElementById("ad-modal")?.remove();
+      setStatus(ctx, "📞 Call note posted", "ok");
+    });
+
+    bodyEl.focus();
   }
 
   // It used to be a permanent collapsible section at the foot of every
