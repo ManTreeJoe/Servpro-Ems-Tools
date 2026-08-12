@@ -65,8 +65,17 @@
     document.body.appendChild(wrap);
     const close = () => closeModal(overlayId);
     wrap.querySelector(".overlay-backdrop").addEventListener("click", close);
-    wrap.querySelectorAll(".modal-close").forEach((b) =>
-      b.addEventListener("click", close));
+    // DELEGATED, not wired per button. Binding each .modal-close at
+    // creation only ever reaches the ones present right then — and most
+    // of these dialogs replace their body once async content lands, so
+    // every Close/Cancel button in the REPLACED markup came up dead.
+    // Callers were expected to re-bind by hand; some remembered, most
+    // didn't. `closest` so a click on an icon inside the button counts.
+    wrap.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest
+        ? e.target.closest(".modal-close") : null;
+      if (btn && wrap.contains(btn)) close();
+    });
     if (onClose) wrap._onClose = onClose;
     _openIds.push(overlayId);
     return wrap;

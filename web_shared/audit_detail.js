@@ -2057,9 +2057,15 @@
         <div style="padding:18px 20px;overflow-y:auto;">${body}</div>
       </div>`;
     document.body.appendChild(w);
-    w.addEventListener("click", (e) => { if (e.target === w) w.remove(); });
-    w.querySelectorAll(".modal-close").forEach((b) =>
-      b.addEventListener("click", () => w.remove()));
+    // Delegated — see modal.js. Several of these dialogs replace their
+    // body once the async content lands, and a Close button wired at
+    // creation is gone by then, leaving a button that does nothing.
+    w.addEventListener("click", (e) => {
+      if (e.target === w) { w.remove(); return; }
+      const btn = e.target && e.target.closest
+        ? e.target.closest(".modal-close") : null;
+      if (btn && w.contains(btn)) w.remove();
+    });
     return w;
   }
 
