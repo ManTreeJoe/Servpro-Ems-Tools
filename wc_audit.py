@@ -224,8 +224,9 @@ def _name_variants(name):
 
 
 def load_source(path):
-    """Parse the downloaded WC export. Reads the active sheet, slices
-    cols D-J + AP, drops rows that are blank across all seven D-J cols.
+    """Parse the downloaded WC export. Finds each column by HEADER NAME,
+    falling back to the historic D-J slice (+ AP) when a header is
+    missing. Drops rows blank across all seven mapped columns.
 
     Returns a list of dicts:
         {date_received, corp_ref, project_num, property_type, type,
@@ -234,19 +235,49 @@ def load_source(path):
     The `not_sold_det` field is the WC "Not Sold/Cancelled
     Determination" column (col AP) — used alongside `progress` to
     detect terminal-state jobs per the 2026-06-02 classifier rules.
+
+    ⚠ Header lookup is not a nicety. The audits on the share start at
+    column A, not D, so the fixed D-J slice landed three columns to the
+    right: `customer` read the empty column J on EVERY row while the real
+    name silently arrived as `property_type`. A blank customer is not
+    visibly wrong in the panel — the table renders `cells`, not this
+    field — but it made per-row Trello pinning impossible, because
+    wc_audit_web.pin_trello_card refuses a blank name ("customer +
+    card_id required"). Match on the header and both layouts work.
     """
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb.active
+
+    # First non-empty header wins, so a duplicate label later in the
+    # sheet can't steal a column we already mapped.
+    headers = {}
+    for c in range(1, (ws.max_column or 0) + 1):
+        h = str(ws.cell(1, c).value or "").strip().lower()
+        if h and h not in headers:
+            headers[h] = c
+
+    def _col(name, legacy_offset):
+        """1-based column for `name`; legacy_offset is the 0-based index
+        into the old D-J slice used when the header isn't found."""
+        return headers.get(name, _SOURCE_START_COL + legacy_offset)
+
+    cols = (_col("date received",   0), _col("corporate ref #", 1),
+            _col("project #",       2), _col("property type",   3),
+            _col("type",            4), _col("progress",        5),
+            _col("customer",        6))
+    nsd_col = headers.get("not sold/cancelled determination",
+                          headers.get("not sold detail", _NOT_SOLD_DET_COL))
+
     rows = []
     for r in range(2, ws.max_row + 1):  # skip header row
-        vals = [ws.cell(r, c).value
-                for c in range(_SOURCE_START_COL, _SOURCE_END_COL + 1)]
+        vals = [ws.cell(r, c).value for c in cols]
         if not any(v not in (None, "") for v in vals):
             continue
-        # Pull AP separately — outside the D-J slice but needed for
-        # terminal-state detection.
+        # Pulled separately — outside the main block but needed for
+        # terminal-state detection. Sheets that stop short of this
+        # column simply have no determination to read.
         try:
-            nsd = ws.cell(r, _NOT_SOLD_DET_COL).value
+            nsd = ws.cell(r, nsd_col).value
         except Exception:
             nsd = None
         rows.append({
