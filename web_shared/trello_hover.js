@@ -83,10 +83,15 @@
   // any new hover starting on a different anchor). Without this the
   // popover sometimes stays visible when the cursor moves quickly
   // off the anchor before mouseleave fires.
+  // Holds each visible popover's OWN hide() — not the element. Removing
+  // the element here instead left the owning closure still holding a
+  // reference to a detached node, so its `popover` stayed truthy: the
+  // stale value then made the next hover return early and that anchor
+  // never showed a popover again.
   const _active = new Set();
   function _hideAll() {
-    for (const p of _active) {
-      try { p.remove(); } catch (_) {}
+    for (const h of [..._active]) {
+      try { h(); } catch (_) {}
     }
     _active.clear();
   }
@@ -104,14 +109,15 @@
 
   window.attachTrelloHover = function (anchor, cardId) {
     if (!anchor || !cardId) return;
-    let timer = null, popover = null;
+    let timer = null, popover = null, liveness = null;
     function hide() {
       if (timer) { clearTimeout(timer); timer = null; }
+      if (liveness) { clearInterval(liveness); liveness = null; }
       if (popover) {
         try { popover.remove(); } catch (_) {}
-        _active.delete(popover);
         popover = null;
       }
+      _active.delete(hide);
     }
     anchor.addEventListener("mouseenter", () => {
       // Hide any popover from a previous anchor — moving between
@@ -120,16 +126,26 @@
       if (timer) clearTimeout(timer);
       timer = setTimeout(async () => {
         const data = await _fetchCard(cardId);
-        if (!data?.ok || popover) return;
+        // The fetch is awaited, so the anchor may well be gone by now —
+        // a list re-render during those few hundred ms would otherwise
+        // strand a popover pointing at a row that no longer exists.
+        if (!data?.ok || popover || !anchor.isConnected) return;
         popover = _buildPopover(data);
         _position(popover, anchor);
-        _active.add(popover);
-        // Watchdog: auto-hide after 8s in case mouseleave never
-        // fires (DOM re-render mid-hover, etc.). Cheap belt-and-
-        // braces for the "stuck popover" symptom.
-        setTimeout(() => {
-          if (popover && _active.has(popover)) hide();
-        }, 8000);
+        _active.add(hide);
+        // mouseleave is NOT guaranteed. A re-render can detach the anchor
+        // mid-hover and a fast exit can skip the event entirely — in
+        // either case nothing was left to take the popover down, so it
+        // sat over the panel until something else happened to clear it.
+        // Rather than add more events to miss, poll the two conditions
+        // that actually define "should still be showing": the anchor is
+        // still in the document, and the cursor is still on it.
+        liveness = setInterval(() => {
+          let alive = false;
+          try { alive = anchor.isConnected && anchor.matches(":hover"); }
+          catch (_) { alive = false; }
+          if (!alive) hide();
+        }, 250);
       }, 400);
     });
     anchor.addEventListener("mouseleave", hide);
