@@ -394,9 +394,31 @@ class HomeApi:
                 out.append({"label": label, "items": visible})
         return out
 
-    # Panels hidden by default — Job Notes is data-only now (timeline
-    # + expected files surface via the audit/snapshot hover popover).
-    _PANELS_HIDDEN_BY_DEFAULT = {"job_notes"}
+    # Panels hidden by default. Hidden, not removed: every one of these
+    # still works and Settings → panel visibility turns any of them back
+    # on. The sidebar is meant to be the handful of tools used daily, and
+    # fifteen entries made the three that matter harder to reach.
+    #
+    #   photo_folders — superseded by CompanyCam; photos no longer land
+    #                   in dated folders by hand.
+    #   job_notes     — data-only; the timeline and expected files surface
+    #                   in the audit/snapshot hover popover instead.
+    #   the rest      — periodic or reference tools, not part of the
+    #                   daily run: pulled up when wanted, not lived in.
+    #
+    # Deliberately still visible: audit, apa, snapshot, pipeline,
+    # cheat_sheet (+ settings, which is pinned and never hideable).
+    _PANELS_HIDDEN_BY_DEFAULT = {
+        "photo_folders",
+        "notifications",
+        "hygiene",
+        "kpi",
+        "disputes",
+        "wc_audit",
+        "spreadsheet",
+        "job_notes",
+        "multi_unit",
+    }
 
     def _is_panel_visible(self, key: str) -> bool:
         if key == "settings":
