@@ -53,3 +53,6 @@ skills-lock.json
 # Side-path builds used when the app is running and holds dist/
 dist_next/
 build_next/
+
+# Inno Setup compiler output — installers are release artifacts, not source
+Output/
