@@ -36,6 +36,54 @@ def _isolate_job_db(tmp_path_factory):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _pin_db_backend(monkeypatch_session):
+    """Run against SQLite regardless of what the app is set to.
+
+    `ems_db._backend()` reads `ems_db_backend` from the live config.json,
+    so flipping Settings → ☁ Shared job database → Use shared changed what
+    the SUITE did. Observed 2026-08-12: 1804 passed → 8 failed / 118 errors
+    with no code change, all `NotImplementedError` from the Supabase
+    backend's deliberate refusals for bulk operations.
+
+    A test result must not depend on a checkbox. This also keeps the suite
+    off the network and out of the shared database entirely — the same
+    instinct as `_isolate_job_db` above, one layer up.
+    """
+    import config
+    _orig = config.load
+
+    def _load(*a, **kw):
+        cfg = _orig(*a, **kw)
+        try:
+            cfg["ems_db_backend"] = "sqlite"
+        except Exception:
+            pass
+        return cfg
+
+    monkeypatch_session.setattr(config, "load", _load)
+    try:
+        import ems_db
+        ems_db.invalidate_backend()
+    except Exception:
+        pass
+    yield
+    try:
+        import ems_db
+        ems_db.invalidate_backend()
+    except Exception:
+        pass
+
+
+@pytest.fixture(scope="session")
+def monkeypatch_session():
+    """Session-scoped monkeypatch — pytest's own is function-scoped."""
+    from _pytest.monkeypatch import MonkeyPatch
+    mp = MonkeyPatch()
+    yield mp
+    mp.undo()
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _isolate_log(tmp_path_factory):
     """Keep the suite out of the real ems.log.
 
