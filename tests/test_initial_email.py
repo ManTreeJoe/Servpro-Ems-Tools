@@ -40,7 +40,6 @@ def draft():
 
 # ── the sentences, verbatim ────────────────────────────────────────────
 @pytest.mark.parametrize("line", [
-    "Servpro of Woodcrest/Lake Matthews/El Ce",
     "Good Morning,",
     "Initial Inspection performed Monday 6/29/26 Supervisor Mark Escobar",
     "Arrival Time:4:00PM",
@@ -68,6 +67,16 @@ def draft():
 ])
 def test_expected_line_is_present(draft, line):
     assert line in draft
+
+
+def test_the_franchise_is_not_named(draft):
+    """The email goes out from a mailbox that already identifies the
+    office (user, 2026-08-12). It used to lead with the franchise, which
+    also meant a literal "[FRANCHISE]" reached adjusters whenever it
+    wasn't configured. `franchise` is still accepted, just not printed."""
+    assert "Servpro of Woodcrest" not in draft
+    assert "[FRANCHISE]" not in draft
+    assert draft.splitlines()[0].startswith("Good")
 
 
 def test_rooms_are_listed_one_per_line(draft):

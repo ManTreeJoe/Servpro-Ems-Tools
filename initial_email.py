@@ -135,8 +135,11 @@ def compose(fields, *, franchise="", supervisor="", greeting="Good Morning,",
         return _tri(f.get(note_key))
 
     L = []
-    L.append(franchise or "[FRANCHISE]")
-    L.append("")
+    # No franchise line. It goes out from a mailbox that already
+    # identifies the office, so naming the franchise on top only
+    # restated it — and on any job where it wasn't configured a literal
+    # "[FRANCHISE]" went out to an adjuster. `franchise` is still
+    # accepted so callers don't all have to change.
     L.append(greeting or "Good Morning,")
     L.append("")
 

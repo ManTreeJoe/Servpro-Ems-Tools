@@ -109,8 +109,16 @@ _SECTION_HEADER_RE = re.compile(
 # Initial-inspection block headers we look for. A block starts at any
 # of these lines and runs until the next block start or end of text.
 _BLOCK_START_RE = re.compile(
-    r"^(?:initial\s+notes?|initial\s+inspection"
-    r"|initial\s+inspection.*field\s+template)\s*$",
+    r"^\**\s*(?:initial\s+notes?|initial\s+inspection"
+    r"|initial\s+inspection.*field\s+template"
+    # Techs also file the report under this heading, sometimes with a
+    # budgetary-estimate tail. Without it the block was only found by the
+    # count-the-labels fallback, which needs four recognised labels in
+    # one comment — and these reports carry Date / Time / Cause of Loss
+    # and then prose, so they fell one short and the arrival time was
+    # lost even though it was written down plainly.
+    r"|preliminary\s+inspection\s+report.*"
+    r")\s*\**\s*$",
     re.IGNORECASE)
 
 
@@ -391,6 +399,46 @@ def parse_initial_inspection_notes(raw: str) -> list[dict]:
         if parsed:
             blocks.append(parsed)
     return blocks
+
+
+# Fields that make a block genuinely useful as an inspection report.
+# Used to score candidates: a block naming the date AND the arrival time
+# is the tech's report; one with neither is something else that happened
+# to trip the label heuristic.
+_SCORE_FIELDS = ("Date", "Time", "Met With", "Cause of Loss", "Category")
+
+
+def best_initial_block(texts) -> dict:
+    """The most complete initial-inspection block across several texts.
+
+    Callers used to join every comment on a card into one string and
+    parse the lump, taking whichever block came out first. Two things
+    went wrong. Comments arrive NEWEST-first, so an unrelated later
+    comment that tripped the label heuristic beat the tech's actual
+    report — and joining across comment boundaries let the tail of one
+    comment and the head of the next form a block nobody wrote.
+
+    Parsing each comment on its own and scoring them fixes both: the
+    block naming the most inspection fields wins, ties going to the one
+    that has an arrival Time, since recovering that is the point.
+    Returns {} when nothing qualifies.
+    """
+    best, best_score = {}, -1
+    for raw in (texts or []):
+        if not raw or not str(raw).strip():
+            continue
+        try:
+            blocks = parse_initial_inspection_notes(str(raw))
+        except Exception:
+            continue
+        for b in blocks or []:
+            score = sum(1 for k in _SCORE_FIELDS
+                        if str(b.get(k) or "").strip())
+            if str(b.get("Time") or "").strip():
+                score += 1        # the tie-break, and the point of this
+            if score > best_score:
+                best, best_score = b, score
+    return best
 
 
 def format_initial_notes(parsed: list[dict]) -> str:

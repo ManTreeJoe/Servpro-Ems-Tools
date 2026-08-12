@@ -3262,10 +3262,13 @@ class Api(JobSettingsApi, CompanyCamApi):
             comments = tc.get_all_comments(cid) or []
         except Exception as ex:
             return {"ok": False, "error": f"comment fetch failed: {ex}"}
-        joined = "\n".join((a.get("data") or {}).get("text", "")
-                           for a in comments)
-        blocks = inp.parse_initial_inspection_notes(joined) or []
-        fields = blocks[0] if blocks else {}
+        # Score each comment on its own rather than parsing one big join.
+        # Comments come back newest-first, so the join handed the FIRST
+        # block to whichever recent comment tripped the label heuristic
+        # — which is why the arrival Time came through empty on live
+        # cards while the real inspection report sat further down.
+        fields = inp.best_initial_block(
+            [(a.get("data") or {}).get("text", "") for a in comments])
 
         # Job facts come from the v6 columns, so year built doesn't have
         # to be retyped either.
@@ -3292,8 +3295,15 @@ class Api(JobSettingsApi, CompanyCamApi):
         }
 
     def _supervisor_for(self, client: str, fields: dict) -> str:
-        """Who ran the inspection. The notes rarely name them, so fall
-        back to the tech on this client's run-doc row."""
+        """Who ran the inspection.
+
+        The notes rarely name a supervisor, so this falls back to the
+        run-doc row — but only to the TECH LEADS on it. A run-doc line
+        usually lists the whole crew ("Wendy/Priscilla/Vince"), and
+        naming all of them as Supervisor to an adjuster is wrong; a lead
+        is who supervises. When the row has no lead on it, say nothing
+        rather than promote whoever happened to be listed first.
+        """
         for key in ("Supervisor", "Inspector", "Tech"):
             val = (fields or {}).get(key)
             if (val or "").strip():
@@ -3303,8 +3313,10 @@ class Api(JobSettingsApi, CompanyCamApi):
             for row in (self._last_rows or []):
                 if (row.get("client") or "").strip().lower() == want:
                     techs = [str(t) for t in (row.get("techs") or []) if t]
-                    if techs:
-                        return ", ".join(techs)
+                    leads = [t for t in techs if audit_logic.is_tech_lead(t)]
+                    if leads:
+                        return ", ".join(leads)
+                    break
         except Exception:
             pass
         return ""

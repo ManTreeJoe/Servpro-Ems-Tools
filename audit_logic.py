@@ -263,6 +263,34 @@ _FIRST_NAME_INITIALS = {
 }
 
 
+# The tech leads. A lead is who runs an inspection, so this is also the
+# set the Initial Inspection email names as Supervisor: a run-doc line
+# usually lists the whole crew, and only the lead among them supervised.
+TECH_LEADS = (
+    "Fernando", "Rudy", "Pablo", "Mark E", "Mark L", "Aaron", "Johnny",
+)
+
+
+def is_tech_lead(name):
+    """True when `name` is one of the tech leads, however it was written
+    — first name, full name, or roster initials ("FB", "ME")."""
+    n = re.sub(r"\s+", " ", str(name or "").strip()).lower()
+    if not n:
+        return False
+    keys = set()
+    for lead in TECH_LEADS:
+        keys.add(lead.lower())
+        ini = (initials_for_name(lead) or "").lower()
+        if ini:
+            keys.add(ini)
+    if n in keys:
+        return True
+    # "Fernando Baca" / "Mark Escobar" — resolve through the roster so a
+    # Trello display name counts too.
+    ini = (initials_for_name(n) or "").lower()
+    return bool(ini and ini in keys)
+
+
 def _escape_name_for_regex(name):
     """Names from the user dialog are typed plainly (e.g. "Carlos" or
     "Mark T"). Escape regex metacharacters but allow whitespace between
