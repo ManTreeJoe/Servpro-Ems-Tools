@@ -60,6 +60,26 @@ class JobSettingsApi:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def job_settings_name_history(self, client: str) -> dict:
+        """Every recorded rename for this job, oldest first.
+
+        A job is rarely named right on day one — intake files a surname or
+        an address and the full "Last, First - Carrier" lands once the
+        claim details do. This answers "what was this called when those
+        photos were filed?".
+
+        Empty for jobs renamed before renames were recorded: the old
+        display_name was overwritten in place and is not recoverable.
+        """
+        try:
+            import ems_db
+            key = _resolve(client)
+            if not key:
+                return {"ok": False, "error": "no job name"}
+            return {"ok": True, "history": ems_db.name_history(key)}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def job_settings_save(self, client: str, values: dict,
                           child_name: str = "", card_desc: str = "") -> dict:
         """Save, and push only the fields that differ from the card.

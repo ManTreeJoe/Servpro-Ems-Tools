@@ -1556,6 +1556,7 @@
       width: 720,
       body: `
         ${conflicts}${note}
+        <div id="ji-names"></div>
         ${group(core)}
         <details style="margin-top:4px;">
           <summary style="cursor:pointer;font-size:11.5px;color:var(--text-muted);">
@@ -1577,6 +1578,31 @@
         b.closest("div").style.opacity = ".5";
       });
     });
+
+    // Former names, fetched after the modal paints so the rename lookup
+    // never delays the fields the user came here to edit. Silent when the
+    // job has only ever had one name — which is most of them.
+    (async () => {
+      let hist = [];
+      try {
+        const r = await pywebview.api.job_settings_name_history(row.client);
+        hist = (r && r.ok && r.history) || [];
+      } catch (e) { return; }
+      if (!hist.length) return;
+      const slot = document.getElementById("ji-names");
+      if (!slot) return;   // modal closed while we were fetching
+      // Oldest first, so the chain reads the way it happened. Each `from`
+      // is a name this job has been filed under at some point.
+      const names = hist.map((h) => h.from).filter(Boolean);
+      slot.innerHTML = `
+        <div style="font-size:11.5px;color:var(--text-muted);
+                    margin-bottom:12px;padding:6px 8px;
+                    border-left:2px solid var(--border);">
+          Previously filed as ${names.map((n) =>
+            `<b>${_escapeHtml(n)}</b>`).join(" → ")}
+          <span style="opacity:.7;"> → now</span>
+        </div>`;
+    })();
 
     document.getElementById("ji-save").addEventListener("click", async () => {
       const out = {};

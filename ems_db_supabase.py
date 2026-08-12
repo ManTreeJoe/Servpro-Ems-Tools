@@ -36,6 +36,7 @@ from ems_db_common import (            # noqa: F401 — re-exported as API
     _norm_link, invalidate_department_cache, department_for_path,
     split_department_path, rebase_department_path,
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
+    EVENT_RENAMED, is_material_rename,
 )
 
 SCHEMA_VERSION = 5
@@ -170,6 +171,10 @@ def upsert_job(*, display_name: str, claim_number: str = "",
         _sb.rest("POST", "jobs", body=body,
                  prefer="resolution=merge-duplicates")
         return key
+    # Captured before the PATCH overwrites it — see the SQLite backend.
+    renamed_from = (existing.get("display_name")
+                    if is_material_rename(existing.get("display_name"),
+                                          display_name) else "")
     patch = {
         "display_name":  display_name or existing.get("display_name"),
         "year":          year if year is not None else existing.get("year"),
@@ -181,6 +186,16 @@ def upsert_job(*, display_name: str, claim_number: str = "",
     for col in _TEXT_COLUMNS:
         patch[col] = supplied.get(col) or existing.get(col)
     _sb.rest("PATCH", "jobs", params={"canon_key": f"eq.{key}"}, body=patch)
+    if renamed_from:
+        try:
+            add_alias(key, renamed_from, source="rename")
+        except Exception:
+            pass
+        try:
+            log_event(key, EVENT_RENAMED,
+                      payload={"from": renamed_from, "to": display_name})
+        except Exception:
+            pass
     return key
 
 
@@ -270,6 +285,26 @@ def get_aliases(canon_key_value: str) -> list:
     return [r["alias"] for r in
             _rows("job_aliases", canon_key=f"eq.{canon_key_value}",
                   select="alias", order="added_at.asc")]
+
+
+def name_history(canon_key_value: str) -> list:
+    """Every recorded rename for a job, oldest first — see the SQLite twin."""
+    if not canon_key_value:
+        return []
+    out = []
+    for r in _rows("job_events", canon_key=f"eq.{canon_key_value}",
+                   event_type=f"eq.{EVENT_RENAMED}",
+                   select="event_at,payload_json", order="event_at.asc"):
+        raw = r.get("payload_json")
+        try:
+            p = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except (ValueError, TypeError):
+            continue
+        if p.get("from") or p.get("to"):
+            out.append({"from": p.get("from") or "",
+                        "to": p.get("to") or "",
+                        "at": r.get("event_at")})
+    return out
 
 
 def all_aliases() -> list:
@@ -740,7 +775,21 @@ def merge_jobs(into_key: str, from_keys) -> dict:
         _sb.rest("DELETE", "job_links", params={"canon_key": f"eq.{fk}"})
         if row.get("display_name"):
             add_alias(into_key, row["display_name"], source="merge", force=True)
+        # Carry the loser's history over rather than strand it under a
+        # canon_key that no longer names a job — see the SQLite twin.
+        _sb.rest("PATCH", "job_events", params={"canon_key": f"eq.{fk}"},
+                 body={"canon_key": into_key})
         _sb.rest("DELETE", "jobs", params={"canon_key": f"eq.{fk}"})
+        # The fold IS the rename when the two names really differ.
+        if is_material_rename(row.get("display_name"),
+                              (into or {}).get("display_name")):
+            try:
+                log_event(into_key, EVENT_RENAMED,
+                          payload={"from": row.get("display_name"),
+                                   "to": (into or {}).get("display_name"),
+                                   "via": "merge"})
+            except Exception:
+                pass
         merged += 1
     out = {"merged": merged}
     if skipped:

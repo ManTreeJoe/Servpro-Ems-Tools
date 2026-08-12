@@ -61,6 +61,7 @@ from ems_db_common import (            # noqa: E402  (after module docstring)
     _norm_link, invalidate_department_cache, department_for_path,
     split_department_path, rebase_department_path,
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
+    EVENT_RENAMED, is_material_rename,
 )
 from persistence import _canon_pin_key as _canon_pin_key_persistence
 
@@ -483,6 +484,7 @@ def upsert_job(*, display_name: str,
     # readers don't break, but nothing writes them implicitly any more.
     parent_canon_value = None
     unit_num = None
+    renamed_from = ""
     with _LOCK, _connect() as c:
         existing = c.execute(
             "SELECT * FROM jobs WHERE canon_key = ?", (key,)).fetchone()
@@ -500,7 +502,12 @@ def upsert_job(*, display_name: str,
         else:
             # Partial-update: only overwrite columns the caller actually
             # supplied (non-empty). display_name is always overwritten
-            # so casing/spacing fixes propagate.
+            # so casing/spacing fixes propagate — which is why the old
+            # name has to be captured HERE, before the UPDATE lands, or
+            # it is gone for good. Recorded after the commit so the
+            # audit trail can never claim a rename that didn't stick.
+            if is_material_rename(existing["display_name"], display_name):
+                renamed_from = existing["display_name"]
             new_vals = {
                 "display_name":  display_name or existing["display_name"],
                 "year":          year         if year is not None else existing["year"],
@@ -533,6 +540,20 @@ def upsert_job(*, display_name: str,
                 [new_vals[c_] for c_ in set_cols]
                 + [new_parent, new_unit, new_dept, key])
         c.commit()
+    # After the commit, and outside the connection: the old spelling stays
+    # searchable as an alias, and the change itself is on the record.
+    # Best-effort — a job must never fail to save because its history
+    # couldn't be written.
+    if renamed_from:
+        try:
+            add_alias(key, renamed_from, source="rename")
+        except Exception:
+            pass
+        try:
+            log_event(key, EVENT_RENAMED,
+                      payload={"from": renamed_from, "to": display_name})
+        except Exception:
+            pass
     return key
 
 
@@ -665,10 +686,13 @@ def merge_jobs(into_key: str, from_keys) -> dict:
         return {"merged": 0}
     merged = 0
     skipped_dept = []
+    renames = []
     with _LOCK, _connect() as c:
-        into_dept = (c.execute(
-            "SELECT department FROM jobs WHERE canon_key=?",
-            (into_key,)).fetchone() or {"department": None})["department"]
+        into_row = c.execute(
+            "SELECT display_name, department FROM jobs WHERE canon_key=?",
+            (into_key,)).fetchone()
+        into_dept = into_row["department"] if into_row else None
+        into_name = into_row["display_name"] if into_row else ""
         for fk in from_keys or ():
             fk = (fk or "").strip()
             if not fk or fk == into_key:
@@ -691,7 +715,17 @@ def merge_jobs(into_key: str, from_keys) -> dict:
             c.execute("UPDATE OR IGNORE job_links SET canon_key=? "
                       "WHERE canon_key=?", (into_key, fk))
             c.execute("DELETE FROM job_links WHERE canon_key=?", (fk,))
-            c.execute("DELETE FROM job_events WHERE canon_key=?", (fk,))
+            # Move the history too. Deleting it used to throw away the
+            # loser's renames — the very record of "this job used to be
+            # called that" which a fold is the biggest single source of.
+            # `job_events.id` is the PK, so there is nothing to collide.
+            c.execute("UPDATE job_events SET canon_key=? WHERE canon_key=?",
+                      (into_key, fk))
+            # The fold IS a rename when the two names really differ: a job
+            # filed as "Smith" becoming "Smith, John - State Farm" is a new
+            # canon_key, so upsert_job never saw it as one.
+            if row and is_material_rename(row["display_name"], into_name):
+                renames.append((row["display_name"], into_name))
             # Preserve the old spelling as a searchable alias of the winner.
             if row and row["display_name"]:
                 ac = canon_key(row["display_name"])
@@ -709,6 +743,15 @@ def merge_jobs(into_key: str, from_keys) -> dict:
         c.execute("DELETE FROM job_aliases WHERE canon_key=? "
                   "AND alias_canon=?", (into_key, into_key))
         c.commit()
+    # Logged after the commit, outside the connection — same rule as
+    # upsert_job: never claim a rename the fold didn't actually make.
+    for old_name, new_name in renames:
+        try:
+            log_event(into_key, EVENT_RENAMED,
+                      payload={"from": old_name, "to": new_name,
+                               "via": "merge"})
+        except Exception:
+            pass
     out = {"merged": merged}
     if skipped_dept:
         out["skipped_department_conflict"] = skipped_dept
@@ -1387,6 +1430,35 @@ def get_aliases(canon_key_value: str) -> list[str]:
             ORDER BY added_at ASC
         """, (canon_key_value,)).fetchall()
     return [r["alias"] for r in rows]
+
+
+def name_history(canon_key_value: str) -> list[dict]:
+    """Every recorded rename for a job, oldest first.
+
+    Each entry is ``{"from", "to", "at"}``. Empty for a job that has been
+    called the same thing since intake — and for every job renamed before
+    this was recorded, since the old names were overwritten in place and
+    are not recoverable.
+    """
+    if not canon_key_value:
+        return []
+    with _LOCK, _connect() as c:
+        rows = c.execute("""
+            SELECT event_at, payload_json FROM job_events
+            WHERE canon_key=? AND event_type=?
+            ORDER BY event_at ASC, id ASC
+        """, (canon_key_value, EVENT_RENAMED)).fetchall()
+    out = []
+    for r in rows:
+        try:
+            p = json.loads(r["payload_json"] or "{}")
+        except (ValueError, TypeError):
+            continue
+        if p.get("from") or p.get("to"):
+            out.append({"from": p.get("from") or "",
+                        "to": p.get("to") or "",
+                        "at": r["event_at"]})
+    return out
 
 
 def all_aliases() -> list[dict]:

@@ -97,6 +97,42 @@ def canon_key(name: str) -> str:
     return _canon_pin_key_persistence(name)
 
 
+# ── Renames ─────────────────────────────────────────────────────────────
+#
+# A job's name is rarely right on the first day: intake often has only a
+# surname or an address, and the full "Last, First - Carrier" arrives once
+# the claim details do. `display_name` is overwritten on every upsert, so
+# without this the earlier name simply disappears — and with it the answer
+# to "what was this job called when I filed those photos?".
+#
+# Both backends record the change as a `renamed` event and keep the old
+# spelling as an alias, so the old name still resolves to the job.
+
+EVENT_RENAMED = "renamed"
+
+
+def _squash_name(s: str) -> str:
+    """Casefold + collapse whitespace. Two names that differ only here are
+    the same name typed twice, not a rename."""
+    return re.sub(r"\s+", " ", (s or "").strip()).casefold()
+
+
+def is_material_rename(old: str, new: str) -> bool:
+    """True when `new` is a genuinely different name from `old`.
+
+    Note this is deliberately FINER than `canon_key`: that strips the
+    " - Carrier" suffix, so "Smith, John" and "Smith, John - State Farm"
+    share a key. Adding the carrier once it is known is exactly the change
+    worth recording, so it must count as material here.
+
+    Blank on either side is never a rename — a partial-update upsert that
+    omits the name must not read as one.
+    """
+    if not (old or "").strip() or not (new or "").strip():
+        return False
+    return _squash_name(old) != _squash_name(new)
+
+
 LINK_FOLDER = "folder_path"
 
 

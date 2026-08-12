@@ -77,7 +77,7 @@ _READS = frozenset({
     "get_aliases", "get_job", "get_link", "get_links", "group_by_property",
     "iter_jobs", "job_identity", "lifecycle_counts_by_stage",
     "lifecycle_get", "lifecycle_list", "lifecycle_needs_action_enrichment",
-    "list_transitions",
+    "list_transitions", "name_history",
 })
 
 # Writes that must never be replayed later. Each is either a bulk rewrite
