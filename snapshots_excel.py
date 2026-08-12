@@ -642,6 +642,90 @@ _ROUTE_HINT_TO_SHEET = {
 }
 
 
+# ── Manual sheet pins ───────────────────────────────────────────────
+#
+# Sheet routing is recomputed from scratch on EVERY sync, so a row the
+# user moved to another sheet by hand was silently moved back the next
+# time the audit ran — the change looked like it took, then quietly
+# undid itself. The pin records "the user put this here on purpose" in
+# the shared job DB, so the decision outlives the sync and follows the
+# job across machines.
+#
+# Stored as a job link rather than a new table: single-valued, already
+# present on both backends, moves with the job on a merge, and survives
+# export/import.
+_SHEET_PIN_LINK = "snapshot_sheet"
+
+
+def _pin_canon_key(client):
+    try:
+        import ems_db
+        return ems_db.canon_key(client or "")
+    except Exception:
+        return ""
+
+
+def get_sheet_pin(client):
+    """The sheet the user last moved this job to by hand, or "".
+
+    Best-effort: the DB being unreachable must never block a workbook
+    write, so any failure reads as "no pin" and routing falls back to
+    the automatic rules. An unrecognised stored value is ignored too —
+    a renamed sheet must not strand the row.
+    """
+    key = _pin_canon_key(client)
+    if not key:
+        return ""
+    try:
+        import ems_db
+        v = (ems_db.get_link(key, _SHEET_PIN_LINK) or "").strip()
+    except Exception:
+        return ""
+    return v if v in _ALL_SHEETS else ""
+
+
+def set_sheet_pin(client, sheet):
+    """Remember the user's manual sheet choice; a blank `sheet` forgets it.
+
+    Single-valued — the old pin is dropped first, so a job can never end
+    up pinned to two sheets at once. Returns True when the DB accepted it.
+    """
+    key = _pin_canon_key(client)
+    if not key:
+        return False
+    try:
+        import ems_db
+    except Exception:
+        return False
+
+    if not (sheet and sheet in _ALL_SHEETS):
+        try:
+            ems_db.remove_link(key, _SHEET_PIN_LINK)
+            return True
+        except Exception:
+            return False
+
+    for attempt in (1, 2):
+        try:
+            ems_db.remove_link(key, _SHEET_PIN_LINK)
+            ems_db.set_link(key, _SHEET_PIN_LINK, sheet,
+                            added_by="tracked_move")
+            return True
+        except Exception:
+            # job_links carries a FOREIGN KEY into `jobs`, so a job the
+            # index has never seen cannot hold a pin — the write fails and
+            # the hand-move silently reverts on the next sync, which is the
+            # exact bug this is here to fix. The spreadsheet row IS a real
+            # job, so register it and retry once.
+            if attempt == 2:
+                return False
+            try:
+                ems_db.upsert_job(display_name=(client or "").strip())
+            except Exception:
+                return False
+    return False
+
+
 def _route_for(r):
     """Decide which sheet the job belongs in.
 
@@ -649,10 +733,16 @@ def _route_for(r):
       1. r["_route_override"]  — explicit hint set by the caller
          (e.g., snapshot generate-PDF sets "completed"; the Trello
          reconciler sets the result of `card_route_status`).
-      2. Comment marks it cancelled / archived       → Incomplete
-      3. r["flagged"] OR r["new_loss"]               → NEW LOSS
-      4. would-be Completed AND no Claim# filed      → Incomplete
-      5. else                                        → Completed
+      2. r["_sheet_pin"]       — the user moved this row by hand.
+         Beats every heuristic below: a background sync must not argue
+         with a deliberate choice. It does NOT beat rule 1, because
+         those are deliberate acts too and describe a newer state —
+         `_apply_one` clears the pin when one fires, handing the job
+         back to automatic routing.
+      3. Comment marks it cancelled / archived       → Incomplete
+      4. r["flagged"] OR r["new_loss"]               → NEW LOSS
+      5. would-be Completed AND no Claim# filed      → Incomplete
+      6. else                                        → Completed
 
     The "cancelled" check looks at the audit's free-text fields plus
     the existing spreadsheet Comment cell (from `_existing_comment`)
@@ -669,6 +759,9 @@ def _route_for(r):
     override = (r.get("_route_override") or "").strip().lower()
     if override in _ROUTE_HINT_TO_SHEET:
         return _ROUTE_HINT_TO_SHEET[override]
+    pinned = (r.get("_sheet_pin") or "").strip()
+    if pinned in _ALL_SHEETS:
+        return pinned
     comment = (r.get("_existing_comment") or "").lower()
     if any(k in comment for k in ("cancel", "3rd party", "third party",
                                     "archived", "archive")):
@@ -1117,6 +1210,16 @@ def _apply_one(wb, year, r):
                 r.setdefault(k, v)
         except Exception:
             _warn(f"sync: enrichment failed for {name!r}")
+
+    # Manual placement vs. this sync. An explicit `_route_override` is a
+    # deliberate act describing a NEWER state (the PDF was generated, the
+    # job was added as a new loss), so it supersedes an older hand-move
+    # and returns the job to automatic routing. Everything else is a
+    # background recompute, which must not argue with the user.
+    if (r.get("_route_override") or "").strip():
+        set_sheet_pin(name, "")
+    else:
+        r.setdefault("_sheet_pin", get_sheet_pin(name))
 
     target_base = _route_for(r)
     target_title = _sheet_name(target_base, year)
@@ -1822,14 +1925,21 @@ def set_comment(client, comment, *, year=None):
 
 
 def move_existing_row(client, target_sheet_base, *, year=None):
-    """Public mover used by the state reconciler — finds `client`'s
-    existing row (across all three sheets via _canon_name_key) and
-    relocates it to `target_sheet_base` ("NEW LOSS" / "Completed" /
-    "Incomplete"). Returns True on move, False when the client wasn't
-    found anywhere.
+    """Move `client`'s existing row (found across all sheets via
+    _canon_name_key) to `target_sheet_base` ("NEW LOSS" / "Completed" /
+    "Incomplete" / "Needs Attention"). Returns True on move, False when
+    the client wasn't found anywhere.
+
+    Every caller is a deliberate user move (the Tracked tab, the
+    spreadsheet panel), so a successful move also PINS the choice — see
+    `set_sheet_pin`. Without that the next sync recomputed the route and
+    put the row straight back, which is what made hand-moves look like
+    they didn't save.
 
     Honors the workbook lock — returns False without raising when
-    Excel has the file open."""
+    Excel has the file open. The pin is only written after the workbook
+    write succeeds, so a locked file leaves no pin promising a move that
+    never happened."""
     if not client or target_sheet_base not in _ALL_SHEETS:
         return False
     yr = year or datetime.today().year
@@ -1852,6 +1962,9 @@ def move_existing_row(client, target_sheet_base, *, year=None):
             _atomic_save(wb, path)
         except Exception:
             return False
+    # Only after the workbook write landed — a pin promising a move that
+    # never happened would be worse than no pin at all.
+    set_sheet_pin(client, target_sheet_base)
     return True
 
 
