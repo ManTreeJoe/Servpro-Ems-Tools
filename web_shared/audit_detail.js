@@ -244,6 +244,8 @@
                   title="Draft the Initial Inspection email from the card's notes, copy it, open XactAnalysis, then log it on the card">✉ Initial email</button>
           <button class="action-btn" data-action="job-log-comment" ${hasPin ? "" : "disabled"}
                   title="Post the dated job-log comment — pick what happened and who was there">🗒 Job log comment</button>
+          <button class="action-btn" data-action="activity-comment" ${hasPin ? "" : "disabled"}
+                  title="Post the dated visit comment — pick the stage and who was there">📆 Activity comment</button>
           <button class="action-btn" data-action="docusketch" ${hasPin ? "" : "disabled"}>📐 Docusketch</button>
           <button class="action-btn" data-action="request-items">📨 Request items</button>
           <button class="action-btn" data-action="add-note" title="Add a tracked to-do note for this job">📝 Note</button>
@@ -280,10 +282,6 @@
                   title="Build a clean dated job log from the card's comments (strips email noise) + flag equipment left on site">🗒 Job log</button>
           <span id="cat-class-out" class="muted" style="float:right;margin:2px 8px 0 0;font-weight:600;"></span></h3>
         <div id="all-cl-body"></div>
-      </section>` : ""}
-      ${hasPin ? `<section class="detail-section cl-collapsible cl-collapsed" id="activity-log">
-        <h3>📆 Activity comment <span class="muted" id="activity-log-status"></span></h3>
-        <div id="activity-log-body"></div>
       </section>` : ""}
     `;
   }
@@ -342,7 +340,7 @@
     // Trello checklists — each section collapsible, collapsed by default.
     // Trello info section collapsible (each checklist collapses individually
     // inside #all-cl — handled in loadAllChecklists).
-    ["trello-info", "activity-log"].forEach((id) => {
+    ["trello-info"].forEach((id) => {
       const sec = container.querySelector("#" + id);
       if (!sec) return;
       sec.classList.add("cl-collapsible", "cl-collapsed");
@@ -395,7 +393,8 @@
     const hasPin = !!r.trello_card_id;
     if (hasPin) loadTrelloInfo(r, ctx);
     if (hasPin) loadAllChecklists(r, ctx);   // every checklist on the card
-    if (hasPin) loadActivityLog(r, ctx);
+    // Activity comment is a BUTTON now — loaded on demand, so opening a
+    // job no longer costs two API calls for a thing posted occasionally.
     decorateIssueListsWithCheckboxes(r, ctx);
 
     const trelloBtn = container.querySelector('.action-btn[data-action="open-trello"]');
@@ -1014,6 +1013,8 @@
       openInitialEmailModal(row, ctx);
     } else if (action === "job-log-comment") {
       openJobLogModal(row, ctx);
+    } else if (action === "activity-comment") {
+      openActivityCommentModal(row, ctx);
     } else if (action === "comment") {
       if (M.openComment) M.openComment(row);
     } else if (action === "docusketch") {
@@ -1110,12 +1111,14 @@
   // those map to the same tab as their suffixed twin so an old card
   // reads like a new one. Anything unrecognised falls to Misc rather
   // than being hidden.
+  // Intake first — it's where a job starts, so it's where you look first.
   const CL_ROLES = [
+    { key: "intake", label: "Intake" },
     { key: "admin",  label: "Admin" },
     { key: "coord",  label: "Coordinator" },
     { key: "field",  label: "Field" },
+    { key: "est",    label: "Estimating" },
     { key: "misc",   label: "Misc" },
-    { key: "intake", label: "Intake" },
   ];
 
   // Un-suffixed legacy names → the tab their suffixed twin uses.
@@ -1131,12 +1134,18 @@
     const n = String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
     if (!n) return "misc";
     if (n === "intake") return "intake";
+    if (n === "estimating") return "est";
     // Suffix wins: it's the current convention and the most specific.
     if (/\s-\s*admin$/.test(n))       return "admin";
     if (/\s-\s*coordinator$/.test(n)) return "coord";
-    if (/\s-\s*field$/.test(n))       return "field";
+    if (/\s-\s*estimating$/.test(n))  return "est";
+    // "FIELD" and "FIELD LEAD" are the same people — match the whole
+    // family rather than the one exact spelling, so a checklist added as
+    // "INITIAL - FIELD LEADS" doesn't quietly land in Misc.
+    if (/\s-\s*field(\s+leads?)?$/.test(n)) return "field";
+    if (/\bfield\s+leads?\b/.test(n))       return "field";
     if (Object.prototype.hasOwnProperty.call(CL_LEGACY, n)) return CL_LEGACY[n];
-    return "misc";   // SUBS, ESTIMATING, and anything new
+    return "misc";   // SUBS, and anything new
   }
 
   // Recompute every checklist bar + tab count from the checkboxes on
@@ -1390,6 +1399,28 @@
   function _rememberUsed(key, val) {
     try { localStorage.setItem("activityLog." + key, String(val || "")); }
     catch (_) { /* private mode — the picker just won't be sticky */ }
+  }
+
+  // It used to be a permanent collapsible section at the foot of every
+  // pinned job, which meant two API calls on every card you looked at for
+  // a thing you post occasionally. Now it's a button like every other
+  // action, and the same builder fills the modal — `loadActivityLog` only
+  // needs `#activity-log` and `#activity-log-body` to exist, so nothing
+  // about how the comment is built or posted changed.
+  function openActivityCommentModal(row, ctx) {
+    if (!row || !row.trello_card_id) return;
+    mkModal({
+      title: "📆 Activity comment",
+      sub: _firstLast(row.display_name || tc(ctx, row.client)),
+      width: 560,
+      body: `<div id="activity-log">
+               <span class="muted" id="activity-log-status"></span>
+               <div id="activity-log-body">
+                 <div class="muted" style="padding:8px 0;">Loading…</div>
+               </div>
+             </div>`,
+    });
+    loadActivityLog(row, ctx);
   }
 
   async function loadActivityLog(row, ctx) {
@@ -2730,6 +2761,7 @@
     detailAction,
     loadTrelloInfo,
     loadActivityLog,
+    openActivityCommentModal,
     loadInProgressChecklist,
     loadInitialChecklists,
     loadCloseoutChecklist,

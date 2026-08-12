@@ -1569,10 +1569,13 @@ async function createTodayDoc() {
     setStatus(res.note || "Doc already existed", "warn");
   }
   await loadDate(state.active_date);
-  // Ask about the carried jobs Trello couldn't place — after loadDate,
-  // so state.doc is the doc the modal will be editing.
-  if (res.created && res.unrouted?.length) {
-    await openCarryPlacementModal(res.unrouted);
+  // Review the carried jobs — after loadDate, so state.doc is the doc
+  // the modal will be editing. Every carried job is listed with what the
+  // Trello check decided, not just the ones it couldn't place: an
+  // automatic move is still a decision worth a glance.
+  if (res.created) {
+    const rows = res.reviewed?.length ? res.reviewed : (res.unrouted || []);
+    if (rows.length) await openCarryPlacementModal(rows);
   }
 }
 
@@ -1599,9 +1602,10 @@ async function refreshLanesFromTrello() {
       : `🔄 All ${res.checked} pinned items already in the right section`)
     + (stuck ? ` · ${stuck} couldn't be placed` : ""),
     "ok");
-  // Manual refresh: offer the same placement prompt rather than leaving
-  // the user to hunt for which ones Trello couldn't route.
-  if (stuck) await openCarryPlacementModal(res.unrouted);
+  // Manual refresh: same review, so the user can see what the check did
+  // and disagree with any of it — not just hunt for the failures.
+  const rows = res.reviewed?.length ? res.reviewed : (res.unrouted || []);
+  if (rows.length) await openCarryPlacementModal(rows);
 }
 
 // ── "Where should these go?" — carry-forward placement ──────────
@@ -1610,15 +1614,35 @@ async function refreshLanesFromTrello() {
 // used to stay silently in yesterday's section, which nobody notices
 // until the job is filed wrong. Ask instead, once, at the moment the
 // day rolls over.
-const UNROUTED_REASONS = {
-  no_card:       "no Trello card pinned",
-  no_lane:       "card pinned, but Trello gave no lane",
-  unmapped_lane: "its lane doesn't map to an APA section",
+// How each carried job fared against Trello. The two "checked" outcomes
+// read as reassurance; the three failures read as "you decide".
+const CARRY_STATUS = {
+  confirmed:     { chip: "✓ Trello",   tone: "var(--green,#3fb950)",
+                   note: (r) => `already in the right section${r.lane ? " · " + r.lane : ""}` },
+  moved:         { chip: "→ Moved",    tone: "var(--accent,#4c9aff)",
+                   note: (r) => `${r.section} → ${r.dest}${r.lane ? " · " + r.lane : ""}` },
+  no_card:       { chip: "? No card",  tone: "var(--amber,#d29922)",
+                   note: () => "no Trello card pinned — couldn't check" },
+  no_lane:       { chip: "? No lane",  tone: "var(--amber,#d29922)",
+                   note: () => "card pinned, but Trello gave no lane" },
+  unmapped_lane: { chip: "? Unmapped", tone: "var(--amber,#d29922)",
+                   note: (r) => `lane "${r.lane}" maps to no APA section` },
 };
 
-async function openCarryPlacementModal(unrouted) {
-  if (!Array.isArray(unrouted) || !unrouted.length) return;
+async function openCarryPlacementModal(rows) {
+  if (!Array.isArray(rows) || !rows.length) return;
   if (!state.doc) return;
+  // Accepts the full review list (preferred) or the older unrouted-only
+  // list, whose entries carry no dest/status.
+  const reviewed = rows.map((r) => ({
+    text: r.text,
+    section: r.section,
+    dest: r.dest || r.section,
+    lane: r.lane || "",
+    status: r.status || r.reason || "no_card",
+  }));
+  const unsure = reviewed.filter(
+    (r) => !["confirmed", "moved"].includes(r.status)).length;
 
   // Valid targets: whatever this doc actually has, plus the configured
   // order — a section the user can't see isn't a useful choice.
@@ -1637,36 +1661,43 @@ async function openCarryPlacementModal(unrouted) {
   w.innerHTML = `
     <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(720px,94vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
       <header style="padding:16px 20px;background:var(--surface);border-bottom:1px solid var(--border);">
-        <div style="font-size:15px;font-weight:600;">📍 Where should these jobs go?</div>
+        <div style="font-size:15px;font-weight:600;">📍 Review carried-over jobs</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
-          Carried over from the prior day. Trello couldn't place
-          ${unrouted.length} of them — they're sitting where they were yesterday.
+          ${reviewed.length} job${reviewed.length === 1 ? "" : "s"} carried from the prior day,
+          each checked against its Trello card.
+          ${unsure
+            ? `<b>${unsure}</b> couldn't be checked — those are sitting where they were yesterday.`
+            : `All of them checked out.`}
         </div>
       </header>
-      <div style="padding:14px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
-        ${unrouted.map((u, i) => `
+      <div style="padding:14px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+        ${reviewed.map((r, i) => {
+          const st = CARRY_STATUS[r.status] || CARRY_STATUS.no_card;
+          return `
           <div style="display:grid;grid-template-columns:1fr 230px;gap:10px;align-items:center;
                       padding:8px 10px;background:var(--surface-2);border-radius:6px;">
             <div style="min-width:0;">
               <div style="font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
-                   title="${escapeAttr(u.text || "")}">${escapeHtml(u.text || "")}</div>
-              <div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;">
-                ${escapeHtml(UNROUTED_REASONS[u.reason] || u.reason || "")}
+                   title="${escapeAttr(r.text || "")}">${escapeHtml(r.text || "")}</div>
+              <div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;
+                          display:flex;align-items:center;gap:6px;">
+                <span style="color:${st.tone};font-weight:600;white-space:nowrap;">${escapeHtml(st.chip)}</span>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(st.note(r))}</span>
               </div>
             </div>
             <select class="search ap-sel" data-ix="${i}">
               ${sections.map((s) =>
-                `<option value="${escapeAttr(s)}" ${s === u.section ? "selected" : ""}>${escapeHtml(s)}</option>`
+                `<option value="${escapeAttr(s)}" ${s === r.dest ? "selected" : ""}>${escapeHtml(s)}</option>`
               ).join("")}
             </select>
-          </div>`).join("")}
+          </div>`; }).join("")}
       </div>
       <footer style="padding:12px 20px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;align-items:center;">
         <span style="font-size:11px;color:var(--text-muted);margin-right:auto;">
-          Leave a row unchanged to keep it where it is
+          Each dropdown already holds what the Trello check decided — change any you disagree with
         </span>
-        <button class="btn" id="ap-skip">Leave them</button>
-        <button class="btn btn-primary" id="ap-go">Place jobs</button>
+        <button class="btn" id="ap-skip">Accept as-is</button>
+        <button class="btn btn-primary" id="ap-go">Apply changes</button>
       </footer>
     </div>`;
   document.body.appendChild(w);
@@ -1677,13 +1708,16 @@ async function openCarryPlacementModal(unrouted) {
   document.getElementById("ap-go").addEventListener("click", async () => {
     const moves = [];
     w.querySelectorAll(".ap-sel").forEach((sel) => {
-      const u = unrouted[Number(sel.dataset.ix)];
-      if (u && sel.value && sel.value !== u.section) {
-        moves.push({ from: u.section, to: sel.value, text: u.text });
+      const r = reviewed[Number(sel.dataset.ix)];
+      // Move FROM `dest` — the Trello check already wrote the doc, so
+      // that is where the row actually sits now. Using `section` (where
+      // it came from) would look for it in the section it just left.
+      if (r && sel.value && sel.value !== r.dest) {
+        moves.push({ from: r.dest, to: sel.value, text: r.text });
       }
     });
     close();
-    if (!moves.length) { setStatus("Left all carried jobs in place", "warn"); return; }
+    if (!moves.length) { setStatus("Carried jobs left as the Trello check placed them", "ok"); return; }
     // Move in local state, then reuse the normal whole-doc save.
     let applied = 0;
     for (const mv of moves) {

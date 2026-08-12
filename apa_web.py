@@ -1629,6 +1629,11 @@ class Api:
                     # when the user should be asked where these go —
                     # otherwise they sit in yesterday's section unnoticed.
                     out["unrouted"] = res.get("unrouted") or []
+                    # Every carried job plus what Trello said about it.
+                    # The doc was only just created from carry-forward, so
+                    # everything in it IS a carried job — the review list
+                    # and the carried set are the same thing here.
+                    out["reviewed"] = res.get("reviewed") or []
                     out["doc"] = res.get("doc") or out["doc"]
                 else:
                     out["lanes_error"] = res.get("error", "")
@@ -1683,12 +1688,14 @@ class Api:
         moved = 0
         checked = 0
         unrouted = []
+        reviewed = []
         _lane_cache = {}     # card_id → lane name (one fetch per card)
         for sec, items in parsed.items():
             for text, highlighted in items:
                 dest = sec
                 cid = ""
                 reason = ""
+                lane = ""
                 try:
                     bare = apa.strip_status_from_text(text or "").strip()
                     key = apa._franchise_key(bare) if bare else ""
@@ -1722,6 +1729,19 @@ class Api:
                 if reason:
                     unrouted.append({"text": text, "section": sec,
                                      "reason": reason})
+                # EVERY item, not only the ones that couldn't be placed.
+                # An automatic move is still a decision worth showing:
+                # "Trello says this is in Estimating so I filed it there"
+                # is right most of the time and quietly wrong the rest,
+                # and quietly wrong is what costs a day.
+                reviewed.append({
+                    "text":    text,
+                    "section": sec,          # where it came from
+                    "dest":    dest,         # where the check put it
+                    "lane":    lane or "",   # what Trello actually said
+                    "status":  reason or ("moved" if dest != sec
+                                          else "confirmed"),
+                })
                 new_sections.setdefault(dest, []).append(
                     (text, bool(highlighted)))
 
@@ -1730,7 +1750,8 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"write: {ex}"}
         return {"ok": True, "moved": moved, "checked": checked,
-                "unrouted": unrouted, "doc": _doc_payload_for(d)}
+                "unrouted": unrouted, "reviewed": reviewed,
+                "doc": _doc_payload_for(d)}
 
     def save_doc(self, date_iso: str, sections: list) -> dict:
         """Persist edits to the APA doc for `date_iso`. `sections` is
