@@ -531,6 +531,44 @@ def get_list(list_id, *, fields="id,name,idBoard"):
         return None
 
 
+def order_checklists(card):
+    """Put a card's checklists — and the items inside them — into the
+    order Trello shows them, in place. Returns the same card.
+
+    Trello orders by `pos`, but the API does NOT return them in that
+    order, so a card reading INTAKE → INITIAL → CLOSE OUT on the board
+    arrived here shuffled, and the items inside each one came back
+    scrambled too (pos 17328, 21443, 8664, 37827 in that arrival order
+    on a live card). Anything rendering a checklist looked unrelated to
+    the board it was meant to mirror.
+
+    `pos` is absent unless requested, so this sorts defensively: entries
+    without one keep their arrival order BEHIND those with one, rather
+    than every one of them collapsing to the front.
+    """
+    if not isinstance(card, dict):
+        return card
+    cls = card.get("checklists")
+    if not isinstance(cls, list):
+        return card
+
+    def _by_pos(seq):
+        def key(pair):
+            i, d = pair
+            p = d.get("pos") if isinstance(d, dict) else None
+            try:
+                return (0, float(p), i)
+            except (TypeError, ValueError):
+                return (1, 0.0, i)
+        return [d for _i, d in sorted(enumerate(seq), key=key)]
+
+    card["checklists"] = _by_pos(cls)
+    for cl in card["checklists"]:
+        if isinstance(cl, dict) and isinstance(cl.get("checkItems"), list):
+            cl["checkItems"] = _by_pos(cl["checkItems"])
+    return card
+
+
 def cards_in_list_with_checklists(list_id, *,
                                    fields=("id,name,desc,shortUrl,idBoard,"
                                            "idList,labels,closed")):
@@ -547,11 +585,13 @@ def cards_in_list_with_checklists(list_id, *,
             "fields":           fields,
             "filter":           "open",
             "checklists":       "all",
-            "checklist_fields": "name",
+            # `pos` or the checklists come back in arbitrary order —
+            # see order_checklists.
+            "checklist_fields": "name,pos",
         })
     except Exception:
         return []
-    return [c for c in (raw or []) if not c.get("closed")]
+    return [order_checklists(c) for c in (raw or []) if not c.get("closed")]
 
 
 def set_check_item_state(card_id, check_item_id, state):
@@ -612,17 +652,19 @@ def get_card(card_id, *, actions_limit=50):
     if not card_id:
         return None
     try:
-        return _call(f"/cards/{card_id}", params={
+        return order_checklists(_call(f"/cards/{card_id}", params={
             "fields":         _CARD_FIELDS,
             "checklists":     "all",
-            "checklist_fields": "name",
+            # `pos` or the checklists come back in arbitrary order —
+            # see order_checklists.
+            "checklist_fields": "name,pos",
             "attachments":    "true",
             "attachment_fields": "name,url,date,isUpload",
             "members":        "true",
             "member_fields":  "fullName,username",
             "actions":        _CARD_ACTIONS,
             "actions_limit":  str(actions_limit),
-        })
+        }))
     except urllib.request.HTTPError as ex:
         if ex.code == 404:
             return None

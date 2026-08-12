@@ -306,6 +306,23 @@
         ".cl-collapsible.cl-collapsed > *:not(h3){display:none !important;}" +
         ".cl-group.cl-collapsed .cl-items{display:none;}" +
         ".cl-group-name{font-weight:600;padding:4px 0;}" +
+        // Role tabs over the card's checklists, and a Trello-like
+        // progress bar under each checklist title.
+        ".cl-tabs{display:flex;gap:2px;flex-wrap:wrap;margin:2px 0 8px;" +
+        "border-bottom:1px solid var(--border);}" +
+        ".cl-tab{background:transparent;border:none;border-bottom:2px solid transparent;" +
+        "color:var(--text-muted);font:inherit;font-size:11.5px;font-weight:600;" +
+        "padding:5px 9px;cursor:pointer;border-radius:4px 4px 0 0;white-space:nowrap;}" +
+        ".cl-tab:hover{background:var(--surface-2);color:var(--text);}" +
+        ".cl-tab.active{color:var(--text);border-bottom-color:var(--accent,#4c9aff);}" +
+        ".cl-tab .cl-tab-count{opacity:.65;font-weight:500;margin-left:4px;}" +
+        ".cl-tab.cl-tab-done .cl-tab-count{color:var(--green,#3fb950);opacity:1;}" +
+        ".cl-pane[hidden]{display:none;}" +
+        ".cl-bar{height:4px;border-radius:2px;background:var(--surface-2);" +
+        "overflow:hidden;margin:2px 0 4px;}" +
+        ".cl-bar > i{display:block;height:100%;background:var(--accent,#4c9aff);" +
+        "transition:width .15s ease;}" +
+        ".cl-bar.cl-bar-done > i{background:var(--green,#3fb950);}" +
         ".detail-more{display:flex;flex-direction:row;flex-wrap:wrap;gap:4px;}" +
         ".detail-more .action-btn{flex:0 0 auto;}" +
         // Sticky job-name header that shrinks as you scroll (Trello-style).
@@ -1013,6 +1030,84 @@
       }));
   }
 
+  // ── Checklist role grouping ────────────────────────────────────────
+  // The card carries eight checklists belonging to different people, and
+  // showing them as one flat run made it impossible to see what was
+  // yours. Split by role, in the order the office asked for.
+  //
+  // Matching is by SUFFIX ("INITIAL - ADMIN" → Admin) so a new checklist
+  // added to the card template lands in the right tab without a code
+  // change. Older cards carry un-suffixed names (INITIAL, CONTENTS…);
+  // those map to the same tab as their suffixed twin so an old card
+  // reads like a new one. Anything unrecognised falls to Misc rather
+  // than being hidden.
+  const CL_ROLES = [
+    { key: "admin",  label: "Admin" },
+    { key: "coord",  label: "Coordinator" },
+    { key: "field",  label: "Field" },
+    { key: "misc",   label: "Misc" },
+    { key: "intake", label: "Intake" },
+  ];
+
+  // Un-suffixed legacy names → the tab their suffixed twin uses.
+  const CL_LEGACY = {
+    "initial":     "admin",
+    "in progress": "admin",
+    "close out":   "admin",
+    "closeout":    "admin",
+    "contents":    "coord",
+  };
+
+  function checklistRole(name) {
+    const n = String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!n) return "misc";
+    if (n === "intake") return "intake";
+    // Suffix wins: it's the current convention and the most specific.
+    if (/\s-\s*admin$/.test(n))       return "admin";
+    if (/\s-\s*coordinator$/.test(n)) return "coord";
+    if (/\s-\s*field$/.test(n))       return "field";
+    if (Object.prototype.hasOwnProperty.call(CL_LEGACY, n)) return CL_LEGACY[n];
+    return "misc";   // SUBS, ESTIMATING, and anything new
+  }
+
+  // Recompute every checklist bar + tab count from the checkboxes on
+  // screen. Cheap, and it keeps one source of truth (the DOM) rather
+  // than trying to patch counts item by item.
+  function refreshChecklistProgress(root) {
+    if (!root) return;
+    root.querySelectorAll(".cl-group").forEach((g) => {
+      const boxes = g.querySelectorAll('.cl-item input[type="checkbox"]');
+      const done = [...boxes].filter((b) => b.checked).length;
+      const pct = boxes.length ? Math.round((done / boxes.length) * 100) : 0;
+      const bar = g.querySelector(".cl-bar");
+      if (bar) {
+        bar.classList.toggle("cl-bar-done", boxes.length > 0 && done === boxes.length);
+        const fill = bar.querySelector("i");
+        if (fill) fill.style.width = pct + "%";
+      }
+      const lbl = g.querySelector(".cl-group-name .muted");
+      if (lbl) lbl.textContent = `(${done}/${boxes.length})`;
+    });
+    root.querySelectorAll(".cl-pane").forEach((p) => {
+      const boxes = p.querySelectorAll('.cl-item input[type="checkbox"]');
+      const done = [...boxes].filter((b) => b.checked).length;
+      const tab = root.querySelector(`.cl-tab[data-cltab="${p.dataset.clpane}"]`);
+      if (!tab) return;
+      tab.classList.toggle("cl-tab-done", boxes.length > 0 && done === boxes.length);
+      const c = tab.querySelector(".cl-tab-count");
+      if (c) c.textContent = `${done}/${boxes.length}`;
+    });
+  }
+
+  function groupChecklistsByRole(checklists) {
+    const by = {};
+    CL_ROLES.forEach((r) => { by[r.key] = []; });
+    (checklists || []).forEach((cl) => {
+      (by[checklistRole(cl && cl.name)] || by.misc).push(cl);
+    });
+    return CL_ROLES.map((r) => ({ ...r, checklists: by[r.key] }));
+  }
+
   // ── Async section: 🗂 In Progress checklist (verbatim port) ────────
   // Every checklist on the card, each collapsible (collapsed by default).
   async function loadAllChecklists(row, ctx) {
@@ -1032,12 +1127,15 @@
       n + (cl.items || []).filter((i) => i.complete).length, 0);
     if (statusEl) statusEl.textContent = checklists.length ? `(${done}/${total})` : "";
 
-    const clHtml = checklists.map((cl) => {
+    const groupHtml = (cl) => {
       const items = cl.items || [];
       const cdone = items.filter((i) => i.complete).length;
+      const pct = items.length ? Math.round((cdone / items.length) * 100) : 0;
+      const full = items.length > 0 && cdone === items.length;
       return `
-      <div class="cl-group cl-collapsed">
-        <div class="cl-group-name" style="cursor:pointer;">▸ ${esc(ctx, cl.name)} <span class="muted">(${cdone}/${items.length})</span></div>
+      <div class="cl-group">
+        <div class="cl-group-name" style="cursor:pointer;">▾ ${esc(ctx, cl.name)} <span class="muted">(${cdone}/${items.length})</span></div>
+        <div class="cl-bar${full ? " cl-bar-done" : ""}"><i style="width:${pct}%;"></i></div>
         <ul class="issue-list cl-items">
           ${items.map((it) => `
             <li class="cl-item"><label>
@@ -1046,7 +1144,32 @@
             </label></li>`).join("")}
         </ul>
       </div>`;
-    }).join("");
+    };
+
+    // Group the card's checklists by whose job they are. Checklists keep
+    // Trello's own order inside each tab — trello_client sorts by `pos`,
+    // so this mirrors the board rather than inventing an order.
+    const buckets = window.AuditDetail.groupChecklistsByRole(checklists);
+    // A tab with nothing behind it is just a dead end. Field has no
+    // checklists on the current card template and only appears once a
+    // "- FIELD" checklist exists.
+    const shown = buckets.filter((b) => b.checklists.length);
+    const clHtml = shown.length ? `
+      <div class="cl-tabs" role="tablist">
+        ${shown.map((b, i) => {
+          const its = b.checklists.reduce((n, c) => n + (c.items || []).length, 0);
+          const dn = b.checklists.reduce((n, c) =>
+            n + (c.items || []).filter((x) => x.complete).length, 0);
+          const full = its > 0 && dn === its;
+          return `<button class="cl-tab${i === 0 ? " active" : ""}${full ? " cl-tab-done" : ""}"
+                    role="tab" data-cltab="${escA(ctx, b.key)}">${esc(ctx, b.label)}<span
+                    class="cl-tab-count">${dn}/${its}</span></button>`;
+        }).join("")}
+      </div>
+      ${shown.map((b, i) => `
+        <div class="cl-pane" data-clpane="${escA(ctx, b.key)}"${i === 0 ? "" : " hidden"}>
+          ${b.checklists.map(groupHtml).join("")}
+        </div>`).join("")}` : "";
     const cannedHtml = `
       <div class="canned-comments">
         <button class="action-btn" data-canned="ipr"
@@ -1064,6 +1187,41 @@
         g.classList.toggle("cl-collapsed");
         nm.firstChild.nodeValue = g.classList.contains("cl-collapsed") ? "▸ " : "▾ ";
       });
+    });
+    // Role tabs. Remembered per panel so flipping between jobs keeps you
+    // on your own tab instead of resetting to the first one every time.
+    const tabs = bodyEl.querySelectorAll(".cl-tab");
+    const showTab = (key) => {
+      let matched = false;
+      tabs.forEach((t) => {
+        const on = t.dataset.cltab === key;
+        t.classList.toggle("active", on);
+        if (on) matched = true;
+      });
+      bodyEl.querySelectorAll(".cl-pane").forEach((p) => {
+        p.hidden = p.dataset.clpane !== key;
+      });
+      return matched;
+    };
+    if (tabs.length) {
+      // The remembered tab may not exist on this card (no Coordinator
+      // checklist, say) — fall back to the first rather than showing
+      // nothing at all.
+      const want = window.AuditDetail._clTab;
+      if (!want || !showTab(want)) showTab(tabs[0].dataset.cltab);
+      tabs.forEach((t) => t.addEventListener("click", () => {
+        window.AuditDetail._clTab = t.dataset.cltab;
+        showTab(t.dataset.cltab);
+      }));
+    }
+    // Ticking an item has to move the bar and the tab's count, or the
+    // progress you just made is invisible until the next reload. Runs
+    // after the per-item handler above has (or hasn't) reverted the box,
+    // so it always reflects what actually stuck.
+    bodyEl.addEventListener("change", (e) => {
+      if (e.target && e.target.matches('.cl-item input[type="checkbox"]')) {
+        setTimeout(() => refreshChecklistProgress(bodyEl), 0);
+      }
     });
     bodyEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
       cb.addEventListener("change", async () => {
@@ -2497,6 +2655,7 @@
   }
 
   window.AuditDetail = {
+    groupChecklistsByRole,
     buildDetailBodyHTML,
     wireDetail,
     detailAction,
