@@ -3633,7 +3633,12 @@ function onKeyDown(ev) {
     openQuickJump();
     return;
   }
-  if (ev.target.tagName === "INPUT") return;
+  // One shared guard — typing anywhere, or any dialog open, means these
+  // single-key shortcuts are not for us. Falls back to the old test if
+  // keyboard.js somehow didn't load.
+  if (window.shouldIgnoreKey
+        ? window.shouldIgnoreKey(ev)
+        : (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA")) return;
   if (ev.key === "/") {
     $("#search-box").focus();
     ev.preventDefault();

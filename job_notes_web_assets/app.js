@@ -18,7 +18,11 @@ window.addEventListener("pywebviewready", async () => {
     renderList();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.target.tagName === "INPUT") return;
+    // Shared guard: typing anywhere, or any dialog open, means these
+    // shortcuts are not for us. TEXTAREA used to fall straight through.
+    if (window.shouldIgnoreKey
+          ? window.shouldIgnoreKey(e)
+          : (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
     if (e.key === "/") { $("#search-box").focus(); e.preventDefault(); return; }
     if (e.key === "ArrowDown" || e.key === "j") stepSel(+1);
     if (e.key === "ArrowUp"   || e.key === "k") stepSel(-1);

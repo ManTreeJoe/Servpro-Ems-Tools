@@ -829,7 +829,12 @@ function onKeyDown(ev) {
     forceSave();
     return;
   }
-  if (ev.target.tagName === "INPUT") return;
+  // One shared guard — typing anywhere, or any dialog open, means these
+  // single-key shortcuts are not for us. Falls back to the old test if
+  // keyboard.js somehow didn't load.
+  if (window.shouldIgnoreKey
+        ? window.shouldIgnoreKey(ev)
+        : (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA")) return;
   if (ev.key === "ArrowLeft" && ev.altKey)  stepDate(-1);
   else if (ev.key === "ArrowRight" && ev.altKey) stepDate(+1);
   else if (ev.key === "Home" && ev.altKey)  loadToday();

@@ -27,6 +27,39 @@
     return false;
   }
 
+  // A dialog is open. Single-key shortcuts belong to the LIST behind it,
+  // and firing them from a dialog moves a selection you cannot see —
+  // or worse, acts on it.
+  function isModalOpen() {
+    const sel = ".overlay, #ad-modal, #apa-place-modal, #apa-add-modal," +
+                " #cc-missing-modal, [data-modal]";
+    let nodes;
+    try { nodes = document.querySelectorAll(sel); } catch (_) { return false; }
+    for (const n of nodes) {
+      // offsetParent is null for display:none — a modal element left in
+      // the DOM but hidden must not suppress every shortcut on the page.
+      if (n.offsetParent !== null || n.getClientRects().length) return true;
+    }
+    return false;
+  }
+
+  // The one guard every panel's global keydown should ask.
+  //
+  // Each panel used to test `ev.target.tagName === "INPUT"` on its own,
+  // which let every single-key shortcut through while typing in a
+  // TEXTAREA: Enter opened a folder, "r" kicked off a full re-audit, j/k
+  // moved the selection — all from inside a note or comment box.
+  function shouldIgnoreKey(ev) {
+    if (!ev) return false;
+    if (isTyping(ev.target)) return true;
+    if (isTyping(document.activeElement)) return true;
+    return isModalOpen();
+  }
+
+  window.isTypingTarget = isTyping;
+  window.isModalOpen = isModalOpen;
+  window.shouldIgnoreKey = shouldIgnoreKey;
+
   function focusSearch() {
     const box = document.getElementById("search-box");
     if (!box) return false;
