@@ -1932,7 +1932,9 @@ function renderList() {
   // searched jobs now persist, so there has to be a way to empty them.
   const clearBtn = $("#clear-oneoff-btn");
   if (clearBtn) {
-    const n = (state.oneoffHits || []).length;
+    // Only on Recent, where those results are actually visible — offering
+    // to clear something you can't see is just a confusing button.
+    const n = state.mode === "search" ? (state.oneoffHits || []).length : 0;
     clearBtn.classList.toggle("hidden", n === 0);
     clearBtn.textContent = n > 1 ? `✕ Clear ${n}` : "✕ Clear result";
   }
@@ -2624,9 +2626,11 @@ function scrollSelectedIntoView() {
 // ── Filtering ────────────────────────────────────────────────────
 function filterRows() {
   let rows = state.rows;
-  // One-off audit rows surfaced by a search that found nothing in the
-  // loaded list — prepend them (deduped) so they show up as matches.
-  if (state.oneoffHits && state.oneoffHits.length) {
+  // One-off audit rows belong to the Recent tab and ONLY there. They used
+  // to be prepended onto whatever list was showing, which put searched
+  // jobs into the Daily Run list where they read as part of the day's run
+  // — they aren't, and no amount of scrolling told you which was which.
+  if (state.mode === "search" && state.oneoffHits && state.oneoffHits.length) {
     const have = new Set(rows.map(rowKey));
     const extra = state.oneoffHits.filter((h) => !have.has(rowKey(h)));
     if (extra.length) rows = extra.concat(rows);
@@ -3107,6 +3111,12 @@ async function pickSuggestion(r) {
 async function runOneoffFromSearch(term, skipCanon, folderPath) {
   const t = (term || "").trim();
   if (!t || state.oneoffRunning) return;
+  // The result lands on Recent and shows nowhere else, so searching from
+  // Daily Run or Starred used to audit the job into a tab you weren't
+  // looking at — it read as "nothing happened". Switch first, so the
+  // audit visibly runs where its result will appear. Matches what the
+  // "Audit one" dialog already does.
+  if (state.mode !== "search") await switchMode("search");
   state.oneoffRunning = true;
   state.oneoffTried = t;
   renderList();  // repaint the empty-state button as "Searching…"
