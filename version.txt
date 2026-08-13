@@ -1,6 +1,6 @@
 {
-  "version": "1.3.3",
+  "version": "1.3.4",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.3.3/Linguar-Hub-Setup-1.3.3.exe",
-  "notes": "The initial email works again (it was failing silently). APA's filter search now edits the row you clicked, not another job. Copy email finds the address wherever the card keeps it, and there's a Copy address button. Jobs show their carrier. Right-click a checklist to add or remove items. Long jobs show a progress bar. CompanyCam checks are much faster the second time, and no longer pull in video. WC audit pinning works again."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.3.4/Linguar-Hub-Setup-1.3.4.exe",
+  "notes": "Searching for a job that isn't in the index: one click on \"Search folders\" now audits it, instead of scanning and waiting for a second click. When a folder search really does turn up several matches you still get to pick. Buttons that fail now say why in the status bar instead of doing nothing."
 }

@@ -3028,19 +3028,30 @@ function renderSuggestions(q, rows) {
   el.querySelectorAll(".suggest-row[data-i]").forEach((row) => {
     row.addEventListener("click", () => pickSuggestion(rows[+row.dataset.i]));
   });
+  // An async handler that throws becomes an unhandled rejection — no
+  // error, no log, nothing on screen. Report it instead: a button that
+  // says why it failed is debuggable; one that does nothing is not.
+  const go = (scope) => {
+    try {
+      const p = runDeepPicker(q, scope);
+      if (p && p.catch) p.catch((ex) => setStatus(`Folder search failed: ${ex}`, "error"));
+    } catch (ex) {
+      setStatus(`Folder search failed: ${ex}`, "error");
+    }
+  };
   const deep = el.querySelector(".sg-deep");
-  deep?.addEventListener("click", () => runDeepPicker(q, ""));
+  deep?.addEventListener("click", () => go(""));
   deep?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") runDeepPicker(q, "");
+    if (e.key === "Enter") go("");
   });
   // Same scan, straight from the empty state. It goes through the picker
   // rather than the old blind fuzzy match, so a weak match still can't
   // silently audit the wrong job — it just doesn't cost an extra click to
   // reach.
   const force = el.querySelector(".sg-force");
-  force?.addEventListener("click", () => runDeepPicker(q, ""));
+  force?.addEventListener("click", () => go(""));
   force?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") runDeepPicker(q, "");
+    if (e.key === "Enter") go("");
   });
 }
 
@@ -3157,8 +3168,15 @@ function renderAuditCandidates(host, cands, typed, widened) {
     el.addEventListener("click", (ev) => {
       if (ev.target.closest(".sg-merge")) return;   // merge handled below
       const c = cands[+el.dataset.i];
-      if (!c.has_card) { offerCardThenAudit(host, c); return; }
-      auditCandidate(c);
+      // Same reasoning as the scan button: an async handler that throws
+      // here reaches nothing at all, so the row just looks dead.
+      setStatus(`🔍 Auditing ${c && c.name ? c.name : "job"}…`, "info");
+      try {
+        const p = (!c.has_card) ? offerCardThenAudit(host, c) : auditCandidate(c);
+        if (p && p.catch) p.catch((ex) => setStatus(`Audit failed: ${ex}`, "error"));
+      } catch (ex) {
+        setStatus(`Audit failed: ${ex}`, "error");
+      }
     });
   });
   host.querySelectorAll(".sg-merge").forEach((el) => {
@@ -3186,10 +3204,18 @@ function renderAuditCandidates(host, cands, typed, widened) {
 }
 
 async function runDeepPicker(typed, scope) {
+  // Say something in the STATUS BAR too, not only in the dropdown. A JS
+  // error in here reached nowhere: it doesn't go to ems.log, and the
+  // dropdown it would have drawn into is the thing that failed — so a
+  // dead click looked like a dead button with nothing to go on.
+  try { setStatus(`🔍 Searching folders for “${typed}”…`, "info"); } catch (_) {}
   const t = (typed || "").trim();
   if (!t) return;
   const host = ensureSuggestBox();
-  if (!host) return;
+  if (!host) {
+    try { setStatus("Couldn't open the results list", "error"); } catch (_) {}
+    return;
+  }
   // Cancel any in-flight type-ahead so its results can't repaint over the
   // picker after the slower scan has already drawn.
   state.suggestSeq = (state.suggestSeq || 0) + 1;
@@ -3201,7 +3227,28 @@ async function runDeepPicker(typed, scope) {
     host.innerHTML = `<div class="suggest-empty">Search failed: ${escapeHtml(res?.error || "?")}</div>`;
     return;
   }
-  renderAuditCandidates(host, res.candidates || [], t, scope === "all");
+  const cands = res.candidates || [];
+  // Exactly one match is not a choice. The picker exists so a weak match
+  // can't silently audit the wrong job — with a single hit from a scan
+  // the user explicitly asked for, there is no ambiguity to resolve, and
+  // making them click a list of one is what made this read as "the
+  // button does nothing": the scan ran, a list appeared, and nothing
+  // seemed to happen because the second click was never obvious.
+  if (cands.length === 1 && cands[0]) {
+    const only = cands[0];
+    setStatus(`🔍 ${only.name} — auditing…`, "info");
+    if (only.has_card) {
+      hideSuggestions();
+      await auditCandidate(only);
+    } else {
+      // No card yet: offering one before auditing is the point of that
+      // step, and it draws into the dropdown — so the list stays open
+      // for it rather than being hidden first.
+      await offerCardThenAudit(host, only);
+    }
+    return;
+  }
+  renderAuditCandidates(host, cands, t, scope === "all");
 }
 
 // The pick is where the real work starts: we already know the canonical
