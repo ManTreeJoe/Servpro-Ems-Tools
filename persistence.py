@@ -226,6 +226,29 @@ def _canon_pin_key(client) -> str:
     # And the no-space-before variant "- Carrier" (e.g.
     # "Smith, John- AAA"). Same guard — short alpha tail only.
     head = _re.sub(r"-\s+[A-Z][A-Za-z0-9&/]{0,15}\s*$", "", head)
+    # Both rules above only match a SINGLE-word tail, so the no-space
+    # variants missed every multi-word carrier — and most carriers are
+    # two words. "Smith, John - State Farm" and "Smith, John- State Farm"
+    # canon'd to different keys, i.e. two jobs for one insured; on the
+    # live index 8 rows were sitting on a "- Self Pay" / "- State Farm"
+    # key that the spaced spelling would never find.
+    #
+    # Widen it ONLY for a tail we actually recognise as a carrier. The
+    # dash is not reserved for carriers — it also separates units, dates,
+    # sub-properties and claim numbers ("Avila Apartments- Unit 226",
+    # "Keystone- Highland Village- (Unit 168)", "7 -11  (Norco)",
+    # "MUSD Oak Meadows Elementary- 2511-565898WTR"). A blanket split was
+    # measured against the live index first and folded every unit of a
+    # complex, and every school in a district, onto one key. `is_known`
+    # exists for this exact call — see its docstring.
+    m = _re.search(r"(?:\s+-\s*|-\s+)([^-]+?)\s*$", head)
+    if m:
+        try:
+            import carriers as _carriers
+            if _carriers.is_known(m.group(1)):
+                head = head[:m.start()]
+        except Exception:
+            pass
     head = head.strip()
     # Normalize comma-space: ensure each comma has exactly one
     # space after it. Catches "Doe,John" → "Doe, John".
