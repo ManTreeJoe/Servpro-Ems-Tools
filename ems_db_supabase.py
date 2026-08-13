@@ -849,8 +849,146 @@ def merge_jobs(into_key: str, from_keys) -> dict:
 def backfill_departments(*a, **k):    _unsupported("backfill_departments")
 def export_db(*a, **k):               _unsupported("export_db")
 def import_db(*a, **k):               _unsupported("import_db")
-def sync_from_trello(*a, **k):        _unsupported("sync_from_trello")
 def reset_db_path(*a, **k):           _unsupported("reset_db_path")
+
+
+# How many rows go in one PostgREST request. Big enough that a full
+# workspace is a handful of calls, small enough that one failure doesn't
+# cost the whole sync.
+_SYNC_CHUNK = 200
+
+
+def _chunks(seq, n=_SYNC_CHUNK):
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
+
+
+def sync_from_trello(*, exclude_quality: bool = True,
+                     exclude_logs: bool = True,
+                     lane_filter=None, progress_cb=None) -> dict:
+    """Refresh the index from Trello, in bulk.
+
+    This was unsupported for a real reason: the SQLite version writes per
+    card — upsert_job + add_alias + set_link — which against a hosted
+    database is three round trips times every open card, so a workspace
+    sync was thousands of requests. Nobody was going to wait, so the
+    shared index simply stopped learning anything from Trello after the
+    cutover: no carriers, no claim numbers, no new jobs.
+
+    Same work, batched: read the existing rows for every key at once,
+    merge in Python, then upsert in chunks. A full workspace is a handful
+    of requests.
+
+    The SQLite semantics are preserved deliberately, because conformance
+    compares the two:
+      * a blank from Trello never overwrites a stored value,
+      * first_seen_at survives, last_seen_at moves,
+      * a material rename still records a rename event and keeps the old
+        name as an alias.
+    """
+    # Local import, matching upsert_job: the column list is owned by the
+    # SQLite module so the two backends can't drift on which fields exist.
+    from ems_db_sqlite import _TEXT_COLUMNS
+    import trello_job_sync as _walk
+    found = _walk.collect(exclude_quality=exclude_quality,
+                          exclude_logs=exclude_logs,
+                          lane_filter=lane_filter,
+                          progress_cb=progress_cb)
+    records = found["records"]
+    out = {"boards": found["boards"], "cards": len(records),
+           "jobs_upserted": 0, "links_added": 0}
+    if not records:
+        return out
+
+    # One card per key wins the job fields — a client with several cards
+    # would otherwise fight itself. Every card still gets its own link,
+    # which is how multi-card clients stay reachable.
+    by_key: dict = {}
+    for rec in records:
+        by_key[rec["canon_key"]] = rec
+    keys = list(by_key)
+
+    existing: dict = {}
+    for part in _chunks(keys):
+        for row in _rows("jobs", canon_key=_in(part), select="*"):
+            existing[row["canon_key"]] = row
+
+    now = _now_iso()
+    job_rows, alias_rows, rename_events = [], [], []
+    for key, rec in by_key.items():
+        prior = existing.get(key)
+        name = rec["display_name"]
+        supplied = {"claim_number": rec["claim_number"],
+                    "carrier": rec["carrier"],
+                    "status": rec["status"]}
+        md_json = json.dumps({"board": rec["board"], "lane": rec["lane"]})
+        row = {"canon_key": key, "display_name": name,
+               "last_seen_at": now, "metadata_json": md_json}
+        if prior is None:
+            row["first_seen_at"] = now
+            row["department"] = None
+            for col in _TEXT_COLUMNS:
+                row[col] = supplied.get(col) or None
+        else:
+            row["first_seen_at"] = prior.get("first_seen_at") or now
+            row["department"] = prior.get("department")
+            for col in _TEXT_COLUMNS:
+                # Blank in never clears what's stored — the same
+                # partial-update rule upsert_job applies one row at a
+                # time. Without it a card missing its carrier would
+                # ERASE a carrier somebody typed in.
+                row[col] = supplied.get(col) or prior.get(col)
+            was = prior.get("display_name") or ""
+            if is_material_rename(was, name):
+                rename_events.append((key, was, name))
+                alias_rows.append({"canon_key": key, "alias": was,
+                                   "alias_canon": canon_key(was),
+                                   "source": "rename"})
+        job_rows.append(row)
+        alias_rows.append({"canon_key": key, "alias": name,
+                           "alias_canon": canon_key(name),
+                           "source": "trello"})
+
+    for part in _chunks(job_rows):
+        _sb.rest("POST", "jobs", body=part,
+                 prefer="resolution=merge-duplicates")
+        out["jobs_upserted"] += len(part)
+
+    # Aliases are keyed on (canon_key, alias_canon); re-syncing the same
+    # board must not pile up duplicates.
+    seen_alias = set()
+    deduped = []
+    for a in alias_rows:
+        sig = (a["canon_key"], a["alias_canon"])
+        if a["alias_canon"] and sig not in seen_alias:
+            seen_alias.add(sig)
+            deduped.append(a)
+    for part in _chunks(deduped):
+        try:
+            _sb.rest("POST", "job_aliases", body=part,
+                     prefer="resolution=merge-duplicates")
+        except Exception:
+            pass          # an alias clash must not fail the whole sync
+
+    link_rows = [{
+        "canon_key": rec["canon_key"], "link_type": LINK_TRELLO,
+        "value": rec["card_id"], "added_by": "sync_from_trello",
+        "added_at": now,
+        "metadata_json": json.dumps({"board": rec["board"],
+                                     "lane": rec["lane"]}),
+    } for rec in records if rec.get("card_id")]
+    for part in _chunks(link_rows):
+        _sb.rest("POST", "job_links", body=part,
+                 prefer="resolution=merge-duplicates")
+        out["links_added"] += len(part)
+
+    for key, was, now_name in rename_events:
+        try:
+            log_event(key, EVENT_RENAMED, payload={"from": was,
+                                                   "to": now_name})
+        except Exception:
+            pass          # history is worth having, not worth failing for
+    return out
 
 
 def __getattr__(name):

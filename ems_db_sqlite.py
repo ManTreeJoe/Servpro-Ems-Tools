@@ -1720,92 +1720,30 @@ def sync_from_trello(*, exclude_quality: bool = True,
     Returns {"boards": B, "cards": C, "jobs_upserted": J,
              "links_added": L}.
     """
-    import trello_client as tc
-    boards = tc.list_boards(exclude_quality=exclude_quality)
-    # Resolve closed-board IDs once so the per-board loop can stamp
-    # status='closed' on those cards without a second Trello call.
-    closed_board_ids: set[str] = set()
-    try:
-        if exclude_logs:
-            logs_bid = tc.get_logs_board_id()
-            if logs_bid:
-                closed_board_ids.add(logs_bid)
-                # Drop closed boards from the iteration too — saves the
-                # /cards round-trip when the caller doesn't want them.
-                boards = [b for b in boards
-                          if b.get("id") not in closed_board_ids]
-    except Exception:
-        pass
-    b_total = len(boards)
-    cards_total = 0
-    jobs_upserted = 0
-    links_added = 0
+    import trello_job_sync as _walk
+    found = _walk.collect(exclude_quality=exclude_quality,
+                          exclude_logs=exclude_logs,
+                          lane_filter=lane_filter,
+                          progress_cb=progress_cb)
+    b_total = found["boards"]
+    cards_total = jobs_upserted = links_added = 0
 
-    for bi, b in enumerate(boards, start=1):
-        bid = b.get("id")
-        if not bid:
-            continue
-        try:
-            lists = tc._call(f"/boards/{bid}/lists",
-                              params={"fields": "id,name"}) or []
-        except Exception:
-            lists = []
-        list_name_by_id = {l["id"]: l.get("name", "")
-                            for l in lists if l.get("id")}
-        try:
-            cards = tc._call(f"/boards/{bid}/cards",
-                              params={"fields":
-                                  "id,name,shortUrl,idList,closed,desc"}) or []
-        except Exception:
-            cards = []
-
-        for ci, card in enumerate(cards, start=1):
-            if card.get("closed"):
-                continue
-            lane = list_name_by_id.get(card.get("idList", ""), "")
-            if lane_filter is not None and lane not in lane_filter:
-                continue
-            name = (card.get("name") or "").strip()
-            if not name:
-                continue
-            # Strip a trailing " - Carrier" / date suffix from the
-            # display_name when building the canon_key (persistence
-            # canon already does this). Stash both forms as aliases
-            # so a search on the full card title still hits.
-            key = canon_key(name)
-            if not key:
-                continue
-            # Trello-source fields: best-effort claim# extraction from
-            # the desc, since `desc` parsing is cheap here.
-            claim = ""
-            carrier = ""
-            try:
-                fields = tc.parse_card_desc(card.get("desc") or "")
-                ins = fields.get("INSURANCE INFORMATION") or {}
-                claim = (ins.get("CLAIM NUMBER") or "").strip()
-                carrier = (ins.get("INSURANCE COMPANY") or "").strip()
-            except Exception:
-                pass
-
-            upsert_job(
-                display_name=name,
-                claim_number=claim,
-                carrier=carrier,
-                status=("closed" if bid in closed_board_ids else "active"),
-                metadata={"board": b.get("name", ""), "lane": lane},
-            )
-            jobs_upserted += 1
-            add_alias(key, name, source="trello")
-            set_link(key, "trello_card", card["id"],
-                     metadata={"board": b.get("name", ""), "lane": lane},
-                     added_by="sync_from_trello")
-            links_added += 1
-            cards_total += 1
-            if progress_cb is not None:
-                try:
-                    progress_cb(ci, len(cards), name)
-                except Exception:
-                    pass
+    for rec in found["records"]:
+        key = rec["canon_key"]
+        meta = {"board": rec["board"], "lane": rec["lane"]}
+        upsert_job(
+            display_name=rec["display_name"],
+            claim_number=rec["claim_number"],
+            carrier=rec["carrier"],
+            status=rec["status"],
+            metadata=meta,
+        )
+        jobs_upserted += 1
+        add_alias(key, rec["display_name"], source="trello")
+        set_link(key, "trello_card", rec["card_id"],
+                 metadata=meta, added_by="sync_from_trello")
+        links_added += 1
+        cards_total += 1
 
     return {
         "boards": b_total,

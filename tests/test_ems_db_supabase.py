@@ -48,7 +48,11 @@ def test_every_sqlite_function_exists_on_the_supabase_backend():
 
 
 def test_bulk_operations_fail_loudly_rather_than_half_working():
-    for name in ("export_db", "import_db", "sync_from_trello",
+    # sync_from_trello is no longer here: it is implemented in bulk.
+    # It was unsupported because the per-card form was thousands of
+    # round trips, which left the shared index unable to learn
+    # anything from Trello after the cutover.
+    for name in ("export_db", "import_db",
                  "backfill_departments", "lifecycle_list"):
         with pytest.raises(NotImplementedError) as ex:
             getattr(sup, name)()
