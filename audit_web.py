@@ -6994,6 +6994,55 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def invalidate_checklist_cache(self) -> dict:
+        """Drop the 45s checklist cache (and the 60s card enrichment).
+
+        Adding or removing an item has to be visible immediately. Without
+        this the panel re-reads the cached payload and redraws the list
+        exactly as it was, which reads as the change having failed — then
+        it appears on its own up to a minute later.
+        """
+        for attr in ("_all_cl_cache", "_card_enrich_cache"):
+            try:
+                cache = getattr(self, attr, None)
+                if isinstance(cache, dict):
+                    cache.clear()
+            except Exception:
+                pass
+        return {"ok": True}
+
+    def add_checklist_item(self, checklist_id: str, name: str) -> dict:
+        """Add an item to any checklist on the card (right-click 'Add
+        item' in the checklist sections).
+
+        Returns the created item so the caller can splice the row in with
+        the id Trello assigned — re-fetching the whole card to find it
+        would cost a round trip and race the 60s enrichment cache.
+        """
+        name = (name or "").strip()
+        if not checklist_id or not name:
+            return {"ok": False, "error": "checklist_id + name required"}
+        try:
+            import trello_client as tc
+            item = tc.add_check_item(checklist_id, name)
+            if not item:
+                return {"ok": False, "error": "Trello rejected the item"}
+            return {"ok": True, "item": {
+                "id": item.get("id") or "",
+                "name": item.get("name") or name,
+                "complete": (item.get("state") == "complete"),
+            }}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def delete_checklist_item(self, checklist_id: str,
+                              item_id: str) -> dict:
+        """Delete a checklist item from any checklist. Same operation as
+        `delete_closeout_item`, under the name the non-closeout callers
+        look for; the older name stays so existing callers keep working.
+        """
+        return self.delete_closeout_item(checklist_id, item_id)
+
     def delete_closeout_item(self, checklist_id: str,
                              item_id: str) -> dict:
         """Delete a checklist item from Trello entirely (right-click

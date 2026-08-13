@@ -643,6 +643,35 @@ def delete_check_item(checklist_id, check_item_id):
         return False
 
 
+def add_check_item(checklist_id, name, *, pos="bottom"):
+    """Add an item to a Trello checklist. Returns the created item dict,
+    or None on any failure.
+
+    The counterpart to `delete_check_item` — a job that needs a step the
+    template didn't cover had to be opened in Trello to add it, which is
+    the sort of round trip the panel exists to avoid.
+
+    Returns the item (not a bool) because the caller has to render the
+    new row, and it needs the id Trello assigned to toggle or delete it
+    afterwards. Failures log, matching set_check_item_state, so a silent
+    "the item never appeared" leaves a trail."""
+    name = (name or "").strip()
+    if not checklist_id or not name:
+        return None
+    try:
+        return _call(f"/checklists/{checklist_id}/checkItems",
+                     method="POST", data={"name": name, "pos": pos})
+    except Exception as ex:
+        try:
+            import ems_log
+            ems_log.warn("trello_client",
+                          f"add_check_item failed "
+                          f"checklist={checklist_id} name={name!r}: {ex}")
+        except Exception:
+            pass
+        return None
+
+
 def get_card(card_id, *, actions_limit=50):
     """Return one card with the fields, checklists, members, attachments,
     and last `actions_limit` activity actions in a single API call.

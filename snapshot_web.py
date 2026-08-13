@@ -909,6 +909,14 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().toggle_closeout_item(card_id, item_id, complete)
     def delete_closeout_item(self, checklist_id, item_id):
         return self._aw().delete_closeout_item(checklist_id, item_id)
+    # Checklist right-click (add / remove). audit_detail.js is shared, so
+    # without these the menu is dead here while working from Audit.
+    def add_checklist_item(self, checklist_id, name):
+        return self._aw().add_checklist_item(checklist_id, name)
+    def delete_checklist_item(self, checklist_id, item_id):
+        return self._aw().delete_checklist_item(checklist_id, item_id)
+    def invalidate_checklist_cache(self):
+        return self._aw().invalidate_checklist_cache()
     # Pin proxies (Audit's real pin) — used by the shared pin modal.
     def search_trello(self, text, boards=None):
         return self._aw().search_trello(text, boards)

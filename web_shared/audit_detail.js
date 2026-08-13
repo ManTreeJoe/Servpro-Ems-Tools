@@ -1196,6 +1196,80 @@
 
   // ── Async section: 🗂 In Progress checklist (verbatim port) ────────
   // Every checklist on the card, each collapsible (collapsed by default).
+  // Right-click menu for the checklist sections. Add is always offered;
+  // Remove only when the click landed on an item.
+  function showChecklistCtx(ev, o) {
+    document.getElementById("cl-ctx")?.remove();
+    const m = document.createElement("div");
+    m.id = "cl-ctx";
+    m.style.cssText = `position:fixed;left:${ev.clientX}px;top:${ev.clientY}px;
+      background:var(--surface);border:1px solid var(--border);border-radius:6px;
+      box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:300;min-width:220px;padding:4px 0;`;
+    const mkBtn = (label, color) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.style.cssText = "display:block;width:100%;text-align:left;"
+        + `background:transparent;color:${color};border:0;padding:8px 14px;`
+        + "cursor:pointer;font:inherit;font-size:13px;";
+      b.addEventListener("mouseenter", () => {
+        b.style.background = "var(--row-hover)";
+      });
+      b.addEventListener("mouseleave", () => { b.style.background = "transparent"; });
+      m.appendChild(b);
+      return b;
+    };
+
+    mkBtn(`+ Add item to "${o.clName || "checklist"}"`, "var(--text)")
+      .addEventListener("click", async () => {
+        m.remove();
+        const name = (prompt(`New item for "${o.clName}":`) || "").trim();
+        if (!name) return;                       // cancelled or empty
+        setStatus(o.ctx, `Adding "${name}"…`, "info");
+        let res;
+        try { res = await pywebview.api.add_checklist_item(o.clId, name); }
+        catch (ex) { res = { ok: false, error: String(ex) }; }
+        if (!res || !res.ok) {
+          setStatus(o.ctx, `Add failed: ${(res && res.error) || "?"}`, "error");
+          return;
+        }
+        setStatus(o.ctx, `＋ Added "${name}"`, "ok");
+        // The checklist payload is cached 45s, so a plain reload would
+        // redraw the list without the item and read as a failed add.
+        try { await pywebview.api.invalidate_checklist_cache(); } catch (_) {}
+        o.reload();
+      });
+
+    if (o.itemId) {
+      mkBtn(`✕ Remove "${o.itemName}"`, "var(--red)")
+        .addEventListener("click", async () => {
+          m.remove();
+          if (!confirm(`Remove "${o.itemName}" from the checklist on Trello?`
+                       + `\n\nThis deletes it for everyone on the card.`)) return;
+          setStatus(o.ctx, `Removing "${o.itemName}"…`, "info");
+          let res;
+          try {
+            res = await pywebview.api.delete_checklist_item(o.clId, o.itemId);
+          } catch (ex) { res = { ok: false, error: String(ex) }; }
+          if (!res || !res.ok) {
+            setStatus(o.ctx, `Remove failed: ${(res && res.error) || "?"}`, "error");
+            return;
+          }
+          setStatus(o.ctx, `✕ Removed "${o.itemName}"`, "ok");
+          try { await pywebview.api.invalidate_checklist_cache(); } catch (_) {}
+          o.reload();
+        });
+    }
+
+    document.body.appendChild(m);
+    const closer = (e) => {
+      if (!m.contains(e.target)) {
+        m.remove();
+        document.removeEventListener("click", closer);
+      }
+    };
+    setTimeout(() => document.addEventListener("click", closer), 0);
+  }
+
   async function loadAllChecklists(row, ctx) {
     const sec = document.getElementById("all-cl");
     const statusEl = document.getElementById("all-cl-status");
@@ -1219,12 +1293,15 @@
       const pct = items.length ? Math.round((cdone / items.length) * 100) : 0;
       const full = items.length > 0 && cdone === items.length;
       return `
-      <div class="cl-group">
-        <div class="cl-group-name" style="cursor:pointer;">▾ ${esc(ctx, cl.name)} <span class="muted">(${cdone}/${items.length})</span></div>
+      <div class="cl-group" data-cl="${escA(ctx, cl.id || "")}"
+           data-cl-name="${escA(ctx, cl.name || "")}">
+        <div class="cl-group-name" style="cursor:pointer;"
+             title="Right-click for add / remove">▾ ${esc(ctx, cl.name)} <span class="muted">(${cdone}/${items.length})</span></div>
         <div class="cl-bar${full ? " cl-bar-done" : ""}"><i style="width:${pct}%;"></i></div>
         <ul class="issue-list cl-items">
           ${items.map((it) => `
-            <li class="cl-item"><label>
+            <li class="cl-item" data-item="${escA(ctx, it.id)}"
+                data-item-name="${escA(ctx, it.name)}"><label>
               <input type="checkbox" data-id="${escA(ctx, it.id)}" ${it.complete ? "checked" : ""}/>
               <span class="${it.complete ? "cl-done" : ""}">${esc(ctx, it.name)}</span>
             </label></li>`).join("")}
@@ -1272,6 +1349,24 @@
       if (nm) nm.addEventListener("click", () => {
         g.classList.toggle("cl-collapsed");
         nm.firstChild.nodeValue = g.classList.contains("cl-collapsed") ? "▸ " : "▾ ";
+      });
+    });
+    // Right-click a checklist — add or remove items without opening the
+    // card in Trello. On an item both options show; on the title only Add,
+    // since there's no item under the cursor to remove.
+    bodyEl.addEventListener("contextmenu", (ev) => {
+      const group = ev.target.closest && ev.target.closest(".cl-group");
+      if (!group || !bodyEl.contains(group)) return;
+      const clId = group.dataset.cl || "";
+      if (!clId) return;                  // nothing actionable without it
+      const li = ev.target.closest(".cl-item");
+      ev.preventDefault();
+      showChecklistCtx(ev, {
+        ctx, clId,
+        clName: group.dataset.clName || "",
+        itemId: li ? (li.dataset.item || "") : "",
+        itemName: li ? (li.dataset.itemName || "") : "",
+        reload: () => loadAllChecklists(r, ctx),
       });
     });
     // Role tabs. Remembered per panel so flipping between jobs keeps you
