@@ -689,8 +689,7 @@ async function openIncomingPanel() {
           try {
             const re = await pywebview.api.reaudit_one(client);
             if (re?.ok) {
-              const ix = state.rows.findIndex((x) => x.client === client);
-              if (ix >= 0) { state.rows[ix] = re.row; renderAll(); }
+              applyRow(re.row); renderAll();
             }
           } catch (_) { /* not in today's list — fine */ }
         } catch (ex) {
@@ -1224,8 +1223,7 @@ function openScopeDialog(row) {
     // Re-audit since Scope was likely a missing form
     const reRes = await pywebview.api.reaudit_one(row.client);
     if (reRes?.ok) {
-      const ix = state.rows.findIndex((x) => x.client === row.client);
-      if (ix >= 0) state.rows[ix] = reRes.row;
+      applyRow(reRes.row);
       renderAll();
     }
   });
@@ -1554,8 +1552,7 @@ function showCtxMenu(ev, row, customItems) {
         setStatus(`🧹 Cleared folder pin for ${row.client}`, "ok");
         const re = await pywebview.api.reaudit_one(row.client);
         if (re?.ok) {
-          const ix = state.rows.findIndex((x) => x.client === row.client);
-          if (ix >= 0) state.rows[ix] = re.row;
+          applyRow(re.row);
           renderAll();
         }
       },
@@ -1568,8 +1565,7 @@ function showCtxMenu(ev, row, customItems) {
         setStatus(`🏢 ${row.client} no longer marked Commercial`, "ok");
         const re = await pywebview.api.reaudit_one(row.client);
         if (re?.ok) {
-          const ix = state.rows.findIndex((x) => x.client === row.client);
-          if (ix >= 0) state.rows[ix] = re.row;
+          applyRow(re.row);
           renderAll();
         }
       },
@@ -1584,8 +1580,7 @@ function showCtxMenu(ev, row, customItems) {
         setStatus(`♻ Reset for ${row.client}: ${(r.cleared || []).join(", ")}`, "ok");
         const re = await pywebview.api.reaudit_one(row.client);
         if (re?.ok) {
-          const ix = state.rows.findIndex((x) => x.client === row.client);
-          if (ix >= 0) state.rows[ix] = re.row;
+          applyRow(re.row);
           renderAll();
         }
       } },
@@ -2452,8 +2447,7 @@ function buildAuditDetailCtx() {
     reauditAndRerender: async (client) => {
       const re = await pywebview.api.reaudit_one(client);
       if (re?.ok) {
-        const ix = state.rows.findIndex((x) => x.client === client);
-        if (ix >= 0) state.rows[ix] = re.row;
+        applyRow(re.row);
         renderAll();
       } else { renderDetail(); }
     },
@@ -2479,6 +2473,38 @@ function findRowByKey(key) {
   const pool = (state.oneoffHits && state.oneoffHits.length)
     ? state.oneoffHits.concat(state.rows) : state.rows;
   return pool.find((x) => rowKey(x) === key);
+}
+
+// The write-side twin of findRowByKey: put a freshly re-audited row back
+// into whichever list it came from.
+//
+// Every caller used to splice into state.rows ONLY. A job pulled up
+// through Search lives in state.oneoffHits instead, so findIndex returned
+// -1, the fresh row was dropped on the floor, and renderDetail() ->
+// findRowByKey() -- which reads oneoffHits FIRST -- went on repainting
+// the stale one. That is why missing forms sat there after an import
+// until the whole tool was reloaded: the re-audit ran, the backend
+// returned the right answer (audit_web.reaudit_one picks _oneoff_rows vs
+// _last_rows correctly), and the UI threw it away.
+//
+// Matching is by rowKey, not client: multi-unit rows share a client name
+// ("Avila Apartments::1413" vs "::1416"), so matching on client alone
+// overwrote the first unit's row with a different unit's audit.
+function applyRow(row) {
+  if (!row) return false;
+  const key = rowKey(row);
+  let hit = false;
+  for (const list of [state.oneoffHits, state.rows]) {
+    if (!Array.isArray(list)) continue;
+    let ix = list.findIndex((x) => rowKey(x) === key);
+    // Fall back to the client name: a re-audit can legitimately change a
+    // row's key (a job that splits into per-unit rows once days are
+    // pinned), and landing the update on the matching client beats
+    // silently discarding it — the bug this helper exists to fix.
+    if (ix < 0) ix = list.findIndex((x) => x.client === row.client);
+    if (ix >= 0) { list[ix] = row; hit = true; }
+  }
+  return hit;
 }
 
 function renderDetail() {
@@ -2640,8 +2666,7 @@ function attachBulkToolbar() {
       try {
         const re = await pywebview.api.reaudit_one(c);
         if (re?.ok) {
-          const ix = state.rows.findIndex((x) => x.client === c);
-          if (ix >= 0) state.rows[ix] = re.row;
+          applyRow(re.row);
         }
       } catch (_) {}
     }
@@ -3696,8 +3721,7 @@ async function openSpImportModal(row) {
           // Re-audit so photo counts + SP +N chip update
           const re = await pywebview.api.reaudit_one(row.client);
           if (re?.ok) {
-            const ix = state.rows.findIndex((x) => x.client === row.client);
-            if (ix >= 0) state.rows[ix] = re.row;
+            applyRow(re.row);
             renderAll();
           }
         }
@@ -4000,8 +4024,7 @@ async function doReaudit(r) {
     setStatus(`Re-audit failed: ${res?.error || "?"}`, "error");
     return;
   }
-  const ix = state.rows.findIndex((x) => x.client === r.client);
-  if (ix >= 0) state.rows[ix] = res.row;
+  applyRow(res.row);
   renderAll();
   setStatus(
     `Re-audited ${r.client} — ${res.row.flagged ? `${res.row.total_missing} missing` : "clean ✓"}`,
@@ -4310,8 +4333,7 @@ async function openFindFolderModal(row) {
     closeOverlay();
     const re = await pywebview.api.reaudit_one(row.client);
     if (re?.ok) {
-      const ix = state.rows.findIndex((x) => x.client === row.client);
-      if (ix >= 0) state.rows[ix] = re.row;
+      applyRow(re.row);
       renderAll();
     }
     setStatus(`📁 Folder set: ${label || path}`, "ok");
@@ -4475,8 +4497,7 @@ async function openFindFolderModal(row) {
       closeOverlay();
       const re = await pywebview.api.reaudit_one(row.client);
       if (re?.ok) {
-        const ix = state.rows.findIndex((x) => x.client === row.client);
-        if (ix >= 0) state.rows[ix] = re.row;
+        applyRow(re.row);
         renderAll();
       }
       setStatus("📁 Override cleared — re-audited", "ok");
@@ -4652,8 +4673,7 @@ async function openJobImportModal(row) {
               setStatus(`✓ ${row.client}: ${parts.join(" · ")}`, "ok");
               const reRes = await pywebview.api.reaudit_one(row.client);
               if (reRes?.ok) {
-                const ix = state.rows.findIndex((x) => x.client === row.client);
-                if (ix >= 0) state.rows[ix] = reRes.row;
+                applyRow(reRes.row);
                 renderAll();
               }
             } catch (ex) {
@@ -4703,8 +4723,7 @@ async function openJobImportModal(row) {
           // Re-audit so the detail pane reflects the new files
           const reRes = await pywebview.api.reaudit_one(row.client);
           if (reRes?.ok) {
-            const ix = state.rows.findIndex((x) => x.client === row.client);
-            if (ix >= 0) state.rows[ix] = reRes.row;
+            applyRow(reRes.row);
             renderAll();
           }
         } catch (ex) {
@@ -4755,8 +4774,7 @@ async function openJobImportModal(row) {
           // Re-audit so the detail pane reflects the new files.
           const reRes = await pywebview.api.reaudit_one(row.client);
           if (reRes?.ok) {
-            const ix = state.rows.findIndex((x) => x.client === row.client);
-            if (ix >= 0) state.rows[ix] = reRes.row;
+            applyRow(reRes.row);
             renderAll();
           }
           await scan();  // refresh candidate list (sources got trashed)
@@ -5606,8 +5624,7 @@ async function openDayUnitsModal(row) {
     // collapses back to one).
     const re = await pywebview.api.reaudit_one(row.client);
     if (re?.ok) {
-      const ix = state.rows.findIndex((x) => x.client === row.client);
-      if (ix >= 0) state.rows[ix] = re.row;
+      applyRow(re.row);
       renderAll();
     }
   }
@@ -5668,8 +5685,7 @@ async function openMatchDiagnostic(row) {
         closeOverlay();
         const re = await pywebview.api.reaudit_one(row.client);
         if (re?.ok) {
-          const ix = state.rows.findIndex((x) => x.client === row.client);
-          if (ix >= 0) state.rows[ix] = re.row;
+          applyRow(re.row);
           renderAll();
         }
       }
