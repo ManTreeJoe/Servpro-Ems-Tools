@@ -603,6 +603,8 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().get_all_checklists(client)
     def get_card_comments(self, client, limit=200):
         return self._aw().get_card_comments(client, limit)
+    def comment_image(self, client, attachment_id, big=False):
+        return self._aw().comment_image(client, attachment_id, big)
     def invalidate_comments_cache(self, client=""):
         return self._aw().invalidate_comments_cache(client)
     def toggle_checklist_item(self, card_id, item_id, want):

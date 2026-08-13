@@ -3185,7 +3185,30 @@
       ".cmt-grip{position:absolute;left:-3px;top:0;width:6px;height:100%;" +
       "cursor:col-resize;z-index:1;}" +
       ".cmt-grip:hover{background:var(--accent,#4aa3ff);opacity:.35;}" +
-      ".cmt-empty{color:var(--text-muted,#999);font-size:12px;padding:12px 0;}";
+      ".cmt-empty{color:var(--text-muted,#999);font-size:12px;padding:12px 0;}" +
+      // search
+      ".cmt-filter{display:flex;align-items:center;gap:8px;padding:6px 12px;" +
+      "border-bottom:1px solid var(--border,#333);flex:0 0 auto;}" +
+      ".cmt-filter input{flex:1 1 auto;min-width:0;}" +
+      ".cmt-hits{font-size:11px;color:var(--text-muted,#999);white-space:nowrap;}" +
+      ".cmt-txt mark{background:var(--accent,#4aa3ff);color:#fff;border-radius:2px;}" +
+      // attachments
+      ".cmt-file{font-size:12px;color:var(--text-muted,#999);margin-bottom:4px;" +
+      "word-wrap:break-word;overflow-wrap:anywhere;}" +
+      ".cmt-thumb-wrap{min-height:24px;}" +
+      ".cmt-thumb{max-width:100%;border-radius:4px;cursor:zoom-in;display:block;" +
+      "border:1px solid var(--border,#333);}" +
+      ".cmt-lightbox{position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.85);" +
+      "display:flex;align-items:center;justify-content:center;cursor:zoom-out;}" +
+      ".cmt-lightbox img{max-width:94vw;max-height:94vh;object-fit:contain;}" +
+      ".cmt-lb-msg{color:#eee;font-size:13px;}" +
+      // compose
+      ".cmt-compose{flex:0 0 auto;border-top:1px solid var(--border,#333);padding:8px 12px;}" +
+      ".cmt-compose textarea{width:100%;box-sizing:border-box;resize:vertical;" +
+      "font:inherit;font-size:12px;line-height:1.4;padding:6px 8px;border-radius:6px;" +
+      "border:1px solid var(--border,#333);background:var(--bg,#151515);" +
+      "color:var(--text,#eee);}" +
+      ".cmt-btns{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}";
     document.head.appendChild(st);
   }
 
@@ -3206,10 +3229,66 @@
       '    <button class="action-btn" id="cmt-close" title="Close (Esc)">✕</button>' +
       '  </div>' +
       '</header>' +
-      '<div class="cmt-body" id="cmt-body"></div>';
+      '<div class="cmt-filter">' +
+      '  <input type="search" id="cmt-q" class="search" placeholder="Search this thread…"/>' +
+      '  <span class="cmt-hits" id="cmt-hits"></span>' +
+      '</div>' +
+      '<div class="cmt-body" id="cmt-body"></div>' +
+      '<footer class="cmt-compose">' +
+      '  <textarea id="cmt-new" rows="2" placeholder="Write a comment…  (Ctrl+Enter posts)"></textarea>' +
+      '  <div class="cmt-btns">' +
+      '    <button class="action-btn" id="cmt-post" title="Post to the pinned Trello card">💬 Post</button>' +
+      '    <button class="action-btn" id="cmt-ipr" title="Initial Photo Report Created and Uploaded to OD.">📷 IPR</button>' +
+      '    <button class="action-btn" id="cmt-upload" title="Initial Upload submitted To WC.">📤 Upload</button>' +
+      '  </div>' +
+      '</footer>';
     document.body.appendChild(el);
 
     el.querySelector("#cmt-close").addEventListener("click", closeCommentsDrawer);
+
+    // Search filters what is already loaded — no round trip per keystroke.
+    el.querySelector("#cmt-q").addEventListener("input", () => renderEntries(el));
+
+    // Posting from the drawer. The thread is re-read afterwards rather
+    // than optimistically appended: what Trello stored (mention
+    // expansion, its own timestamp) is the truth worth showing.
+    async function post(text, btn) {
+      const row = el._row, ctx = el._ctx;
+      if (!row || !(text || "").trim()) return;
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "…";
+      try {
+        const res = await pywebview.api.post_comment(row.client, text.trim());
+        if (res && res.ok) {
+          const box = el.querySelector("#cmt-new");
+          if (box) box.value = "";
+          setStatus(ctx, "💬 Posted to Trello", "ok");
+          await loadCommentsInto(row, ctx, false);
+        } else {
+          setStatus(ctx, `Post failed: ${(res && res.error) || "?"}`, "error");
+        }
+      } catch (ex) {
+        setStatus(ctx, `Post failed: ${ex}`, "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    }
+    el.querySelector("#cmt-post").addEventListener("click", (e) =>
+      post(el.querySelector("#cmt-new").value, e.currentTarget));
+    // The two canned phrases the office already uses verbatim — typing
+    // them by hand is how they drift into three spellings.
+    el.querySelector("#cmt-ipr").addEventListener("click", (e) =>
+      post("Initial Photo Report Created and Uploaded to OD.", e.currentTarget));
+    el.querySelector("#cmt-upload").addEventListener("click", (e) =>
+      post("Initial Upload submitted To WC.", e.currentTarget));
+    el.querySelector("#cmt-new").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        post(e.currentTarget.value, el.querySelector("#cmt-post"));
+      }
+    });
     el.querySelector("#cmt-refresh").addEventListener("click", async () => {
       const row = el._row, ctx = el._ctx;
       if (!row) return;
@@ -3336,28 +3415,158 @@
       return;
     }
     const list = res.comments || [];
+    el._entries = list;
+    const nCmt = list.filter((e) => e.kind !== "attachment").length;
+    const nAtt = list.length - nCmt;
     if (title) {
-      title.innerHTML = `💬 ${esc(ctx, who)} <span class="cmt-sub">${
-        list.length} comment${list.length === 1 ? "" : "s"}</span>`;
+      title.innerHTML = `💬 ${esc(ctx, who)} <span class="cmt-sub">${nCmt} comment${
+        nCmt === 1 ? "" : "s"}${nAtt ? ` · ${nAtt} file${nAtt === 1 ? "" : "s"}` : ""
+        }</span>`;
     }
-    if (!list.length) {
-      body.innerHTML = '<div class="cmt-empty">No comments on this card yet.</div>';
+    renderEntries(el);
+    body.scrollTop = 0;
+    if (forced) setStatus(ctx, `💬 Reloaded ${nCmt} comment${
+      nCmt === 1 ? "" : "s"}`, "ok");
+  }
+
+  // Draw whatever survives the search box. Kept separate from the fetch
+  // so typing filters instantly instead of re-reading Trello per key.
+  function renderEntries(el) {
+    const ctx  = el._ctx || {};
+    const body = el.querySelector("#cmt-body");
+    const hits = el.querySelector("#cmt-hits");
+    const all  = el._entries || [];
+    const q = ((el.querySelector("#cmt-q") || {}).value || "")
+      .trim().toLowerCase();
+    const list = !q ? all : all.filter((e) =>
+      (e.text || "").toLowerCase().includes(q) ||
+      (e.author || "").toLowerCase().includes(q) ||
+      (e.name || "").toLowerCase().includes(q) ||
+      (e.date || "").includes(q));
+    if (hits) {
+      hits.textContent = q
+        ? `${list.length} of ${all.length}`
+        : "";
+    }
+    if (!body) return;
+    if (!all.length) {
+      body.innerHTML = '<div class="cmt-empty">Nothing on this card yet.</div>';
       return;
     }
-    body.innerHTML = list.map((c) => `
-      <div class="cmt-item">
+    if (!list.length) {
+      body.innerHTML = `<div class="cmt-empty">No match for “${esc(ctx, q)}”.</div>`;
+      return;
+    }
+    body.innerHTML = list.map((c) => {
+      const head = `
         <div class="cmt-av" style="background:${_avatarColor(c.author || c.initials)};"
-             title="${escA(ctx, c.author || "")}">${esc(ctx, c.initials || "?")}</div>
-        <div class="cmt-main">
-          <div class="cmt-who">${esc(ctx, c.author || "Someone")}${
-            c.when ? ` · ${esc(ctx, _relTime(c.when))}` : ""}${
-            c.date ? ` · ${esc(ctx, c.date)}` : ""}</div>
-          <div class="cmt-txt">${_linkify(ctx, c.text || "")}</div>
-        </div>
-      </div>`).join("");
-    body.scrollTop = 0;
-    if (forced) setStatus(ctx, `💬 Reloaded ${list.length} comment${
-      list.length === 1 ? "" : "s"}`, "ok");
+             title="${escA(ctx, c.author || "")}">${esc(ctx, c.initials || "?")}</div>`;
+      const meta = `
+        <div class="cmt-who">${esc(ctx, c.author || "Someone")}${
+          c.when ? ` · ${esc(ctx, _relTime(c.when))}` : ""}${
+          c.date ? ` · ${esc(ctx, c.date)}` : ""}</div>`;
+      if (c.kind === "attachment") {
+        const size = c.bytes ? ` · ${Math.round(c.bytes / 1024)} KB` : "";
+        // The <img> has no src: Trello 401s without an OAuth header, so
+        // the bytes arrive from comment_image once it scrolls into view.
+        const thumb = c.is_image
+          ? `<div class="cmt-thumb-wrap"><img class="cmt-thumb" data-att="${
+              escA(ctx, c.id)}" alt="${escA(ctx, c.name || "")}"
+              title="Click to enlarge"/></div>`
+          : "";
+        return `
+          <div class="cmt-item cmt-att">
+            ${head}
+            <div class="cmt-main">
+              ${meta}
+              <div class="cmt-file">📎 ${esc(ctx, c.name || "attachment")}${
+                esc(ctx, size)}</div>
+              ${thumb}
+            </div>
+          </div>`;
+      }
+      return `
+        <div class="cmt-item">
+          ${head}
+          <div class="cmt-main">
+            ${meta}
+            <div class="cmt-txt">${_hilite(ctx, c.text || "", q)}</div>
+          </div>
+        </div>`;
+    }).join("");
+    _wireThumbs(el);
+  }
+
+  // Escape, then linkify, then mark the search term — in that order, so
+  // neither the comment nor the query can inject markup.
+  function _hilite(ctx, text, q) {
+    const html = _linkify(ctx, text);
+    if (!q) return html;
+    const needle = esc(ctx, q).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Never inside a tag/attribute — only in the text between them.
+    return html.replace(new RegExp(`(>[^<]*)(${needle})`, "gi"),
+                        (m, pre, hit) => `${pre}<mark>${hit}</mark>`)
+               .replace(new RegExp(`^([^<]*)(${needle})`, "i"),
+                        (m, pre, hit) => `${pre}<mark>${hit}</mark>`);
+  }
+
+  // Thumbnails load as they scroll into view. A photo-heavy card can
+  // carry 180+ attachments; fetching them all to draw a list would cost
+  // a camera roll per job opened.
+  function _wireThumbs(el) {
+    const ctx = el._ctx || {};
+    const imgs = [...el.querySelectorAll("img.cmt-thumb[data-att]")];
+    if (!imgs.length) return;
+    const load = async (img) => {
+      if (img.dataset.loaded) return;
+      img.dataset.loaded = "1";
+      const row = el._row;
+      if (!row) return;
+      try {
+        const r = await pywebview.api.comment_image(row.client, img.dataset.att, false);
+        if (r && r.ok && r.data_uri) img.src = r.data_uri;
+        else img.replaceWith(Object.assign(document.createElement("div"), {
+          className: "cmt-empty", textContent: "(preview unavailable)" }));
+      } catch (_) { /* a missing thumbnail is not worth an error banner */ }
+    };
+    if (window.IntersectionObserver) {
+      const io = new IntersectionObserver((ents) => {
+        ents.forEach((e) => {
+          if (e.isIntersecting) { load(e.target); io.unobserve(e.target); }
+        });
+      }, { root: el.querySelector("#cmt-body"), rootMargin: "200px" });
+      imgs.forEach((i) => io.observe(i));
+    } else {
+      imgs.slice(0, 12).forEach(load);
+    }
+    imgs.forEach((img) => img.addEventListener("click", () =>
+      _openFullImage(el, img.dataset.att, ctx)));
+  }
+
+  async function _openFullImage(el, attId, ctx) {
+    const row = el._row;
+    if (!row) return;
+    const over = document.createElement("div");
+    over.className = "cmt-lightbox";
+    over.innerHTML = '<div class="cmt-lb-msg">Loading…</div>';
+    over.addEventListener("click", () => over.remove());
+    document.body.appendChild(over);
+    const esc2 = (e) => {
+      if (e.key === "Escape") { over.remove(); window.removeEventListener("keydown", esc2); }
+    };
+    window.addEventListener("keydown", esc2);
+    try {
+      const r = await pywebview.api.comment_image(row.client, attId, true);
+      if (!document.body.contains(over)) return;
+      if (r && r.ok && r.data_uri) {
+        over.innerHTML = `<img src="${r.data_uri}" alt="${escA(ctx, r.name || "")}"/>`;
+      } else {
+        over.innerHTML = `<div class="cmt-lb-msg">${
+          esc(ctx, (r && r.error) || "Couldn't load the image")}</div>`;
+      }
+    } catch (ex) {
+      over.innerHTML = `<div class="cmt-lb-msg">${esc(ctx, String(ex))}</div>`;
+    }
   }
 
   window.AuditDetail = {

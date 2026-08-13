@@ -32,7 +32,7 @@ def _action(text, who="Nathan Bupte", date="2026-08-12T17:04:00.000Z", aid="a1")
 @pytest.fixture
 def api(monkeypatch):
     a = audit_web.Api.__new__(audit_web.Api)
-    state = {"pin": "card1", "actions": [], "fetches": 0}
+    state = {"pin": "card1", "actions": [], "fetches": 0, "attachments": []}
 
     def _get_all(card_id, **kw):
         state["fetches"] += 1
@@ -41,6 +41,11 @@ def api(monkeypatch):
     monkeypatch.setattr(audit_web.persistence, "get_trello_card_id",
                         lambda c: state["pin"])
     monkeypatch.setattr(tc, "get_all_comments", _get_all)
+    # The thread now merges attachments in, so these must be stubbed or
+    # the suite reaches for the network.
+    monkeypatch.setattr(tc, "card_attachments",
+                        lambda cid, **kw: list(state["attachments"]))
+    monkeypatch.setattr(tc, "_attachment_uploaders", lambda cid: {})
     # post_comment must succeed offline, or it never flags the card and
     # the staleness tests below pass for the wrong reason.
     monkeypatch.setattr(tc, "_call", lambda *a, **k: {"id": "act1"})
@@ -239,6 +244,195 @@ def test_the_drawer_is_exported(detail_js):
     for fn in ("openCommentsDrawer", "closeCommentsDrawer",
                "toggleCommentsDrawer", "syncCommentsDrawer"):
         assert f"\n    {fn},\n" in detail_js, f"{fn} missing from AuditDetail"
+
+
+# ── attachments in the thread ────────────────────────────────────────
+def _att(aid="at1", name="photo.jpg", mime="image/jpeg",
+         date="2026-08-12T18:00:00.000Z", previews=None, upload=True):
+    return {"id": aid, "name": name, "fileName": name, "mimeType": mime,
+            "date": date, "isUpload": upload, "bytes": 343888,
+            "url": f"https://trello.com/1/cards/c/attachments/{aid}/download/{name}",
+            "previews": previews if previews is not None else [
+                {"url": "https://trello.com/p/70",   "width": 70,   "height": 50,
+                 "bytes": 698},
+                {"url": "https://trello.com/p/250",  "width": 250,  "height": 150,
+                 "bytes": 4728},
+                {"url": "https://trello.com/p/1200", "width": 1200, "height": 338,
+                 "bytes": 39410},
+            ]}
+
+
+def test_attachments_join_the_thread(api):
+    """On the sampled boards 18 of 44 cards carry image attachments (183
+    images) and NO comment body contained an image link — photos live as
+    attachments, so a text-only drawer would show none of them."""
+    a, state = api
+    state["actions"] = [_action("look at this")]
+    state["attachments"] = [_att()]
+    res = a.get_card_comments("x")
+    kinds = [e["kind"] for e in res["comments"]]
+    assert "attachment" in kinds and "comment" in kinds
+    assert res["attachments"] == 1
+
+
+def test_the_thread_is_one_chronological_list(api):
+    """Interleaved, not comments-then-files — that is how the card reads."""
+    a, state = api
+    state["actions"] = [
+        _action("newest", date="2026-08-12T20:00:00.000Z", aid="c2"),
+        _action("oldest", date="2026-08-12T10:00:00.000Z", aid="c1")]
+    state["attachments"] = [_att(date="2026-08-12T15:00:00.000Z")]
+    got = [e.get("text") or e.get("name")
+           for e in a.get_card_comments("x")["comments"]]
+    assert got == ["newest", "photo.jpg", "oldest"]
+
+
+def test_a_non_image_attachment_is_listed_but_not_shown(api):
+    """A PDF belongs in the thread; it just has no thumbnail."""
+    a, state = api
+    state["attachments"] = [_att(name="scope.pdf", mime="application/pdf",
+                                  previews=[])]
+    e = a.get_card_comments("x")["comments"][0]
+    assert e["kind"] == "attachment" and e["is_image"] is False
+    assert e["has_thumb"] is False
+
+
+def test_no_image_bytes_ride_along_in_the_thread(api):
+    """183 attachments inlined would make opening a job cost a camera
+    roll — the drawer asks for thumbnails one at a time instead."""
+    a, state = api
+    state["attachments"] = [_att()]
+    blob = repr(a.get_card_comments("x"))
+    assert "data:image" not in blob and "base64" not in blob
+
+
+def test_a_broken_attachment_payload_cannot_kill_the_thread(api,
+                                                            monkeypatch):
+    """Comments are the point; a bad attachments response must not take
+    them down with it."""
+    a, state = api
+    state["actions"] = [_action("still here")]
+    monkeypatch.setattr(tc, "card_attachments", lambda cid, **kw: {"id": "oops"})
+    res = a.get_card_comments("x")
+    assert res["ok"] is True
+    assert [c["text"] for c in res["comments"]] == ["still here"]
+
+
+# ── comment_image ────────────────────────────────────────────────────
+@pytest.fixture
+def img_api(api, monkeypatch):
+    a, state = api
+    state["attachments"] = [_att()]
+    seen = []
+
+    def _fetch(url, **kw):
+        seen.append(url)
+        return b"\x89PNG-bytes"
+
+    monkeypatch.setattr(tc, "fetch_attachment_bytes", _fetch)
+    return a, state, seen
+
+
+def test_thumbnail_uses_a_small_preview(img_api):
+    """~5KB instead of ~340KB. This is the difference between a drawer
+    that opens instantly and one that downloads the original."""
+    a, _, seen = img_api
+    res = a.comment_image("x", "at1", False)
+    assert res["ok"] is True
+    assert res["data_uri"].startswith("data:image/")
+    assert seen == ["https://trello.com/p/250"]
+
+
+def test_enlarging_uses_a_big_preview(img_api):
+    a, _, seen = img_api
+    a.comment_image("x", "at1", True)
+    assert seen == ["https://trello.com/p/1200"]
+
+
+def test_an_attachment_with_no_previews_falls_back_to_the_original(img_api,
+                                                                   monkeypatch):
+    """Older uploads have no generated previews."""
+    a, state, seen = img_api
+    state["attachments"] = [_att(previews=[])]
+    a.comment_image("x", "at1", False)
+    assert seen and "download" in seen[0]
+
+
+def test_the_same_image_is_only_downloaded_once(img_api):
+    a, _, seen = img_api
+    a.comment_image("x", "at1", False)
+    a.comment_image("x", "at1", False)
+    assert len(seen) == 1
+
+
+def test_a_failed_download_is_reported_not_cached(img_api, monkeypatch):
+    a, _, _ = img_api
+    monkeypatch.setattr(tc, "fetch_attachment_bytes", lambda *a, **k: None)
+    assert a.comment_image("x", "at1", False)["ok"] is False
+
+
+def test_an_unknown_attachment_is_refused(img_api):
+    """Never fetch an id that isn't on this card."""
+    a, _, seen = img_api
+    assert a.comment_image("x", "not-on-this-card", False)["ok"] is False
+    assert seen == []
+
+
+def test_image_cache_is_bounded(img_api):
+    """A long session on a photo-heavy board must not grow forever."""
+    a, state, _ = img_api
+    state["attachments"] = [_att(aid=f"a{i}") for i in range(80)]
+    for i in range(80):
+        a.comment_image("x", f"a{i}", False)
+    assert len(a._cmt_img_cache) <= 61
+
+
+# ── search + compose, in the drawer's source ─────────────────────────
+def test_search_filters_without_refetching(detail_js):
+    """Typing must not hit Trello per keystroke."""
+    body = detail_js[detail_js.index("function renderEntries"):]
+    body = body[:body.index("\n  }")]
+    assert "pywebview.api" not in body
+
+
+def test_search_matches_attachment_names_too(detail_js):
+    body = detail_js[detail_js.index("function renderEntries"):]
+    body = body[:body.index("\n  }")]
+    assert "e.name" in body, "searching should find a file by name"
+
+
+def test_the_search_term_is_escaped_before_it_is_highlighted(detail_js):
+    """The query goes into a RegExp AND into HTML — both are injection
+    routes if it is used raw."""
+    body = detail_js[detail_js.index("function _hilite"):]
+    body = body[:body.index("\n  }")]
+    assert "esc(ctx, q)" in body
+    assert "\\\\$&" in body, "regex metacharacters in the query must be escaped"
+
+
+def test_the_canned_buttons_match_the_canonical_phrases(detail_js):
+    """These strings are what the office greps for. If the drawer's copy
+    drifts from post_canned's, the same event exists under two wordings
+    and the trackers stop matching."""
+    import inspect
+    src = inspect.getsource(audit_web.Api.post_canned)
+    for phrase in ("Initial Photo Report Created and Uploaded to OD.",
+                   "Initial Upload submitted To WC."):
+        assert phrase in src, f"post_canned lost {phrase!r}"
+        assert phrase in detail_js, f"drawer lost {phrase!r}"
+
+
+def test_posting_rereads_the_thread(detail_js):
+    """What Trello stored — mention expansion, its own timestamp — is the
+    truth worth showing, not an optimistic local echo."""
+    body = detail_js[detail_js.index("    async function post("):]
+    body = body[:body.index("\n    }")]
+    assert "post_comment" in body and "loadCommentsInto" in body
+
+
+def test_thumbnails_are_lazy(detail_js):
+    """A card can carry 180+ attachments."""
+    assert "IntersectionObserver" in detail_js
 
 
 def test_every_loader_got_the_cache_bust():

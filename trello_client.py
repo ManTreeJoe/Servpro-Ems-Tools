@@ -1556,8 +1556,13 @@ def card_attachments(card_id, *, image_only=False):
         return []
     try:
         raw = _call(f"/cards/{card_id}/attachments", params={
+            # `previews` carries Trello's own scaled copies (70x50 up to
+            # ~1430 wide). The comments drawer shows the ~250px one as a
+            # thumbnail, which is ~5KB against ~340KB for the original —
+            # the difference between a drawer that opens instantly and
+            # one that downloads a phone camera roll to draw a list.
             "fields": ("id,name,fileName,url,date,isUpload,"
-                       "mimeType,idMember,bytes"),
+                       "mimeType,idMember,bytes,previews"),
         }) or []
     except Exception:
         return []
@@ -1613,6 +1618,66 @@ def _member_name(member_id):
         name = ""
     _MEMBER_NAME_CACHE[member_id] = name
     return name
+
+
+def fetch_attachment_bytes(url, *, timeout=30):
+    """Raw bytes for an attachment or preview URL, or None.
+
+    Uploaded-attachment URLs need the OAuth Authorization HEADER — the
+    query-param key/token that works everywhere else 401s here. That is
+    why a Trello photo cannot simply be dropped into an <img src>: the
+    webview has no credentials, so the browser gets the 401 and shows a
+    broken image. Callers hand the bytes to the page as a data: URI
+    instead, which also keeps the token out of the page entirely.
+    """
+    if not url:
+        return None
+    key, token = _creds()
+    req = urllib.request.Request(url, headers={
+        "User-Agent": _USER_AGENT,
+        "Authorization": (f'OAuth oauth_consumer_key="{key}", '
+                          f'oauth_token="{token}"'),
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except Exception as ex:
+        try:
+            import ems_log
+            ems_log.warn("trello_client",
+                          f"fetch_attachment_bytes failed {url[:80]}: {ex}")
+        except Exception:
+            pass
+        return None
+
+
+def attachment_events(card_id, *, max_pages=20):
+    """Every `addAttachmentToCard` action on a card, newest first.
+
+    The drawer interleaves these with comments because that is how the
+    card reads in Trello: "Nathan attached photo.jpg" is part of the
+    conversation, not a separate list. Paged like get_all_comments.
+    """
+    if not card_id:
+        return []
+    out, before = [], None
+    for _ in range(max_pages):
+        params = {"filter": "addAttachmentToCard", "limit": "50"}
+        if before:
+            params["before"] = before
+        try:
+            page = _call(f"/cards/{card_id}/actions", params=params) or []
+        except Exception:
+            break
+        if not page:
+            break
+        out.extend(page)
+        if len(page) < 50:
+            break
+        before = page[-1].get("id")
+        if not before:
+            break
+    return out
 
 
 def _download_attachment(att, dest_path):

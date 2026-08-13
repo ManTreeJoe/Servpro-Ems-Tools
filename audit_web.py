@@ -3182,16 +3182,29 @@ class Api(JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": str(ex)}
 
     def get_card_comments(self, client: str, limit: int = 200) -> dict:
-        """Every comment on the client's pinned card, newest first.
+        """The card's thread, newest first: comments AND attachments.
 
-        The Trello info section already shows five, truncated to 400
-        characters and collapsed — enough to notice a comment exists,
-        useless for reading the thread. This is the whole history for
-        the drawer, untruncated, so the card's running commentary can be
-        read next to the audit instead of in a browser.
+        The Trello info section already shows five comments, truncated to
+        400 characters and collapsed — enough to notice a comment exists,
+        useless for reading the thread. This is the whole history,
+        untruncated, so the card's running commentary can be read next to
+        the audit instead of in a browser.
 
-        Paged through `trello_client.get_all_comments`, which walks past
-        Trello's 50-per-request cap. 45s cache keyed by card id, same as
+        Attachments are interleaved rather than listed separately because
+        that is how the card reads in Trello — "Aaron attached
+        photo.jpg" belongs in the conversation, and on the sampled boards
+        18 of 44 cards carry image attachments (183 images) while NO
+        comment body contained an image link. Photos on these cards are
+        attachments, not markup inside a comment, so a drawer that only
+        parsed comment text would have shown none of them.
+
+        Every entry carries `kind` ("comment" or "attachment"). Image
+        bytes are NOT included — see `comment_image`, which fetches one
+        thumbnail on demand; inlining 183 photos would make opening a
+        job cost a camera roll.
+
+        Paged through `trello_client`, which walks past Trello's
+        50-per-request cap. 45s cache keyed by card id, same as
         get_all_checklists — the drawer re-opens constantly as the user
         moves between jobs and each open must not cost a round trip.
         """
@@ -3230,6 +3243,7 @@ class Api(JobSettingsApi, CompanyCamApi):
                     continue
                 who = (a.get("memberCreator") or {}).get("fullName") or ""
                 out.append({
+                    "kind":     "comment",
                     "id":       a.get("id") or "",
                     "author":   who,
                     "initials": _member_initials(who),
@@ -3237,12 +3251,141 @@ class Api(JobSettingsApi, CompanyCamApi):
                     "when":     a.get("date") or "",
                     "text":     txt,
                 })
-                if len(out) >= max(1, int(limit or 200)):
-                    break
+            out.extend(self._attachment_entries(card_id))
+            # One thread, newest first. Sorting on the ISO timestamp is
+            # safe because Trello stamps everything UTC with the same
+            # format; entries with no date sink to the bottom rather than
+            # jumping to the top on a falsy compare.
+            out.sort(key=lambda e: e.get("when") or "", reverse=True)
+            out = out[:max(1, int(limit or 200))]
+            n_img = sum(1 for e in out if e.get("kind") == "attachment")
             payload = {"ok": True, "has_card": True, "card_id": card_id,
-                       "comments": out, "count": len(out)}
+                       "comments": out, "count": len(out),
+                       "attachments": n_img}
             cache[card_id] = (now, payload)
             return payload
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def _attachment_entries(self, card_id: str) -> list:
+        """Attachment entries for the thread — metadata only, no bytes.
+
+        Uploader comes from the `addAttachmentToCard` action rather than
+        the attachment's own `idMember`, which is sometimes null on older
+        items (the same reason `_attachment_uploaders` exists).
+        """
+        try:
+            import trello_client as tc
+            atts = tc.card_attachments(card_id) or []
+        except Exception:
+            return []
+        # Trello has handed back a bare dict on error before; iterating it
+        # yields strings and every .get below explodes. The thread must
+        # survive a bad attachment payload — comments are the point.
+        if not isinstance(atts, list):
+            return []
+        try:
+            who_by_id = tc._attachment_uploaders(card_id) or {}
+        except Exception:
+            who_by_id = {}
+        if not isinstance(who_by_id, dict):
+            who_by_id = {}
+        out = []
+        for a in atts:
+            if not isinstance(a, dict):
+                continue
+            try:
+                is_img = tc._is_image_attachment(a)
+            except Exception:
+                is_img = False
+            who = who_by_id.get(a.get("id") or "") or ""
+            out.append({
+                "kind":       "attachment",
+                "id":         a.get("id") or "",
+                "author":     who,
+                "initials":   _member_initials(who),
+                "date":       (a.get("date") or "")[:10],
+                "when":       a.get("date") or "",
+                "text":       "",
+                "name":       a.get("name") or a.get("fileName") or "attachment",
+                "is_image":   bool(is_img),
+                "mime":       a.get("mimeType") or "",
+                "bytes":      a.get("bytes") or 0,
+                "url":        a.get("url") or "",
+                # The page can't load this itself (401 without the OAuth
+                # header) — it asks comment_image for the bytes.
+                "has_thumb":  bool(is_img),
+            })
+        return out
+
+    def comment_image(self, client: str, attachment_id: str,
+                       big: bool = False) -> dict:
+        """One attachment image as a data: URI.
+
+        Trello's uploaded-attachment URLs need an OAuth Authorization
+        header, so the webview cannot fetch them itself — it would get a
+        401 and draw a broken image. The bytes come through here instead,
+        which also keeps the API token out of the page.
+
+        `big` picks a ~1200px preview for the click-to-enlarge view;
+        otherwise the smallest preview at least 250px wide, which is
+        roughly 5KB against 340KB for a phone photo. Falls back to the
+        original only when a preview is missing (older uploads).
+        """
+        if not attachment_id:
+            return {"ok": False, "error": "no attachment"}
+        try:
+            card_id = persistence.get_trello_card_id(client) or ""
+        except Exception:
+            card_id = ""
+        if not card_id:
+            return {"ok": False, "error": "no card pinned"}
+        key = f"{attachment_id}:{'big' if big else 'thumb'}"
+        cache = getattr(self, "_cmt_img_cache", None)
+        if cache is None:
+            cache = {}
+            self._cmt_img_cache = cache
+        if key in cache:
+            return cache[key]
+        try:
+            import base64
+            import trello_client as tc
+            att = next((a for a in (tc.card_attachments(card_id) or [])
+                        if (a.get("id") or "") == attachment_id), None)
+            if not att:
+                return {"ok": False, "error": "attachment not on this card"}
+            previews = sorted(
+                [p for p in (att.get("previews") or []) if p.get("url")],
+                key=lambda p: p.get("width") or 0)
+            want = 1200 if big else 250
+            pick = next((p for p in previews if (p.get("width") or 0) >= want),
+                        previews[-1] if previews else None)
+            url = (pick or {}).get("url") or att.get("url") or ""
+            raw = tc.fetch_attachment_bytes(url)
+            if not raw:
+                return {"ok": False, "error": "couldn't download"}
+            mime = att.get("mimeType") or "image/jpeg"
+            if pick:
+                # Previews are always served as the same type Trello
+                # generated; trust the original's mime only for the
+                # no-preview fallback.
+                mime = "image/png" if str(url).endswith(".png") else "image/jpeg"
+            res = {
+                "ok": True,
+                "data_uri": f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}",
+                "width": (pick or {}).get("width") or 0,
+                "height": (pick or {}).get("height") or 0,
+                "name": att.get("name") or att.get("fileName") or "",
+            }
+            # Bounded so a long session on a photo-heavy board can't grow
+            # the process without limit; oldest key goes first.
+            if len(cache) > 60:
+                try:
+                    cache.pop(next(iter(cache)))
+                except Exception:
+                    cache.clear()
+            cache[key] = res
+            return res
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
