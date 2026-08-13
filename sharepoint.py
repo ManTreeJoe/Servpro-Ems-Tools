@@ -27,8 +27,18 @@ import persistence
 _IMAGE_EXTS = {
     ".jpg", ".jpeg", ".jfif", ".png", ".heic", ".heif",
     ".webp", ".bmp", ".tif", ".tiff", ".gif",
-    ".mp4", ".mov", ".m4v", ".avi",
 }
+
+# Video used to live in _IMAGE_EXTS, so imports copied clips into the PICS
+# stage folders as though they were photos: 34 .MOV and 2 .mp4 across the
+# 2026 jobs, carrying phone names like IMG_3007.MOV. They inflate the
+# photo counts the audit reasons about, and a walkthrough clip is not a
+# documentation photo. audit_logic already left them out of its own
+# checks, so separating them makes the two agree.
+_VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".wmv", ".3gp",
+               ".hevc"}
+# For a caller that genuinely wants "anything a camera produced".
+_MEDIA_EXTS = _IMAGE_EXTS | _VIDEO_EXTS
 
 # SharePoint photos share root. Resolved LAZILY from config on every access
 # (config.load() is mtime-cached, so this is cheap) so a Settings change or
