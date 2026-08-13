@@ -1,0 +1,44 @@
+/*
+ * web_shared/modal.css — the styling for what web_shared/modal.js builds.
+ *
+ * These rules lived only in audit_web_assets/app.css, while modal.js is
+ * loaded by Audit, Snapshot and Quick Import. On the other two the markup
+ * arrived unstyled, so a modal rendered as plain divs in document flow —
+ * stacked at the bottom of the page with its close button stranded under
+ * the header, instead of centred over a backdrop. That is what the
+ * CompanyCam pull dialog looked like in Snapshot's audit subview.
+ *
+ * A component that builds its own markup has to carry its own styling, or
+ * it works in exactly the one panel somebody happened to style it in.
+ * Load this wherever modal.js is loaded.
+ */
+.overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+}
+.overlay.hidden { display: none; }
+.overlay-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.65); }
+.overlay-panel {
+  position: relative; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 10px;
+  width: min(900px, 92vw); max-height: 86vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5); overflow: hidden;
+}
+.overlay-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.overlay-title { display: flex; gap: 12px; align-items: center; }
+.overlay-icon {
+  font-size: 26px; background: var(--surface-2);
+  border-radius: 8px; padding: 6px 12px;
+}
+.overlay-name { font-size: 18px; font-weight: 700; }
+.overlay-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.overlay-actions { display: flex; gap: 8px; }
+.overlay-body {
+  overflow-y: auto; padding: 18px 22px;
+  display: flex; flex-direction: column; gap: 18px;
+}

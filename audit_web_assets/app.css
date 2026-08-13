@@ -775,31 +775,10 @@ body { display: flex; flex-direction: column; }
 .loading-label { color: var(--text-muted); font-size: 13px; }
 .hidden { display: none !important; }
 
-/* ── Import overlay (full-screen modal) ────────────────────────── */
-.overlay { position: fixed; inset: 0; z-index: 100;
-  display: flex; align-items: center; justify-content: center; }
-.overlay.hidden { display: none; }
-.overlay-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.65); }
-.overlay-panel {
-  position: relative; background: var(--bg);
-  border: 1px solid var(--border); border-radius: 10px;
-  width: min(900px, 92vw); max-height: 86vh;
-  display: flex; flex-direction: column;
-  box-shadow: 0 12px 36px rgba(0,0,0,0.5); overflow: hidden;
-}
-.overlay-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 22px; background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-.overlay-title { display: flex; gap: 12px; align-items: center; }
-.overlay-icon { font-size: 26px; background: var(--surface-2);
-  border-radius: 8px; padding: 6px 12px; }
-.overlay-name { font-size: 18px; font-weight: 700; }
-.overlay-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.overlay-actions { display: flex; gap: 8px; }
-.overlay-body { overflow-y: auto; padding: 18px 22px;
-  display: flex; flex-direction: column; gap: 18px; }
+/* Modal overlay styling lives in web_shared/modal.css, next to the
+   modal.js that builds the markup — it is loaded by three panels
+   and was styled in only this one. */
+
 .import-section {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; padding: 14px 18px;
