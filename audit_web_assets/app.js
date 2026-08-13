@@ -2134,6 +2134,64 @@ function campusShortName(r) {
   return name;
 }
 
+// ── Carrier chip ──────────────────────────────────────────────────────
+// Roughly the carriers' own brand colours, so the ones you see all day
+// are recognisable without reading the word — AAA alone is a quarter of
+// the book, Mercury and Farmers most of the rest. Anything not listed
+// gets a stable colour derived from its name, so the long tail (21
+// carriers with one or two jobs each) still reads as distinct rather
+// than collapsing into one grey.
+//
+// These are approximations by eye, not brand assets. Edit freely — one
+// place, and the key is matched loosely so "AAA " / "aaa" both hit.
+const CARRIER_COLORS = {
+  "aaa":             "#D0202E",   // red oval
+  "mercury":         "#C8102E",
+  "farmers":         "#00587C",
+  "state farm":      "#E31837",
+  "usaa":            "#00305E",
+  "allstate":        "#0033A0",
+  "liberty mutual":  "#FFD200",
+  "american family": "#0C2340",
+  "safeco":          "#0072CE",
+  "nationwide":      "#00539B",
+  "travelers":       "#E01719",
+  "lemonade":        "#FF4FA0",
+  "the hartford":    "#0A5640",
+  "sedgwick":        "#F0B323",   // TPA, not a carrier
+  "self pay":        "#2E9E5B",   // no carrier at all — paid direct
+};
+
+// Stable per-name colour for carriers not in the table, so the same one
+// always looks the same without needing an entry.
+function carrierFallbackColor(key) {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 360;
+  return `hsl(${h}, 55%, 42%)`;
+}
+
+// White text on light chips is unreadable; pick by perceived brightness
+// rather than maintaining a second table of text colours.
+function carrierTextColor(bg) {
+  const m = /^#([0-9a-f]{6})$/i.exec(bg || "");
+  if (!m) return "#FFFFFF";
+  const n = parseInt(m[1], 16);
+  const lum = (((n >> 16) & 255) * 299 + ((n >> 8) & 255) * 587
+               + (n & 255) * 114) / 1000;
+  return lum > 150 ? "#1A1A1A" : "#FFFFFF";
+}
+
+function carrierChipHtml(carrier) {
+  const raw = (carrier || "").trim();
+  if (!raw) return "";                       // unknown — say nothing
+  const key = raw.toLowerCase();
+  const bg = CARRIER_COLORS[key] || carrierFallbackColor(key);
+  const fg = carrierTextColor(bg);
+  return `<span class="mini-chip carrier-chip"
+                style="background:${bg};color:${fg};border-color:${bg};"
+                title="Carrier: ${escapeAttr(raw)}">${escapeHtml(raw)}</span>`;
+}
+
 function renderListRow(r, opts = {}) {
   const role = opts.role;          // "parent" | "child" | undefined
   const group = opts.group || null;
@@ -2173,6 +2231,12 @@ function renderListRow(r, opts = {}) {
         : `<span class="list-status ok">✓</span>`);
 
   const subChips = [];
+  // Who's paying. Brand-ish colours so the common ones are recognisable
+  // without reading — AAA alone is a quarter of the book. No chip when
+  // the carrier is unknown: that's 45% of jobs, and a chip on half the
+  // list saying "don't know" is just noise.
+  const carrierChip = carrierChipHtml(r.carrier);
+  if (carrierChip) subChips.push(carrierChip);
   if (r.aging_days >= 3) {
     const hot = r.aging_days >= 7 ? "hot" : "";
     subChips.push(`<span class="mini-chip aging ${hot}">⏰${r.aging_days}d</span>`);

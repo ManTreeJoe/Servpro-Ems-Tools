@@ -69,7 +69,8 @@ _WRITES = frozenset({
 
 _READS = frozenset({
     "all_aliases", "all_children",
-    "card_display_names_for", "children_of", "count_by_department",
+    "card_display_names_for", "carriers_for", "children_of",
+    "count_by_department",
     "department_of_job", "export_db", "find_child_by_card",
     "find_child_by_folder", "find_dead_folder_links",
     "find_department_conflicts", "find_job_by_link", "find_job_by_name",

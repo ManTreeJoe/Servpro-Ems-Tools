@@ -510,6 +510,53 @@ def card_display_names_for(names) -> dict:
     return out
 
 
+def carriers_for(names) -> dict:
+    """{input_name: carrier} for names resolving to a job with one.
+
+    Batched for the same reason as `card_display_names_for` — the audit
+    shapes hundreds of rows at once, and a per-row request would be tens
+    of seconds against a hosted database.
+
+    No card requirement here: the carrier is a fact about the job, known
+    long before anyone pins a card.
+    """
+    wanted = {}
+    for n in names or ():
+        k = canon_key(n or "")
+        if k:
+            wanted.setdefault(k, []).append(n)
+    if not wanted:
+        return {}
+    keys = list(wanted)
+    out = {}
+
+    jobs = _rows("jobs", canon_key=_in(keys), select="canon_key,carrier")
+    direct = {j["canon_key"] for j in jobs}
+    for j in jobs:
+        val = (j.get("carrier") or "").strip()
+        if val:
+            for orig in wanted.get(j["canon_key"], ()):
+                out[orig] = val
+
+    # Alias pass for names with no direct row — same trap as above.
+    left = [k for k in keys if k not in direct]
+    if left:
+        al = _rows("job_aliases", alias_canon=_in(left),
+                   select="alias_canon,canon_key")
+        if al:
+            akeys = list({a["canon_key"] for a in al})
+            ajobs = {j["canon_key"]: j for j in
+                     _rows("jobs", canon_key=_in(akeys),
+                           select="canon_key,carrier")}
+            for a in al:
+                j = ajobs.get(a["canon_key"])
+                val = ((j or {}).get("carrier") or "").strip()
+                if val:
+                    for orig in wanted.get(a["alias_canon"], ()):
+                        out.setdefault(orig, val)
+    return out
+
+
 # ── departments ─────────────────────────────────────────────────────────
 
 def department_of_job(canon_key_value: str):

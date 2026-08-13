@@ -995,6 +995,62 @@ def card_display_names_for(names) -> dict:
     return out
 
 
+def carriers_for(names) -> dict:
+    """Bulk form of "who insures this job?" — {input_name: carrier} for
+    every name resolving to a job with a non-empty carrier.
+
+    Two queries regardless of row count, for the same reason
+    `card_display_names_for` is batched: the audit shapes ~300 rows at
+    once, and a per-row lookup there cost ~600 round trips — invisible on
+    local SQLite, ruinous on a hosted one.
+
+    Resolution order matches find_job_by_name (direct canon_key, then
+    alias) so a name that is both resolves as it would singly. Unlike the
+    display-name lookup this does NOT require a pinned card: the carrier
+    is a fact about the job, known long before anyone pins anything.
+    """
+    wanted = {}
+    for n in names or ():
+        k = canon_key(n or "")
+        if k:
+            wanted.setdefault(k, []).append(n)
+    if not wanted:
+        return {}
+    keys = list(wanted)
+    marks = ",".join("?" * len(keys))
+    out = {}
+    with _LOCK, _connect() as c:
+        rows = c.execute(f"""
+            SELECT canon_key, carrier FROM jobs
+            WHERE canon_key IN ({marks})
+        """, tuple(keys)).fetchall()
+        direct = set()
+        for r in rows:
+            direct.add(r["canon_key"])
+            val = ((r["carrier"] if r["carrier"] is not None else "")).strip()
+            if val:
+                for orig in wanted.get(r["canon_key"], ()):
+                    out[orig] = val
+        # Alias pass only for names with NO direct job row — the same
+        # trap card_display_names_for documents: falling through for a
+        # name that is its own job labels the row with another
+        # customer's data.
+        left = [k for k in keys if k not in direct]
+        if left:
+            marks2 = ",".join("?" * len(left))
+            rows = c.execute(f"""
+                SELECT a.alias_canon, j.carrier
+                FROM jobs j
+                JOIN job_aliases a ON a.canon_key = j.canon_key
+                WHERE a.alias_canon IN ({marks2})
+                  AND j.carrier IS NOT NULL AND TRIM(j.carrier) <> ''
+            """, tuple(left)).fetchall()
+            for r in rows:
+                for orig in wanted.get(r["alias_canon"], ()):
+                    out.setdefault(orig, (r["carrier"] or "").strip())
+    return out
+
+
 def get_job(canon_key_value: str) -> dict | None:
     """Fetch a job row by its canon_key. None when absent."""
     if not canon_key_value:

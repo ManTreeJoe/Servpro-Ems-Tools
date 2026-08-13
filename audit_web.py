@@ -303,6 +303,22 @@ def _card_display_map(jobs):
         return {}
 
 
+def _carrier_map(jobs):
+    """{client: carrier} for a whole batch of rows, in two queries.
+
+    Same batching rule as `_card_display_map` — a per-row carrier lookup
+    would reintroduce exactly the N+1 that fix removed. Never raises: no
+    carrier just means no chip, which is already the case for 45% of
+    live jobs.
+    """
+    try:
+        import ems_db as _emsdb
+        return _emsdb.carriers_for(
+            [(j.get("client") or "") for j in jobs or ()])
+    except Exception:
+        return {}
+
+
 def _shells_for(path):
     """{"own": [...], "from_children": [...]} — which work shells a job has.
 
@@ -329,13 +345,15 @@ def _shells_for(path):
         return {"own": [], "from_children": []}
 
 
-def _shape_job(j, audit_result, pin_id, display_map=None):
+def _shape_job(j, audit_result, pin_id, display_map=None,
+                carrier_map=None):
     """Combine one run-doc job + its audit result into a single
     JSON-shaped row for the frontend. Pulls activity labels via
     `detect_activity` so chip rendering matches the Tk version.
 
     `display_map` is the batched card-name lookup from
-    `_card_display_map`; omit it for a single row and the per-row
+    `_card_display_map`, and `carrier_map` the batched carrier lookup
+    from `_carrier_map`; omit either for a single row and the per-row
     lookup is used instead.
 
     Every field must be JSON-serializable — pywebview's bridge
@@ -533,9 +551,23 @@ def _shape_job(j, audit_result, pin_id, display_map=None):
                     display_name = _j["display_name"]
             except Exception:
                 display_name = ""
+    # Carrier — batched like display_name. No card requirement: it's a
+    # fact about the job, not about the pin. Falls back to a single
+    # lookup for the one-row callers that pass no map.
+    carrier = ""
+    if carrier_map is not None:
+        carrier = carrier_map.get(j.get("client") or "") or ""
+    else:
+        try:
+            import ems_db as _emsdb
+            _cj = _emsdb.find_job_by_name(j.get("client") or "")
+            carrier = ((_cj or {}).get("carrier") or "").strip()
+        except Exception:
+            carrier = ""
     return {
         "client":           j.get("client") or "",
         "display_name":     display_name,
+        "carrier":          carrier,
         "row_key":          row_key,
         "section":          section,
         "activity":         activity_labels,
@@ -940,6 +972,10 @@ class Api(JobSettingsApi, CompanyCamApi):
                 # Keyed on the RESOLVED client (an expanded sub-job or
                 # multi-claim row carries its own), so it must be computed
                 # after that adoption rule, not from the raw run-doc jobs.
+                _carrier_map_b = _carrier_map([
+                    {"client": ((r or {}).get("client") or "")
+                               or (j or {}).get("client") or ""}
+                    for j, r in _pairs])
                 _display_map = _card_display_map([
                     {"client": ((r or {}).get("client") or "")
                                or (j or {}).get("client") or ""}
@@ -966,7 +1002,8 @@ class Api(JobSettingsApi, CompanyCamApi):
                     except Exception:
                         pin = ""
                     rows.append(_shape_job(j, r, pin,
-                                           display_map=_display_map))
+                                           display_map=_display_map,
+                                           carrier_map=_carrier_map_b))
                 self._last_rows = rows
                 self._last_meta = {
                     "date_iso":   d.strftime("%Y-%m-%d"),
@@ -1410,6 +1447,10 @@ class Api(JobSettingsApi, CompanyCamApi):
                 # chips fill in via audit:sp_update events.
                 rows = []
                 _pairs = list(_pair_results_to_jobs(filtered, results))
+                _carrier_map_b = _carrier_map([
+                    {"client": ((r or {}).get("client") or "")
+                               or (j or {}).get("client") or ""}
+                    for j, r in _pairs])
                 _display_map = _card_display_map([
                     {"client": ((r or {}).get("client") or "")
                                or (j or {}).get("client") or ""}
@@ -1432,7 +1473,8 @@ class Api(JobSettingsApi, CompanyCamApi):
                     except Exception:
                         pass
                     rows.append(_shape_job(j, r, pin,
-                                           display_map=_display_map))
+                                           display_map=_display_map,
+                                           carrier_map=_carrier_map_b))
                 self._last_rows = rows
                 self._last_meta = {
                     "date_iso":      d.strftime("%Y-%m-%d"),
