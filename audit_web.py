@@ -2283,6 +2283,33 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    def get_address(self, client: str) -> dict:
+        """Pull the loss address from the client's pinned Trello card desc
+        (CUSTOMER INFORMATION → ADDRESS). Backs '📋 Copy address'.
+
+        Checked against live cards: all ten sampled kept it under that one
+        section and key, so unlike the email — which turned up under four
+        different headings — a single lookup is honest here. STREET is
+        accepted as a second spelling in case a card ever uses it.
+        """
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            import trello_client as tc
+            card_id = persistence.get_trello_card_id(client) or ""
+            if not card_id:
+                return {"ok": False, "error": "no pinned Trello card"}
+            card = tc.get_card(card_id, actions_limit=0) or {}
+            fields = tc.parse_card_desc(card.get("desc") or "") or {}
+            cust = fields.get("CUSTOMER INFORMATION") or {}
+            addr = (cust.get("ADDRESS") or cust.get("STREET ADDRESS")
+                    or cust.get("STREET") or "").strip()
+            if not addr:
+                return {"ok": False, "error": "no address on the card"}
+            return {"ok": True, "address": addr}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     def get_initial_cat_class(self, client: str, card_id: str = "") -> dict:
         """Pull the water Category + Class out of the initial-inspection
         notes the tech posts in the card's Trello COMMENTS (not the card
@@ -3340,18 +3367,44 @@ class Api(JobSettingsApi, CompanyCamApi):
             franchise = ""
         supervisor = self._supervisor_for(client, fields)
 
+        # The card's own LINKS section carries both of these. The office
+        # was pasting the DocuSketch section in by hand on every job that
+        # has one, while the link sat on the card the whole time.
+        sketch_url, card_video = "", ""
+        try:
+            card = tc.get_card(cid, actions_limit=0) or {}
+            links = (tc.parse_card_desc(card.get("desc") or "")
+                     or {}).get("LINKS") or {}
+            sketch_url = (links.get("DOCUSKETCH LINK") or "").strip()
+            card_video = (links.get("INITIAL VIDEO LINK") or "").strip()
+        except Exception:
+            pass
+        # Notes first, card second: a tech who wrote the link into the
+        # notes for THIS visit is more specific than a field on the card
+        # that may predate it.
+        walkthrough = (fields.get("Video Taken") or "").strip() or card_video
+
         draft = ie.compose(
             fields, franchise=franchise, supervisor=supervisor,
             year_built=(job.get("year_built") or ""),
-            walkthrough_url=(fields.get("Video Taken") or ""))
+            walkthrough_url=walkthrough,
+            docusketch_url=sketch_url)
         return {
             "ok": True, "card_id": cid, "text": draft, "fields": fields,
             "placeholders": ie.missing_placeholders(draft),
-            "found_notes": bool(blocks), "supervisor": supervisor,
+            # `fields`, not the `blocks` list this used to build: 49dc7ef
+            # replaced parse_initial_inspection_notes with
+            # best_initial_block and left this reference behind, so every
+            # call raised NameError and the ✉ Initial email button did
+            # nothing at all.
+            "found_notes": bool(fields), "supervisor": supervisor,
             # Pre-fills the dialog's editable SLA line. Sent from here so
             # the wording lives in one place instead of being restated in
             # the JS, where the two would drift apart.
             "default_sla_line": ie.DEFAULT_SLA_LINE,
+            # Pre-fills the DocuSketch box, so the common case is typing
+            # nothing at all.
+            "docusketch_url": sketch_url,
         }
 
     def _supervisor_for(self, client: str, fields: dict) -> str:

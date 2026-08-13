@@ -87,6 +87,12 @@
     const misplacedPhotos = r.misplaced_photos || [];
     const misplacedCount  = misplacedForms.length + misplacedPhotos.length;
     const chips = [];
+    // Who's paying, first — it frames everything else on the job. Colour
+    // comes from the shared carrier table so the row chip and this one
+    // can't drift apart. Nothing shown when the carrier is unknown.
+    const carrierChip = (window.AuditDetail && window.AuditDetail.carrierChip)
+      ? window.AuditDetail.carrierChip(r.carrier) : "";
+    if (carrierChip) chips.push(carrierChip);
     if (r.total_missing > 0) {
       chips.push(`<span class="detail-chip missing">${r.total_missing} missing</span>`);
     } else if (!r.flagged) {
@@ -234,6 +240,9 @@
                   ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
           <button class="action-btn" data-action="copy-email" id="copy-email-btn" disabled
                   title="Copy the customer / adjuster email from this Trello card">📧 Copy email</button>
+          <button class="action-btn" data-action="copy-address"
+                  title="Copy the loss address from this Trello card"
+                  ${hasPin ? "" : "disabled"}>📋 Copy address</button>
           <button class="action-btn" data-action="copy-pics"
                   title="Stage every image in a PICS subfolder into a TEMP folder + open it in Explorer — drag into XactAnalysis from there. Auto-deletes after 1 min."
                   ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
@@ -676,14 +685,21 @@
         // background thread and give the panel back straight away — the
         // result arrives as an event, so nothing is lost by not waiting.
         let started;
+        // Indeterminate until the first per-shoot event arrives — the
+        // download starts with a folder walk and an API call before it
+        // can say "3 of 40", and that gap is exactly where a bar is
+        // wanted most.
+        if (window.Progress) window.Progress.start();
         try {
           started = await pywebview.api.companycam_pull_assigned_bg(
             row.client, assignments(), tech || "", row.trello_card_id || "");
         } catch (e) {
+          if (window.Progress) window.Progress.fail();
           setStatus(ctx, "CompanyCam pull failed: " + e, "error");
           finish(null); return;
         }
         if (!started || !started.ok) {
+          if (window.Progress) window.Progress.fail();
           setStatus(ctx, "CompanyCam: " + ((started && started.error) || "?"), "warn");
           finish(null); return;
         }
@@ -925,10 +941,24 @@
       // honest question in both cases.
       const who = _firstLast(row.display_name || tc(ctx, row.client));
       setStatus(ctx, "📷 Working out what's missing…", "");
+      // Start the bar HERE, not when the first progress event lands. This
+      // check is the long part — it walks the folder and fetches a tag
+      // per photo — and showing nothing until the download begins meant
+      // the bar appeared only after the wait everyone was watching.
+      if (window.Progress) window.Progress.start();
       let v;
       try { v = await pywebview.api.companycam_plan_pull(row.client, "", cardId); }
-      catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
-      if (!v || !v.ok) { setStatus(ctx, "CompanyCam: " + ((v && v.error) || "?"), "warn"); return; }
+      catch (e) {
+        if (window.Progress) window.Progress.fail();
+        setStatus(ctx, "CompanyCam check failed: " + e, "error"); return;
+      }
+      if (!v || !v.ok) {
+        if (window.Progress) window.Progress.fail();
+        setStatus(ctx, "CompanyCam: " + ((v && v.error) || "?"), "warn"); return;
+      }
+      // Planning is done — the download has its own progress from here,
+      // and if there's nothing to pull this is where it ends.
+      if (window.Progress) window.Progress.done();
       if (!v.missing) {
         setStatus(ctx, `📷 All ${v.total} photo${v.total === 1 ? "" : "s"} already in the folder`
           + (v.extra_files ? ` · ${v.extra_files} not in CompanyCam any more` : ""), "ok");
@@ -957,6 +987,15 @@
         setStatus(ctx, ok ? `📋 Copied claim #: ${res.claim}` : "Couldn't copy", ok ? "ok" : "error");
       } else {
         setStatus(ctx, (res && res.error) || "No claim # found", "warn");
+      }
+    } else if (action === "copy-address") {
+      const res = await pywebview.api.get_address(row.client);
+      if (res && res.ok && res.address) {
+        const ok = await copyText(ctx, res.address);
+        setStatus(ctx, ok ? `📋 Copied address: ${res.address}` : "Couldn't copy",
+                  ok ? "ok" : "error");
+      } else {
+        setStatus(ctx, (res && res.error) || "No address found", "warn");
       }
     } else if (action === "copy-email") {
       const btn = document.getElementById("copy-email-btn");
@@ -2696,6 +2735,7 @@
         <input id="ie-crews" class="search" style="width:110px;" placeholder="6/30/26"/>
         <label class="modal-lbl" for="ie-sketch">DocuSketch</label>
         <input id="ie-sketch" class="search" style="width:230px;"
+               value="${escA(ctx, draft.docusketch_url || "")}"
                placeholder="https://app.docusketch.com/player/…"/>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
@@ -2999,7 +3039,78 @@
       }));
   }
 
+  // Minimal text escape — this module's `esc` needs a ctx, and the
+  // carrier chip is called from render paths that don't carry one.
+  function _escText(v) {
+    return String(v == null ? "" : v)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  // ── Carrier chip ──────────────────────────────────────────────────────
+  // Roughly the carriers' own brand colours, so the ones you see all day
+  // are recognisable without reading the word — AAA alone is a quarter of
+  // the book, Mercury and Farmers most of the rest. Anything not listed
+  // gets a stable colour derived from its name, so the long tail (21
+  // carriers with one or two jobs each) still reads as distinct rather
+  // than collapsing into one grey.
+  //
+  // These are approximations by eye, not brand assets. Edit freely — one
+  // place, and the key is matched loosely so "AAA " / "aaa" both hit.
+  const CARRIER_COLORS = {
+    "aaa":             "#D0202E",   // red oval
+    "mercury":         "#C8102E",
+    "farmers":         "#00587C",
+    "state farm":      "#E31837",
+    "usaa":            "#00305E",
+    "allstate":        "#0033A0",
+    "liberty mutual":  "#FFD200",
+    "american family": "#0C2340",
+    "safeco":          "#0072CE",
+    "nationwide":      "#00539B",
+    "travelers":       "#E01719",
+    "lemonade":        "#FF4FA0",
+    "the hartford":    "#0A5640",
+    "sedgwick":        "#F0B323",   // TPA, not a carrier
+    "self pay":        "#2E9E5B",   // no carrier at all — paid direct
+  };
+
+  // Stable per-name colour for carriers not in the table, so the same one
+  // always looks the same without needing an entry.
+  function carrierFallbackColor(key) {
+    let h = 0;
+    for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) % 360;
+    return `hsl(${h}, 55%, 42%)`;
+  }
+
+  // White text on light chips is unreadable; pick by perceived brightness
+  // rather than maintaining a second table of text colours.
+  function carrierTextColor(bg) {
+    const m = /^#([0-9a-f]{6})$/i.exec(bg || "");
+    if (!m) return "#FFFFFF";
+    const n = parseInt(m[1], 16);
+    const lum = (((n >> 16) & 255) * 299 + ((n >> 8) & 255) * 587
+                 + (n & 255) * 114) / 1000;
+    return lum > 150 ? "#1A1A1A" : "#FFFFFF";
+  }
+
+  // `cls` is the host's chip class — the compact "mini-chip" on a list
+  // row, the roomier "detail-chip" in the header. The COLOUR logic is
+  // what has to be shared; the sizing belongs to whoever is drawing it.
+  function carrierChip(carrier, cls) {
+    const raw = (carrier || "").trim();
+    if (!raw) return "";                       // unknown — say nothing
+    const key = raw.toLowerCase();
+    const bg = CARRIER_COLORS[key] || carrierFallbackColor(key);
+    const fg = carrierTextColor(bg);
+    return `<span class="${cls || "detail-chip"} carrier-chip"
+                  style="background:${bg};color:${fg};border-color:${bg};"
+                  title="Carrier: ${String(raw).replace(/"/g, '&quot;')}">${_escText(raw)}</span>`;
+  }
+
+
   window.AuditDetail = {
+    carrierChip,
     groupChecklistsByRole,
     buildDetailBodyHTML,
     wireDetail,

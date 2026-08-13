@@ -237,6 +237,8 @@ class Api:
         return self._aw().open_companycam_link(client)
     def get_claim_number(self, client):
         return self._aw().get_claim_number(client)
+    def get_address(self, client):
+        return self._aw().get_address(client)
     def reaudit_one(self, client):
         return self._aw().reaudit_one(client)
     def list_folder_candidates(self, client, year=""):

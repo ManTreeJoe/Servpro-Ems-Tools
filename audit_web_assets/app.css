@@ -994,7 +994,8 @@ body { display: flex; flex-direction: column; }
 /* Carrier chip — brand-ish colour set inline per carrier (see
    CARRIER_COLORS in app.js). Slightly bolder than the other mini-chips
    because it's an identity, not a status. */
-.mini-chip.carrier-chip {
+.mini-chip.carrier-chip,
+.detail-chip.carrier-chip {
   font-weight: 700;
   letter-spacing: 0.01em;
   max-width: 140px;

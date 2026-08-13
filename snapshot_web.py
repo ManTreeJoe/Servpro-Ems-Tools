@@ -560,6 +560,8 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().claim_folders(path)
     def get_claim_number(self, client):
         return self._aw().get_claim_number(client)
+    def get_address(self, client):
+        return self._aw().get_address(client)
     # Multi-unit umbrella ➕ create-missing-child + loose-file flag —
     # single-sourced through audit_web so Snapshot's property-structure
     # modal creates units the same way Audit does.

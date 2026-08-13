@@ -141,6 +141,12 @@
     padding: 4px 10px; border-radius: 4px; font-size: 11px;
     font-weight: 600; background: var(--chip-bg); color: var(--text);
   }
+  /* Carrier chip — colours come inline from the shared carrier table in
+     audit_detail.js; this only matches the audit panel's weight. */
+  .detail-chip.carrier-chip {
+    font-weight: 700; letter-spacing: 0.01em; max-width: 160px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .detail-chip.activity { color: #FFFFFF; background: var(--act-monitor); }
   .detail-chip.aging   { background: var(--amber); color: #FFFFFF; }
   .detail-chip.aging.hot { background: var(--red); }
@@ -527,7 +533,7 @@
   <span id="status-msg" class="status-msg"></span>
 </footer>
 
-<script src="../web_shared/audit_detail.js?v=20260813c"></script>
+<script src="../web_shared/audit_detail.js?v=20260813f"></script>
 <script src="app.js?v=20260710a"></script>
 </body>
 </html>
