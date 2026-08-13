@@ -210,3 +210,73 @@ def test_snapshot_proxies_the_initial_email_api():
     for name in ("initial_email_draft", "compose_initial_email",
                  "post_initial_email_comment", "open_xa_link"):
         assert hasattr(snapshot_web.Api, name), f"snapshot_web missing {name}"
+
+
+# ── fields the notes captured but the email used to drop ──────────────
+# Each of these was being retyped by hand on every job, which is how the
+# generated draft and the emails actually sent drifted apart.
+
+def _compose(**kw):
+    import initial_email as ie
+    fields = kw.pop("fields", {})
+    return ie.compose(fields, **kw)
+
+
+def test_leak_detection_prints_when_the_tech_said_yes():
+    txt = _compose(fields={"Leak Detection": "Yes /"})
+    assert "Leak detection is recommended" in txt
+
+
+def test_leak_detection_absent_when_unanswered():
+    """"Yes / No" untouched means nobody answered — assert nothing."""
+    txt = _compose(fields={"Leak Detection": "Yes / No"})
+    assert "Leak detection" not in txt
+
+
+def test_water_heater_temp_prints_with_its_reading():
+    txt = _compose(fields={"Water Heater Temp": "120F"})
+    assert "Water Heater Temp Set - 120F" in txt
+
+
+def test_water_heater_temp_omitted_without_a_reading():
+    """A bare "Water Heater Temp Set -" tells an adjuster nothing."""
+    assert "Water Heater Temp" not in _compose(fields={})
+
+
+def test_mold_under_ten_prints_the_office_wording():
+    txt = _compose(fields={"Visible Mold": "Yes /",
+                           "Mold Sq Ft": "Less than 10 sq ft"})
+    assert "Microbial growth less than 10sqft present" in txt
+    assert "Remediation not warranted" in txt
+    assert "Servpro to address" in txt
+    assert "An air scrubber will be utilized throughout the duration" in txt
+    assert "Please advise on approvals" in txt
+
+
+def test_mold_over_ten_does_not_claim_remediation_is_unwarranted():
+    """Above 10sqft the opposite is true, and the office's wording for
+    that case isn't recorded anywhere — so it must not be invented."""
+    txt = _compose(fields={"Visible Mold": "Yes /",
+                           "Mold Sq Ft": "Greater than 10 sq ft"})
+    assert "Microbial growth greater than 10sqft present" in txt
+    assert "Remediation not warranted" not in txt
+
+
+def test_no_mold_block_when_none_reported():
+    assert "Microbial" not in _compose(fields={"Visible Mold": "/ No"})
+
+
+def test_docusketch_link_is_included():
+    txt = _compose(fields={}, docusketch_url="https://app.docusketch.com/player/bLfjBOMu")
+    assert "browser to view the DocuSketch:" in txt
+    assert "https://app.docusketch.com/player/bLfjBOMu" in txt
+
+
+def test_docusketch_absent_when_no_link():
+    assert "DocuSketch" not in _compose(fields={})
+
+
+def test_docusketch_ignores_a_yes_no_answer():
+    """"DocuSketch Done: Yes" is not a link — printing it under "paste
+    the link below" would send the adjuster nothing to click."""
+    assert "DocuSketch" not in _compose(fields={"DocuSketch Done": "Yes"})

@@ -2589,6 +2589,9 @@
         <input id="ie-rate" class="search" style="width:90px;" placeholder="$85.26"/>
         <label class="modal-lbl" for="ie-crews">Crews start</label>
         <input id="ie-crews" class="search" style="width:110px;" placeholder="6/30/26"/>
+        <label class="modal-lbl" for="ie-sketch">DocuSketch</label>
+        <input id="ie-sketch" class="search" style="width:230px;"
+               placeholder="https://app.docusketch.com/player/…"/>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
         ${opt("ie-tl", "TL inventory", true)}
@@ -2621,6 +2624,7 @@
         supervisor: wrap.querySelector("#ie-sup").value,
         equipment_rate: wrap.querySelector("#ie-rate").value,
         crews_date: wrap.querySelector("#ie-crews").value,
+        docusketch_url: wrap.querySelector("#ie-sketch").value,
         extras: {
           tl_inventory: wrap.querySelector("#ie-tl").checked,
           pod: wrap.querySelector("#ie-pod").checked,

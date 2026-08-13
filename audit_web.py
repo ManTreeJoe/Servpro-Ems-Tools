@@ -3342,6 +3342,7 @@ class Api(JobSettingsApi, CompanyCamApi):
             equipment_rate=o.get("equipment_rate", ""),
             crews_date=o.get("crews_date", ""),
             walkthrough_url=o.get("walkthrough_url", ""),
+            docusketch_url=o.get("docusketch_url", ""),
             extras=o.get("extras") or {})
         return {"ok": True, "text": text,
                 "placeholders": ie.missing_placeholders(text)}

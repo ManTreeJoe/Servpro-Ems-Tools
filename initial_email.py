@@ -119,7 +119,7 @@ def _rooms_block(fields):
 
 def compose(fields, *, franchise="", supervisor="", greeting="Good Morning,",
             year_built="", equipment_rate="", crews_date="",
-            walkthrough_url="", extras=None):
+            walkthrough_url="", docusketch_url="", extras=None):
     """Render the email. `fields` is one block from
     `initial_notes_parser.parse_initial_inspection_notes`.
 
@@ -163,8 +163,24 @@ def compose(fields, *, franchise="", supervisor="", greeting="Good Morning,",
         L.append("Repairs have yet to be completed")
     L.append("")
 
+    # Leak detection sits between Repairs and Re-inspection in the
+    # official note. The notes parser has captured "Leak Detection" all
+    # along; the email simply never printed it, so the office retyped it.
+    if flag("leak_detection", "Leak Detection") is True:
+        L.append("Leak detection is recommended")
+        L.append("")
+
     if flag("reinspection", "Re-inspection") is not False:
         L.append("Re-inspection is recommended upon completion of repairs")
+        L.append("")
+
+    # Also parsed and never printed. A reading only means something with
+    # its value attached, so it prints only when the tech recorded one —
+    # no bracket, since a bare "Water Heater Temp Set -" tells an adjuster
+    # nothing the omission doesn't.
+    water_heater = _clean(f.get("Water Heater Temp"))
+    if water_heater:
+        L.append(f"Water Heater Temp Set - {water_heater}")
         L.append("")
 
     L.extend(_rooms_block(f))
@@ -176,6 +192,36 @@ def compose(fields, *, franchise="", supervisor="", greeting="Good Morning,",
     if flag("testing", "Asbestos/Lead Test") is True:
         L.append("Asbestos and Lead testing is required")
         L.append("")
+
+    # Mold. "Visible Mold" / "Mold Sq Ft" have always been parsed and
+    # never printed, so every mold job had this block retyped by hand.
+    if flag("mold", "Visible Mold") is True:
+        sq = _clean(f.get("Mold Sq Ft")).lower()
+        under_ten = ("less" in sq) or ("<" in sq) or ("under" in sq)
+        over_ten = ("greater" in sq) or ("more" in sq) or (">" in sq) \
+            or ("over" in sq)
+        if under_ten:
+            L.append("Microbial growth less than 10sqft present")
+        elif over_ten:
+            L.append("Microbial growth greater than 10sqft present")
+        else:
+            L.append("Microbial growth present")
+        L.append("")
+        # Only the UNDER-ten wording exists in the office's sent emails.
+        # Above ten the opposite holds — remediation IS warranted — so
+        # those follow-on sentences are deliberately not guessed. The
+        # operator adds them in the draft box, which is the same place
+        # this whole block used to be typed.
+        if under_ten:
+            L.append("Remediation not warranted")
+            L.append("")
+            L.append("Servpro to address")
+            L.append("")
+            L.append("An air scrubber will be utilized throughout the "
+                     "duration of the remediation")
+            L.append("")
+            L.append("Please advise on approvals")
+            L.append("")
 
     if flag("packout", "Packout Required") is True:
         L.append("Pack out will be necessary to facilitate mitigation")
@@ -226,6 +272,16 @@ def compose(fields, *, franchise="", supervisor="", greeting="Good Morning,",
         L.append("Please copy & paste the link below into your preferred "
                  "browser to view initial walkthrough:")
         L.append(url)
+        L.append("")
+
+    # DocuSketch. Same shape as the walkthrough link above — the office
+    # was pasting this whole section in by hand on every job that has a
+    # sketch, because the email had no place for it at all.
+    sketch = _clean(docusketch_url) or _clean(f.get("DocuSketch Done"))
+    if sketch.lower().startswith("http"):
+        L.append("Please copy & paste the link below into your preferred "
+                 "browser to view the DocuSketch:")
+        L.append(sketch)
         L.append("")
 
     L.append("Regards,")
