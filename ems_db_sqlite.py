@@ -1728,6 +1728,12 @@ def sync_from_trello(*, exclude_quality: bool = True,
     b_total = found["boards"]
     cards_total = jobs_upserted = links_added = 0
 
+    # Point a card at the job it already belongs to when the index holds
+    # the other spelling — otherwise "Knudsen, Seth - Mercury" makes a
+    # second job for the "Seth Knudsen" the audit is already reading.
+    _walk.resolve_against_existing(
+        found["records"], lambda k: get_job(k) is not None)
+
     for rec in found["records"]:
         key = rec["canon_key"]
         meta = {"board": rec["board"], "lane": rec["lane"]}
@@ -1748,6 +1754,11 @@ def sync_from_trello(*, exclude_quality: bool = True,
         )
         jobs_upserted += 1
         add_alias(key, rec["display_name"], source="trello")
+        # The card's own spelling, when it differs from the surviving
+        # key's — so searching the card title still finds the job.
+        for extra in (rec.get("aliases") or ()):
+            if extra:
+                add_alias(key, extra, source="trello")
         set_link(key, "trello_card", rec["card_id"],
                  metadata=meta, added_by="sync_from_trello")
         links_added += 1

@@ -56,6 +56,56 @@ def _card_columns(tc, card) -> dict:
     return out
 
 
+def resolve_against_existing(records, exists) -> dict:
+    """Point cards at the job they already belong to, under whichever
+    spelling the index happens to hold.
+
+    A card titled "Knudsen, Seth - Mercury" keys to `knudsen, seth`; the
+    run doc and the folder call him "Seth Knudsen", keying to
+    `seth knudsen`. Writing the card's key makes a SECOND job for one
+    person, and the audit keeps reading the first — which is how a job
+    ends up with the carrier on a row nothing looks at. Measured on live
+    data: a full sync would have done this to nine open jobs.
+
+    `exists(key)` answers whether a job row already exists. Records are
+    mutated in place: `canon_key` becomes the surviving identity and the
+    card's own spelling is added to `aliases`, so a search for it still
+    finds the job.
+
+    Only ever redirects INTO a row that already exists. It never merges
+    two existing jobs — that needs a person, and the 🧩 Name issues
+    review is where it happens.
+
+    Returns {"redirected": n, "pairs": [(card_key, existing_key)]}.
+    """
+    try:
+        from job_name_issues import swapped_name
+        from ems_db_sqlite import canon_key
+    except Exception:                                  # pragma: no cover
+        return {"redirected": 0, "pairs": []}
+
+    out = {"redirected": 0, "pairs": []}
+    for rec in records or ():
+        key = rec.get("canon_key") or ""
+        if not key or exists(key):
+            continue                       # already the right identity
+        sw = swapped_name(rec.get("display_name") or "")
+        if not sw:
+            continue
+        other = canon_key(sw)
+        if not other or other == key or not exists(other):
+            continue
+        # The card's spelling stays searchable; the job keeps the key the
+        # rest of the system already uses.
+        aliases = list(rec.get("aliases") or [])
+        aliases.append(rec.get("display_name") or "")
+        rec["aliases"] = aliases
+        rec["canon_key"] = other
+        out["redirected"] += 1
+        out["pairs"].append((key, other))
+    return out
+
+
 class CardRecord(dict):
     """One open Trello card, in the shape a job index wants.
 

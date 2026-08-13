@@ -900,6 +900,27 @@ def sync_from_trello(*, exclude_quality: bool = True,
     if not records:
         return out
 
+    # Before anything is keyed: point each card at the job it already
+    # belongs to when the index holds the other spelling. Both the card's
+    # key and its swapped form are looked up in ONE read, so this costs a
+    # request, not a request per card.
+    from job_name_issues import swapped_name as _swap
+    probe = set()
+    for rec in records:
+        k = rec.get("canon_key") or ""
+        if k:
+            probe.add(k)
+        sw = _swap(rec.get("display_name") or "")
+        if sw:
+            sk = canon_key(sw)
+            if sk:
+                probe.add(sk)
+    known = set()
+    for part in _chunks(sorted(probe)):
+        for row in _rows("jobs", canon_key=_in(part), select="canon_key"):
+            known.add(row["canon_key"])
+    _walk.resolve_against_existing(records, lambda k: k in known)
+
     # One card per key wins the job fields — a client with several cards
     # would otherwise fight itself. Every card still gets its own link,
     # which is how multi-card clients stay reachable.
@@ -952,6 +973,13 @@ def sync_from_trello(*, exclude_quality: bool = True,
         alias_rows.append({"canon_key": key, "alias": name,
                            "alias_canon": canon_key(name),
                            "source": "trello"})
+        # The card's own spelling when it was redirected to an existing
+        # job — so a search for the card title still finds it.
+        for extra in (rec.get("aliases") or ()):
+            if extra:
+                alias_rows.append({"canon_key": key, "alias": extra,
+                                   "alias_canon": canon_key(extra),
+                                   "source": "trello"})
 
     for part in _chunks(job_rows):
         _sb.rest("POST", "jobs", body=part,
