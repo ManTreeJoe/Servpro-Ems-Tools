@@ -35,6 +35,32 @@ def _isolate_job_db(tmp_path_factory):
         _db.reset_db_path(live)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_companycam_tag_cache(tmp_path, monkeypatch):
+    """Keep the CompanyCam tag sidecar out of the real data dir.
+
+    `photo_tags` persists tags to `paths.data("cache_companycam_tags.json")`
+    so a job's tags survive a restart. Unisolated, the suite wrote its
+    fixture ids into the LIVE cache — `{"p1": ["Kitchen", "Demo"]}` really
+    landed in %APPDATA%, and then leaked BACK into a later test, which is
+    how it was caught: test_photo_tags_never_raises got real-looking tags
+    from a stub that only raises.
+
+    Function-scoped, so state can't carry between tests either. Same
+    instinct as `_isolate_job_db` — a suite must not touch live data.
+    """
+    import companycam_api as cc
+    monkeypatch.setattr(cc, "_tag_disk_path",
+                        lambda: str(tmp_path / "cc_tags.json"))
+    cc._TAG_CACHE.clear()
+    cc._TAG_DISK = None
+    cc._TAG_DISK_DIRTY = 0
+    yield
+    cc._TAG_CACHE.clear()
+    cc._TAG_DISK = None
+    cc._TAG_DISK_DIRTY = 0
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _pin_db_backend(monkeypatch_session):
     """Run against SQLite regardless of what the app is set to.

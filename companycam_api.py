@@ -457,19 +457,95 @@ def _shape_photo(photo):
 _TAG_CACHE: dict = {}
 _TAG_FETCH_CAP = 400          # ~2 min of the 240/min GET budget
 
+# Tags survive the process. They come from /photos/{id}/tags — ONE call
+# per photo, with no bulk form: the project photo list carries no tags
+# (verified against the live API). A job with 194 missing photos is
+# therefore 194 requests, and at 240 GET/min that is ~48s of budget no
+# matter how many threads you throw at it. Held only in memory, that
+# price was paid again on every app restart and every department switch,
+# for answers that had not changed.
+_TAG_DISK_FILE = "cache_companycam_tags.json"
+_TAG_DISK = None                   # None = sidecar not read yet
+_TAG_DISK_DIRTY = 0                # unsaved entries
+
+
+def _tag_disk_path():
+    try:
+        import paths
+        return paths.data(_TAG_DISK_FILE)
+    except Exception:
+        return ""
+
+
+def _tag_disk_load():
+    """Read the sidecar once per process. Any problem starts empty — a
+    corrupt cache must cost a re-fetch, never a broken pull."""
+    global _TAG_DISK
+    if _TAG_DISK is not None:
+        return _TAG_DISK
+    _TAG_DISK = {}
+    p = _tag_disk_path()
+    if not p:
+        return _TAG_DISK
+    try:
+        with open(p, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+        if isinstance(raw, dict):
+            _TAG_DISK = {str(k): [str(t) for t in v]
+                         for k, v in raw.items()
+                         if isinstance(v, list) and v}
+    except Exception:
+        _TAG_DISK = {}
+    return _TAG_DISK
+
+
+def flush_tag_cache():
+    """Write newly-learned tags to the sidecar. Best-effort: losing this
+    costs time on the next look and nothing else."""
+    global _TAG_DISK_DIRTY
+    if not _TAG_DISK_DIRTY or _TAG_DISK is None:
+        return
+    p = _tag_disk_path()
+    if not p:
+        return
+    try:
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(_TAG_DISK, fh)
+        os.replace(tmp, p)         # atomic — never a half-written cache
+        _TAG_DISK_DIRTY = 0
+    except Exception:
+        pass
+
 
 def invalidate_tag_cache():
+    """Drop the in-process tags. The SIDECAR is deliberately kept.
+
+    cache_bust clears this on a settings save / department switch because
+    the token may have changed. A CompanyCam photo id is unique to the
+    company that owns it, so entries belonging to another token are
+    simply never asked for — whereas re-fetching them costs the 48s
+    above. Delete the file by hand to truly clear it.
+    """
     _TAG_CACHE.clear()
 
 
 def photo_tags(photo_id):
     """Tag display names for one photo. [] on any failure — a pull must
-    never break because a label lookup did."""
+    never break because a label lookup did.
+
+    Served from memory, then from the sidecar, then from the API.
+    """
+    global _TAG_DISK_DIRTY
     pid = str(photo_id or "").strip()
     if not pid:
         return []
     if pid in _TAG_CACHE:
         return _TAG_CACHE[pid]
+    disk = _tag_disk_load()
+    if pid in disk:
+        _TAG_CACHE[pid] = disk[pid]
+        return disk[pid]
     try:
         raw = _call(f"/photos/{pid}/tags") or []
     except Exception:
@@ -483,6 +559,15 @@ def photo_tags(photo_id):
         if n:
             names.append(n)
     _TAG_CACHE[pid] = names
+    # Only TAGGED photos are written to disk. A photo with no tags is
+    # usually one nobody has tagged YET — techs tag late, and the
+    # suggest-a-stage feature exists precisely because shoots arrive
+    # untagged. Persisting an empty answer would freeze those photos as
+    # untagged forever. Empties still cache in memory, so a single run
+    # never asks twice.
+    if names:
+        disk[pid] = names
+        _TAG_DISK_DIRTY += 1
     return names
 
 
@@ -501,6 +586,11 @@ def attach_tags(photos, *, cap=_TAG_FETCH_CAP):
         if p.get("tags"):
             continue
         p["tags"] = photo_tags(p.get("id")) if i < cap else []
+    # Save once per batch rather than per photo: this is the only place
+    # that fetches tags in bulk, and the whole point is that the next
+    # look at this job doesn't pay for them again — including after a
+    # crash or a plain close, which is when it would otherwise be lost.
+    flush_tag_cache()
     return photos
 
 
