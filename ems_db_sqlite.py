@@ -1731,12 +1731,20 @@ def sync_from_trello(*, exclude_quality: bool = True,
     for rec in found["records"]:
         key = rec["canon_key"]
         meta = {"board": rec["board"], "lane": rec["lane"]}
+        # Every column the card stated, not just claim + carrier. Blanks
+        # are already dropped by the collector, and upsert_job treats a
+        # blank as "don't overwrite", so a card that omits a field never
+        # clears one somebody typed.
+        cols = dict(rec.get("columns") or {})
+        cols.pop("claim_number", None)
+        cols.pop("carrier", None)
         upsert_job(
             display_name=rec["display_name"],
             claim_number=rec["claim_number"],
             carrier=rec["carrier"],
             status=rec["status"],
             metadata=meta,
+            **cols,
         )
         jobs_upserted += 1
         add_alias(key, rec["display_name"], source="trello")

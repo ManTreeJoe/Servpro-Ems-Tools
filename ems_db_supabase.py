@@ -918,9 +918,13 @@ def sync_from_trello(*, exclude_quality: bool = True,
     for key, rec in by_key.items():
         prior = existing.get(key)
         name = rec["display_name"]
-        supplied = {"claim_number": rec["claim_number"],
-                    "carrier": rec["carrier"],
-                    "status": rec["status"]}
+        # Every column the card stated, not just claim + carrier. The
+        # collector already dropped blanks, and the partial-update rule
+        # below means a card that omits a field never clears one.
+        supplied = dict(rec.get("columns") or {})
+        supplied.update({"claim_number": rec["claim_number"],
+                         "carrier": rec["carrier"],
+                         "status": rec["status"]})
         md_json = json.dumps({"board": rec["board"], "lane": rec["lane"]})
         row = {"canon_key": key, "display_name": name,
                "last_seen_at": now, "metadata_json": md_json}

@@ -180,3 +180,39 @@ def test_alias_rows_match_the_live_schema(sync):
     body = [c for c in calls if c["table"] == "job_aliases"][0]["body"][0]
     assert set(body) <= {"canon_key", "alias", "alias_canon", "source",
                          "added_at"}
+
+
+def test_every_column_the_card_stated_is_written(sync):
+    """The card carries address, phone, adjuster, agent, year built and
+    dates; the sync used to read CLAIM NUMBER and INSURANCE COMPANY and
+    discard the rest, which is how a full card sat beside an empty job
+    row."""
+    rec = _rec("a b", "A B", carrier="AAA", claim_number="C-9")
+    rec["columns"] = {
+        "carrier": "AAA", "claim_number": "C-9",
+        "address": "14665 Cagney CT", "phone": "951-570-2627",
+        "adjuster_name": "Gilbert Ancheta", "agent_name": "Abel Duran",
+        "date_of_loss": "7/15/26", "loss_type": "sink overflow",
+    }
+    _res, calls = sync([rec])
+    job = [c for c in calls if c["table"] == "jobs"][0]["body"][0]
+    assert job["address"] == "14665 Cagney CT"
+    assert job["phone"] == "951-570-2627"
+    assert job["adjuster_name"] == "Gilbert Ancheta"
+    assert job["agent_name"] == "Abel Duran"
+    assert job["date_of_loss"] == "7/15/26"
+    assert job["loss_type"] == "sink overflow"
+
+
+def test_a_field_the_card_omits_never_clears_a_stored_one(sync):
+    """The partial-update rule has to hold for the new columns too, or a
+    card missing an address wipes an address somebody typed."""
+    prior = {"a b": {"canon_key": "a b", "display_name": "A B",
+                     "address": "9 Elm Ave", "phone": "555-0000",
+                     "first_seen_at": "2026-01-01", "department": None}}
+    rec = _rec("a b", "A B")
+    rec["columns"] = {"phone": "951-570-2627"}      # no address on the card
+    _res, calls = sync([rec], prior)
+    job = [c for c in calls if c["table"] == "jobs"][0]["body"][0]
+    assert job["address"] == "9 Elm Ave"
+    assert job["phone"] == "951-570-2627"

@@ -14,6 +14,48 @@ from __future__ import annotations
 from typing import Iterable
 
 
+def _card_columns(tc, card) -> dict:
+    """{column: value} for every card field that has a column.
+
+    Driven by `job_settings` — FIELDS says where a value lives on the
+    card, COLUMN_FIELDS says which column it belongs in. Using that table
+    rather than a hand-picked list is the point: the job-info editor
+    already writes these fields back to the card, so a sync reading a
+    different set would quietly disagree with the editor.
+
+    Blank values are dropped, not stored: `upsert_job` treats a blank as
+    "don't overwrite", and passing one explicitly would just be noise.
+    Carriers are canonicalised here for the same reason they are on the
+    editor's way in.
+    """
+    try:
+        import job_settings as _js
+    except Exception:
+        return {}
+    try:
+        fields = tc.parse_card_desc((card or {}).get("desc") or "") or {}
+    except Exception:
+        return {}
+    out = {}
+    for entry in getattr(_js, "FIELDS", ()):
+        # (field_id, section, key, label, core)
+        fid, section, key = entry[0], entry[1], entry[2]
+        col = (getattr(_js, "COLUMN_FIELDS", {}) or {}).get(fid)
+        if not col:
+            continue                     # lives in the JSON blob, not a column
+        val = ((fields.get(section) or {}).get(key) or "").strip()
+        if not val:
+            continue
+        if col == "carrier":
+            try:
+                import carriers as _carriers
+                val = _carriers.normalize(val) or val
+            except Exception:
+                pass
+        out[col] = val
+    return out
+
+
 class CardRecord(dict):
     """One open Trello card, in the shape a job index wants.
 
@@ -97,26 +139,19 @@ def collect(*, exclude_quality: bool = True,
                 continue
             # Claim number and carrier ride along in the desc we already
             # fetched, so reading them costs nothing extra.
-            claim = ""
-            carrier = ""
-            try:
-                fields = tc.parse_card_desc(card.get("desc") or "")
-                ins = fields.get("INSURANCE INFORMATION") or {}
-                claim = (ins.get("CLAIM NUMBER") or "").strip()
-                carrier = (ins.get("INSURANCE COMPANY") or "").strip()
-            except Exception:
-                pass
-            # Canonicalise on the way in. Cards carry "farmers", "Farmers"
-            # and "FARMERS" for one carrier, and storing them as typed is
-            # why backfill_carriers.py had to exist to tidy up afterwards.
-            # normalize() leaves anything it doesn't recognise alone, so
-            # this never invents a carrier.
-            if carrier:
-                try:
-                    import carriers as _carriers
-                    carrier = _carriers.normalize(carrier) or carrier
-                except Exception:
-                    pass
+            # Everything the card states about the job, not just two
+            # fields. `job_settings` already maps every card field to its
+            # column and round-trips them in the job-info editor; reading
+            # the same table here means the sync and the editor cannot
+            # disagree about where a value lives.
+            #
+            # This used to take CLAIM NUMBER and INSURANCE COMPANY and
+            # discard the rest, which is why a card with an address,
+            # phone, adjuster, agent, year built and date of loss sat
+            # beside a job row that was completely empty.
+            cols = _card_columns(tc, card)
+            claim = cols.get("claim_number", "")
+            carrier = cols.get("carrier", "")
 
             records.append(CardRecord({
                 "canon_key":    key,
@@ -128,6 +163,10 @@ def collect(*, exclude_quality: bool = True,
                 "board":        b.get("name", ""),
                 "lane":         lane,
                 "card_id":      card.get("id") or "",
+                # Every column the card stated. claim_number and carrier
+                # stay as their own keys for the callers that only want
+                # those two; `columns` is the whole set.
+                "columns":      cols,
             }))
             if progress_cb is not None:
                 try:
