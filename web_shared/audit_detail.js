@@ -710,6 +710,13 @@
     const onProgress = (e) => {
       const d = (e && e.detail) || {};
       if (d.client !== client) return;
+      // Photos when we have a count, shoots otherwise — a pull can know
+      // how many shoots it has long before it knows the photo total.
+      if (window.Progress) {
+        if (d.total) window.Progress.set(d.done, d.total);
+        else if (d.n) window.Progress.set(d.i, d.n);
+        else window.Progress.start();
+      }
       setStatus(ctx, `⬇ Pulling ${d.stage || "photos"} — shoot ${d.i}/${d.n}`
                      + (d.total ? ` (${d.done}/${d.total} photos)` : ""), "");
     };
@@ -721,6 +728,7 @@
       _ccWatching.delete(client);
 
       if (!res.ok) {
+        if (window.Progress) window.Progress.fail();
         setStatus(ctx, "CompanyCam: " + (res.error || "?"), "warn");
         return;
       }
@@ -729,9 +737,11 @@
       // it reported a clean "✓ Pulled 0" for a pull that had actually
       // errored — folders created, no photos, no explanation.
       if (res.error) {
+        if (window.Progress) window.Progress.fail();
         setStatus(ctx, p ? `Pulled ${p}, but some failed — ${res.error}`
                          : `Pull failed — ${res.error}`, "warn");
       } else {
+        if (window.Progress) window.Progress.done();
         setStatus(ctx, p ? `✓ Pulled ${p} photo${p === 1 ? "" : "s"}`
                          : "Nothing pulled — everything was already there",
                   p ? "ok" : "");

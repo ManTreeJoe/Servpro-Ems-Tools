@@ -147,6 +147,9 @@ window.addEventListener("pywebviewready", async () => {
   window.addEventListener("audit:sp_update", onSpUpdate);
   window.addEventListener("audit:sp_done",   onSpDone);
   // SP cloud-only force-pull (from the SP import dialog)
+  // The bar rides the same stream as the text — it says how far along,
+  // which the text can't at a glance.
+  if (window.Progress) window.Progress.bind("sp:pull-progress", "sp:pull-done");
   window.addEventListener("sp:pull-progress", (ev) => {
     const d = ev.detail || {};
     setStatus(`☁ Pulling ${d.done || 0}/${d.total || "?"} · ${d.name || "…"}`);
