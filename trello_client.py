@@ -98,8 +98,18 @@ _QUALITY_EXCLUDED_IDS_CACHE: set[str] | None = None
 
 
 def _is_quality_excluded_name(name) -> bool:
-    nl = (name or "").lower()
-    return any(tok in nl for tok in QUALITY_EXCLUDED_BOARD_NAMES)
+    """Whitespace-insensitive, because the real board is called
+    "AR  BOARD" with TWO spaces.
+
+    The tokens below are written with single spaces, so a plain substring
+    test missed it and the AR board was never actually excluded —
+    everywhere this is used: the workspace sync, hygiene, search tiers.
+    Board names are typed by people; matching them literally is a bet
+    that nobody ever double-taps the space bar.
+    """
+    nl = " ".join((name or "").lower().split())
+    return any(" ".join(tok.split()) in nl
+               for tok in QUALITY_EXCLUDED_BOARD_NAMES)
 
 
 def quality_excluded_board_ids() -> set[str]:

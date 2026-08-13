@@ -150,7 +150,7 @@ def test_several_cards_for_one_client_all_get_links(sync):
             _rec("a b", "A B", card_id="card-2")]
     res, calls = sync(recs)
     links = [c for c in calls if c["table"] == "job_links"][0]["body"]
-    assert {l["value"] for l in links} == {"card-1", "card-2"}
+    assert {l["link_value"] for l in links} == {"card-1", "card-2"}
     assert res["jobs_upserted"] == 1     # ...but one job row
 
 
@@ -159,3 +159,24 @@ def test_metadata_carries_board_and_lane(sync):
     job = [c for c in calls if c["table"] == "jobs"][0]["body"][0]
     md = json.loads(job["metadata_json"])
     assert md == {"board": "WIP", "lane": "Demo"}
+
+
+def test_links_use_the_real_column_name_and_are_canonicalised(sync):
+    """The live schema calls it link_value, not value — a canary sync
+    against real PostgREST failed with PGRST204 because this guessed.
+    trello_card is also a STRONG link type, so it goes through _norm_link
+    exactly as set_link does; a pin stored un-canonicalised is one
+    nothing else can match."""
+    _res, calls = sync([_rec("a b", "A B", card_id="CARD-1")])
+    body = [c for c in calls if c["table"] == "job_links"][0]["body"][0]
+    assert "link_value" in body and "value" not in body
+    assert set(body) <= {"canon_key", "link_type", "link_value",
+                         "added_by", "added_at", "metadata_json"}, \
+        "job_links has no other columns in the live schema"
+
+
+def test_alias_rows_match_the_live_schema(sync):
+    _res, calls = sync([_rec("a b", "A B")])
+    body = [c for c in calls if c["table"] == "job_aliases"][0]["body"][0]
+    assert set(body) <= {"canon_key", "alias", "alias_canon", "source",
+                         "added_at"}

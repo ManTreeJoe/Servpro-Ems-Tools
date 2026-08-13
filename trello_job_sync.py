@@ -106,6 +106,17 @@ def collect(*, exclude_quality: bool = True,
                 carrier = (ins.get("INSURANCE COMPANY") or "").strip()
             except Exception:
                 pass
+            # Canonicalise on the way in. Cards carry "farmers", "Farmers"
+            # and "FARMERS" for one carrier, and storing them as typed is
+            # why backfill_carriers.py had to exist to tidy up afterwards.
+            # normalize() leaves anything it doesn't recognise alone, so
+            # this never invents a carrier.
+            if carrier:
+                try:
+                    import carriers as _carriers
+                    carrier = _carriers.normalize(carrier) or carrier
+                except Exception:
+                    pass
 
             records.append(CardRecord({
                 "canon_key":    key,

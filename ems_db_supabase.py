@@ -970,13 +970,17 @@ def sync_from_trello(*, exclude_quality: bool = True,
         except Exception:
             pass          # an alias clash must not fail the whole sync
 
+    # The column is link_value, and trello_card is a STRONG link type, so
+    # it goes through _norm_link exactly as set_link does — a pin stored
+    # un-canonicalised is a pin nothing else can match.
     link_rows = [{
         "canon_key": rec["canon_key"], "link_type": LINK_TRELLO,
-        "value": rec["card_id"], "added_by": "sync_from_trello",
-        "added_at": now,
+        "link_value": _norm_link(LINK_TRELLO, rec["card_id"]),
+        "added_by": "sync_from_trello", "added_at": now,
         "metadata_json": json.dumps({"board": rec["board"],
                                      "lane": rec["lane"]}),
     } for rec in records if rec.get("card_id")]
+    link_rows = [r for r in link_rows if r["link_value"]]
     for part in _chunks(link_rows):
         _sb.rest("POST", "job_links", body=part,
                  prefer="resolution=merge-duplicates")
