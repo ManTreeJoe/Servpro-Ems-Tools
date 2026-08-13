@@ -239,6 +239,25 @@ def _safe_is_starred(client):
         return False
 
 
+def _member_initials(full_name: str) -> str:
+    """Initials for a Trello member's avatar in the comments drawer.
+
+    Deliberately NOT `audit_logic.initials_for_name`: that one now
+    answers a franchise question — which of the seven leads is this, and
+    how does their photo folder get named. A Trello member is whoever
+    typed the comment (often office staff who are not techs at all), and
+    this is only a two-letter bubble next to their name, which is
+    already spelled out in full beside it.
+    """
+    import re as _re
+    parts = [p for p in _re.sub(r"\s+", " ", str(full_name or "")).strip().split(" ") if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
 def _pair_results_to_jobs(jobs, results):
     """Yield (job, result) for each audit result, mapping it back to the
     run-doc job it came from.
@@ -3161,6 +3180,92 @@ class Api(JobSettingsApi, CompanyCamApi):
             return payload
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+
+    def get_card_comments(self, client: str, limit: int = 200) -> dict:
+        """Every comment on the client's pinned card, newest first.
+
+        The Trello info section already shows five, truncated to 400
+        characters and collapsed — enough to notice a comment exists,
+        useless for reading the thread. This is the whole history for
+        the drawer, untruncated, so the card's running commentary can be
+        read next to the audit instead of in a browser.
+
+        Paged through `trello_client.get_all_comments`, which walks past
+        Trello's 50-per-request cap. 45s cache keyed by card id, same as
+        get_all_checklists — the drawer re-opens constantly as the user
+        moves between jobs and each open must not cost a round trip.
+        """
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            card_id = persistence.get_trello_card_id(client) or ""
+        except Exception:
+            card_id = ""
+        if not card_id:
+            return {"ok": False, "error": "no card pinned", "has_card": False}
+        try:
+            import time as _time
+            cache = getattr(self, "_comments_cache", None)
+            if cache is None:
+                cache = {}
+                self._comments_cache = cache
+            now = _time.time()
+            cached = cache.get(card_id)
+            import trello_client as tc
+            # Checked BEFORE the cache is served, not after — the whole
+            # point is to beat the 45s window.
+            # A comment posted from ANY surface since the last read makes
+            # the cached thread wrong — and the drawer showing a thread
+            # without the comment just sent reads as "it didn't post".
+            if tc.consume_comment_dirty(card_id):
+                cache.pop(card_id, None)
+                cached = None
+            if cached and (now - cached[0]) < 45:
+                return cached[1]
+            actions = tc.get_all_comments(card_id) or []
+            out = []
+            for a in actions:
+                txt = ((a.get("data") or {}).get("text") or "").strip()
+                if not txt:
+                    continue
+                who = (a.get("memberCreator") or {}).get("fullName") or ""
+                out.append({
+                    "id":       a.get("id") or "",
+                    "author":   who,
+                    "initials": _member_initials(who),
+                    "date":     (a.get("date") or "")[:10],
+                    "when":     a.get("date") or "",
+                    "text":     txt,
+                })
+                if len(out) >= max(1, int(limit or 200)):
+                    break
+            payload = {"ok": True, "has_card": True, "card_id": card_id,
+                       "comments": out, "count": len(out)}
+            cache[card_id] = (now, payload)
+            return payload
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def invalidate_comments_cache(self, client: str = "") -> dict:
+        """Drop the cached thread so a just-posted comment shows up.
+
+        Posting goes through a different surface (the activity-comment
+        composer, the adjuster ✓ Post), so without this the drawer would
+        keep serving the pre-post thread for up to 45 seconds and read
+        as "my comment didn't send".
+        """
+        cache = getattr(self, "_comments_cache", None)
+        if cache is None:
+            return {"ok": True, "cleared": 0}
+        if not client:
+            n = len(cache)
+            cache.clear()
+            return {"ok": True, "cleared": n}
+        try:
+            card_id = persistence.get_trello_card_id(client) or ""
+        except Exception:
+            card_id = ""
+        return {"ok": True, "cleared": int(bool(cache.pop(card_id, None)))}
 
     def activity_comment_text(self, stage: str, tech: str,
                               date_iso: str = "") -> dict:
@@ -7303,6 +7408,8 @@ class Api(JobSettingsApi, CompanyCamApi):
             tc.post_comment(card_id, body)
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+        # No cache-busting here: trello_client.post_comment flags the card
+        # for every caller at once, so one mechanism covers all of them.
         return {"ok": True, "card_id": card_id}
 
     def xa_note_members(self, client: str) -> dict:

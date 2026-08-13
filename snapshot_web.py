@@ -601,6 +601,10 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().get_inprogress_checklist(client)
     def get_all_checklists(self, client):
         return self._aw().get_all_checklists(client)
+    def get_card_comments(self, client, limit=200):
+        return self._aw().get_card_comments(client, limit)
+    def invalidate_comments_cache(self, client=""):
+        return self._aw().invalidate_comments_cache(client)
     def toggle_checklist_item(self, card_id, item_id, want):
         return self._aw().toggle_checklist_item(card_id, item_id, want)
     def post_canned(self, card_id, kind):

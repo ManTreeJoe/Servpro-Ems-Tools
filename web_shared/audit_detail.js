@@ -277,7 +277,10 @@
         </div>
       </footer>
       ${hasPin ? `<section class="detail-section" id="trello-info">
-        <h3>🎴 Trello <span class="muted" id="trello-info-status">loading…</span></h3>
+        <h3>🎴 Trello <span class="muted" id="trello-info-status">loading…</span>
+          <button class="action-btn" data-action="comments"
+                  style="float:right;margin-top:-2px;"
+                  title="Open the card's full comment thread in a drawer on the right">💬 Comments</button></h3>
         <div id="trello-info-body"></div>
       </section>` : ""}
       ${hasPin ? `<section class="detail-section" id="all-cl">
@@ -404,6 +407,9 @@
     const hasPin = !!r.trello_card_id;
     if (hasPin) loadTrelloInfo(r, ctx);
     if (hasPin) loadAllChecklists(r, ctx);   // every checklist on the card
+    // An open comments drawer follows the selection. Costs nothing when
+    // it's closed, which is the default — no extra call per job opened.
+    syncCommentsDrawer(r, ctx);
     // Activity comment is a BUTTON now — loaded on demand, so opening a
     // job no longer costs two API calls for a thing posted occasionally.
     decorateIssueListsWithCheckboxes(r, ctx);
@@ -828,6 +834,10 @@
 
   async function detailAction(action, row, ctx) {
     const M = (ctx && ctx.modals) || {};
+    if (action === "comments") {
+      toggleCommentsDrawer(row, ctx);
+      return;
+    }
     if (action === "request-items") {
       if (window.RequestItems) {
         window.RequestItems.open({
@@ -3109,8 +3119,254 @@
   }
 
 
+  // ── 💬 Trello comments drawer ────────────────────────────────────────
+  //
+  // The Trello section already lists five comments, truncated to 400
+  // characters and collapsed inside a <details> — enough to notice a
+  // thread exists, useless for reading it, so following a job's running
+  // commentary still meant opening the card in a browser.
+  //
+  // This is the whole thread, docked to the right edge, and it STAYS open
+  // as you move between jobs: the point is to read the card while working
+  // the audit, and a drawer that closed on every selection would be worse
+  // than the browser tab it replaces. Open state and width persist, per
+  // the house rule that panels remember where you left them.
+  const CMT_OPEN_KEY  = "auditCommentsOpen";
+  const CMT_WIDTH_KEY = "auditCommentsWidth";
+  const CMT_MIN_W = 260, CMT_MAX_W = 720, CMT_DEF_W = 380;
+
+  function _lsGet(k, dflt) {
+    try { const v = localStorage.getItem(k); return v === null ? dflt : v; }
+    catch (_) { return dflt; }
+  }
+  function _lsSet(k, v) { try { localStorage.setItem(k, String(v)); } catch (_) {} }
+
+  function commentsDrawerIsOpen() {
+    const el = document.getElementById("cmt-drawer");
+    return !!(el && el.classList.contains("cmt-open"));
+  }
+
+  function _cmtWidth() {
+    const n = parseInt(_lsGet(CMT_WIDTH_KEY, CMT_DEF_W), 10);
+    if (!isFinite(n)) return CMT_DEF_W;
+    return Math.min(CMT_MAX_W, Math.max(CMT_MIN_W, n));
+  }
+
+  function _injectCommentsCss() {
+    if (document.getElementById("cmt-drawer-css")) return;
+    const st = document.createElement("style");
+    st.id = "cmt-drawer-css";
+    // Colours are all tokens so the drawer follows the app's theme; a
+    // hard-coded background here reads as a foreign window in dark mode.
+    st.textContent =
+      ".cmt-drawer{position:fixed;top:0;right:0;height:100vh;z-index:9000;" +
+      "display:flex;flex-direction:column;background:var(--panel,#1e1e1e);" +
+      "border-left:1px solid var(--border,#333);box-shadow:-6px 0 18px rgba(0,0,0,.35);" +
+      "transform:translateX(100%);transition:transform .16s ease-out;}" +
+      ".cmt-drawer.cmt-open{transform:translateX(0);}" +
+      ".cmt-head{display:flex;align-items:center;gap:8px;padding:10px 12px;" +
+      "border-bottom:1px solid var(--border,#333);flex:0 0 auto;}" +
+      ".cmt-title{font-weight:700;font-size:13px;flex:1 1 auto;overflow:hidden;" +
+      "text-overflow:ellipsis;white-space:nowrap;}" +
+      ".cmt-sub{font-size:11px;color:var(--text-muted,#999);font-weight:400;}" +
+      ".cmt-actions{display:flex;gap:4px;flex:0 0 auto;}" +
+      ".cmt-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:10px 12px;}" +
+      ".cmt-item{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border,#2b2b2b);}" +
+      ".cmt-item:last-child{border-bottom:0;}" +
+      ".cmt-av{flex:0 0 auto;width:26px;height:26px;border-radius:50%;" +
+      "display:flex;align-items:center;justify-content:center;font-size:10px;" +
+      "font-weight:700;color:#fff;margin-top:2px;}" +
+      ".cmt-main{flex:1 1 auto;min-width:0;}" +
+      ".cmt-who{font-size:11px;color:var(--text-muted,#999);margin-bottom:2px;}" +
+      ".cmt-txt{font-size:12px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;" +
+      "overflow-wrap:anywhere;}" +
+      ".cmt-txt a{color:var(--accent,#4aa3ff);}" +
+      // The drag handle sits ON the left border, hence the negative inset.
+      ".cmt-grip{position:absolute;left:-3px;top:0;width:6px;height:100%;" +
+      "cursor:col-resize;z-index:1;}" +
+      ".cmt-grip:hover{background:var(--accent,#4aa3ff);opacity:.35;}" +
+      ".cmt-empty{color:var(--text-muted,#999);font-size:12px;padding:12px 0;}";
+    document.head.appendChild(st);
+  }
+
+  function _ensureCommentsDrawer() {
+    let el = document.getElementById("cmt-drawer");
+    if (el) return el;
+    _injectCommentsCss();
+    el = document.createElement("aside");
+    el.id = "cmt-drawer";
+    el.className = "cmt-drawer";
+    el.style.width = _cmtWidth() + "px";
+    el.innerHTML =
+      '<div class="cmt-grip" id="cmt-grip" title="Drag to resize"></div>' +
+      '<header class="cmt-head">' +
+      '  <div class="cmt-title" id="cmt-title">Comments</div>' +
+      '  <div class="cmt-actions">' +
+      '    <button class="action-btn" id="cmt-refresh" title="Re-read the thread from Trello">↻</button>' +
+      '    <button class="action-btn" id="cmt-close" title="Close (Esc)">✕</button>' +
+      '  </div>' +
+      '</header>' +
+      '<div class="cmt-body" id="cmt-body"></div>';
+    document.body.appendChild(el);
+
+    el.querySelector("#cmt-close").addEventListener("click", closeCommentsDrawer);
+    el.querySelector("#cmt-refresh").addEventListener("click", async () => {
+      const row = el._row, ctx = el._ctx;
+      if (!row) return;
+      // Drop the 45s server cache too, or ↻ just re-serves what is
+      // already on screen and looks broken.
+      try { await pywebview.api.invalidate_comments_cache(row.client); } catch (_) {}
+      loadCommentsInto(row, ctx, true);
+    });
+
+    // Drag-resize from the left edge.
+    let dragging = false;
+    el.querySelector("#cmt-grip").addEventListener("mousedown", (e) => {
+      dragging = true;
+      e.preventDefault();
+      document.body.style.userSelect = "none";
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const w = Math.min(CMT_MAX_W,
+                         Math.max(CMT_MIN_W, window.innerWidth - e.clientX));
+      el.style.width = w + "px";
+    });
+    window.addEventListener("mouseup", () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.userSelect = "";
+      _lsSet(CMT_WIDTH_KEY, parseInt(el.style.width, 10) || CMT_DEF_W);
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && commentsDrawerIsOpen()) closeCommentsDrawer();
+    });
+    return el;
+  }
+
+  function closeCommentsDrawer() {
+    const el = document.getElementById("cmt-drawer");
+    if (el) el.classList.remove("cmt-open");
+    _lsSet(CMT_OPEN_KEY, "0");
+  }
+
+  function openCommentsDrawer(row, ctx) {
+    if (!row) return;
+    const el = _ensureCommentsDrawer();
+    el.classList.add("cmt-open");
+    _lsSet(CMT_OPEN_KEY, "1");
+    loadCommentsInto(row, ctx, false);
+  }
+
+  function toggleCommentsDrawer(row, ctx) {
+    if (commentsDrawerIsOpen()) closeCommentsDrawer();
+    else openCommentsDrawer(row, ctx);
+  }
+
+  // Called on every detail render so the open drawer follows the
+  // selection instead of showing the last job's thread.
+  function syncCommentsDrawer(row, ctx) {
+    if (!commentsDrawerIsOpen()) return;
+    if (!row || !row.trello_card_id) {
+      const b = document.getElementById("cmt-body");
+      const t = document.getElementById("cmt-title");
+      if (t) t.textContent = "Comments";
+      if (b) b.innerHTML = '<div class="cmt-empty">No Trello card pinned to this job.</div>';
+      return;
+    }
+    openCommentsDrawer(row, ctx);
+  }
+
+  function _relTime(iso) {
+    const t = Date.parse(iso || "");
+    if (!isFinite(t)) return "";
+    const mins = Math.floor((Date.now() - t) / 60000);
+    if (mins < 1)   return "just now";
+    if (mins < 60)  return mins + "m ago";
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24)   return hrs + "h ago";
+    const days = Math.floor(hrs / 24);
+    if (days < 30)  return days + "d ago";
+    const mos = Math.floor(days / 30);
+    return mos < 12 ? mos + "mo ago" : Math.floor(mos / 12) + "y ago";
+  }
+
+  function _avatarColor(seed) {
+    let h = 0;
+    const s = String(seed || "?");
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+    return `hsl(${h}, 45%, 40%)`;
+  }
+
+  // Comments are full of pasted links (Workcenter, CompanyCam, DocuSign).
+  // Escape FIRST, then linkify, so the text can never inject markup.
+  function _linkify(ctx, text) {
+    const safe = esc(ctx, text || "");
+    return safe.replace(/(https?:\/\/[^\s<]+)/g, (m) => {
+      const href = m.replace(/[.,;:)]+$/, "");
+      const tail = m.slice(href.length);
+      return `<a href="${href}" target="_blank" rel="noreferrer">${href}</a>${tail}`;
+    });
+  }
+
+  async function loadCommentsInto(row, ctx, forced) {
+    const el = _ensureCommentsDrawer();
+    el._row = row;
+    el._ctx = ctx;
+    const body  = document.getElementById("cmt-body");
+    const title = document.getElementById("cmt-title");
+    if (!body) return;
+    const who = tc(ctx, row.display_name || row.client || "");
+    if (title) title.innerHTML = `💬 ${esc(ctx, who)}`;
+    body.innerHTML = '<div class="cmt-empty">Reading the thread…</div>';
+    // Stamp the request so a slow reply for a job you already left can't
+    // overwrite the one you are looking at now.
+    const token = (el._token = (el._token || 0) + 1);
+    let res;
+    try {
+      res = await pywebview.api.get_card_comments(row.client, 200);
+    } catch (ex) {
+      res = { ok: false, error: String(ex) };
+    }
+    if (el._token !== token) return;
+    if (!res || !res.ok) {
+      const msg = (res && res.error) || "Couldn't read the comments";
+      body.innerHTML = `<div class="cmt-empty">${esc(ctx, msg)}</div>`;
+      return;
+    }
+    const list = res.comments || [];
+    if (title) {
+      title.innerHTML = `💬 ${esc(ctx, who)} <span class="cmt-sub">${
+        list.length} comment${list.length === 1 ? "" : "s"}</span>`;
+    }
+    if (!list.length) {
+      body.innerHTML = '<div class="cmt-empty">No comments on this card yet.</div>';
+      return;
+    }
+    body.innerHTML = list.map((c) => `
+      <div class="cmt-item">
+        <div class="cmt-av" style="background:${_avatarColor(c.author || c.initials)};"
+             title="${escA(ctx, c.author || "")}">${esc(ctx, c.initials || "?")}</div>
+        <div class="cmt-main">
+          <div class="cmt-who">${esc(ctx, c.author || "Someone")}${
+            c.when ? ` · ${esc(ctx, _relTime(c.when))}` : ""}${
+            c.date ? ` · ${esc(ctx, c.date)}` : ""}</div>
+          <div class="cmt-txt">${_linkify(ctx, c.text || "")}</div>
+        </div>
+      </div>`).join("");
+    body.scrollTop = 0;
+    if (forced) setStatus(ctx, `💬 Reloaded ${list.length} comment${
+      list.length === 1 ? "" : "s"}`, "ok");
+  }
+
   window.AuditDetail = {
     carrierChip,
+    openCommentsDrawer,
+    closeCommentsDrawer,
+    toggleCommentsDrawer,
+    syncCommentsDrawer,
+    commentsDrawerIsOpen,
     groupChecklistsByRole,
     buildDetailBodyHTML,
     wireDetail,

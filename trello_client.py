@@ -1384,6 +1384,26 @@ def update_card_desc(card_id, desc):
     return _call(f"/cards/{card_id}", method="PUT", data={"desc": desc})
 
 
+_COMMENTS_DIRTY = set()
+
+
+def consume_comment_dirty(card_id) -> bool:
+    """True once after a comment is posted to `card_id`, then False.
+
+    Anything caching a comment thread has to know it just went stale.
+    Comments are posted from a dozen places — the audit's missing-item
+    reply, the activity composer, hygiene, docusign, docusketch, the
+    adjuster monitor — and asking each of them to invalidate is the kind
+    of rule that holds until someone adds the thirteenth. `post_comment`
+    is the one road they all go down, so the flag is set here instead.
+    """
+    if not card_id:
+        return False
+    was_dirty = card_id in _COMMENTS_DIRTY
+    _COMMENTS_DIRTY.discard(card_id)
+    return was_dirty
+
+
 def post_comment(card_id, text):
     """Post `text` as a new comment on the card. The author is whichever
     user owns the trello_token in their config. Returns the created
@@ -1396,8 +1416,10 @@ def post_comment(card_id, text):
     if not card_id or not (text or "").strip():
         return None
     try:
-        return _call(f"/cards/{card_id}/actions/comments",
-                     method="POST", data={"text": text})
+        res = _call(f"/cards/{card_id}/actions/comments",
+                    method="POST", data={"text": text})
+        _COMMENTS_DIRTY.add(card_id)
+        return res
     except Exception as ex:
         try:
             import ems_log
