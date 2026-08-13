@@ -413,8 +413,16 @@ function renderBoard() {
     if (s.is_builtin)   headClasses.push("is-builtin");
     if (filtered.length === 0) headClasses.push("is-empty");
 
+    // data-index must be the item's position in s.items, NOT in the
+    // filtered view: every consumer (edit dialog, right-click menu,
+    // drag-drop) reads back through `section.items[idx]`. While a filter
+    // was active those diverged, so clicking a row edited a DIFFERENT
+    // item — the dialog opened showing that other item's status, which
+    // read as "stuck on pending with extended always ticked", and any
+    // change saved onto the wrong row.
+    // indexOf is by reference, so duplicate text can't confuse it.
     const itemsHtml = filtered.length
-      ? filtered.map((it, i) => renderItem(it, s.name, i)).join("")
+      ? filtered.map((it) => renderItem(it, s.name, s.items.indexOf(it))).join("")
       : `<div class="item-empty">empty</div>`;
 
     const cntClasses = filtered.length ? "section-count has-items" : "section-count";
@@ -1392,7 +1400,9 @@ function attachApaSectionDrop(body) {
     // target body. Find the .item beneath/closest to the drop point
     // and insert before it (or at end if past the last row).
     const items = Array.from(body.querySelectorAll(".item[data-section]"));
-    let insertIdx = items.length;
+    // Past the last VISIBLE row means the end of the section, which is
+    // not the visible count while a filter is hiding rows.
+    let insertIdx = dst.items.length;
     for (let i = 0; i < items.length; i++) {
       const rect = items[i].getBoundingClientRect();
       if (e.clientY < rect.top + rect.height / 2) {
