@@ -2879,7 +2879,16 @@ function renderSuggestions(q, rows) {
   const el = ensureSuggestBox();
   if (!el) return;
   if (!rows.length) {
-    el.innerHTML = `<div class="suggest-empty">No job matches “${escapeHtml(q)}”</div>`;
+    // A name the index has never seen is exactly when someone needs to
+    // force an audit, so that stays ONE click. Folding it behind the
+    // deep-scan row cost a click and renamed the control people reach
+    // for — reported as "I can't force an audit any more".
+    el.innerHTML = `<div class="suggest-empty">No job matches “${escapeHtml(q)}”</div>`
+      + `<div class="suggest-row sg-force" tabindex="0">`
+      + `<span>🔍</span>`
+      + `<span class="suggest-name">Search folders for “${escapeHtml(q)}”</span>`
+      + `<span class="suggest-why">audit it</span>`
+      + `</div>`;
   } else {
     const KIND = { unit: "🏢 unit", claim: "📄 claim", subjob: "🔧 sub-job" };
     el.innerHTML = rows.map((r, i) => {
@@ -2913,6 +2922,15 @@ function renderSuggestions(q, rows) {
   const deep = el.querySelector(".sg-deep");
   deep?.addEventListener("click", () => runDeepPicker(q, ""));
   deep?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") runDeepPicker(q, "");
+  });
+  // Same scan, straight from the empty state. It goes through the picker
+  // rather than the old blind fuzzy match, so a weak match still can't
+  // silently audit the wrong job — it just doesn't cost an extra click to
+  // reach.
+  const force = el.querySelector(".sg-force");
+  force?.addEventListener("click", () => runDeepPicker(q, ""));
+  force?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") runDeepPicker(q, "");
   });
 }
