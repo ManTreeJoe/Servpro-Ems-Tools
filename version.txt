@@ -1,6 +1,6 @@
 {
-  "version": "1.3.2",
+  "version": "1.3.3",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.3.2/Linguar-Hub-Setup-1.3.2.exe",
-  "notes": "Typing in a dialog no longer triggers shortcuts. The Trello hover card no longer sticks. Untagged CompanyCam shoots suggest a stage from that day's run doc. Log a call on the job card, timestamped. Close buttons work on dialogs that load their content. The initial email fills in the real arrival time and names the lead as supervisor."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.3.3/Linguar-Hub-Setup-1.3.3.exe",
+  "notes": "The initial email works again (it was failing silently). APA's filter search now edits the row you clicked, not another job. Copy email finds the address wherever the card keeps it, and there's a Copy address button. Jobs show their carrier. Right-click a checklist to add or remove items. Long jobs show a progress bar. CompanyCam checks are much faster the second time, and no longer pull in video. WC audit pinning works again."
 }
