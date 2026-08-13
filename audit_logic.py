@@ -537,6 +537,24 @@ REQUIRED_FORMS = [
     ("Cert of Satisfaction", r'cert.*satisf|\bcos\b'),
     ("Scope",                r'\bscope\b'),
 ]
+
+# The Initial Photo Report is checked like a form but is NOT in
+# REQUIRED_FORMS, because unlike the forms above it isn't due at intake —
+# it can only exist once the initial photos have been taken. Listing it
+# unconditionally flagged 272 of 608 live jobs, 224 of which simply
+# hadn't had their inspection yet; gating on the photos gives 48, all
+# real. See `check_forms`.
+IPR_FORM_NAME = "Initial Photo Report"
+# Misspellings are on the share for real ("Inital", "Intial") — matching
+# only the correct spelling flags jobs that HAVE the report. Equally, the
+# word "initial" is load-bearing: Mold / Demo / Re-inspection / Contents /
+# Post-Abatement photo reports all exist too, and letting one of those
+# satisfy this check would be a false pass, which is worse than a nag.
+IPR_PATTERN = r'(?:initial|inital|intial)\s*photo\s*report'
+_IPR_INITIAL_DIR_PREFIX = "init"
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".jfif", ".png", ".heic", ".heif",
+              ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 EXTRA_CARRIERS = ["farmers", "travelers", "lemonade"]
 COMMERCIAL_FORM_NAMES = frozenset([
     "auth to perform", "customer info form",
@@ -546,6 +564,43 @@ COMMERCIAL_FORM_NAMES = frozenset([
 
 def is_commercial_form(text):
     return any(n in text.lower() for n in COMMERCIAL_FORM_NAMES)
+
+
+def has_initial_photos(ems_path):
+    """True when this job has initial photos on disk — i.e. the Initial
+    Photo Report is now something that CAN be produced, and so something
+    worth chasing.
+
+    Looks for images anywhere under a PICS subfolder starting "init"
+    (the folder is "Initial", but a stray "Initial pics" shouldn't make
+    the check silently miss). Stops at the first image found.
+
+    Time-budgeted for the same reason `_pics_has_any` is: this runs per
+    row against a network share, and a cold-cache or syncing folder can
+    stall enumeration. On timeout it answers False — the report is then
+    simply not chased for that row, which is the quiet failure. Hanging
+    the audit would not be.
+    """
+    import time as _t
+    deadline = _t.monotonic() + 5.0
+    pics = os.path.join(ems_path, "PICS")
+    if not os.path.isdir(pics):
+        return False
+    try:
+        with os.scandir(pics) as it:
+            stages = [e.path for e in it
+                      if e.is_dir()
+                      and e.name.lower().startswith(_IPR_INITIAL_DIR_PREFIX)]
+    except OSError:
+        return False
+    for stage in stages:
+        for _root, _dirs, files in os.walk(stage):
+            if _t.monotonic() > deadline:
+                return False
+            for fn in files:
+                if os.path.splitext(fn)[1].lower() in IMAGE_EXTS:
+                    return True
+    return False
 
 
 def _has_files(path):
@@ -1146,6 +1201,11 @@ def check_forms(ems_path, carrier=None):
     for form_name, pattern in REQUIRED_FORMS:
         if not any(re.search(pattern, fn, re.IGNORECASE) for fn in all_files):
             missing.append(form_name)
+    # Initial Photo Report — only once there are initial photos to report
+    # on. A job that hasn't had its inspection yet isn't missing anything.
+    if not any(re.search(IPR_PATTERN, fn, re.IGNORECASE) for fn in all_files):
+        if has_initial_photos(ems_path):
+            missing.append(IPR_FORM_NAME)
     if carrier:
         ins = next((c for c in EXTRA_CARRIERS if c in carrier.lower()), None)
         if ins:
