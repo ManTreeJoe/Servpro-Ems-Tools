@@ -3292,6 +3292,10 @@ class Api(JobSettingsApi, CompanyCamApi):
             "ok": True, "card_id": cid, "text": draft, "fields": fields,
             "placeholders": ie.missing_placeholders(draft),
             "found_notes": bool(blocks), "supervisor": supervisor,
+            # Pre-fills the dialog's editable SLA line. Sent from here so
+            # the wording lives in one place instead of being restated in
+            # the JS, where the two would drift apart.
+            "default_sla_line": ie.DEFAULT_SLA_LINE,
         }
 
     def _supervisor_for(self, client: str, fields: dict) -> str:
@@ -3343,6 +3347,7 @@ class Api(JobSettingsApi, CompanyCamApi):
             crews_date=o.get("crews_date", ""),
             walkthrough_url=o.get("walkthrough_url", ""),
             docusketch_url=o.get("docusketch_url", ""),
+            sla_text=o.get("sla_text", ""),
             extras=o.get("extras") or {})
         return {"ok": True, "text": text,
                 "placeholders": ie.missing_placeholders(text)}

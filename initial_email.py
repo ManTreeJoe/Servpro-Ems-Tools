@@ -22,6 +22,12 @@ import re
 
 PLACEHOLDER_RE = re.compile(r"\[[A-Z][A-Z0-9 /&'-]{2,40}\]")
 
+# The SLA sentence sent on most claims. Overridable per job via
+# `sla_text` — the office states the real figure when they have it
+# ("1.5 hours of CON LAB will be exceeded"). Single-sourced so the
+# dialog can offer the same default it prints.
+DEFAULT_SLA_LINE = "The time allotted per room under the SLA will be exceeded"
+
 # Yes/No answers arrive as "Yes", "No", "Yes /", "/ No", "" (unanswered).
 _YES = ("yes", "y", "true", "required", "needed")
 _NO = ("no", "n", "false", "not required", "none")
@@ -119,7 +125,8 @@ def _rooms_block(fields):
 
 def compose(fields, *, franchise="", supervisor="", greeting="Good Morning,",
             year_built="", equipment_rate="", crews_date="",
-            walkthrough_url="", docusketch_url="", extras=None):
+            walkthrough_url="", docusketch_url="", sla_text="",
+            extras=None):
     """Render the email. `fields` is one block from
     `initial_notes_parser.parse_initial_inspection_notes`.
 
@@ -228,7 +235,13 @@ def compose(fields, *, franchise="", supervisor="", greeting="Good Morning,",
         L.append("")
         L.append("Packing materials will be utilized")
         L.append("")
-        L.append("The time allotted per room under the SLA will be exceeded")
+        # Editable. The default is what goes out on most claims, but the
+        # office often needs to state the actual figure instead — "1.5
+        # hours of CON LAB will be exceeded", "1.5 hours per SLA agreement
+        # will be surpassed" — and was rewriting the line in the draft box
+        # to do it. Blank falls back to the default rather than dropping
+        # the line, so clearing the box can't silently remove it.
+        L.append(_clean(sla_text) or DEFAULT_SLA_LINE)
         L.append("")
         storage = _clean(f.get("Storage Type")).lower()
         if ex.get("pod") if "pod" in ex else ("pod" in storage):

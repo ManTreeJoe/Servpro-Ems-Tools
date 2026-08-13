@@ -280,3 +280,35 @@ def test_docusketch_ignores_a_yes_no_answer():
     """"DocuSketch Done: Yes" is not a link — printing it under "paste
     the link below" would send the adjuster nothing to click."""
     assert "DocuSketch" not in _compose(fields={"DocuSketch Done": "Yes"})
+
+
+# ── the SLA line is editable ──────────────────────────────────────────
+
+def _packout(**kw):
+    import initial_email as ie
+    return ie.compose({"Packout Required": "Yes /"}, **kw)
+
+
+def test_sla_line_defaults_to_the_usual_sentence():
+    import initial_email as ie
+    assert ie.DEFAULT_SLA_LINE in _packout()
+
+
+def test_sla_line_can_state_the_real_figure():
+    txt = _packout(sla_text="1.5 hours of CON LAB will be exceeded")
+    import initial_email as ie
+    assert "1.5 hours of CON LAB will be exceeded" in txt
+    assert ie.DEFAULT_SLA_LINE not in txt
+
+
+def test_blank_sla_text_falls_back_rather_than_dropping_the_line():
+    """Clearing the box must not silently delete the sentence."""
+    import initial_email as ie
+    assert ie.DEFAULT_SLA_LINE in _packout(sla_text="   ")
+
+
+def test_sla_line_only_appears_with_packout():
+    import initial_email as ie
+    txt = ie.compose({"Packout Required": "/ No"},
+                     sla_text="1.5 hours per SLA agreement will be surpassed")
+    assert "1.5 hours" not in txt

@@ -2593,6 +2593,12 @@
         <input id="ie-sketch" class="search" style="width:230px;"
                placeholder="https://app.docusketch.com/player/…"/>
       </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+        <label class="modal-lbl" for="ie-sla" style="white-space:nowrap;">SLA line</label>
+        <input id="ie-sla" class="search" style="flex:1;"
+               value="${escA(ctx, draft.default_sla_line || "")}"
+               title="Sent as-is on most claims. Replace it with the real figure when you have one — e.g. &quot;1.5 hours of CON LAB will be exceeded&quot;. Only used when Pack out applies."/>
+      </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
         ${opt("ie-tl", "TL inventory", true)}
         ${opt("ie-pod", "POD required", false)}
@@ -2625,6 +2631,7 @@
         equipment_rate: wrap.querySelector("#ie-rate").value,
         crews_date: wrap.querySelector("#ie-crews").value,
         docusketch_url: wrap.querySelector("#ie-sketch").value,
+        sla_text: wrap.querySelector("#ie-sla").value,
         extras: {
           tl_inventory: wrap.querySelector("#ie-tl").checked,
           pod: wrap.querySelector("#ie-pod").checked,
