@@ -226,13 +226,16 @@ body { display: flex; flex-direction: column; }
 }
 
 /* ── Filter bar ────────────────────────────────────────────────── */
+/* Nested inside .mode-row now, so it contributes no padding, background
+   or border of its own — the row it sits in owns all three. Still a flex
+   container, purely to space the chips. */
 .filter-bar {
   display: flex; gap: 6px; flex-wrap: wrap;
-  padding: 8px 18px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+/* Modes left, filters right, on one line. */
+.mode-row { display: flex; align-items: center; gap: 8px; }
+.mode-row .spacer { flex: 1; }
 .filter {
   background: var(--chip-bg); color: var(--text);
   border: 1px solid transparent;

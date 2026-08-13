@@ -84,11 +84,20 @@
   .more-item + .more-item { border-top: 1px solid var(--border); }
 </style>
 
-<!-- Mode switcher -->
-<div class="audit-toolbar" style="border-bottom:none;padding-bottom:4px;">
+<!-- Mode switcher + filters share a row. Both answer "which subset am I
+     looking at", and stacking them cost a whole line of chrome above the
+     list. Modes left, filters right. -->
+<div class="audit-toolbar mode-row">
   <button class="mode-btn active" id="mode-search" title="Jobs you've pulled up this session, newest first. Search from the box above; ⭐ Starred keeps jobs across sessions.">🕘 Recent</button>
   <button class="mode-btn" id="mode-daily" title="Today's run-doc audit">📋 Daily Run</button>
   <button class="mode-btn" id="mode-starred" title="Clients you've starred — sticky across days, regardless of today's run-doc">⭐ Starred</button>
+  <span class="spacer"></span>
+  <nav class="filter-bar" id="filter-bar" aria-label="Filters">
+    <button class="filter active" data-filter="all">All</button>
+    <button class="filter" data-filter="starred"
+            title="Only clients you've ⭐ starred">⭐ Starred</button>
+    <button class="filter" data-filter="new_loss">🆕 New loss</button>
+  </nav>
 </div>
 
 <!-- Day walker + section toggles (Daily Run mode only) -->
@@ -107,13 +116,8 @@
   </label>
 </div>
 
-<!-- Stats bar + most filters removed in the 2026-07 streamline. -->
-<nav class="filter-bar" id="filter-bar" aria-label="Filters">
-  <button class="filter active" data-filter="all">All</button>
-  <button class="filter" data-filter="starred"
-          title="Only clients you've ⭐ starred">⭐ Starred</button>
-  <button class="filter" data-filter="new_loss">🆕 New loss</button>
-</nav>
+<!-- The filter bar now shares the mode row above; see .mode-row. -->
+
 
 <main class="split">
   <!-- Left pane: compact list of all jobs -->
@@ -161,6 +165,6 @@
 </footer>
 
 <script src="../web_shared/audit_detail.js?v=20260813f"></script>
-<script src="app.js?v=20260813f"></script>
+<script src="app.js?v=20260813g"></script>
 </body>
 </html>
