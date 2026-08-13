@@ -752,8 +752,10 @@ def tech_label(photo, fallback="", *, force=False):
     per batch — a mixed-crew day attributes correctly. `fallback` (the
     picked tech) is only used when CompanyCam has no creator.
 
-    Leads collapse to initials (Fernando Baca → FB), matching what the
-    zip import writes; anyone without initials keeps their name.
+    Only the seven LEADS collapse to initials (Fernando Baca → FB);
+    everyone else is "First LastInitial" ("Nestor B"). The zip import
+    labels folders the same way, through the same helper, so one tech
+    can't end up with two spellings on one job.
     """
     # `force` is the user overriding it in the pull dialog. CompanyCam's
     # creator is whoever's phone took the shot, which is not always who the
@@ -768,7 +770,7 @@ def tech_label(photo, fallback="", *, force=False):
         return ""
     try:
         import audit_logic
-        return _safe_folder(audit_logic.initials_for_name(who) or who)
+        return _safe_folder(audit_logic.tech_folder_label(who) or who)
     except Exception:
         return _safe_folder(who)
 

@@ -36,6 +36,28 @@ def _isolate_job_db(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_tech_roster():
+    """Rebuild the tech roster from the real config before each test.
+
+    `audit_logic.TECH_PATTERN` is module-level global state built from the
+    user-tech store. Tests that exercise the roster isolate persistence,
+    rebuild the pattern, and then "clean up" by emptying the store and
+    rebuilding again — which leaves the pattern built from NOTHING for
+    every test that follows. By the time a later test runs, monkeypatch
+    has restored persistence, so the pattern is simply stale.
+
+    It surfaced as tech_folder_label("Fernando Baca") returning
+    "Fernando B" instead of "FB" — but only in a full run, never alone.
+    """
+    try:
+        import audit_logic
+        audit_logic.rebuild_tech_pattern()
+    except Exception:
+        pass
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_companycam_tag_cache(tmp_path, monkeypatch):
     """Keep the CompanyCam tag sidecar out of the real data dir.
 

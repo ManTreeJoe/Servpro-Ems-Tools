@@ -497,6 +497,37 @@ def initials_for_name(name):
     return ""
 
 
+def tech_folder_label(name):
+    """How a tech is written on a photo folder: "<label> MM-DD-YYYY".
+
+    Only the seven LEADS collapse to initials — FB, ME, ML, RQ, PG, AP,
+    JL — because those are the codes the office reads at a glance and has
+    been reading for years. Everyone else is "First LastInitial":
+    "Nestor Bautista" is "Nestor B", not "NB".
+
+    `initials_for_name` gives initials to ANY multi-word name, so helpers
+    were being filed as NB / DR / JR / MC / VG — codes nobody recognises,
+    for people nobody thinks of that way. The intent was always leads-only
+    (see the zip import's note), but the fallback quietly overrode it.
+
+    Both photo paths — the CompanyCam pull and the zip import — call this,
+    so one tech can never end up with two differently-spelled folders on
+    the same job.
+    """
+    cleaned = re.sub(r"\s+", " ", str(name or "")).strip()
+    if not cleaned:
+        return ""
+    if is_tech_lead(cleaned):
+        return initials_for_name(cleaned) or cleaned
+    parts = [p for p in cleaned.split(" ") if p]
+    if len(parts) == 1:
+        # One word is already how they're known ("Danny"), and an
+        # already-initials code we don't recognise is left alone rather
+        # than mangled into something new.
+        return parts[0]
+    return f"{parts[0]} {parts[-1][0].upper()}"
+
+
 # ── Stable persistence keys ─────────────────────────────────────────────────
 
 _AGING_RE = re.compile(r'^\s*\d+d\s+inactive', re.IGNORECASE)

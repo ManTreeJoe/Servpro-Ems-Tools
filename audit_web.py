@@ -6372,7 +6372,7 @@ class Api(JobSettingsApi, CompanyCamApi):
                 # initials_for_name returns "" for non-leads → fall back to
                 # the raw name. (2026-06-19)
                 try:
-                    _tech_lbl = (audit_logic.initials_for_name(tech or "")
+                    _tech_lbl = (audit_logic.tech_folder_label(tech or "")
                                  or (tech or ""))
                 except Exception:
                     _tech_lbl = tech or ""
