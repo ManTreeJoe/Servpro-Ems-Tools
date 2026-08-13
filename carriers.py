@@ -160,6 +160,20 @@ def is_specified(value):
     return kind(value) in ("carrier", "tpa", "self")
 
 
+def is_known(value) -> bool:
+    """True only when this is a name we actually recognise.
+
+    A different question from `is_specified`, which asks what KIND of
+    thing a value is and answers "carrier" for anything unrecognised — so
+    is_specified("Jones") is True. Callers that must tell a carrier from
+    an ordinary word need this: stripping a trailing " - Something" off a
+    job name is right for "Greer, Tesal - Mercury" and wrong for
+    "Mary Smith-Jones".
+    """
+    raw = re.sub(r"\s+", " ", str(value or "").strip())
+    return bool(raw) and _squash(raw) in _BY_SQUASH
+
+
 def options():
     """Suggestions for the carrier picker, in the order they should show:
     the placeholders first (they answer "why is this empty?"), then

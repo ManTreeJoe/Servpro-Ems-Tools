@@ -985,3 +985,29 @@ body { display: flex; flex-direction: column; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── 🧩 Name issues review ─────────────────────────────────────── */
+/* One insured under two spellings. The facts are the point: what AGREES
+   argues for folding, what CONFLICTS argues against, and the names alone
+   can't tell you which. */
+.ni-pair {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 12px; background: var(--surface);
+}
+.ni-verdict { font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+.ni-verdict.same   { color: var(--green); }
+.ni-verdict.unsure { color: var(--amber); }
+.ni-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ni-side {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; background: var(--surface-2);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.ni-name { font-size: 14px; font-weight: 700; }
+.ni-meta { font-size: 10.5px; color: var(--text-dim); }
+.ni-fact { font-size: 11.5px; color: var(--text-muted); }
+/* A value that disagrees with the other side is the reason to stop. */
+.ni-fact.clash { color: var(--red); }
+.ni-fact.clash strong { text-decoration: underline; }
+.ni-keep { margin-top: 8px; align-self: flex-start; }
+.ni-actions { margin-top: 10px; display: flex; justify-content: flex-end; }

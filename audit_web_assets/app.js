@@ -85,6 +85,7 @@ window.addEventListener("pywebviewready", async () => {
   $("#new-loss-btn")?.addEventListener("click", () => openNewLossModal());
   $("#usage-btn")?.addEventListener("click", () => openUsagePanel());
   $("#overview-btn")?.addEventListener("click", () => openOverviewPanel());
+  $("#name-issues-btn")?.addEventListener("click", () => openNameIssuesPanel());
   $("#cc-sync-btn")?.addEventListener("click", () => runCompanyCamSync());
   $("#notes-btn")?.addEventListener("click", () => openNotesPanel());
   $("#sec-work").addEventListener("change", () => refreshDayLabel());
@@ -709,6 +710,114 @@ async function openIncomingPanel() {
 // DocuSign / initial+final paperwork / weekly-check-in status of every
 // active job is one click away. Shares web_shared/hygiene_board.js with
 // the Hygiene panel, so the two never drift.
+// ── 🧩 Name issues ────────────────────────────────────────────────────
+// One insured, two spellings. The job key comes from the name, so
+// "Seth Knudsen" and "Knudsen, Seth - Mercury" are two jobs, and the
+// carrier, claim and photos land on whichever row a tool resolved.
+//
+// Nothing here decides on its own. Folding two people who share a
+// surname is worse than the split, so each pair is shown with the facts
+// that agree and the facts that conflict, and the answer is yours. A
+// pair marked "different people" is remembered and not offered again.
+async function openNameIssuesPanel() {
+  const overlay = createOverlay({
+    title: "🧩 Name issues",
+    sub: "Jobs that look like one insured typed two ways. Keep the spelling you want, or say they're different people.",
+    body: `<div id="ni-body" class="muted">Looking for split names…</div>
+           <div class="modal-footer"><button class="btn modal-close">Close</button></div>`,
+  });
+  const body = overlay.querySelector("#ni-body");
+
+  const load = async () => {
+    body.innerHTML = `<div class="muted">Looking for split names…</div>`;
+    let res;
+    try { res = await pywebview.api.list_name_issues(); }
+    catch (ex) { res = { ok: false, error: String(ex) }; }
+    if (!res?.ok) {
+      body.innerHTML = `<div style="color:var(--red);">Couldn't check: ${escapeHtml(res?.error || "?")}</div>`;
+      return;
+    }
+    const pairs = res.pairs || [];
+    if (!pairs.length) {
+      body.innerHTML = `<div style="padding:8px 0;">✓ No split names found`
+        + (res.ignored ? ` · ${res.ignored} pair(s) marked as different people` : "")
+        + `</div>`;
+      return;
+    }
+    // Facts first: a shared carrier or claim is the argument FOR folding,
+    // a conflicting one the argument against. Showing them is the whole
+    // point — the names alone can't tell you.
+    const side = (s, other, pk) => `
+      <div class="ni-side">
+        <div class="ni-name">${escapeHtml(s.display_name || s.canon_key)}</div>
+        <div class="ni-meta">${escapeHtml(s.canon_key)}</div>
+        ${["carrier", "claim_number", "address", "phone"].map((f) => {
+          const v = (s[f] || "").trim();
+          if (!v) return "";
+          const clash = ((other[f] || "").trim()
+                         && (other[f] || "").trim().toLowerCase() !== v.toLowerCase());
+          return `<div class="ni-fact${clash ? " clash" : ""}">`
+            + `${f.replace("_", " ")}: <strong>${escapeHtml(v)}</strong></div>`;
+        }).join("")}
+        <div class="ni-meta">first seen ${escapeHtml(s.first_seen || "—")}</div>
+        <button class="btn ni-keep" data-keep="${escapeAttr(s.canon_key)}"
+                data-drop="${escapeAttr(other.canon_key)}" data-pair="${escapeAttr(pk)}">
+          Keep this name</button>
+      </div>`;
+
+    body.innerHTML = pairs.map((p) => `
+      <div class="ni-pair" data-pair="${escapeAttr(p.pair_key)}">
+        <div class="ni-verdict ${p.likely_same ? "same" : "unsure"}">
+          ${p.likely_same
+            ? `Probably the same — ${escapeHtml(p.agrees.join(", "))} match`
+            : (p.conflicts.length
+                ? `⚠ ${escapeHtml(p.conflicts.join(", "))} differ — check before folding`
+                : "No shared details to compare — your call")}
+        </div>
+        <div class="ni-sides">
+          ${side(p.a, p.b, p.pair_key)}
+          ${side(p.b, p.a, p.pair_key)}
+        </div>
+        <div class="ni-actions">
+          <button class="btn ni-ignore" data-pair="${escapeAttr(p.pair_key)}">
+            These are different people</button>
+        </div>
+      </div>`).join("");
+
+    body.querySelectorAll(".ni-keep").forEach((b) => {
+      b.addEventListener("click", async () => {
+        const keep = b.dataset.keep, drop = b.dataset.drop;
+        if (!confirm(`Fold "${drop}" into "${keep}"?\n\n`
+                     + `Aliases, folder and Trello links and history move across, `
+                     + `and any detail only the folded job had is carried over first. `
+                     + `This can't be undone from here.`)) return;
+        b.disabled = true; b.textContent = "Folding…";
+        let r;
+        try { r = await pywebview.api.merge_name_issue(keep, drop); }
+        catch (ex) { r = { ok: false, error: String(ex) }; }
+        if (!r?.ok) {
+          setStatus(`Fold failed: ${r?.error || "?"}`, "error");
+          b.disabled = false; b.textContent = "Keep this name";
+          return;
+        }
+        setStatus(`🧩 Folded into ${keep}`
+          + ((r.carried || []).length ? ` · carried ${r.carried.join(", ")}` : ""), "ok");
+        load();
+      });
+    });
+    body.querySelectorAll(".ni-ignore").forEach((b) => {
+      b.addEventListener("click", async () => {
+        b.disabled = true;
+        try { await pywebview.api.ignore_name_issue(b.dataset.pair, true); }
+        catch (_) {}
+        setStatus("Marked as different people — won't be offered again", "ok");
+        load();
+      });
+    });
+  };
+  load();
+}
+
 function openOverviewPanel() {
   const overlay = createOverlay({
     title: "🩺 Job admin overview",

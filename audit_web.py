@@ -7152,6 +7152,90 @@ class Api(JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     # ── Phase 2: Per-item resolved checkboxes ────────────────────────
+    # ── Name issues: one insured under two spellings ─────────────────
+    # The job key is derived from the name, so "Seth Knudsen" and
+    # "Knudsen, Seth - Mercury" are two jobs for one person and the
+    # carrier, claim and photos land on whichever row a tool resolved.
+    # These only ever PROPOSE — folding two people who share a surname
+    # is worse than the split, so a person confirms every one.
+    _IGNORE_KEY = "name_issue_ignored"
+
+    def _name_issue_ignored(self) -> dict:
+        try:
+            val = persistence.get(self._IGNORE_KEY) or {}
+            return val if isinstance(val, dict) else {}
+        except Exception:
+            return {}
+
+    def list_name_issues(self) -> dict:
+        """Every pair that looks like one insured typed two ways."""
+        try:
+            import ems_db as _db
+            import job_name_issues as _jni
+            jobs = _db.iter_jobs() or []
+            ignored = self._name_issue_ignored()
+            pairs = _jni.find_split_pairs(jobs, ignored=set(ignored))
+            return {"ok": True,
+                    "pairs": [_jni.describe(a, b) for a, b in pairs],
+                    "ignored": len(ignored)}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def merge_name_issue(self, keep_key: str, drop_key: str) -> dict:
+        """Fold `drop_key` into `keep_key`, keeping the winner's name.
+
+        Column values are carried across FIRST: merge_jobs moves aliases,
+        links and events but NOT fields, so a carrier or claim number
+        that only the folded row carried would be lost.
+        """
+        keep_key = (keep_key or "").strip()
+        drop_key = (drop_key or "").strip()
+        if not keep_key or not drop_key or keep_key == drop_key:
+            return {"ok": False, "error": "two different jobs required"}
+        try:
+            import ems_db as _db
+            keep = _db.get_job(keep_key) or {}
+            drop = _db.get_job(drop_key) or {}
+            if not keep or not drop:
+                return {"ok": False, "error": "one of the jobs is gone"}
+            carried = {}
+            for field in ("carrier", "claim_number", "address", "phone",
+                          "email", "adjuster_name", "adjuster_email",
+                          "adjuster_phone", "date_of_loss", "loss_type",
+                          "xa_id", "wc_project_id"):
+                # Only fills gaps — the surviving row's own value wins.
+                if not (keep.get(field) or "").strip() and \
+                        (drop.get(field) or "").strip():
+                    carried[field] = drop[field]
+            if carried:
+                _db.upsert_job(display_name=keep.get("display_name")
+                               or keep_key, **carried)
+            res = _db.merge_jobs(keep_key, [drop_key])
+            return {"ok": True, "merged": res.get("merged", 0),
+                    "carried": sorted(carried),
+                    "skipped": res.get("skipped_department_conflict") or []}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def ignore_name_issue(self, pair_key: str,
+                          ignored: bool = True) -> dict:
+        """Remember that a pair is two different people, so the review
+        stops offering it."""
+        pair_key = (pair_key or "").strip()
+        if not pair_key:
+            return {"ok": False, "error": "pair_key required"}
+        try:
+            import datetime as _dt
+            cur = dict(self._name_issue_ignored())
+            if ignored:
+                cur[pair_key] = _dt.datetime.now().isoformat(timespec="seconds")
+            else:
+                cur.pop(pair_key, None)
+            persistence.set_value(self._IGNORE_KEY, cur)
+            return {"ok": True, "ignored": bool(ignored)}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def get_resolved_map(self, client: str) -> dict:
         """Return {item_text: True/False} for items the user has
         already crossed off this run-doc date. Reads
