@@ -42,7 +42,7 @@ def draft():
 @pytest.mark.parametrize("line", [
     "Good Morning,",
     "Initial Inspection performed Monday 6/29/26 Supervisor Mark Escobar",
-    "Arrival Time:4:00PM",
+    "Arrival Time: 4:00PM",
     "Met With: Insured",
     "COL: Master toilet supply line",
     "CAT: 2",

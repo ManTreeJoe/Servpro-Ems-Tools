@@ -6,7 +6,15 @@ Three complaints:
   * a new day didn't re-check Trello, so carried items kept yesterday's
     section routing
 """
+import datetime as _dt
+
 import pytest
+
+# These assert on "a NEW day", and the stub decides new-vs-prior by
+# comparing against date.today(). A literal date silently stops being
+# today at midnight — these passed the day they were written and failed
+# every day after.
+_TODAY = _dt.date.today().isoformat()
 
 import apa_logic as apa
 import apa_web
@@ -115,7 +123,7 @@ def stub_docs(monkeypatch, tmp_path):
 
 def test_new_day_resets_carried_items_to_pending(stub_docs):
     api = _Api()
-    res = api.create_doc("2026-08-12")
+    res = api.create_doc(_TODAY)
     assert res["ok"] and res["created"]
     carried = stub_docs.get("Final Uploads") or []
     texts = [t for t, _ in carried]
@@ -127,20 +135,20 @@ def test_new_day_resets_carried_items_to_pending(stub_docs):
 
 def test_new_day_rechecks_trello_by_default(stub_docs):
     api = _Api()
-    res = api.create_doc("2026-08-12")
-    assert api.lane_calls == ["2026-08-12"]
+    res = api.create_doc(_TODAY)
+    assert api.lane_calls == [_TODAY]
     assert res["lanes_moved"] == 2
 
 
 def test_lane_refresh_can_be_turned_off(stub_docs):
     api = _Api()
-    api.create_doc("2026-08-12", refresh_lanes=False)
+    api.create_doc(_TODAY, refresh_lanes=False)
     assert api.lane_calls == []
 
 
 def test_status_reset_can_be_turned_off(stub_docs):
     api = _Api()
-    api.create_doc("2026-08-12", reset_status="")
+    api.create_doc(_TODAY, reset_status="")
     texts = [t for t, _ in stub_docs.get("Final Uploads") or []]
     assert any("extended" in t for t in texts)
 
@@ -151,6 +159,6 @@ def test_a_trello_failure_does_not_lose_the_doc(stub_docs):
     class _Broken(_Api):
         def refresh_doc_lanes(self, date_iso=""):
             raise RuntimeError("Trello 429")
-    res = _Broken().create_doc("2026-08-12")
+    res = _Broken().create_doc(_TODAY)
     assert res["ok"] and res["created"]
     assert "429" in res["lanes_error"]

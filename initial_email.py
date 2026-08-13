@@ -148,7 +148,7 @@ def compose(fields, *, franchise="", supervisor="", greeting="Good Morning,",
     L.append(f"Initial Inspection performed {date_txt or '[DATE]'} "
              f"Supervisor {sup}")
     L.append("")
-    L.append(f"Arrival Time:{_clean(f.get('Time')) or '[ARRIVAL TIME]'}")
+    L.append(f"Arrival Time: {_clean(f.get('Time')) or '[ARRIVAL TIME]'}")
     L.append(f"Met With: {_clean(f.get('Met With')) or '[MET WITH]'}")
     L.append("")
     L.append(f"COL: {_clean(f.get('Cause of Loss')) or '[CAUSE OF LOSS]'}")
