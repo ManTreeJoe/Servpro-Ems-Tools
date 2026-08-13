@@ -2868,6 +2868,20 @@ class Api(JobSettingsApi, CompanyCamApi):
             adjuster_email = (ins.get("ADJUSTER EMAIL") or "").strip()
             customer_email = (cust.get("EMAIL")
                               or cust.get("EMAIL ADDRESS") or "").strip()
+            if not customer_email:
+                # Cards don't agree on where the insured's email lives:
+                # INSURED INFORMATION, PROPERTY DETAILS and CONTACT
+                # INFORMATION all appear in the wild, which is why the
+                # address could be plainly visible on the card while
+                # 📧 Copy email stayed disabled. docusign_requests
+                # already learned this the hard way — reuse its list
+                # rather than keep a second, shorter one here.
+                try:
+                    import docusign_requests as _ds
+                    customer_email = (_ds.extract_insured_email(card)
+                                      or "").strip()
+                except Exception:
+                    pass
             # These template fields sometimes hold a website/URL, not an
             # address — only keep a real-looking email so "Copy email"
             # never hands back "https://…".
