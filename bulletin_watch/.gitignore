@@ -1,0 +1,7 @@
+# The scraper's working data — never committed.
+#
+# _data/browser_profile alone is 80MB (a persistent Chromium profile
+# holding the SAML session), and the manifest/snapshots/updates are
+# machine-local scan state that regenerates. It has to live HERE because
+# DATA_DIR is anchored to the script directory, but it is not source.
+_data/

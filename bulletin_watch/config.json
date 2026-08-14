@@ -1,0 +1,51 @@
+{
+  "site_url": "https://servpro.interactgo.com/",
+  "local_bulletins_dir": "X:\\IE_Public\\Forms_Contracts\\Bulletins",
+  "sections": [
+    {
+      "name": "National Accounts",
+      "section": 3186,
+      "subsection": 3445
+    },
+    {
+      "name": "Credit & Insurance",
+      "section": 3186,
+      "subsection": 3710
+    }
+  ],
+  "page_size": 50,
+  "max_pages_per_section": 40,
+  "download_changed": true,
+  "nav_timeout_ms": 45000,
+  "extra_carriers": [
+    "AAA",
+    "Allstate",
+    "American Family",
+    "American National",
+    "Auto Club",
+    "CSAA",
+    "Chubb",
+    "Encompass",
+    "Erie",
+    "Farmers",
+    "Federated Mutual",
+    "Geico",
+    "Hartford",
+    "Horace Mann",
+    "Kemper",
+    "Lemonade",
+    "Liberty Mutual",
+    "Mercury",
+    "MetLife",
+    "Nationwide",
+    "Progressive",
+    "Pure",
+    "Safeco",
+    "Selective",
+    "State Farm",
+    "Stillwater",
+    "Travelers",
+    "USAA",
+    "Wawanesa"
+  ]
+}

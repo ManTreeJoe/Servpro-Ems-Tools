@@ -11,6 +11,9 @@ dist/
 # state.json holds persistence (pins, resolved-issues, franchise tags).
 config.json
 state.json
+# ...but the bulletin watcher's config is site URLs + carrier names,
+# not secrets — its credentials live in %LOCALAPPDATA%.
+!bulletin_watch/config.json
 .credentials*
 *.env
 
