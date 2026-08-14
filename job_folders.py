@@ -125,6 +125,59 @@ def find_client_folder(client: str, *, base: str = "", year=None) -> str:
     return ""
 
 
+def search_clients(query: str, *, base: str = "", year=None,
+                   limit: int = 40) -> list:
+    """Existing client folders matching `query`, for a PICKER.
+
+    This is the deliberate exception to the no-fuzzy-matching rule in the
+    module note, and it is safe for the same reason that rule exists:
+    nothing here CHOOSES anything. It only offers names for a person to
+    pick from, and the person knows something the tool cannot.
+
+    That gap is real, not hypothetical. On the live share `Val Verde
+    Unified School` holds 'Mead Valley 7.22.26', 'Rancho Verde 7.29.26'
+    and 'Red Maple 7.15.26' — not one child name contains "Val Verde". A
+    new loss arrives titled 'Bell Mountain Middle School' with nothing in
+    it to say which district it belongs to, so no amount of name matching
+    could file it correctly. Without a picker it lands as another
+    top-level folder, which is how 'Bell Mountain Middle School
+    -2507388588WTR' ended up loose at the root.
+
+    Umbrellas (folders that already have children) sort first: a parent
+    is usually something that has parented before.
+    """
+    yd = year_dir(base=base, year=year)
+    if not yd:
+        return []
+    q = _norm(query)
+    try:
+        with os.scandir(yd) as it:
+            entries = [e for e in it if e.is_dir(follow_symlinks=False)]
+    except OSError:
+        return []
+    out = []
+    for e in entries:
+        nm = _norm(e.name)
+        if not nm:
+            continue
+        # Whole-query substring OR every token present, so "menifee
+        # school" finds "Menifee Union School District".
+        if q and q not in nm and not all(t in nm for t in q.split()):
+            continue
+        kids = list_children(e.path)
+        out.append({
+            "name": e.name,
+            "path": e.path,
+            "children": kids,
+            "child_count": len(kids),
+            "_rank": (0 if nm == q else 1, 0 if kids else 1, nm),
+        })
+    out.sort(key=lambda r: r["_rank"])
+    for r in out:
+        r.pop("_rank", None)
+    return out[:max(1, int(limit or 40))]
+
+
 def list_children(client_dir: str) -> list:
     """Immediate subfolders of a client folder, minus the job skeleton
     (EMS / RECON / CONTENTS / PICS / DOCS), which are containers rather

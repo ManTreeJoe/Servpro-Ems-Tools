@@ -80,6 +80,13 @@ _ALIASES = {
     "statefarm": "State Farm",
     "triple a": "AAA",
     "aaa insurance": "AAA",
+    # Assignments arrive titled "ACE", but for this office that IS AAA —
+    # same claims, same adjusters. Left unfolded it splits one carrier
+    # across two names in every report, filter and carrier chip.
+    # (Nationally "ACE" is a different insurer; this is a local
+    # convention of the assignment source, not a general truth.)
+    "ace": "AAA",
+    "ace insurance": "AAA",
     "libery mutual": "Liberty Mutual",
     "hartford": "The Hartford",
     "n/a": NOT_A_CARRIER,

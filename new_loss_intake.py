@@ -110,6 +110,19 @@ def parse_assignment_email(text):
     if f.get("loss_details"):
         f["field_notes"] = f["loss_details"]
 
+    # Fold the carrier to its canonical spelling HERE, before the name is
+    # built from it. Assignments arrive titled "ACE" where this office
+    # means AAA, and the raw value flowed straight into the card name,
+    # the folder name and the carrier chip — one carrier under two names
+    # in every report and filter. `carriers.normalize` leaves anything it
+    # doesn't recognise alone, so an unknown carrier is unchanged.
+    if f.get("carrier"):
+        try:
+            import carriers
+            f["carrier"] = carriers.normalize(f["carrier"]) or f["carrier"]
+        except Exception:
+            pass
+
     return f
 
 
@@ -228,7 +241,24 @@ def fill_template_desc(template_desc, fields):
     return "\n".join(out)
 
 
-def plan_folder(fields, *, child="", second_claim=False):
+def _file_under(fields, parent=""):
+    """Who this new loss files under: an explicitly chosen parent, else
+    the insured.
+
+    `parent` exists because the name alone often cannot say. A commercial
+    loss comes in titled 'Bell Mountain Middle School' with nothing
+    indicating the district that owns it, and on the live share the
+    children of 'Val Verde Unified School' are named 'Mead Valley',
+    'Rancho Verde', 'Red Maple' — no shared token with the parent at all.
+    Only the operator knows, so they pick it; nothing is inferred.
+    """
+    chosen = (parent or "").strip()
+    if chosen:
+        return chosen, True
+    return ((fields or {}).get("insured_name") or "").strip(), False
+
+
+def plan_folder(fields, *, child="", second_claim=False, parent=""):
     """What folder this new loss would create — call before the confirm
     dialog so the operator sees it and can rename the child.
 
@@ -236,16 +266,27 @@ def plan_folder(fields, *, child="", second_claim=False):
     second top-level folder. See `job_folders` for the year → client →
     child model: claims, units and commercial sub-jobs are one shape
     there, so the only decision left here is what to call the child.
+
+    `parent` files it under a DIFFERENT existing client instead of the
+    insured — the commercial umbrella case, where the loss is named for
+    the site and the folder belongs to the district that owns it.
     """
     import job_folders
-    insured = ((fields or {}).get("insured_name") or "").strip()
-    if not insured:
+    who, explicit = _file_under(fields, parent)
+    if not who:
         return {"ok": False, "error": "No insured name to file under"}
-    return job_folders.plan(insured, child=child, second_claim=second_claim)
+    # An explicit parent means the insured's own name becomes the CHILD,
+    # since that is what the job is actually called.
+    if explicit and not child:
+        child = ((fields or {}).get("insured_name") or "").strip()
+    res = job_folders.plan(who, child=child, second_claim=second_claim)
+    if explicit and isinstance(res, dict):
+        res["parent_chosen"] = who
+    return res
 
 
 def create_folder(fields, *, child="", second_claim=False,
-                  promote_first=False):
+                  promote_first=False, parent=""):
     """Create the folder `plan_folder` described, and pin it so the
     resolver finds the job immediately.
 
@@ -253,12 +294,18 @@ def create_folder(fields, *, child="", second_claim=False,
     into a '1st Claim' folder, so an existing single-claim customer ends up
     with two sibling claims instead of one loose one. It MOVES live files,
     so it stays opt-in — confirm from `plan_folder()['promote_first_claim']`.
+
+    `parent` mirrors `plan_folder` — file under a chosen client folder
+    rather than the insured's own name.
     """
     import job_folders
-    insured = ((fields or {}).get("insured_name") or "").strip()
-    if not insured:
+    who, explicit = _file_under(fields, parent)
+    if not who:
         return {"ok": False, "error": "No insured name to file under"}
-    res = job_folders.create(insured, child=child, second_claim=second_claim,
+    insured = ((fields or {}).get("insured_name") or "").strip()
+    if explicit and not child:
+        child = insured
+    res = job_folders.create(who, child=child, second_claim=second_claim,
                              promote_first=promote_first)
     if res.get("ok") and res.get("path"):
         try:

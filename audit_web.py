@@ -2164,8 +2164,27 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def search_client_folders(self, query: str = "", limit: int = 40) -> dict:
+        """Existing client folders, for the new-loss parent picker.
+
+        Deliberately a picker and not a matcher: a commercial loss titled
+        'Bell Mountain Middle School' carries nothing to say which
+        district owns it, and on the live share the children of
+        'Val Verde Unified School' are 'Mead Valley', 'Rancho Verde' and
+        'Red Maple' — no shared token with the parent. The operator knows;
+        the tool cannot.
+        """
+        try:
+            import job_folders
+            rows = job_folders.search_clients(query or "", limit=int(limit or 40))
+            return {"ok": True, "clients": rows, "count": len(rows)}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}",
+                    "clients": []}
+
     def plan_new_loss_folder(self, fields: dict, child: str = "",
-                             second_claim: bool = False) -> dict:
+                             second_claim: bool = False,
+                             parent: str = "") -> dict:
         """Where this new loss's folder would go — show it in the confirm
         dialog BEFORE anything is created.
 
@@ -2177,7 +2196,8 @@ class Api(JobSettingsApi, CompanyCamApi):
         try:
             import new_loss_intake as nli
             return nli.plan_folder(dict(fields or {}), child=child,
-                                   second_claim=bool(second_claim))
+                                   second_claim=bool(second_claim),
+                                   parent=parent or "")
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
@@ -2185,7 +2205,8 @@ class Api(JobSettingsApi, CompanyCamApi):
                         second_claim: bool = False,
                         promote_first: bool = False,
                         make_folder: bool = True,
-                        make_companycam: bool = False) -> dict:
+                        make_companycam: bool = False,
+                        parent: str = "") -> dict:
         """Clone the matching template into the intake list, fill it, and
         (by default) create the job folder.
 
@@ -2213,7 +2234,8 @@ class Api(JobSettingsApi, CompanyCamApi):
             try:
                 folder = nli.create_folder(
                     fields, child=child, second_claim=bool(second_claim),
-                    promote_first=bool(promote_first))
+                    promote_first=bool(promote_first),
+                    parent=parent or "")
             except Exception as ex:
                 folder = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
             res["folder"] = folder

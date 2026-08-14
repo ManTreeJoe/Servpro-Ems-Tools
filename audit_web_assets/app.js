@@ -5194,6 +5194,14 @@ function openNewLossModal() {
   // and lets the child be renamed BEFORE anything is created, because
   // the name is the one thing the parser can't infer.
   let nlPlan = null;
+  // The parent the operator picked, if any. A commercial loss titled
+  // "Bell Mountain Middle School" carries nothing to say which district
+  // owns it — and on the live share the children of "Val Verde Unified
+  // School" are "Mead Valley", "Rancho Verde", "Red Maple", sharing no
+  // token with the parent. So it's chosen, never guessed: creation
+  // matches exactly on purpose (a fuzzy hit once nested unrelated
+  // "<Name> Property Management" jobs inside each other).
+  let nlParent = "";
   async function refreshFolderPlan() {
     const card = $$("#nl-folder-card");
     const insured = ($$("#nl-insured_name")?.value || "").trim();
@@ -5201,7 +5209,7 @@ function openNewLossModal() {
     const child = ($$("#nl-child-name")?.value || "").trim();
     const second = !!$$("#nl-second-claim")?.checked;
     let p;
-    try { p = await pywebview.api.plan_new_loss_folder({ insured_name: insured }, child, second); }
+    try { p = await pywebview.api.plan_new_loss_folder({ insured_name: insured }, child, second, nlParent); }
     catch (e) { card.style.display = "none"; return; }
     nlPlan = p;
     if (!p?.ok) {
@@ -5222,7 +5230,9 @@ function openNewLossModal() {
              they may be filed under a different spelling.</div>`
         : "";
       card.innerHTML = `<b>📁 New customer folder</b><br>
-        <code style="font-size:11.5px;">${escapeHtml(p.path)}</code>${prior}`;
+        <code style="font-size:11.5px;">${escapeHtml(p.path)}</code>${prior}
+        ${parentPickerHTML()}`;
+      wireParentPicker();
       return;
     }
     // Existing customer → this becomes a child inside their folder.
@@ -5249,10 +5259,88 @@ function openNewLossModal() {
           <input type="checkbox" id="nl-promote" />
           <span>Move the existing loose photos into <b>1st Claim</b> first
                 (${(promo.moves || []).join(", ")})</span>
-        </label>` : ""}`;
+        </label>` : ""}
+      ${parentPickerHTML()}`;
     // Re-bind: the panel was just replaced.
     $$("#nl-child-name")?.addEventListener("change", refreshFolderPlan);
     $$("#nl-second-claim")?.addEventListener("change", refreshFolderPlan);
+    wireParentPicker();
+  }
+
+  // ── "File under an existing client" ─────────────────────────────
+  // Offered on BOTH branches: a brand-new name is the usual case (the
+  // school that belongs to a district), but a name that happens to match
+  // an existing folder can still belong somewhere else entirely.
+  function parentPickerHTML() {
+    if (nlParent) {
+      return `
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span>📂 Filing under <b>${escapeHtml(nlParent)}</b></span>
+          <button class="btn" id="nl-parent-clear" style="font-size:11px;padding:2px 8px;">Use its own folder</button>
+        </div>`;
+    }
+    return `
+      <div style="margin-top:8px;">
+        <button class="btn" id="nl-parent-open" style="font-size:11px;padding:2px 8px;"
+                title="For a job whose name doesn't say who it belongs to — a school under its district, a tenant under a property manager">📂 File under an existing client…</button>
+        <div id="nl-parent-box" style="display:none;margin-top:6px;">
+          <input type="search" id="nl-parent-q" placeholder="Search client folders…"
+                 style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;
+                        background:var(--surface);color:var(--text);
+                        border:1px solid var(--border);border-radius:5px;padding:5px 8px;" />
+          <div id="nl-parent-hits" style="max-height:170px;overflow-y:auto;margin-top:4px;"></div>
+        </div>
+      </div>`;
+  }
+
+  function wireParentPicker() {
+    $$("#nl-parent-clear")?.addEventListener("click", () => {
+      nlParent = "";
+      refreshFolderPlan();
+    });
+    const open = $$("#nl-parent-open");
+    if (!open) return;
+    open.addEventListener("click", () => {
+      const box = $$("#nl-parent-box");
+      if (!box) return;
+      box.style.display = "block";
+      open.style.display = "none";
+      $$("#nl-parent-q")?.focus();
+      runParentSearch("");
+    });
+    let t = null;
+    $$("#nl-parent-q")?.addEventListener("input", (e) => {
+      clearTimeout(t);
+      const q = e.currentTarget.value;
+      t = setTimeout(() => runParentSearch(q), 180);
+    });
+  }
+
+  async function runParentSearch(q) {
+    const hits = $$("#nl-parent-hits");
+    if (!hits) return;
+    hits.innerHTML = `<div class="muted" style="font-size:11px;">Searching…</div>`;
+    let res;
+    try { res = await pywebview.api.search_client_folders(q || "", 40); }
+    catch (e) { res = null; }
+    if (!$$("#nl-parent-hits")) return;          // panel was replaced
+    const rows = (res && res.clients) || [];
+    if (!rows.length) {
+      hits.innerHTML = `<div class="muted" style="font-size:11px;">No client folder matches.</div>`;
+      return;
+    }
+    hits.innerHTML = rows.map((r) => `
+      <button class="btn nl-parent-pick" data-name="${escapeHtml(r.name)}"
+              style="display:block;width:100%;text-align:left;font-size:11.5px;
+                     padding:4px 8px;margin-bottom:3px;">
+        ${escapeHtml(r.name)}
+        ${r.child_count ? `<span class="muted"> · ${r.child_count} inside</span>` : ""}
+      </button>`).join("");
+    hits.querySelectorAll(".nl-parent-pick").forEach((b) =>
+      b.addEventListener("click", () => {
+        nlParent = b.dataset.name || "";
+        refreshFolderPlan();
+      }));
   }
 
   // Show which board / intake list / templates we'll use.
@@ -5329,7 +5417,8 @@ function openNewLossModal() {
       !!$$("#nl-second-claim")?.checked,
       !!$$("#nl-promote")?.checked,
       true,                                   // make_folder
-      !!$$("#nl-make-companycam")?.checked);
+      !!$$("#nl-make-companycam")?.checked,
+      nlParent);                              // chosen umbrella, if any
     if (!res?.ok) {
       btn.disabled = false;
       $$("#nl-status").innerHTML = `<span style="color:var(--red);">${escapeHtml(res?.error || "Create failed")}</span>`;
