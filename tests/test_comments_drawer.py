@@ -529,8 +529,25 @@ def test_the_tab_lives_inside_the_drawer(detail_js):
 
 
 def test_the_tab_hangs_off_the_drawers_outer_edge(detail_js):
-    assert ".cmt-tab{position:absolute;left:-30px" in detail_js
+    assert ".cmt-tab{position:absolute;" in detail_js
     assert "writing-mode:vertical-rl" in detail_js, "reads as a side tab"
+
+
+def test_the_tab_clears_the_scrollbar_and_the_top_bar(detail_js):
+    """Measured, not assumed. A fixed drawer sits at the viewport edge
+    where the scrollbar also lives, and the top bar is a different height
+    in Audit than in Snapshot — a hardcoded offset is wrong in one of
+    them whichever number you pick."""
+    body = detail_js[detail_js.index("function _placeTab"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert "window.innerWidth - document.documentElement.clientWidth" in body
+    assert ".topbar" in body and "getBoundingClientRect" in body
+
+
+def test_the_tab_is_re_placed_when_things_move(detail_js):
+    """The toolbar changes height and the scrollbar comes and goes."""
+    assert detail_js.count("_placeTab()") >= 3
+    assert 'addEventListener("resize", _placeTab)' in detail_js
 
 
 def test_the_tab_exists_before_the_drawer_is_opened(detail_js):
@@ -550,3 +567,61 @@ def test_no_tab_when_the_job_has_no_card(detail_js):
 
 def test_the_tab_says_which_way_it_goes(detail_js):
     assert "Open Comments" in detail_js and "Close Comments" in detail_js
+
+
+# ── @ in the composer ────────────────────────────────────────────────
+def test_the_composer_offers_board_members(detail_js):
+    """Trello only notifies on an exact @username, so a typed guess
+    reaches nobody. A mention that looks right and notifies no one is
+    worse than not tagging at all."""
+    assert "xa_note_members" in detail_js
+
+
+def test_it_reuses_the_xa_note_member_source(detail_js):
+    """Same names the XA-note modal offers, so a person is spelled one
+    way everywhere rather than two lists drifting apart."""
+    assert detail_js.count("xa_note_members") >= 2
+
+
+def test_the_trigger_needs_an_at_starting_a_word(detail_js):
+    """Otherwise every email address in a pasted thread opens the
+    picker mid-typing."""
+    body = detail_js[detail_js.index("function _mentionState"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert "[" + chr(92) + "s(" + chr(92) + "[]" in body
+
+
+def test_the_picker_owns_its_keys(detail_js):
+    """Enter picks the highlighted name; it must not also fire the
+    composer's post handler."""
+    body = detail_js[detail_js.index("el.querySelector(" + chr(34) + "#cmt-new"):]
+    body = body[:body.index("_wireMentions(el);")]
+    assert "_mentionKey(el, e)" in body
+    assert body.index("_mentionKey") < body.index("ctrlKey")
+
+
+def test_selecting_keeps_focus_in_the_textarea(detail_js):
+    """mousedown + preventDefault — on click the textarea has already
+    blurred and the caret position is gone."""
+    body = detail_js[detail_js.index("async function _showMentions"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert "mousedown" in body and "preventDefault" in body
+
+
+def test_members_are_cached_per_job(detail_js):
+    """The board roster is one call per job, not one per keystroke."""
+    body = detail_js[detail_js.index("async function _members"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert "_memberFor" in body
+
+
+def test_a_moved_caret_cancels_a_late_lookup(detail_js):
+    body = detail_js[detail_js.index("async function _showMentions"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert "caret moved" in body or "_mentionState(el)" in body
+
+
+def test_snapshot_can_reach_the_member_list():
+    """The drawer is shared, so the method has to exist on both APIs."""
+    import snapshot_web
+    assert hasattr(snapshot_web.Api, "xa_note_members")

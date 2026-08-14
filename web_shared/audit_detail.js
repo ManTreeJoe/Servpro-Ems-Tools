@@ -3318,7 +3318,7 @@
       // The handle hangs OFF the drawer's left edge, so when the
       // drawer is parked off-screen this is the part still showing —
       // tab and panel are one object, not a button that summons one.
-      ".cmt-tab{position:absolute;left:-30px;top:90px;width:30px;padding:14px 0;border:1px solid var(--border,#333);border-right:0;border-radius:8px 0 0 8px;background:var(--surface,#262626);color:var(--text,#eee);font:inherit;font-size:11.5px;font-weight:700;letter-spacing:.04em;cursor:pointer;writing-mode:vertical-rl;text-orientation:mixed;box-shadow:-3px 0 8px rgba(0,0,0,.28);}" +
+      ".cmt-tab{position:absolute;width:30px;padding:14px 0;border:1px solid var(--border,#333);border-right:0;border-radius:8px 0 0 8px;background:var(--surface,#262626);color:var(--text,#eee);font:inherit;font-size:11.5px;font-weight:700;letter-spacing:.04em;cursor:pointer;writing-mode:vertical-rl;text-orientation:mixed;box-shadow:-3px 0 8px rgba(0,0,0,.28);}" +
       ".cmt-tab:hover{background:var(--surface-2,#2e2e2e);color:var(--accent,#4aa3ff);}" +
       ".cmt-empty{color:var(--text-muted,#999);font-size:12px;padding:12px 0;}" +
       // search
@@ -3343,7 +3343,11 @@
       "font:inherit;font-size:12px;line-height:1.4;padding:6px 8px;border-radius:6px;" +
       "border:1px solid var(--border,#333);background:var(--bg,#151515);" +
       "color:var(--text,#eee);}" +
-      ".cmt-btns{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}";
+      ".cmt-btns{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}" +
+      ".cmt-compose{position:relative;}" +
+      ".cmt-at-pop{position:absolute;left:12px;right:12px;bottom:100%;margin-bottom:4px;background:var(--surface,#262626);border:1px solid var(--border,#333);border-radius:7px;box-shadow:0 -4px 14px rgba(0,0,0,.4);max-height:190px;overflow-y:auto;z-index:2;}" +
+      ".cmt-at-item{padding:6px 10px;font-size:12px;cursor:pointer;}" +
+      ".cmt-at-item.on,.cmt-at-item:hover{background:var(--surface-2,#2e2e2e);}";
     document.head.appendChild(st);
   }
 
@@ -3426,11 +3430,13 @@
     el.querySelector("#cmt-upload").addEventListener("click", (e) =>
       post("Initial Upload submitted To WC.", e.currentTarget));
     el.querySelector("#cmt-new").addEventListener("keydown", (e) => {
+      if (_mentionKey(el, e)) return;          // the picker owns this key
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         post(e.currentTarget.value, el.querySelector("#cmt-post"));
       }
     });
+    _wireMentions(el);
     el.querySelector("#cmt-refresh").addEventListener("click", async () => {
       const row = el._row, ctx = el._ctx;
       if (!row) return;
@@ -3463,7 +3469,146 @@
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && commentsDrawerIsOpen()) closeCommentsDrawer();
     });
+    _placeTab();
+    window.addEventListener("resize", _placeTab);
     return el;
+  }
+
+  // ── @mention picker for the composer ─────────────────────────────
+  //
+  // Typing @ offers the people on the card's BOARD. The names are the
+  // same ones the XA-note modal already offers (xa_note_members), so a
+  // person is spelled one way everywhere — and Trello only notifies on
+  // an exact @username, so a typed guess reaches nobody. That is the
+  // whole point: a mention that looks right but notifies no one is worse
+  // than not tagging at all.
+  function _mentionState(el) {
+    const box = el.querySelector("#cmt-new");
+    if (!box) return null;
+    const upto = box.value.slice(0, box.selectionStart);
+    const m = /(^|[\s(\[])@([A-Za-z0-9._-]*)$/.exec(upto);
+    return m ? { box, start: box.selectionStart - m[2].length - 1,
+                 term: m[2].toLowerCase() } : null;
+  }
+
+  async function _members(el) {
+    const row = el._row;
+    if (!row) return [];
+    if (el._memberFor === row.client) return el._memberList || [];
+    el._memberFor = row.client;
+    el._memberList = [];
+    try {
+      const r = await pywebview.api.xa_note_members(row.client);
+      el._memberList = (r && r.members) || [];
+    } catch (_) { /* offline — the picker just stays empty */ }
+    return el._memberList;
+  }
+
+  function _mentionPop(el) {
+    let pop = el.querySelector("#cmt-at-pop");
+    if (!pop) {
+      pop = document.createElement("div");
+      pop.id = "cmt-at-pop";
+      pop.className = "cmt-at-pop hidden";
+      el.querySelector(".cmt-compose").appendChild(pop);
+    }
+    return pop;
+  }
+
+  function _hideMentions(el) {
+    const pop = el.querySelector("#cmt-at-pop");
+    if (pop) pop.classList.add("hidden");
+    el._atRows = null;
+  }
+
+  function _insertMention(el, username) {
+    const st = _mentionState(el);
+    if (!st) return;
+    const v = st.box.value;
+    const before = v.slice(0, st.start);
+    const after = v.slice(st.box.selectionStart);
+    st.box.value = `${before}@${username} ${after}`;
+    const caret = before.length + username.length + 2;
+    st.box.setSelectionRange(caret, caret);
+    st.box.focus();
+    _hideMentions(el);
+  }
+
+  async function _showMentions(el) {
+    const st = _mentionState(el);
+    if (!st) { _hideMentions(el); return; }
+    const all = await _members(el);
+    if (!_mentionState(el)) { _hideMentions(el); return; }   // caret moved
+    const hits = all.filter((m) =>
+      !st.term
+      || (m.username || "").toLowerCase().includes(st.term)
+      || (m.name || "").toLowerCase().includes(st.term)).slice(0, 8);
+    const pop = _mentionPop(el);
+    if (!hits.length) { _hideMentions(el); return; }
+    el._atRows = hits;
+    el._atIndex = 0;
+    pop.innerHTML = hits.map((m, i) => `
+      <div class="cmt-at-item${i ? "" : " on"}" data-i="${i}">
+        <b>@${esc(el._ctx, m.username)}</b>
+        <span class="muted"> ${esc(el._ctx, m.name || "")}</span>
+      </div>`).join("");
+    pop.classList.remove("hidden");
+    pop.querySelectorAll(".cmt-at-item").forEach((d) =>
+      d.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();                 // keep focus in the textarea
+        _insertMention(el, hits[+d.dataset.i].username);
+      }));
+  }
+
+  // Returns true when the picker consumed the key, so the composer's own
+  // Ctrl+Enter handler doesn't also fire.
+  function _mentionKey(el, e) {
+    const rows = el._atRows;
+    const pop = el.querySelector("#cmt-at-pop");
+    if (!rows || !pop || pop.classList.contains("hidden")) return false;
+    if (e.key === "Escape") { _hideMentions(el); e.preventDefault(); return true; }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      el._atIndex = (el._atIndex + (e.key === "ArrowDown" ? 1 : rows.length - 1))
+        % rows.length;
+      pop.querySelectorAll(".cmt-at-item").forEach((d, i) =>
+        d.classList.toggle("on", i === el._atIndex));
+      return true;
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      _insertMention(el, rows[el._atIndex].username);
+      return true;
+    }
+    return false;
+  }
+
+  function _wireMentions(el) {
+    const box = el.querySelector("#cmt-new");
+    if (!box) return;
+    box.addEventListener("input", () => _showMentions(el));
+    box.addEventListener("blur", () => setTimeout(() => _hideMentions(el), 120));
+  }
+
+  // Put the tab clear of the scrollbar and under the panel's top bar.
+  // Both are measured, not assumed: a fixed drawer sits at the viewport
+  // edge where the scrollbar also lives, and the top bar is a different
+  // height in Audit than in Snapshot.
+  function _placeTab() {
+    const el = document.getElementById("cmt-drawer");
+    const tab = document.getElementById("cmt-tab");
+    if (!el || !tab) return;
+    const sb = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    tab.style.left = `-${30 + sb}px`;
+    let top = 12;
+    for (const sel of [".topbar", "header.topbar", "#topbar"]) {
+      const bar = document.querySelector(sel);
+      if (bar) {
+        const r = bar.getBoundingClientRect();
+        if (r.height) { top = Math.round(r.bottom) + 10; break; }
+      }
+    }
+    tab.style.top = `${top}px`;
   }
 
   function closeCommentsDrawer() {
@@ -3479,6 +3624,7 @@
     el.classList.add("cmt-open");
     _lsSet(CMT_OPEN_KEY, "1");
     _setTabLabel(true);
+    _placeTab();
     loadCommentsInto(row, ctx, false);
   }
 
@@ -3498,6 +3644,7 @@
     // Nothing to read without a card, and a tab that opens an empty
     // panel is worse than no tab.
     el.style.display = (row && row.trello_card_id) ? "" : "none";
+    _placeTab();          // the top bar's height changes with the toolbar
     if (!commentsDrawerIsOpen()) return;
     if (!row || !row.trello_card_id) {
       closeCommentsDrawer();
