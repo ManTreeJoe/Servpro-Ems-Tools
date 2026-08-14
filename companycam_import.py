@@ -44,6 +44,21 @@ _STAGE_RULES = [
     ("post mold",         "Post Mold"),
     ("mold after",        "Post Mold"),
     ("abatement",         "Abatement"),
+    # Contents work goes to PICS/Contents. audit_logic has routed the
+    # run-doc's Contents / Pack-out / Pack-in activities there all
+    # along (see its `priority` table), but the TAG path never knew
+    # the word — so a photo tagged "Contents" in CompanyCam became a
+    # ROOM folder called Contents instead, one level down and outside
+    # the stage the audit looks in. Pack-out/in absorb to Contents
+    # here for the same reason they do there.
+    ("post contents",     "Contents"),
+    ("pack out",          "Contents"),
+    ("pack-out",          "Contents"),
+    ("packout",           "Contents"),
+    ("pack in",           "Contents"),
+    ("pack-in",           "Contents"),
+    ("packin",            "Contents"),
+    ("contents",          "Contents"),
     ("reinspection",      "Reinspection"),
     ("reinspect",         "Reinspection"),
     ("initial inspection", "Initial"),

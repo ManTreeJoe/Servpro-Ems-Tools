@@ -17,13 +17,22 @@ import re
 # Stage keyword → canonical PICS subfolder. ORDER MATTERS: the most
 # specific patterns come first so "post mold prep" doesn't match "post"
 # and "mold prep" doesn't match "mold". Mirrors the audit's stage table
-# + web_shared/stage_picker.js PICS_STAGES (minus the retired Contents /
-# Post Mold entries).
+# + web_shared/stage_picker.js PICS_STAGES (minus the retired Post Mold
+# entry). Contents came BACK 2026-08-14 — audit_logic never stopped
+# routing to it.
 _STAGE_PATTERNS = (
     ("Post Mold Prep", re.compile(r"post\s*mold\s*prep", re.I)),
     ("Mold Prep",      re.compile(r"mold\s*prep", re.I)),
     ("Reinspection",   re.compile(r"re-?inspect", re.I)),
     ("Abatement",      re.compile(r"abate", re.I)),
+    # Same Contents routing as the CompanyCam tag path and the
+    # audit's run-doc table, so a job filed by zip, by API or by
+    # run-doc lands in the same folder.
+    # The trailing \b matters: without it "pack..in" matches inside
+    # "Packing Room", and a ROOM would be filed as a stage.
+    ("Contents",       re.compile(
+        r"\bcontents\b|\bpack\s*-?\s*(?:out|in)\b",
+        re.I)),
     ("Post",           re.compile(r"post|tear\s*-?\s*down", re.I)),
     ("Mold",           re.compile(r"\bmold\b", re.I)),
     ("Monitor",        re.compile(r"monitor", re.I)),

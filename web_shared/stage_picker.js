@@ -20,9 +20,13 @@
 
   // Canonical PICS subfolders, in workflow order. Edit here once and the
   // picker on every panel follows.
+  // Contents is on this list because audit_logic routes the run-doc's
+  // Contents / Pack-out / Pack-in activities to PICS/Contents and always
+  // has. The picker not offering it meant a hand-picked contents photo
+  // could only be filed somewhere it didn't belong.
   const STAGES = [
     "Initial", "Reinspection", "Demo", "Mold Prep", "Post Mold Prep",
-    "Mold", "Abatement", "Monitor", "Post", "Equipment",
+    "Mold", "Abatement", "Monitor", "Post", "Contents", "Equipment",
   ];
   window.PICS_STAGES = STAGES;
 
