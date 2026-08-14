@@ -1830,6 +1830,11 @@ class Api(JobSettingsApi, CompanyCamApi):
                 detail = c.get("year_folder") or c.get("year") or "folder"
                 if c.get("is_fire"):
                     detail = "🔥 " + detail
+                # Say which client a child sits under. "Bell Mountain" and
+                # "Bell Kimberly" look equally plausible in a list until
+                # one of them says "in Menifee Union School District".
+                if c.get("parent"):
+                    detail = f"in {c['parent']}"
                 _add(c.get("name") or "", "folder", detail,
                      c.get("path") or "", sc)
         except Exception:
@@ -5138,6 +5143,39 @@ class Api(JobSettingsApi, CompanyCamApi):
                         })
             except OSError:
                 continue
+
+            # Children too — a job is not always a top-level folder.
+            # Units, second claims and commercial sub-jobs live INSIDE
+            # their client, and the ones that matter most here are the
+            # ones whose names don't resemble the parent's: searching
+            # "Bell Mountain" found nothing while
+            # "Menifee School District - Bell Mountain - 8.14.26" sat
+            # under "Menifee Union School District" the whole time.
+            #
+            # Only scored hits are kept. Adding 980 unscored children to
+            # the list would bury the top-level matches for every other
+            # search.
+            try:
+                for parent, child in audit_logic.cached_child_listing(
+                        year_folder):
+                    fn = _norm(child)
+                    tokens = [t for t in fn.split() if len(t) >= 2]
+                    overlap = len(set(canon_tokens) & set(tokens))
+                    substr = (canon in fn or (len(fn) >= 4 and fn in canon))
+                    score = overlap + (3 if substr else 0)
+                    if score <= 0:
+                        continue
+                    candidates.append({
+                        "name":        child,
+                        "path":        os.path.join(year_folder, parent, child),
+                        "score":       score,
+                        "year":        yf["year"],
+                        "year_folder": yf["name"],
+                        "is_fire":     yf["is_fire"],
+                        "parent":      parent,
+                    })
+            except Exception:
+                pass
 
         # Sort by score desc, then newer year first, then alphabetical.
         candidates.sort(key=lambda c: (-c["score"], -int(c["year"] or 0),

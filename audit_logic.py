@@ -53,6 +53,76 @@ def invalidate_year_index_cache():
     the audit panel's Full re-scan button."""
     with _year_index_lock:
         _year_index_cache.clear()
+        _child_index_cache.clear()
+
+
+# {year_folder_path: (timestamp, [(parent_name, child_name), ...])}
+_child_index_cache = {}
+
+# One scandir per client folder, and on the share each costs ~31ms of
+# LATENCY rather than work — 614 folders measured at 19.0s serially. The
+# same scan across 32 threads takes 545ms, because the wait is the
+# network and not the disk. 32 is where the curve flattens (8 → 4.2s,
+# 16 → 1.1s, 32 → 0.55s); more threads mostly add contention.
+_CHILD_SCAN_WORKERS = 32
+
+
+def cached_child_listing(year_folder_path, force_refresh=False):
+    """[(parent_name, child_name)] for every client folder in a year.
+
+    A job is not always a top-level folder. Units, second claims and
+    commercial sub-jobs live INSIDE their client — "Menifee School
+    District - Bell Mountain - 8.14.26" sits under "Menifee Union School
+    District" — so a search that only reads the year folder cannot see
+    them, and the ones it cannot see are exactly the ones whose names
+    don't resemble their parent's.
+
+    Shares the year-index TTL and is cleared by the same Full re-scan.
+    """
+    if not year_folder_path:
+        return []
+    now = _time.time()
+    if not force_refresh:
+        cached = _child_index_cache.get(year_folder_path)
+        if cached and (now - cached[0]) < _YEAR_INDEX_TTL_S:
+            return cached[1]
+    tops = []
+    try:
+        with os.scandir(year_folder_path) as it:
+            tops = [(e.name, e.path) for e in it
+                    if e.is_dir(follow_symlinks=False)]
+    except OSError:
+        return []
+
+    # The job skeleton is a container, not a child job.
+    skip = {"ems", "recon", "contents", "pics", "photos", "docs", "videos"}
+
+    def _kids(item):
+        name, path = item
+        out = []
+        try:
+            with os.scandir(path) as it:
+                for c in it:
+                    if (c.is_dir(follow_symlinks=False)
+                            and c.name.lower() not in skip):
+                        out.append((name, c.name))
+        except OSError:
+            pass
+        return out
+
+    entries = []
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        workers = max(1, min(_CHILD_SCAN_WORKERS, len(tops)))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for got in ex.map(_kids, tops):
+                entries.extend(got)
+    except Exception:
+        for item in tops:                      # threads unavailable
+            entries.extend(_kids(item))
+    with _year_index_lock:
+        _child_index_cache[year_folder_path] = (now, entries)
+    return entries
 
 
 # ── Activity-type detection ──────────────────────────────────────────────────
