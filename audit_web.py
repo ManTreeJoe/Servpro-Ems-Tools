@@ -726,7 +726,7 @@ def _group_audit_candidates(raw):
                     label = _j["display_name"]
             except Exception:
                 pass
-        sources = [s for s in ("run", "pin", "folder")
+        sources = [s for s in ("run", "pin", "folder", "trello")
                    if any(m["source"] == s for m in members)]
         path = winner["path"] or next(
             (m["path"] for m in members if m["path"]), "")
@@ -1832,6 +1832,53 @@ class Api(JobSettingsApi, CompanyCamApi):
                     detail = "🔥 " + detail
                 _add(c.get("name") or "", "folder", detail,
                      c.get("path") or "", sc)
+        except Exception:
+            pass
+
+        # 4. LIVE Trello card search.
+        #
+        # The three sources above all require the job to already be
+        # somewhere we keep things: on today's run-doc, pinned, or filed
+        # under a year folder. A job that is none of those — a card
+        # someone made that nobody has pinned and that has no folder yet
+        # — was invisible to this search, which is the case the office
+        # actually hits ("sometimes we don't have it in the right places
+        # everywhere else").
+        #
+        # Scored like a pinned card rather than below the folder tier:
+        # work is STARTED in Trello today (the New Loss button isn't in
+        # use yet), so a card is the first record a job has, and often
+        # the only one. An exact card-name match should not sit under a
+        # loose folder token match.
+        #
+        # Ranking is safe here because a job that has BOTH is grouped
+        # into one candidate that keeps the folder path either way
+        # (_group_audit_candidates), so this changes the order between
+        # different jobs, never which folder gets audited.
+        #
+        # Only runs on this explicit search, never type-ahead — it costs
+        # a network round trip.
+        try:
+            for h in (self.search_trello(typed) or [])[:12]:
+                nm = (h.get("name") or "").strip()
+                if not nm:
+                    continue
+                n = _norm(nm)
+                if n == typed_n:
+                    score = 85
+                elif typed_n in n or (len(n) >= 4 and n in typed_n):
+                    score = 25
+                elif typed_tokens & set(t for t in n.split() if len(t) >= 2):
+                    score = 12
+                else:
+                    continue
+                board = (h.get("board") or "Trello").strip()
+                lane = (h.get("lane") or "").strip()
+                # No path: the whole point is that this job has no folder
+                # here yet. The audit will report it missing, which is the
+                # honest answer and the reason you went looking.
+                _add(nm, "trello", f"🎴 {board}{' · ' + lane if lane else ''}",
+                     "", score)
         except Exception:
             pass
 

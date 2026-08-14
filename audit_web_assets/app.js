@@ -3112,7 +3112,10 @@ function auditCandidateIcon(c) {
   const srcs = (c.sources && c.sources.length) ? c.sources : [c.source];
   if (srcs.includes("run")) return "📋";
   if (srcs.includes("pin")) return "📌";
-  return srcs.includes("folder") ? "📁" : "•";
+  if (srcs.includes("folder")) return "📁";
+  // Found only on Trello — no folder here yet. Jobs are started on the
+  // board today, so this is a normal result, not an error.
+  return srcs.includes("trello") ? "🎴" : "•";
 }
 
 // skip_canon=true — the user just told us which job this is, so don't
