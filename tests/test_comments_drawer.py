@@ -625,3 +625,42 @@ def test_snapshot_can_reach_the_member_list():
     """The drawer is shared, so the method has to exist on both APIs."""
     import snapshot_web
     assert hasattr(snapshot_web.Api, "xa_note_members")
+
+
+def test_the_module_actually_loads():
+    """`node --check` only proves it PARSES. This evaluates it against a
+    stub DOM, which is what caught "ReferenceError: _wireMentions is not
+    defined" being possible at all."""
+    import json
+    import subprocess
+    import os
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    js = os.path.join(here, "web_shared", "audit_detail.js").replace("\\", "/")
+    prog = (
+        "const fs=require('fs');const src=fs.readFileSync(%s,'utf8');"
+        "const stub=()=>({classList:{add(){},remove(){},toggle(){}},style:{},"
+        "addEventListener(){},appendChild(){},querySelector:()=>null,"
+        "querySelectorAll:()=>[]});"
+        "global.window={addEventListener:()=>{},"
+        "localStorage:{getItem:()=>null,setItem:()=>{}},innerWidth:1400};"
+        "global.document={getElementById:()=>null,querySelector:()=>null,"
+        "querySelectorAll:()=>[],createElement:stub,head:{appendChild(){}},"
+        "body:{appendChild(){}},documentElement:{clientWidth:1385}};"
+        "global.localStorage=window.localStorage;"
+        "eval(src);"
+        "console.log(Object.keys(global.window.AuditDetail).length);"
+    ) % json.dumps(js)
+    r = subprocess.run(["node", "-e", prog], capture_output=True, text=True)
+    assert r.returncode == 0, f"module failed to load: {r.stderr.strip()}"
+    assert int(r.stdout.strip()) > 15
+
+
+def test_the_mention_picker_cannot_break_the_drawer():
+    """It is an enhancement. Unguarded, anything wrong in it took the
+    whole detail render down with "Failed to load" and no comments."""
+    import io
+    import os
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    js = io.open(os.path.join(here, "web_shared", "audit_detail.js"),
+                 encoding="utf-8").read()
+    assert "try { _wireMentions(el); } catch" in js

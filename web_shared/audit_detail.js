@@ -3436,7 +3436,10 @@
         post(e.currentTarget.value, el.querySelector("#cmt-post"));
       }
     });
-    _wireMentions(el);
+    // The @ picker is an enhancement; the drawer has to work without it.
+    // Unguarded, anything wrong in there takes the whole detail render
+    // down with a "Failed to load" and you get no comments at all.
+    try { _wireMentions(el); } catch (_) { /* no picker, still a drawer */ }
     el.querySelector("#cmt-refresh").addEventListener("click", async () => {
       const row = el._row, ctx = el._ctx;
       if (!row) return;
