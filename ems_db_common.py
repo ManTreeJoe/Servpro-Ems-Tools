@@ -89,6 +89,51 @@ def detect_property_and_unit(display_name: str) -> tuple[str | None, str | None]
     return None, None
 
 
+def alias_probe_token(alias_canon: str) -> str:
+    """The token to search candidate jobs with — the longest, so the
+    prefilter is as narrow as possible. "" when there is nothing to go on.
+    """
+    toks = [t for t in (alias_canon or "").split() if t]
+    return max(toks, key=len) if toks else ""
+
+
+def truncation_alias_is_ambiguous(alias_canon: str, job_canon: str,
+                                  candidate_canons) -> bool:
+    """True when resolving through this alias would be a guess.
+
+    An alias that is a TRUNCATION of the job's own name claims every
+    sibling, not just the job it was learned on. "menifee school
+    district" was an alias of "Menifee Union School District -Callie
+    Kirkpatrick Elementary", so "Menifee School District - Bell Mountain
+    - 8.14.26" — which canon_key shortens to exactly that, because it
+    drops everything after the first " - " — resolved to Kirkpatrick's
+    job. A different school, a different loss, silently.
+
+    Only a truncation is suspect: an alias with the SAME tokens in
+    another order or spelling ("white margaret" for "White, Margaret")
+    is a genuine synonym and always fine.
+
+    And only when it is ambiguous TODAY. The short form is a useful
+    shortcut while exactly one job answers to it, and becomes a wrong
+    answer the moment a second one does — which is a property of the
+    current job list, not of the alias.
+
+    Shared by both backends deliberately: the reads diverging is how one
+    of them would keep the bug.
+    """
+    a = set((alias_canon or "").split())
+    j = set((job_canon or "").split())
+    if not a or not (a < j):
+        return False
+    hits = 0
+    for cand in candidate_canons or ():
+        if a <= set((cand or "").split()):
+            hits += 1
+            if hits > 1:
+                return True
+    return False
+
+
 def canon_key(name: str) -> str:
     """Return the storage key for `name`. Same rule persistence uses for
     pin keys: casefold + collapse whitespace + strip " - Carrier" suffix.

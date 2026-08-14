@@ -62,6 +62,7 @@ from ems_db_common import (            # noqa: E402  (after module docstring)
     split_department_path, rebase_department_path,
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
     EVENT_RENAMED, is_material_rename,
+    alias_probe_token, truncation_alias_is_ambiguous,
 )
 from persistence import _canon_pin_key as _canon_pin_key_persistence
 
@@ -923,6 +924,18 @@ def find_job_by_name(name: str, *, department: str = "") -> dict | None:
                 ORDER BY a.added_at ASC, a.canon_key ASC
                 LIMIT 1
             """, (key,)).fetchone()
+            # An alias that TRUNCATES the job's name claims every sibling.
+            # No answer beats the wrong job: callers treat None as "not
+            # known yet" and ask. See truncation_alias_is_ambiguous.
+            if row is not None:
+                tok = alias_probe_token(key)
+                if tok:
+                    cands = [r["canon_key"] for r in c.execute(
+                        "SELECT canon_key FROM jobs WHERE canon_key LIKE ?",
+                        (f"%{tok}%",)).fetchall()]
+                    if truncation_alias_is_ambiguous(
+                            key, row["canon_key"], cands):
+                        return None
         if row is not None and dept:
             have = (row["department"] or "").strip()
             if have and have != dept:

@@ -37,6 +37,7 @@ from ems_db_common import (            # noqa: F401 — re-exported as API
     split_department_path, rebase_department_path,
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
     EVENT_RENAMED, is_material_rename,
+    alias_probe_token, truncation_alias_is_ambiguous,
 )
 
 SCHEMA_VERSION = 5
@@ -236,6 +237,20 @@ def find_job_by_name(name: str, *, department: str = ""):
         a = _one("job_aliases", alias_canon=f"eq.{key}", select="canon_key")
         if a:
             row = _one("jobs", canon_key=f"eq.{a['canon_key']}", select="*")
+            # An alias that TRUNCATES the job's name claims every sibling
+            # — see truncation_alias_is_ambiguous. The guard has to be
+            # here as well as in SQLite because THIS backend serves the
+            # live reads; SQLite only answers when the server is
+            # unreachable, so fixing it there alone fixed nothing.
+            if row is not None:
+                tok = alias_probe_token(key)
+                if tok:
+                    cands = [r.get("canon_key") for r in (_rows(
+                        "jobs", canon_key=f"like.*{tok}*",
+                        select="canon_key") or [])]
+                    if truncation_alias_is_ambiguous(
+                            key, row.get("canon_key"), cands):
+                        return None
     if row is not None and (department or "").strip():
         have = (row.get("department") or "").strip()
         if have and have != department.strip():
