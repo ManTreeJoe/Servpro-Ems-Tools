@@ -126,3 +126,74 @@ def test_the_search_is_capped(api):
     a, hits = api
     hits.extend(_card(f"Smith, Person {i}") for i in range(40))
     assert len(a.list_audit_candidates("smith")["candidates"]) <= 12
+
+
+# ── the type-ahead, which is where this was actually noticed ─────────
+def test_suggest_trello_returns_cards(api):
+    """Reported as "Bell Mountain is not showing up as a trello card".
+
+    The backend candidate builder had it all along — the DROPDOWN is fed
+    by suggest_jobs, a pure DB read that only knows jobs already
+    recorded. Three cards carried the name, one live on WORK IN PROGRESS,
+    and none of them could reach the type-ahead.
+    """
+    a, hits = api
+    hits.append(_card("Menifee Union School District (Bell Mountain ) - 8/14"))
+    res = a.suggest_trello("Bell Mountain")
+    assert res["ok"] is True
+    assert res["rows"][0]["board"] == "WORK IN PROGRESS"
+
+
+def test_suggest_trello_stays_off_the_wire_for_short_queries(api):
+    """It runs on keystrokes, so two characters must not cost a request."""
+    a, hits = api
+    hits.append(_card("Knudsen, Seth"))
+    called = []
+
+    import audit_web as aw
+    orig = aw.Api.search_trello
+    try:
+        aw.Api.search_trello = lambda self, q, boards=None: (
+            called.append(q) or [])
+        assert a.suggest_trello("be")["rows"] == []
+        assert called == [], "no network below 3 characters"
+    finally:
+        aw.Api.search_trello = orig
+
+
+def test_suggest_trello_is_capped(api):
+    a, hits = api
+    hits.extend(_card(f"Smith, Person {i}") for i in range(30))
+    assert len(a.suggest_trello("smith", 6)["rows"]) == 6
+
+
+def test_suggest_trello_survives_a_dead_call(api, monkeypatch):
+    monkeypatch.setattr(
+        audit_web.Api, "search_trello",
+        lambda self, q, boards=None: (_ for _ in ()).throw(RuntimeError("429")))
+    a, _ = api
+    res = a.suggest_trello("knudsen")
+    assert res["ok"] is False and res["rows"] == []
+
+
+def test_the_dropdown_asks_trello_after_the_local_rows():
+    """Order matters: suggest_jobs is instant, this is a round trip. If
+    the dropdown waited on Trello, every keystroke would feel slow."""
+    import io, os
+    app = io.open(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "audit_web_assets", "app.js"),
+        encoding="utf-8").read()
+    body = app[app.index("async function showSuggestions"):]
+    body = body[:body.index("\n}")]
+    assert body.index("renderSuggestions(q, rows)") < \
+           body.index("appendTrelloSuggestions"), "render local rows first"
+
+
+def test_late_trello_results_cannot_paint_over_a_newer_query():
+    import io, os
+    app = io.open(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "audit_web_assets", "app.js"),
+        encoding="utf-8").read()
+    body = app[app.index("async function appendTrelloSuggestions"):]
+    body = body[:body.index("\n}")]
+    assert "seq !== state.suggestSeq" in body

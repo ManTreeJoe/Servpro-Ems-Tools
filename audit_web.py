@@ -7178,6 +7178,35 @@ class Api(JobSettingsApi, CompanyCamApi):
         return res
 
     # ── Phase 2: Pin Trello card ─────────────────────────────────────
+    def suggest_trello(self, query: str, limit: int = 6) -> dict:
+        """Trello hits for the search type-ahead.
+
+        `suggest_jobs` backs the dropdown and is a pure DB read, so it
+        only knows jobs we have already recorded. Work is started on the
+        board today, so the job someone is looking for is routinely on a
+        card and nowhere else — searching "Bell Mountain" showed nothing
+        while three cards carried the name, one of them live on WORK IN
+        PROGRESS.
+
+        Kept as its own call rather than folded into `suggest_jobs`
+        because that one must stay instant: this hits the network, so the
+        UI renders the local rows first and lets these land after.
+        """
+        query = (query or "").strip()
+        if len(query) < 3:
+            return {"ok": True, "rows": []}
+        try:
+            hits = self.search_trello(query) or []
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "rows": []}
+        rows = [{
+            "name":    h.get("name") or "",
+            "board":   h.get("board") or "",
+            "lane":    h.get("lane") or "",
+            "card_id": h.get("card_id") or "",
+        } for h in hits if (h.get("name") or "").strip()]
+        return {"ok": True, "rows": rows[:max(1, int(limit or 6))]}
+
     def search_trello(self, query: str, boards: list | None = None) -> list[dict]:
         """Trello card search by name, LIVE work first.
 

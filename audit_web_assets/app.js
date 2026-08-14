@@ -2991,6 +2991,55 @@ async function showSuggestions(q) {
 
   const rows = (res && res.ok && res.rows) || [];
   renderSuggestions(q, rows);
+  // Then let Trello catch up. suggest_jobs is a pure DB read and only
+  // knows jobs we've already recorded, but work is STARTED on the board —
+  // searching "Bell Mountain" showed nothing while three cards carried
+  // the name, one live on WORK IN PROGRESS. Fired after the local rows
+  // are on screen so the network never delays the instant answer.
+  appendTrelloSuggestions(q, seq);
+}
+
+// Trello rows land in the SAME dropdown, appended under a divider, so
+// arrow-key nav keeps working across both groups (it re-queries
+// .suggest-row). Guarded by suggestSeq: a slow reply for a query you've
+// already typed past must not paint over the current one.
+async function appendTrelloSuggestions(q, seq) {
+  let res = null;
+  try {
+    res = await pywebview.api.suggest_trello(q, 6);
+  } catch (ex) {
+    return;                       // offline / rate-limited — local stands
+  }
+  if (seq !== state.suggestSeq) return;
+  const rows = (res && res.ok && res.rows) || [];
+  if (!rows.length) return;
+  const el = $("#suggest-box");
+  if (!el) return;                // dropdown closed while we waited
+  // Don't repeat a job the local index already offered.
+  const have = new Set([...el.querySelectorAll(".suggest-name")]
+    .map((n) => (n.textContent || "").trim().toLowerCase()));
+  const fresh = rows.filter((r) =>
+    !have.has((r.name || "").trim().toLowerCase()));
+  if (!fresh.length) return;
+  const head = document.createElement("div");
+  head.className = "suggest-group";
+  head.textContent = "On Trello";
+  el.appendChild(head);
+  fresh.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = "suggest-row";
+    row.tabIndex = 0;
+    const where = [r.board, r.lane].filter(Boolean).join(" · ");
+    row.innerHTML = `<span>🎴</span>`
+      + `<span class="suggest-name">${escapeHtml(r.name)}</span>`
+      + (where ? `<span class="suggest-why">${escapeHtml(where)}</span>` : "");
+    const go = () => { hideSuggestions(); runOneoffFromSearch(r.name, true); };
+    row.addEventListener("click", go);
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); go(); }
+    });
+    el.appendChild(row);
+  });
 }
 
 // Create (or reuse) the dropdown under the search box. Reused rather than

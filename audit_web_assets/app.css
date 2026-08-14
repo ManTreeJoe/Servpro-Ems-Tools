@@ -958,6 +958,16 @@ body { display: flex; flex-direction: column; }
   padding: 10px 11px; font-size: 12px; color: var(--text-muted);
   display: flex; align-items: center; gap: 10px; justify-content: space-between;
 }
+/* Divider above the Trello hits. Those arrive AFTER the local rows — the
+   DB read is instant, the card search is a network round trip — so the
+   header is what stops them reading as the local list changing under you
+   when they land. */
+.suggest-group {
+  padding: 5px 11px 3px; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim); border-top: 1px solid var(--border);
+  margin-top: 3px;
+}
 
 /* brand hidden — extra topbar space */
 .brand, .brand-mark, .brand-name, .brand-tag { display: none !important; }
