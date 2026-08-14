@@ -3033,7 +3033,22 @@ async function appendTrelloSuggestions(q, seq) {
     row.innerHTML = `<span>🎴</span>`
       + `<span class="suggest-name">${escapeHtml(r.name)}</span>`
       + (where ? `<span class="suggest-why">${escapeHtml(where)}</span>` : "");
-    const go = () => { hideSuggestions(); runOneoffFromSearch(r.name, true); };
+    // Picking a card IS choosing the card for the job — pin it before the
+    // audit, the same order the deep picker uses. Without this the audit
+    // ran against the name only and the card you just chose was thrown
+    // away, so the job came back with no Trello pin at all.
+    const go = async () => {
+      hideSuggestions();
+      if (r.card_id) {
+        try {
+          const p = await pywebview.api.pin_trello(r.name, r.card_id);
+          if (!p?.ok) setStatus(`Pin failed: ${p?.error || "?"}`, "warn");
+        } catch (ex) {
+          setStatus(`Pin failed: ${ex}`, "warn");
+        }
+      }
+      runOneoffFromSearch(r.name, true);
+    };
     row.addEventListener("click", go);
     row.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); go(); }

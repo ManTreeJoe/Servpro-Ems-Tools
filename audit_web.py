@@ -7363,10 +7363,16 @@ class Api(JobSettingsApi, CompanyCamApi):
             persistence.set_trello_card_id(client, card_id)
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
-        for r in self._last_rows:
-            if r.get("client") == client:
-                r["trello_card_id"] = card_id
-                break
+        # Both lists, not just the daily run: a job pulled up through
+        # Search lives in _oneoff_rows, so updating _last_rows alone left
+        # the detail pane showing "no card" for the card just pinned.
+        # Same trap as the re-audit writeback.
+        for lst in (getattr(self, "_last_rows", None) or [],
+                    getattr(self, "_oneoff_rows", None) or []):
+            for r in lst:
+                if r.get("client") == client:
+                    r["trello_card_id"] = card_id
+                    break
         return {"ok": True, "card_id": card_id}
 
     def unpin_trello(self, client: str) -> dict:

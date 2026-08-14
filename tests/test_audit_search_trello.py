@@ -197,3 +197,44 @@ def test_late_trello_results_cannot_paint_over_a_newer_query():
     body = app[app.index("async function appendTrelloSuggestions"):]
     body = body[:body.index("\n}")]
     assert "seq !== state.suggestSeq" in body
+
+
+# ── picking a card must PIN it ───────────────────────────────────────
+def test_pin_trello_updates_a_one_off_row_too(monkeypatch):
+    """A job found through Search lives in _oneoff_rows. Updating only
+    _last_rows left the detail pane showing "no card" for the card just
+    pinned — the same trap as the re-audit writeback."""
+    a = audit_web.Api.__new__(audit_web.Api)
+    a._last_rows = []
+    a._oneoff_rows = [{"client": "Knudsen, Seth", "trello_card_id": ""}]
+    monkeypatch.setattr(audit_web.persistence, "set_trello_card_id",
+                        lambda c, cid: None)
+    assert a.pin_trello("Knudsen, Seth", "card9")["ok"] is True
+    assert a._oneoff_rows[0]["trello_card_id"] == "card9"
+
+
+def test_choosing_a_trello_suggestion_pins_the_card_before_auditing():
+    """Reported: "it didn't pin the trello card that was chosen to it."
+
+    The suggestion carried card_id and the click handler dropped it, so
+    the audit ran on the name alone and the job came back unpinned.
+    Pinning FIRST also means the audit builds the row with the card
+    already attached.
+    """
+    import io
+    import os
+    app = io.open(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "audit_web_assets", "app.js"),
+        encoding="utf-8").read()
+    body = app[app.index("async function appendTrelloSuggestions"):]
+    body = body[:body.index("\n}")]
+    assert "pin_trello" in body, "the chosen card must be pinned"
+    assert body.index("pin_trello") < body.index("runOneoffFromSearch"), \
+        "pin before the audit, so the row is built with the card on it"
+
+
+def test_the_suggestion_carries_a_card_id(api):
+    """Nothing can be pinned without it."""
+    a, hits = api
+    hits.append(_card("Knudsen, Seth"))
+    assert a.suggest_trello("knudsen")["rows"][0]["card_id"] == "c1"
