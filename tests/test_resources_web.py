@@ -156,3 +156,39 @@ def test_the_assets_exist():
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     for f in ("index.html", "app.js", "app.css"):
         assert os.path.isfile(os.path.join(here, "resources_web_assets", f))
+
+
+# ── browsing, not just searching ─────────────────────────────────────
+def test_an_area_lists_its_files_without_a_query(api):
+    """Clicking "Vendors" means "show me what's in Vendors". The panel
+    listed every area and its count and then none of the files in them,
+    because an empty search box was treated as no question at all."""
+    a, base = api
+    ri.rebuild(base)
+    res = a.search("", "", "Forms_Contracts", 50)
+    assert res["ok"] is True
+    assert [r["name"] for r in res["rows"]] == ["Decline Form 28625.pdf"]
+
+
+def test_a_type_filter_alone_is_also_a_question(api):
+    a, base = api
+    ri.rebuild(base)
+    assert a.search("", "pdf", "", 50)["count"] >= 1
+
+
+def test_no_query_no_area_no_type_returns_nothing(api):
+    """Listing 49,602 files answers nothing — the UI prompts instead."""
+    a, base = api
+    ri.rebuild(base)
+    assert a.search("", "", "", 50)["count"] == 0
+
+
+def test_the_panel_does_not_bail_on_an_empty_box(api):
+    """Guards the regression directly: the early return has to consider
+    the area and the type, not just the query."""
+    import io
+    import os
+    js = io.open(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "resources_web_assets", "app.js"),
+        encoding="utf-8").read()
+    assert "!q && !state.area && !ext" in js

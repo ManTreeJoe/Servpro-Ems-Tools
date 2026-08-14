@@ -75,9 +75,9 @@ async function loadAreas() {
 
 function render(rows, q) {
   if (!rows.length) {
-    $("#rows").innerHTML =
-      `<div class="hint">Nothing matches “${esc(q)}”${
-        state.area ? ` in ${esc(state.area)}` : ""}.</div>`;
+    $("#rows").innerHTML = `<div class="hint">${
+      q ? `Nothing matches “${esc(q)}”` : "Nothing here"}${
+      state.area ? ` in ${esc(state.area)}` : ""}.</div>`;
     return;
   }
   $("#rows").innerHTML = rows.map((r, i) => `
@@ -127,14 +127,20 @@ function render(rows, q) {
 async function run() {
   const q = ($("#q").value || "").trim();
   const ext = $("#ext").value || "";
-  if (!q) {
-    $("#rows").innerHTML = "";
+  // An AREA (or a type) is a query in its own right — clicking "Vendors"
+  // means "show me what's in Vendors". Bailing out whenever the search
+  // box was empty is what made the panel show every area and its count
+  // and then none of the files in them.
+  if (!q && !state.area && !ext) {
+    $("#rows").innerHTML =
+      `<div class="hint">Pick an area on the left, or search for a `
+      + `file — forms, COIs, vendors, templates.</div>`;
     loadAreas();
     return;
   }
   let res;
   try {
-    res = await pywebview.api.search(q, ext, state.area, 200);
+    res = await pywebview.api.search(q, ext, state.area, 300);
   } catch (ex) {
     setStatus(String(ex), "error");
     return;
@@ -145,9 +151,13 @@ async function run() {
   }
   state.rows = res.rows || [];
   render(state.rows, q);
-  $("#hint").innerHTML =
-    `${res.count} match${res.count === 1 ? "" : "es"} for “${esc(q)}”`
-    + (state.area ? ` in <b>${esc(state.area)}</b>` : "");
+  const what = q ? `${res.count} match${res.count === 1 ? "" : "es"} for “${esc(q)}”`
+                 : `${res.count} file${res.count === 1 ? "" : "s"}`;
+  $("#hint").innerHTML = what
+    + (state.area ? ` in <b>${esc(state.area)}</b>` : "")
+    + (ext ? ` · ${esc(ext).toUpperCase()}` : "")
+    + (res.count >= 300 ? ` <span class="muted">(showing the newest 300 —
+       narrow it with a search)</span>` : "");
 }
 
 // The rebuild is polled, not awaited: 47 seconds of a blocked window is
