@@ -448,3 +448,51 @@ def test_every_loader_got_the_cache_bust():
         html = io.open(idx, encoding="utf-8", errors="ignore").read()
         vs.update(re.findall(r"audit_detail\.js\?v=([A-Za-z0-9]+)", html))
     assert len(vs) <= 1, f"audit_detail.js loaded at mixed versions: {vs}"
+
+
+# ── reading the thread at a glance ───────────────────────────────────
+def test_the_author_is_not_muted_with_the_timestamp(detail_js):
+    """"Hard to distinguish between users." The name and the time were
+    one muted run, so nothing in the row said who spoke."""
+    assert ".cmt-name{" in detail_js and "font-weight:700" in detail_js
+    assert '<span class="cmt-name">' in detail_js
+    assert '<span class="cmt-when">' in detail_js
+
+
+def test_each_message_gets_its_own_bubble(detail_js):
+    """Messages separated only by a hairline read as one long block."""
+    assert ".cmt-bubble{" in detail_js
+    assert '<div class="cmt-bubble">' in detail_js
+
+
+def test_mentions_are_styled_apart_from_the_author(detail_js):
+    """A tagged person is not the person speaking — undecorated, an
+    @name in the body looked exactly like the author line above it."""
+    assert ".cmt-at{" in detail_js
+    body = detail_js[detail_js.index("function _mentions"):]
+    body = body[:body.index("\n  }")]
+    assert "cmt-at" in body
+
+
+def test_a_mention_must_start_a_word(detail_js):
+    """These comments are mostly pasted email threads, so
+    "aaron@servpro10100.com" must not have its domain chipped."""
+    body = detail_js[detail_js.index("function _mentions"):]
+    body = body[:body.index("\n  }")]
+    assert r"[\s(\[,;:]" in body, "the @ needs a boundary before it"
+
+
+def test_mentions_skip_anchor_text(detail_js):
+    """A URL can carry an @ in its visible text; chipping it reads as a
+    person tagged inside a link."""
+    body = detail_js[detail_js.index("function _mentions"):]
+    body = body[:body.index("\n  }")]
+    assert "<a" in body and "split" in body
+
+
+def test_decoration_never_touches_markup(detail_js):
+    """Mentions and highlights are applied to text BETWEEN tags — inside
+    an href they would corrupt the link."""
+    body = detail_js[detail_js.index("function _inTextNodes"):]
+    body = body[:body.index("\n  }")]
+    assert "(^|>)([^<]+)" in body

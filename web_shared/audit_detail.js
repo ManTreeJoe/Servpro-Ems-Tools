@@ -3250,16 +3250,28 @@
       ".cmt-sub{font-size:11px;color:var(--text-muted,#999);font-weight:400;}" +
       ".cmt-actions{display:flex;gap:4px;flex:0 0 auto;}" +
       ".cmt-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:10px 12px;}" +
-      ".cmt-item{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border,#2b2b2b);}" +
-      ".cmt-item:last-child{border-bottom:0;}" +
-      ".cmt-av{flex:0 0 auto;width:26px;height:26px;border-radius:50%;" +
-      "display:flex;align-items:center;justify-content:center;font-size:10px;" +
-      "font-weight:700;color:#fff;margin-top:2px;}" +
+      // Gap between messages instead of a hairline: separation is what
+      // makes a thread scannable, and a 1px rule reads as one block.
+      ".cmt-item{display:flex;gap:9px;padding:0 0 14px;}" +
+      ".cmt-av{flex:0 0 auto;width:28px;height:28px;border-radius:50%;" +
+      "display:flex;align-items:center;justify-content:center;font-size:10.5px;" +
+      "font-weight:700;color:#fff;margin-top:1px;letter-spacing:.02em;}" +
       ".cmt-main{flex:1 1 auto;min-width:0;}" +
-      ".cmt-who{font-size:11px;color:var(--text-muted,#999);margin-bottom:2px;}" +
+      ".cmt-who{display:flex;align-items:baseline;gap:7px;margin-bottom:4px;" +
+      "flex-wrap:wrap;}" +
+      // The NAME is what the eye looks for, so it gets the readable
+      // colour and the weight; the time steps back out of the way.
+      ".cmt-name{font-size:12px;font-weight:700;color:var(--text,#eee);}" +
+      ".cmt-when{font-size:10.5px;color:var(--text-dim,#888);}" +
+      ".cmt-bubble{background:var(--surface,#262626);border:1px solid var(--border,#333);" +
+      "border-radius:8px;padding:8px 10px;}" +
       ".cmt-txt{font-size:12px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;" +
       "overflow-wrap:anywhere;}" +
       ".cmt-txt a{color:var(--accent,#4aa3ff);}" +
+      // A tagged person is not the person speaking. Undecorated, an
+      // @name in the body looked exactly like the author line above it.
+      ".cmt-at{background:var(--chip-bg,#33405a);color:var(--accent,#7db9ff);" +
+      "border-radius:4px;padding:0 4px;font-weight:600;white-space:nowrap;}" +
       // The drag handle sits ON the left border, hence the negative inset.
       ".cmt-grip{position:absolute;left:-3px;top:0;width:6px;height:100%;" +
       "cursor:col-resize;z-index:1;}" +
@@ -3540,10 +3552,15 @@
       const head = `
         <div class="cmt-av" style="background:${_avatarColor(c.author || c.initials)};"
              title="${escA(ctx, c.author || "")}">${esc(ctx, c.initials || "?")}</div>`;
+      // Author and timestamp are separate elements, not one muted run:
+      // the NAME is what you scan for, so it gets the readable colour
+      // and the weight, and the time steps back.
       const meta = `
-        <div class="cmt-who">${esc(ctx, c.author || "Someone")}${
-          c.when ? ` · ${esc(ctx, _relTime(c.when))}` : ""}${
-          c.date ? ` · ${esc(ctx, c.date)}` : ""}</div>`;
+        <div class="cmt-who">
+          <span class="cmt-name">${esc(ctx, c.author || "Someone")}</span>
+          <span class="cmt-when">${esc(ctx, _relTime(c.when))}${
+            c.date ? ` · ${esc(ctx, c.date)}` : ""}</span>
+        </div>`;
       if (c.kind === "attachment") {
         const size = c.bytes ? ` · ${Math.round(c.bytes / 1024)} KB` : "";
         // The <img> has no src: Trello 401s without an OAuth header, so
@@ -3558,18 +3575,25 @@
             ${head}
             <div class="cmt-main">
               ${meta}
-              <div class="cmt-file">📎 ${esc(ctx, c.name || "attachment")}${
-                esc(ctx, size)}</div>
-              ${thumb}
+              <div class="cmt-bubble">
+                <div class="cmt-file">📎 ${esc(ctx, c.name || "attachment")}${
+                  esc(ctx, size)}</div>
+                ${thumb}
+              </div>
             </div>
           </div>`;
       }
+      // The body sits in its own bubble, the way a comment does on the
+      // card. Runs of text separated only by a hairline all read as one
+      // long block, which is what "hard to tell the messages apart" was.
       return `
         <div class="cmt-item">
           ${head}
           <div class="cmt-main">
             ${meta}
-            <div class="cmt-txt">${_hilite(ctx, c.text || "", q)}</div>
+            <div class="cmt-bubble">
+              <div class="cmt-txt">${_hilite(ctx, c.text || "", q)}</div>
+            </div>
           </div>
         </div>`;
     }).join("");
@@ -3578,15 +3602,38 @@
 
   // Escape, then linkify, then mark the search term — in that order, so
   // neither the comment nor the query can inject markup.
+  // Apply `re` to the TEXT between tags only, never inside one. A
+  // replacement landing in an href would corrupt the link, and marking
+  // up a class name would corrupt the markup.
+  function _inTextNodes(html, re, wrap) {
+    return String(html).replace(/(^|>)([^<]+)/g, (m, lead, text) =>
+      lead + text.replace(re, wrap));
+  }
+
+  // @nathan_bupte is a PERSON being tagged, not the person speaking.
+  // Undecorated it sat in the body looking exactly like the author line
+  // above it, which is what made a thread hard to read at a glance.
+  function _mentions(html) {
+    // Whole anchors are stepped over: a URL like ".../c/aB1?x=@y" has an
+    // @ in its visible TEXT, and chipping that reads as a person being
+    // tagged inside a link.
+    return String(html).split(/(<a\b[^>]*>[\s\S]*?<\/a>)/gi)
+      .map((part) => /^<a\b/i.test(part) ? part
+        // The @ must START a word. These comments are mostly pasted
+        // email threads, and "aaron@servpro10100.com" is an address, not
+        // a tag — chipping its domain was worse than not chipping at all.
+        : _inTextNodes(part, /(^|[\s(\[,;:])@([A-Za-z0-9._-]+)/g,
+                       (m, lead, name) =>
+                         `${lead}<span class="cmt-at">@${name}</span>`))
+      .join("");
+  }
+
   function _hilite(ctx, text, q) {
-    const html = _linkify(ctx, text);
+    const html = _mentions(_linkify(ctx, text));
     if (!q) return html;
     const needle = esc(ctx, q).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Never inside a tag/attribute — only in the text between them.
-    return html.replace(new RegExp(`(>[^<]*)(${needle})`, "gi"),
-                        (m, pre, hit) => `${pre}<mark>${hit}</mark>`)
-               .replace(new RegExp(`^([^<]*)(${needle})`, "i"),
-                        (m, pre, hit) => `${pre}<mark>${hit}</mark>`);
+    return _inTextNodes(html, new RegExp(needle, "gi"),
+                        (hit) => `<mark>${hit}</mark>`);
   }
 
   // Thumbnails load as they scroll into view. A photo-heavy card can
