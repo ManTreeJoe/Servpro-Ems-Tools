@@ -2271,7 +2271,9 @@ class Api(JobSettingsApi, CompanyCamApi):
             import trello_client as tc
             # card_xa_link needs the card DICT (it parses .desc) — fetch it,
             # don't pass the bare id (that silently returned "" before).
-            card = tc.get_card(card_id) or {}
+            # card_xa_link reads the desc and nothing else — see
+            # get_card_lite for what the full fetch costs.
+            card = tc.get_card_lite(card_id) or {}
             url = tc.card_xa_link(card) if hasattr(tc, "card_xa_link") else ""
             if url:
                 dept_browser.open_url(url)
@@ -2292,7 +2294,7 @@ class Api(JobSettingsApi, CompanyCamApi):
             card_id = persistence.get_trello_card_id(client) or ""
             if not card_id:
                 return False
-            card = tc.get_card(card_id) or {}
+            card = tc.get_card_lite(card_id) or {}      # desc-only reader
             url = (tc.card_companycam_link(card)
                    if hasattr(tc, "card_companycam_link") else "")
             if url:
@@ -2314,7 +2316,7 @@ class Api(JobSettingsApi, CompanyCamApi):
             card_id = persistence.get_trello_card_id(client) or ""
             if not card_id:
                 return {"ok": False, "error": "no pinned Trello card"}
-            card = tc.get_card(card_id) or {}
+            card = tc.get_card_lite(card_id) or {}      # desc-only reader
             fields = tc.parse_card_desc(card.get("desc") or "") or {}
             claim = ((fields.get("INSURANCE INFORMATION") or {})
                      .get("CLAIM NUMBER") or "").strip()

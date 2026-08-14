@@ -245,6 +245,8 @@ def _wire(monkeypatch, desc):
     db = _FakeDB()
     sent = {}
     tc = types.SimpleNamespace(
+        # job_settings reads only the desc, so it uses the lean fetch.
+        get_card_lite=lambda cid, **kw: {"desc": desc},
         get_card=lambda cid, **kw: {"desc": desc},
         update_card_desc=lambda cid, d: (sent.update(desc=d), {"id": cid})[1],
         parse_card_desc=__import__("trello_client").parse_card_desc,
@@ -292,6 +294,7 @@ def test_baseline_is_not_advanced_when_the_push_fails(monkeypatch):
     import sys, types
     db = _FakeDB()
     tc = types.SimpleNamespace(
+        get_card_lite=lambda cid, **kw: {"desc": CARD},
         get_card=lambda cid, **kw: {"desc": CARD},
         update_card_desc=lambda cid, d: (_ for _ in ()).throw(
             OSError("network down")),

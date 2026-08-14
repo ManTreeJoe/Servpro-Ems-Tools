@@ -98,7 +98,13 @@ class Api:
             out = []
             for cid in ids:
                 try:
-                    card = tc.get_card(cid)
+                    # Once PER pinned card, so the full fetch was charged
+                    # N times over — 50 activity actions plus every
+                    # checklist, attachment and member — to show a name,
+                    # a lane and an archived flag.
+                    card = tc.get_card_lite(
+                        cid,
+                        fields="name,idBoard,idList,closed,dateLastActivity")
                 except Exception:
                     continue
                 if not card:

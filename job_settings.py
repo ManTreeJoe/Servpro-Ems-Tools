@@ -417,7 +417,8 @@ def load(canon_key, child_name=""):
 
     try:
         import trello_client as tc
-        desc = (tc.get_card(card_id) or {}).get("desc") or ""
+        # Only the desc is read — get_card_lite, not the whole card.
+        desc = (tc.get_card_lite(card_id) or {}).get("desc") or ""
     except Exception as ex:
         # Offline or Trello down: show what we have rather than nothing.
         out["error"] = f"couldn't reach Trello ({ex}); showing local values"
@@ -502,7 +503,7 @@ def save(canon_key, values, child_name="", card_desc=""):
     if card_id:
         try:
             import trello_client as tc
-            desc = card_desc or (tc.get_card(card_id) or {}).get("desc") or ""
+            desc = card_desc or (tc.get_card_lite(card_id) or {}).get("desc") or ""
             on_card = from_card(desc)
             # Diff against what the CARD holds, NOT against our stored copy.
             #

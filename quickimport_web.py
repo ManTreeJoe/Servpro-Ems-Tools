@@ -368,7 +368,7 @@ class Api:
             cid = persistence.get_trello_card_id(client) or ""
             if not cid:
                 return {"ok": True, "email": ""}
-            card = tc.get_card(cid) or {}
+            card = tc.get_card_lite(cid) or {}      # desc-only reader
             fields = tc.parse_card_desc(card.get("desc")) or {}
             cust = fields.get("CUSTOMER INFORMATION", {}) or {}
             ins = fields.get("INSURANCE INFORMATION", {}) or {}

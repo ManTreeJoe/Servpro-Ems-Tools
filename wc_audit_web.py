@@ -482,7 +482,8 @@ class Api:
             _per.set_trello_card_id(customer, card_id)
             # Fetch full card details so we can update the row in
             # memory and re-classify without a full rebuild.
-            card = tc.get_card(card_id) or {}
+            card = tc.get_card_lite(
+                card_id, fields="name,desc,idBoard,idList,shortUrl") or {}
             bid = card.get("idBoard") or ""
             lid = card.get("idList")  or ""
             # Reuse the search method's name caches.

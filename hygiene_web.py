@@ -666,7 +666,7 @@ class Api:
             url = ""
             if hasattr(tc, "card_xa_link"):
                 # card_xa_link parses the card DICT's desc — fetch it.
-                card = tc.get_card(card_id) or {}
+                card = tc.get_card_lite(card_id) or {}
                 url = tc.card_xa_link(card) or ""
             if url:
                 webbrowser.open(url)

@@ -46,6 +46,8 @@ def trello(monkeypatch):
         return True
 
     import trello_client as tc
+    # job_settings reads only the desc, so it takes the lean path.
+    monkeypatch.setattr(tc, "get_card_lite", _get_card)
     monkeypatch.setattr(tc, "get_card", _get_card)
     monkeypatch.setattr(tc, "update_card_desc", _update)
     return state
