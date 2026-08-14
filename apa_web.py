@@ -937,7 +937,15 @@ class Api:
         if card_id:
             try:
                 import trello_client as tc
-                card = tc.get_card(card_id) or {}
+                # Only name / desc / idBoard / idList are read below, so
+                # this must not drag the card's whole contents across.
+                # `get_card` defaults to actions_limit=50 and also pulls
+                # every checklist, attachment and member: measured on 12
+                # live cards that was 754ms and 76.8KB against 253ms and
+                # 1.6KB here — 48x the payload for the same four fields,
+                # because the comments on these cards are pasted email
+                # threads. This is the card-load the topbar search waits on.
+                card = tc.get_card_lite(card_id) or {}
                 idBoard = card.get("idBoard") or ""
                 # Card name overrides the hint when present
                 cn = (card.get("name") or "").strip()
@@ -960,6 +968,15 @@ class Api:
                     ins = fields.get("INSURANCE INFORMATION") or {}
                     carrier = (ins.get("INSURANCE COMPANY") or "").strip()
                     claim   = (ins.get("CLAIM NUMBER") or "").strip()
+                    # Same fold as new-loss intake: cards say "ACE" where
+                    # this office means AAA, and the raw value goes into
+                    # the APA title. Unrecognised carriers pass through.
+                    if carrier:
+                        try:
+                            import carriers as _carr
+                            carrier = _carr.normalize(carrier) or carrier
+                        except Exception:
+                            pass
                     # Insured comes from CUSTOMER INFORMATION → Customer
                     # Name, NOT the card name. Card names often carry a
                     # trailing claim number / date ("Bromme, Ira - 12345")
