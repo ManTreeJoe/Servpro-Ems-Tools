@@ -295,13 +295,6 @@
           <button class="action-btn" data-action="reaudit">↻ Re-audit</button>
         </div>
       </footer>
-      ${hasPin ? `<section class="detail-section" id="trello-info">
-        <h3>🎴 Trello <span class="muted" id="trello-info-status">loading…</span>
-          <button class="action-btn" data-action="comments"
-                  style="float:right;margin-top:-2px;"
-                  title="Open the card's full comment thread in a drawer on the right">💬 Comments</button></h3>
-        <div id="trello-info-body"></div>
-      </section>` : ""}
       ${hasPin ? `<section class="detail-section" id="all-cl">
         <h3>✅ Checklists <span class="muted" id="all-cl-status">loading…</span>
           <button class="action-btn" data-action="import-notes"
@@ -1228,14 +1221,16 @@
   }
 
   async function loadTrelloInfo(row, ctx) {
+    // The 🎴 Trello block is gone from the card — the comments drawer
+    // covers it and the rest was duplicated by the chips. This call
+    // stays because it is ALSO what fills the footer's 📧 Copy email
+    // button; dropping it silently disabled that.
     const statusEl = document.getElementById("trello-info-status");
     const bodyEl = document.getElementById("trello-info-body");
-    if (!bodyEl) return;
     let r;
     try { r = await pywebview.api.trello_enrichment(row.client, row.trello_card_id || ""); }
     catch (e) { if (statusEl) statusEl.textContent = "error"; return; }
-    const still = document.getElementById("trello-info-body");
-    if (!still || still !== bodyEl) return;
+    if (bodyEl && document.getElementById("trello-info-body") !== bodyEl) return;
     if (!r || !r.ok) { if (statusEl) statusEl.textContent = r && r.error ? "error" : ""; return; }
     if (!r.has_card) { const s = document.getElementById("trello-info"); if (s) s.remove(); return; }
     if (statusEl) statusEl.textContent = "";
@@ -1273,7 +1268,7 @@
       </details>`;
     }
     if (!html) html = '<div class="muted" style="font-size:11px;">Card pinned, but no extra info filled in yet.</div>';
-    bodyEl.innerHTML = html;
+    if (bodyEl) bodyEl.innerHTML = html;
     // Email now lives on the footer's 📧 Copy email button (next to the
     // other copy buttons). Enable it + stash the address once known.
     const email = r.customer_email || r.adjuster_email || "";
@@ -1282,7 +1277,7 @@
       emailBtn.disabled = false;
       emailBtn.dataset.email = email;
     }
-    bodyEl.querySelectorAll(".tr-email").forEach((a) =>
+    (bodyEl ? [...bodyEl.querySelectorAll(".tr-email")] : []).forEach((a) =>
       a.addEventListener("click", async (e) => {
         e.preventDefault();
         const ok = await copyText(ctx, a.dataset.email);
@@ -3320,6 +3315,11 @@
       ".cmt-grip{position:absolute;left:-3px;top:0;width:6px;height:100%;" +
       "cursor:col-resize;z-index:1;}" +
       ".cmt-grip:hover{background:var(--accent,#4aa3ff);opacity:.35;}" +
+      // The handle hangs OFF the drawer's left edge, so when the
+      // drawer is parked off-screen this is the part still showing —
+      // tab and panel are one object, not a button that summons one.
+      ".cmt-tab{position:absolute;left:-30px;top:90px;width:30px;padding:14px 0;border:1px solid var(--border,#333);border-right:0;border-radius:8px 0 0 8px;background:var(--surface,#262626);color:var(--text,#eee);font:inherit;font-size:11.5px;font-weight:700;letter-spacing:.04em;cursor:pointer;writing-mode:vertical-rl;text-orientation:mixed;box-shadow:-3px 0 8px rgba(0,0,0,.28);}" +
+      ".cmt-tab:hover{background:var(--surface-2,#2e2e2e);color:var(--accent,#4aa3ff);}" +
       ".cmt-empty{color:var(--text-muted,#999);font-size:12px;padding:12px 0;}" +
       // search
       ".cmt-filter{display:flex;align-items:center;gap:8px;padding:6px 12px;" +
@@ -3356,6 +3356,8 @@
     el.className = "cmt-drawer";
     el.style.width = _cmtWidth() + "px";
     el.innerHTML =
+      '<button class="cmt-tab" id="cmt-tab" type="button" ' +
+      'title="Comment thread for this job">Open Comments</button>' +
       '<div class="cmt-grip" id="cmt-grip" title="Drag to resize"></div>' +
       '<header class="cmt-head">' +
       '  <div class="cmt-title" id="cmt-title">Comments</div>' +
@@ -3380,6 +3382,11 @@
     document.body.appendChild(el);
 
     el.querySelector("#cmt-close").addEventListener("click", closeCommentsDrawer);
+    el.querySelector("#cmt-tab").addEventListener("click", () => {
+      const row = el._row, ctx = el._ctx;
+      if (commentsDrawerIsOpen()) closeCommentsDrawer();
+      else if (row) openCommentsDrawer(row, ctx);
+    });
 
     // Search filters what is already loaded — no round trip per keystroke.
     el.querySelector("#cmt-q").addEventListener("input", () => renderEntries(el));
@@ -3463,6 +3470,7 @@
     const el = document.getElementById("cmt-drawer");
     if (el) el.classList.remove("cmt-open");
     _lsSet(CMT_OPEN_KEY, "0");
+    _setTabLabel(false);
   }
 
   function openCommentsDrawer(row, ctx) {
@@ -3470,6 +3478,7 @@
     const el = _ensureCommentsDrawer();
     el.classList.add("cmt-open");
     _lsSet(CMT_OPEN_KEY, "1");
+    _setTabLabel(true);
     loadCommentsInto(row, ctx, false);
   }
 
@@ -3481,15 +3490,25 @@
   // Called on every detail render so the open drawer follows the
   // selection instead of showing the last job's thread.
   function syncCommentsDrawer(row, ctx) {
+    // Build it even when closed: the TAB is part of the drawer, and the
+    // tab is the only way in now that the Trello section is gone.
+    const el = _ensureCommentsDrawer();
+    el._row = row;
+    el._ctx = ctx;
+    // Nothing to read without a card, and a tab that opens an empty
+    // panel is worse than no tab.
+    el.style.display = (row && row.trello_card_id) ? "" : "none";
     if (!commentsDrawerIsOpen()) return;
     if (!row || !row.trello_card_id) {
-      const b = document.getElementById("cmt-body");
-      const t = document.getElementById("cmt-title");
-      if (t) t.textContent = "Comments";
-      if (b) b.innerHTML = '<div class="cmt-empty">No Trello card pinned to this job.</div>';
+      closeCommentsDrawer();
       return;
     }
     openCommentsDrawer(row, ctx);
+  }
+
+  function _setTabLabel(open) {
+    const tab = document.getElementById("cmt-tab");
+    if (tab) tab.textContent = open ? "Close Comments" : "Open Comments";
   }
 
   function _relTime(iso) {

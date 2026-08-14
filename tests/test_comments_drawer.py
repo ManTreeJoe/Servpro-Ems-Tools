@@ -496,3 +496,57 @@ def test_decoration_never_touches_markup(detail_js):
     body = detail_js[detail_js.index("function _inTextNodes"):]
     body = body[:body.index("\n  }")]
     assert "(^|>)([^<]+)" in body
+
+
+# ── the drawer is reached from a tab, not a button in a section ──────
+def test_the_trello_section_is_gone(detail_js):
+    """Removed on request — the drawer covers the comments and the chips
+    already carried the rest."""
+    assert 'id="trello-info"' not in detail_js
+    assert 'data-action="comments"' not in detail_js
+
+
+def test_the_enrichment_call_survived_the_section(detail_js):
+    """It is ALSO what fills the footer's 📧 Copy email button. Deleting
+    the section without keeping this would have silently disabled that
+    button, with nothing on screen to explain why."""
+    body = detail_js[detail_js.index("async function loadTrelloInfo"):]
+    body = body[:body.index("\n  }")]
+    assert "trello_enrichment" in body
+    assert "copy-email-btn" in body
+    assert "if (bodyEl) bodyEl.innerHTML" in body, "must tolerate no body"
+
+
+def test_the_tab_lives_inside_the_drawer(detail_js):
+    """That is what makes it one object: when the drawer is parked
+    off-screen the tab is the part still showing, so opening slides the
+    whole thing in rather than summoning a separate panel."""
+    body = detail_js[detail_js.index("function _ensureCommentsDrawer"):]
+    body = body[:body.index("\n  }")]
+    assert 'id="cmt-tab"' in body
+    assert body.index('cmt-tab') < body.index('cmt-body'), \
+        "the tab is part of the drawer's own markup"
+
+
+def test_the_tab_hangs_off_the_drawers_outer_edge(detail_js):
+    assert ".cmt-tab{position:absolute;left:-30px" in detail_js
+    assert "writing-mode:vertical-rl" in detail_js, "reads as a side tab"
+
+
+def test_the_tab_exists_before_the_drawer_is_opened(detail_js):
+    """It is the only way in now, so it cannot be built on first open."""
+    body = detail_js[detail_js.index("function syncCommentsDrawer"):]
+    body = body[:body.index("\n  }")]
+    assert "_ensureCommentsDrawer()" in body
+    assert body.index("_ensureCommentsDrawer()") < body.index("commentsDrawerIsOpen()")
+
+
+def test_no_tab_when_the_job_has_no_card(detail_js):
+    """A tab that opens an empty panel is worse than no tab."""
+    body = detail_js[detail_js.index("function syncCommentsDrawer"):]
+    body = body[:body.index("\n  }")]
+    assert "trello_card_id" in body and "display" in body
+
+
+def test_the_tab_says_which_way_it_goes(detail_js):
+    assert "Open Comments" in detail_js and "Close Comments" in detail_js
