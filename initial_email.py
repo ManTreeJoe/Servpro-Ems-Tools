@@ -264,8 +264,12 @@ def compose(fields, *, franchise="", supervisor="", greeting="Good Morning,",
 
     services = [s for s in (ex.get("services") or []) if _clean(s)]
     if services:
+        # "...performed due:" — the trailing "due" was a typo carried over
+        # from the handwritten version. What follows is a list of services
+        # ("Asbestos and Lead testing"), not a list of reasons, so "due"
+        # left the sentence pointing at nothing.
         L.append("Please be advised, on this claim the following services "
-                 "are going to be performed due:")
+                 "are going to be performed:")
         L.append("")
         for s in services:
             L.append(_clean(s))

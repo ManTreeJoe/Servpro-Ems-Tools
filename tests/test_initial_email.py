@@ -312,3 +312,30 @@ def test_sla_line_only_appears_with_packout():
     txt = ie.compose({"Packout Required": "/ No"},
                      sla_text="1.5 hours per SLA agreement will be surpassed")
     assert "1.5 hours" not in txt
+
+
+# ── wording settled 2026-08-13 ───────────────────────────────────────
+def _services(*items):
+    import initial_email as ie
+    return ie.compose({"Date": "8/13/26"}, extras={"services": list(items)})
+
+
+def test_the_services_line_does_not_trail_off_with_due():
+    """"...are going to be performed due:" was a typo carried over from
+    the handwritten version. What follows is a list of SERVICES, not a
+    list of reasons, so "due" left the sentence pointing at nothing."""
+    txt = _services("Asbestos and Lead testing")
+    assert "are going to be performed:" in txt
+    assert "performed due" not in txt
+
+
+def test_the_services_line_only_appears_when_there_are_services():
+    assert "going to be performed" not in _services()
+
+
+def test_the_email_signs_off_bare():
+    """Deliberate: the draft is pasted into Outlook, whose signature
+    block supplies the name and office details. Adding one here would
+    print it twice."""
+    txt = _services("Asbestos and Lead testing")
+    assert txt.rstrip().endswith("Regards,")
