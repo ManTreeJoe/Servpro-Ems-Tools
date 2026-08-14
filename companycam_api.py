@@ -144,6 +144,65 @@ def _shape(proj):
     }
 
 
+def get_project(project_id):
+    """One project by id, shaped. None when it can't be read."""
+    if not project_id:
+        return None
+    try:
+        raw = _call(f"/projects/{project_id}")
+    except Exception:
+        return None
+    if not isinstance(raw, dict) or not raw.get("id"):
+        return None
+    return _shape(raw)
+
+
+def _addr_key(one_line):
+    """Comparison form for a one-line address."""
+    return re.sub(r"[^a-z0-9]+", " ", str(one_line or "").lower()).strip()
+
+
+def siblings_at_address(address, exclude_id="", limit=6):
+    """Other projects at the SAME address as `exclude_id`.
+
+    One job can end up with two CompanyCam projects under different
+    names, and the photos only exist on one of them. Live example: a job
+    carried "Menifee Union School District (Bell Mountain ) - 8/14" (0
+    photos) and "Bell Mountain Middle School" (29 photos), both at
+    28525 La Piedra Rd. The name match was exact and correct — it just
+    landed on the empty one, and the pull honestly reported no photos for
+    a job that plainly had them.
+
+    Address is the right signal here: two projects at one address are the
+    same physical loss whatever they are called. CompanyCam's project
+    query matches addresses as well as names, so the street line finds
+    them in ONE call rather than listing every project.
+
+    Returns shaped projects, never the excluded one.
+    """
+    want = _addr_key(address)
+    if not want:
+        return []
+    street = str(address).split(",")[0].strip()
+    if not street:
+        return []
+    try:
+        raw = list_projects(street) or []
+    except Exception:
+        return []
+    out = []
+    for p in raw:
+        sh = _shape(p)
+        if sh["id"] == str(exclude_id or ""):
+            continue
+        if _addr_key(sh["address"]) != want:
+            continue
+        out.append(sh)
+        if len(out) >= max(1, int(limit or 6)):
+            break
+    return out
+
+
 # ── Name matching ───────────────────────────────────────────────────────
 
 def _tokens(s):

@@ -775,6 +775,70 @@
     window.addEventListener("companycam:pull-done", onDone);
   }
 
+  // The matched project is empty but a project at the SAME ADDRESS has
+  // photos. Resolves true (switched), false (keep this one) or null
+  // (cancelled). The photo counts are the whole point — they are the
+  // evidence for which project is really this job.
+  function ccOfferAlternate(row, ctx, pr) {
+    return new Promise((resolve) => {
+      if (!window.openModal) { resolve(false); return; }
+      const alts = pr.alternates || [];
+      const who = tc(ctx, row.display_name || row.client || "");
+      const overlay = window.openModal({
+        title: "📷 No photos on the matched project",
+        sub: `“${esc(ctx, pr.matched_name || who)}” has none — but another `
+           + `project at the same address does. Which one is this job?`,
+        body: `
+          <div id="cc-alt-list">
+            ${alts.map((a, i) => `
+              <button class="action-btn cc-alt" data-i="${i}"
+                      style="display:block;width:100%;text-align:left;margin-bottom:6px;">
+                <b>${esc(ctx, a.name)}</b>
+                <span class="muted"> · ${a.count}${a.approx ? "+" : ""} photo${
+                  a.count === 1 ? "" : "s"}</span>
+                ${a.address ? `<div class="muted" style="font-size:11px;">${
+                  esc(ctx, a.address)}</div>` : ""}
+              </button>`).join("")}
+          </div>
+          <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+            <button class="btn" id="cc-alt-keep">Keep the matched project</button>
+            <button class="btn modal-close">Cancel</button>
+          </div>`,
+      });
+      let done = false;
+      const finish = (v) => {
+        if (done) return;
+        done = true;
+        try { window.closeModal("modal-overlay"); }
+        catch (e) { try { overlay.remove(); } catch (_) {} }
+        resolve(v);
+      };
+      overlay.querySelector(".modal-close")
+        ?.addEventListener("click", () => finish(null));
+      overlay.querySelectorAll(".cc-alt").forEach((b) =>
+        b.addEventListener("click", async () => {
+          const a = alts[+b.dataset.i];
+          if (!a) return;
+          b.disabled = true;
+          try {
+            const res = await pywebview.api.companycam_pin(row.client, a.id);
+            if (res && res.ok === false) {
+              setStatus(ctx, `Couldn't pin: ${res.error || "?"}`, "warn");
+              b.disabled = false;
+              return;
+            }
+            setStatus(ctx, `📷 Using “${a.name}”`, "ok");
+            finish(true);
+          } catch (ex) {
+            setStatus(ctx, `Couldn't pin: ${ex}`, "warn");
+            b.disabled = false;
+          }
+        }));
+      overlay.querySelector("#cc-alt-keep")
+        ?.addEventListener("click", () => finish(false));
+    });
+  }
+
   function ccManualPick(row, ctx, defaultQuery) {
     return new Promise((resolve) => {
       if (!window.openModal) { resolve(null); return; }
@@ -939,6 +1003,21 @@
         try { pr = await pywebview.api.companycam_probe(row.client, cardId); }
         catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
         if (!pr || !pr.ok || !pr.matched) { setStatus(ctx, "Pinned, but couldn't read that project — try the pull again", "warn"); return; }
+      }
+      // Matched a project with NOTHING on it, while another project at the
+      // same address has photos. One job with two CompanyCam projects
+      // under different names is common enough to handle: the name match
+      // was exact and correct, it just landed on the empty one, and
+      // reporting "no photos" for a job that plainly has them is the
+      // wrong answer. Offer the switch; never make it silently.
+      if (!pr.count && (pr.alternates || []).length) {
+        const switched = await ccOfferAlternate(row, ctx, pr);
+        if (switched === null) { setStatus(ctx, "Pull cancelled", "warn"); return; }
+        if (switched) {
+          setStatus(ctx, "📷 Re-checking CompanyCam…", "");
+          try { pr = await pywebview.api.companycam_probe(row.client, cardId); }
+          catch (e) { setStatus(ctx, "CompanyCam check failed: " + e, "error"); return; }
+        }
       }
       // The per-shoot preview is the MAIN path, not a fallback.
       //

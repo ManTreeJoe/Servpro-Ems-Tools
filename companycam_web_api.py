@@ -137,11 +137,56 @@ class CompanyCamApi:
             return {"ok": True, "matched": False, "count": 0, "uploaders": []}
         try:
             pr = cc.probe_new(pid)
-            return {"ok": True, "matched": True, "matched_name": mname,
-                    "count": pr.get("count", 0),
-                    "uploaders": pr.get("uploaders", [])}
+            out = {"ok": True, "matched": True, "matched_name": mname,
+                   "count": pr.get("count", 0),
+                   "project_id": pid,
+                   "uploaders": pr.get("uploaders", [])}
+            if not out["count"]:
+                out["alternates"] = self._cc_alternates(pid)
+            return out
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+
+    def _cc_alternates(self, pid: str) -> list:
+        """Other projects at the same address that DO have photos.
+
+        One job can end up with two CompanyCam projects under different
+        names, and the photos live on only one. Observed on Bell
+        Mountain: "Menifee Union School District (Bell Mountain ) - 8/14"
+        (0 photos) and "Bell Mountain Middle School" (29), both at
+        28525 La Piedra Rd. The name match was exact and correct — it
+        just landed on the empty one, so the pull reported no photos for
+        a job that plainly had them.
+
+        Only consulted when the matched project is EMPTY, so the normal
+        path costs nothing. Suggested, never switched to automatically:
+        which project is right is a judgement about the job, and the
+        photos are the evidence to judge on.
+        """
+        try:
+            import companycam_api as cc
+            proj = cc.get_project(pid)
+            if not proj or not proj.get("address"):
+                return []
+            out = []
+            for sib in cc.siblings_at_address(proj["address"], pid, limit=4):
+                try:
+                    # Two pages is plenty to say "this one has the photos"
+                    # without walking a huge project to count exactly.
+                    photos = cc.list_project_photos(
+                        sib["id"], per_page=100, max_pages=2) or []
+                except Exception:
+                    continue
+                if not photos:
+                    continue
+                sib = dict(sib)
+                sib["count"] = len(photos)
+                sib["approx"] = len(photos) >= 200
+                out.append(sib)
+            out.sort(key=lambda s: -s["count"])
+            return out
+        except Exception:
+            return []
 
     def _cc_pics_dir(self, client: str) -> str:
         """The job's PICS folder, or "" when the job folder isn't resolved.
