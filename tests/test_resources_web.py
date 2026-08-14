@@ -24,7 +24,11 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(ri, "DB_PATH", str(tmp_path / "resources.db"))
     monkeypatch.setattr(ri, "default_root", lambda: str(base))
     a = resources_web.Api()
-    return a, str(base)
+    yield a, str(base)
+    # A rebuild thread that outlives the test loses these monkeypatched
+    # paths and writes to the LIVE index — it did, and left it with one
+    # row. Nothing may escape the fixture.
+    a.wait_for_rebuild(60)
 
 
 # ── reading ──────────────────────────────────────────────────────────
@@ -104,6 +108,17 @@ def test_rebuild_returns_immediately(api):
     a, base = api
     res = a.rebuild()
     assert res["ok"] is True and res["started"] is True
+    a.wait_for_rebuild(60)          # never leave it running past the test
+
+
+def test_the_root_is_resolved_before_the_thread_starts():
+    """The thread must not re-read configuration later. One that did
+    outlived its test, lost the redirected paths and overwrote the live
+    index with a single row."""
+    import inspect
+    src = inspect.getsource(resources_web.Api.rebuild)
+    assert "base = ri.default_root()" in src
+    assert "ri.rebuild(base" in src
 
 
 def test_rebuild_progress_reports_the_result(api):

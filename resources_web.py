@@ -66,17 +66,34 @@ class Api:
         self._building = True
         self._progress = {"done": 0, "total": 0, "files": 0}
         self._result = None
+        # Resolve the root HERE, not inside the thread. A thread that
+        # reads its configuration later reads whatever the configuration
+        # has become by then — which is how a test's rebuild outlived the
+        # test, lost its redirected paths, and overwrote the live index
+        # with one row.
+        base = ri.default_root()
 
         def _run():
             try:
-                self._result = ri.rebuild(progress_cb=self._on_progress)
+                self._result = ri.rebuild(base, progress_cb=self._on_progress)
             except Exception as ex:
                 self._result = {"ok": False, "error": str(ex)}
             finally:
                 self._building = False
 
-        threading.Thread(target=_run, daemon=True).start()
+        self._thread = threading.Thread(target=_run, daemon=True)
+        self._thread.start()
         return {"ok": True, "started": True}
+
+    def wait_for_rebuild(self, timeout: float = 300) -> bool:
+        """Block until a running rebuild finishes. For tests and shutdown
+        — a rebuild that outlives its caller writes wherever the process
+        happens to point by then."""
+        t = getattr(self, "_thread", None)
+        if t is None:
+            return True
+        t.join(timeout)
+        return not t.is_alive()
 
     def _on_progress(self, d):
         self._progress = d
