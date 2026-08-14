@@ -2238,14 +2238,6 @@ function campusShortName(r) {
   return name;
 }
 
-// Carrier chip lives in web_shared/audit_detail.js so the list chip
-// and the detail chip cannot drift apart, and Snapshot/Quick Import
-// get the same colours without a second copy of the table.
-function carrierChipHtml(carrier) {
-  return (window.AuditDetail && window.AuditDetail.carrierChip)
-    ? window.AuditDetail.carrierChip(carrier, "mini-chip") : "";
-}
-
 function renderListRow(r, opts = {}) {
   const role = opts.role;          // "parent" | "child" | undefined
   const group = opts.group || null;
@@ -2285,12 +2277,10 @@ function renderListRow(r, opts = {}) {
         : `<span class="list-status ok">✓</span>`);
 
   const subChips = [];
-  // Who's paying. Brand-ish colours so the common ones are recognisable
-  // without reading — AAA alone is a quarter of the book. No chip when
-  // the carrier is unknown: that's 45% of jobs, and a chip on half the
-  // list saying "don't know" is just noise.
-  const carrierChip = carrierChipHtml(r.carrier);
-  if (carrierChip) subChips.push(carrierChip);
+  // No carrier chip on the LIST row. It still shows on the detail card,
+  // where you're looking at one job — on the list it competed with the
+  // chips that say something is wrong (aging, not-found, missing), and
+  // who is paying isn't what you scan the list for.
   if (r.aging_days >= 3) {
     const hot = r.aging_days >= 7 ? "hot" : "";
     subChips.push(`<span class="mini-chip aging ${hot}">⏰${r.aging_days}d</span>`);
