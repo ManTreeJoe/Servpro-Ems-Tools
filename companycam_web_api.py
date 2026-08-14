@@ -111,12 +111,42 @@ class CompanyCamApi:
         future probe/pull is a cache hit."""
         if not (client and project_id):
             return {"ok": False, "error": "missing client / project"}
+        project_id = str(project_id)
         try:
             import ems_db
             ems_db.resolve_and_link(
-                client, companycam_project=str(project_id),
+                client, companycam_project=project_id,
                 trello_card=card_id, create=True, source="companycam")
-            return {"ok": True}
+            # Drop any OTHER CompanyCam link on this job, or the pin does
+            # nothing at all.
+            #
+            # `job_links` is keyed on (job, type, VALUE), so pinning a
+            # different project ADDS a row rather than replacing one — and
+            # `get_link` returns the OLDEST match. So once an auto-match
+            # had written the wrong project, every later pin was recorded
+            # and then ignored, and the job resolved to the first answer
+            # forever. That is why Bell Mountain kept reading as empty:
+            # 112272489 (0 photos) was cached ahead of 112251669 (29).
+            #
+            # A job has exactly ONE CompanyCam project, so picking one is
+            # a replacement, not an addition. (Trello cards are
+            # deliberately many-per-job, which is why this is not done
+            # for them.)
+            removed = []
+            try:
+                job = ems_db.find_job_by_name(client)
+                if job:
+                    ck = job["canon_key"]
+                    for ln in (ems_db.get_links(ck, ems_db.LINK_COMPANYCAM)
+                               or []):
+                        val = str(ln.get("link_value") or "")
+                        if val and val != project_id:
+                            ems_db.remove_link(ck, ems_db.LINK_COMPANYCAM, val)
+                            removed.append(val)
+            except Exception:
+                pass
+            return {"ok": True, "project_id": project_id,
+                    "replaced": removed}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
