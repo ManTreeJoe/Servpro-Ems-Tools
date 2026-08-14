@@ -78,6 +78,7 @@ NAV_GROUPS = [
         ("job_notes",   "🗒", "Job Notes"),
         ("multi_unit",  "🏢", "Multi-Unit"),
         ("cheat_sheet", "📝", "Cheat Sheet"),
+        ("resources",   "📚", "Resources"),
     ]),
     ("System", [
         ("settings",    "⚙", "Settings"),
@@ -126,6 +127,7 @@ SUB_MODULES = {
     "kpi":         "kpi_web",
     "photo_folders": "photo_folders_web",
     "notifications": "notifications_web",
+    "resources":   "resources_web",
 }
 
 

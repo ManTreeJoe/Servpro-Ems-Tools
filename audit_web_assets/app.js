@@ -2306,9 +2306,13 @@ function renderListRow(r, opts = {}) {
   const misplacedCount = (r.total_misplaced != null)
     ? r.total_misplaced
     : ((r.misplaced_forms || []).length + (r.misplaced_photos || []).length);
-  // Suppressed on multi-unit parents/units — a file under a unit subfolder
-  // isn't actually misfiled.
-  if (misplacedCount > 0 && !r.subjob && !r.is_parent) {
+  // HIDDEN 2026-08-14, same as the detail card's chip and section: the
+  // detection reports correctly-filed items as misfiled. A wrong warning
+  // on the list is the worst place for one — it's the column people scan
+  // to decide what needs work, so it sends them after files that are
+  // already where they belong. Re-enable by deleting the `false &&`
+  // once the detection is trustworthy.
+  if (false && misplacedCount > 0 && !r.subjob && !r.is_parent) {
     subChips.push(`<span class="mini-chip misplaced" title="${misplacedCount} item(s) found in the wrong folder — see detail">⚠ ${misplacedCount} misfiled</span>`);
   }
 

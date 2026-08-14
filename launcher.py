@@ -363,11 +363,6 @@ NAV_TOOLS = [
         "label": "Cheat Sheet (web)","icon": "🌐",
         "desc": "Markdown reference rendered as styled web pages with TOC + search",
         "mode": "spawn", "module": "cheat_sheet_web", "class": None},
-    {"key": "resources_web","group": NAV_GROUP_REFERENCE,
-        "label": "Resources",        "icon": "📚",
-        "desc": "Search the share's reference material — forms, COIs, "
-                "vendors, templates: everything that isn't a job",
-        "mode": "spawn", "module": "resources_web", "class": None},
     # System — config + low-volume utilities.
     {"key": "sort_files",   "group": NAV_GROUP_SYSTEM,
         "label": "Sort Files",       "icon": "📁", "desc": "Move downloads into job folders",  "mode": "embed",

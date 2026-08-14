@@ -81,6 +81,11 @@
 
   // ── Build the detail card innerHTML for ONE (non-parent) job ───────
   // Verbatim port of audit_web_assets/app.js renderDetail() body.
+  // Misfiled detection is OFF. It flags items that are correctly filed,
+  // and a wrong warning is worse than no warning — see the note at the
+  // chip below. Flip to true once the detection is trustworthy.
+  const MISFILED_ENABLED = false;
+
   function buildDetailBodyHTML(r, ctx) {
     const techs = (r.techs || []).join(" · ");
     const misplacedForms  = r.misplaced_forms  || [];
@@ -93,6 +98,12 @@
     const carrierChip = (window.AuditDetail && window.AuditDetail.carrierChip)
       ? window.AuditDetail.carrierChip(r.carrier) : "";
     if (carrierChip) chips.push(carrierChip);
+    // Category / Class sits WITH the carrier, because it is the same kind
+    // of fact — what this loss IS — not an action. It was a button that
+    // had to be pressed to find out, which meant nobody knew the CAT
+    // without asking. Filled in by loadCatClass once the card is read.
+    chips.push(`<span class="detail-chip cat-chip hidden" id="cat-class-chip"
+                      title="Category / Class from the initial-inspection notes — click to copy"></span>`);
     if (r.total_missing > 0) {
       chips.push(`<span class="detail-chip missing">${r.total_missing} missing</span>`);
     } else if (!r.flagged) {
@@ -100,7 +111,14 @@
     }
     // Misfiled chip suppressed on multi-unit parents/units — files under a
     // unit subfolder aren't actually misfiled (false positive).
-    if (misplacedCount > 0 && !r.subjob && !r.is_parent) {
+    // HIDDEN 2026-08-14 — "all the misfiled is wrong". The detection
+    // reports items as misfiled that aren't, so the chip and the section
+    // below are both suppressed until it can be fixed. Showing a wrong
+    // answer is worse than showing none: people either chase files that
+    // are already filed correctly, or learn to ignore the whole panel.
+    // The data still rides along on the row, so re-enabling is deleting
+    // this flag.
+    if (MISFILED_ENABLED && misplacedCount > 0 && !r.subjob && !r.is_parent) {
       chips.push(`<span class="detail-chip misplaced" title="Found in the wrong folder under the parent — needs re-filing">⚠ ${misplacedCount} misfiled</span>`);
     }
     if (r.aging_days >= 3) {
@@ -166,7 +184,7 @@
       ...misplacedForms.map((m) => ({ ...m, icon: "📋" })),
       ...misplacedPhotos.map((m) => ({ ...m, icon: "📷" })),
     ];
-    const misplacedSection = misItems.length ? `
+    const misplacedSection = (MISFILED_ENABLED && misItems.length) ? `
       <section class="detail-section">
         <h3>⚠ Misfiled — found in the wrong folder (${misItems.length})</h3>
         <p class="muted" style="margin:2px 0 6px;">Exists under the parent insured, just not in this campus's folder. Move it here.</p>
@@ -176,7 +194,8 @@
       </section>` : "";
 
     const cleanSection = (!r.form_issues.length && !r.photo_issues.length
-                          && !reqs.length && !misItems.length && r.found) ? `
+                          && !reqs.length && r.found
+                          && !(MISFILED_ENABLED && misItems.length)) ? `
       <section class="detail-section">
         <div class="detail-clean">
           ✓ All required forms + photos present.
@@ -285,16 +304,13 @@
       </section>` : ""}
       ${hasPin ? `<section class="detail-section" id="all-cl">
         <h3>✅ Checklists <span class="muted" id="all-cl-status">loading…</span>
-          <button class="action-btn" data-action="grab-cat-class"
-                  style="float:right;margin-top:-2px;"
-                  title="Read the initial-inspection notes in the card's Trello comments and copy the Category + Class">🔢 Cat / Class</button>
           <button class="action-btn" data-action="import-notes"
                   style="float:right;margin:-2px 6px 0 0;"
                   title="Parse the full initial-inspection field template from the card's Trello comments and copy it">📋 Import notes</button>
           <button class="action-btn" data-action="job-log"
                   style="float:right;margin:-2px 6px 0 0;"
                   title="Build a clean dated job log from the card's comments (strips email noise) + flag equipment left on site">🗒 Job log</button>
-          <span id="cat-class-out" class="muted" style="float:right;margin:2px 8px 0 0;font-weight:600;"></span></h3>
+</h3>
         <div id="all-cl-body"></div>
       </section>` : ""}
     `;
@@ -407,6 +423,7 @@
     const hasPin = !!r.trello_card_id;
     if (hasPin) loadTrelloInfo(r, ctx);
     if (hasPin) loadAllChecklists(r, ctx);   // every checklist on the card
+    if (hasPin) loadCatClass(r, ctx);        // fills the CAT / Class chip
     // An open comments drawer follows the selection. Costs nothing when
     // it's closed, which is the default — no extra call per job opened.
     syncCommentsDrawer(r, ctx);
@@ -1096,13 +1113,13 @@
       setStatus(ctx, "Reading initial notes from Trello comments…", "info");
       const res = await pywebview.api.get_initial_cat_class(
         row.client, row.trello_card_id || "");
-      const out = document.getElementById("cat-class-out");
+      const out = document.getElementById("cat-class-chip");
       if (res && res.ok && res.text) {
-        if (out) out.textContent = res.text;
+        if (out) { out.textContent = res.text; out.classList.remove("hidden"); }
         const ok = await copyText(ctx, res.text);
         setStatus(ctx, ok ? `🔢 ${res.text} — copied` : `🔢 ${res.text}`, "ok");
       } else {
-        if (out) out.textContent = "";
+        if (out) out.classList.add("hidden");
         setStatus(ctx, (res && res.error) || "No Category/Class in the initial notes", "warn");
       }
     } else if (action === "import-notes") {
@@ -1183,6 +1200,33 @@
   }
 
   // ── Async section: 🎴 Trello info (verbatim port) ──────────────────
+  // The CAT / Class chip. Reads the same initial-inspection notes the
+  // old button read, but on open rather than on demand — the number is
+  // part of what the job IS, and a button meant it stayed unknown until
+  // somebody thought to ask. Silent when the notes don't carry one:
+  // most jobs have no CAT, and an empty chip on every card is noise.
+  async function loadCatClass(row, ctx) {
+    const chip = document.getElementById("cat-class-chip");
+    if (!chip) return;
+    let res;
+    try {
+      res = await pywebview.api.get_initial_cat_class(
+        row.client, row.trello_card_id || "");
+    } catch (_) {
+      return;                       // offline is not worth a banner here
+    }
+    // The card may have been re-rendered while we were awaiting.
+    if (document.getElementById("cat-class-chip") !== chip) return;
+    if (!res || !res.ok || !res.text) return;
+    chip.textContent = res.text;
+    chip.classList.remove("hidden");
+    chip.style.cursor = "pointer";
+    chip.addEventListener("click", async () => {
+      const ok = await copyText(ctx, res.text);
+      setStatus(ctx, ok ? `🔢 ${res.text} — copied` : `🔢 ${res.text}`, "ok");
+    });
+  }
+
   async function loadTrelloInfo(row, ctx) {
     const statusEl = document.getElementById("trello-info-status");
     const bodyEl = document.getElementById("trello-info-body");

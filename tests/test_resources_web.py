@@ -127,13 +127,29 @@ def test_two_rebuilds_at_once_are_refused(api, monkeypatch):
     assert a.rebuild()["ok"] is False
 
 
-def test_the_panel_is_registered_in_the_launcher():
-    """A panel nobody can open is not shipped."""
+def test_the_panel_is_in_the_WEB_sidebar():
+    """The web home is the app. `launcher.py` is the Tk launcher and is
+    NOT where a panel gets registered — putting it there is why this
+    shipped with no tab at all. Everything is built in *_web.py +
+    *_web_assets; nothing new goes near Tk."""
+    import home_web
+    keys = [k for _, tools in home_web.NAV_GROUPS for k, _i, _l in tools]
+    assert "resources" in keys
+    assert home_web.SUB_MODULES["resources"] == "resources_web"
+
+
+def test_nothing_registered_it_with_tk():
     import launcher
-    keys = [t["key"] for t in launcher.NAV_TOOLS]
-    assert "resources_web" in keys
-    spec = next(t for t in launcher.NAV_TOOLS if t["key"] == "resources_web")
-    assert spec["module"] == "resources_web"
+    assert not [t for t in launcher.NAV_TOOLS
+                if t.get("module") == "resources_web"]
+
+
+def test_the_asset_folder_follows_the_convention():
+    """The iframe src is derived from the key, so `resources` has to map
+    to resources_web_assets or the panel loads a blank frame."""
+    import home_web
+    assert home_web._asset_folder_for("resources") == \
+        "../resources_web_assets/index.html"
 
 
 def test_the_assets_exist():

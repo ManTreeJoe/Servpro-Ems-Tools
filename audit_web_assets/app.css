@@ -426,6 +426,17 @@ body { display: flex; flex-direction: column; }
 }
 .subjob-children.collapsed { display: none; }
 /* Misfiled (found in wrong folder) — detail pane. */
+/* CAT / Class — sits with the carrier because it is the same kind of
+   fact (what this loss IS), not an action. Outlined rather than filled
+   so it reads as information next to the carrier's solid brand colour. */
+.detail-chip.cat-chip {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.detail-chip.cat-chip:hover { border-color: var(--accent, #4aa3ff); }
 .detail-chip.misplaced {
   background: transparent;
   color: var(--amber);
