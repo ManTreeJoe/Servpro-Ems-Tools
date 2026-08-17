@@ -3601,9 +3601,25 @@
     const el = document.getElementById("cmt-drawer");
     const tab = document.getElementById("cmt-tab");
     if (!el || !tab) return;
-    // Clear of the scrollbar: a fixed drawer sits at the viewport edge,
-    // which is exactly where the scrollbar lives.
-    const sb = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    // Clear of the scrollbar — but the scrollbar in question is usually
+    // NOT the document's. Inside the shell's iframe the page itself
+    // rarely scrolls; what scrolls is a PANE (the detail pane here, the
+    // results list elsewhere), and its scrollbar sits at the same right
+    // edge the fixed drawer is pinned to. Measuring only
+    // innerWidth-clientWidth gave 0 and the tab sat on top of it.
+    let sb = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    const edge = window.innerWidth;
+    for (const node of document.querySelectorAll("main, main > *, .results")) {
+      const r = node.getBoundingClientRect();
+      if (Math.abs(r.right - edge) >= 40) continue;     // not on this edge
+      const w = node.offsetWidth - node.clientWidth;    // classic scrollbar
+      if (w > 0 && w <= 40) { sb = Math.max(sb, w); continue; }
+      // An OVERLAY scrollbar takes no layout width — offsetWidth equals
+      // clientWidth while a bar is still painted over the content. It
+      // cannot be measured, only inferred from the pane being
+      // scrollable, so assume a normal one rather than sit under it.
+      if (node.scrollHeight - node.clientHeight > 2) sb = Math.max(sb, 12);
+    }
     tab.style.left = `-${30 + sb}px`;
     // Below ALL the chrome, not just the top bar. The audit panel stacks
     // a topbar, a mode row and a toolbar, so anchoring to `.topbar`

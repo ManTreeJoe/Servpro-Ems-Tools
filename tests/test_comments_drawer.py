@@ -675,3 +675,22 @@ def test_the_mention_picker_cannot_break_the_drawer():
     js = io.open(os.path.join(here, "web_shared", "audit_detail.js"),
                  encoding="utf-8").read()
     assert "try { _wireMentions(el); } catch" in js
+
+
+def test_the_tab_measures_the_pane_scrollbar_not_the_document(detail_js):
+    """Inside the shell's iframe the PAGE rarely scrolls; a PANE does,
+    and its scrollbar sits at the same right edge the fixed drawer is
+    pinned to. Measuring only innerWidth-clientWidth returned 0, so the
+    tab sat on top of it."""
+    body = detail_js[detail_js.index("function _placeTab"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert "offsetWidth - node.clientWidth" in body
+    assert 'querySelectorAll("main, main > *' in body
+
+
+def test_an_overlay_scrollbar_is_inferred(detail_js):
+    """It takes no layout width, so it cannot be measured — only
+    inferred from the pane being scrollable at all."""
+    body = detail_js[detail_js.index("function _placeTab"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert "scrollHeight - node.clientHeight" in body
