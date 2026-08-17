@@ -150,7 +150,21 @@ window.addEventListener("pywebviewready", async () => {
   // SP cloud-only force-pull (from the SP import dialog)
   // The bar rides the same stream as the text — it says how far along,
   // which the text can't at a glance.
-  if (window.Progress) window.Progress.bind("sp:pull-progress", "sp:pull-done");
+  if (window.Progress) {
+    window.Progress.bind("sp:pull-progress", "sp:pull-done");
+    // The audit run itself. It already streamed {i, n, client} into
+    // the loading label; the label says WHICH job, the bar says how
+    // much is left, and on a 300-row day those are different
+    // questions.
+    window.Progress.bind("audit:progress", "audit:done");
+    // The SharePoint enrichment pass. It runs 30-120s AFTER the
+    // audit finishes, so the panel looked idle for the longest
+    // stretch of the whole run.
+    window.Progress.bind("audit:sp_update", "audit:sp_done");
+    // Imports (HEIC conversion + copy) already streamed
+    // {done, total} to a button label only.
+    window.Progress.bind("import:progress", "import:done");
+  }
   window.addEventListener("sp:pull-progress", (ev) => {
     const d = ev.detail || {};
     setStatus(`☁ Pulling ${d.done || 0}/${d.total || "?"} · ${d.name || "…"}`);

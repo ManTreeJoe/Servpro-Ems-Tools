@@ -18,6 +18,9 @@ const pad2 = (n) => String(n).padStart(2, "0");
 // `import:progress` per file). Updates the running import button so a
 // big photo dump shows "Converting N/M…" instead of a frozen
 // "Extracting…". No-op if no import is active or the count is 0.
+// Same bar as the audit panel: the import already streamed
+// {done, total}, it just never reached the status bar here.
+if (window.Progress) window.Progress.bind("import:progress", "import:done");
 window.addEventListener("import:progress", (e) => {
   const d = (e && e.detail) || {};
   if (state.importBtn && d.total) {

@@ -541,7 +541,18 @@ def test_the_tab_clears_the_scrollbar_and_the_top_bar(detail_js):
     body = detail_js[detail_js.index("function _placeTab"):]
     body = body[:body.index(chr(10) + "  }")]
     assert "window.innerWidth - document.documentElement.clientWidth" in body
-    assert ".topbar" in body and "getBoundingClientRect" in body
+    assert "getBoundingClientRect" in body
+
+
+def test_the_tab_clears_every_bar_not_just_the_top_one(detail_js):
+    """The audit panel stacks a topbar, a mode row and a toolbar.
+    Anchoring to `.topbar` alone parked the tab on top of the filter
+    chips — the main content element is the honest answer to "where does
+    the page actually start"."""
+    body = detail_js[detail_js.index("function _placeTab"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert 'querySelector("main")' in body
+    assert ".mode-row" in body, "and a fallback when there is no <main>"
 
 
 def test_the_tab_is_re_placed_when_things_move(detail_js):

@@ -140,12 +140,18 @@
       _el.classList.remove("on", "err", "ind");
       _el.firstChild.style.width = "0%";
     },
-    // Wire a {done,total} progress event and its done event in one line.
+    // Wire a progress event and its done event in one line.
     // `okOf` decides success from the done event's detail.
     bind: function (progressEvent, doneEvent, okOf) {
       window.addEventListener(progressEvent, function (ev) {
         var d = (ev && ev.detail) || {};
-        Progress.set(d.done, d.total);
+        // These streams were written at different times and count in two
+        // vocabularies: {done,total} for the pulls and imports, {i,n} for
+        // the audit run. Accepting both is what makes wiring a new stream
+        // one line instead of a payload change on the Python side.
+        var done = (d.done != null) ? d.done : d.i;
+        var total = (d.total != null) ? d.total : d.n;
+        Progress.set(done, total);
       });
       window.addEventListener(doneEvent, function (ev) {
         var d = (ev && ev.detail) || {};

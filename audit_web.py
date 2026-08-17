@@ -239,6 +239,22 @@ def _safe_is_starred(client):
         return False
 
 
+def _emit_import_done(ok: bool) -> None:
+    """Close the `import:progress` stream so the progress bar finishes.
+
+    A bar bound to a progress event with no matching done event stops at
+    whatever fraction it reached and stays there — which reads as "still
+    working" long after the import finished.
+    """
+    try:
+        import json as _json
+        _emit_js_all(
+            "window.dispatchEvent(new CustomEvent('import:done', "
+            "{detail: " + _json.dumps({"ok": bool(ok)}) + "}));")
+    except Exception:
+        pass
+
+
 def _member_initials(full_name: str) -> str:
     """Initials for a Trello member's avatar in the comments drawer.
 
@@ -1077,11 +1093,18 @@ class Api(JobSettingsApi, CompanyCamApi):
             except Exception:
                 folder_index = None
             match_cache = {}
+            # Index the pass so the UI can show HOW FAR along it is. This
+            # runs 30-120s after audit:done — the longest stretch in the
+            # panel, and until now the only sign it was alive was rows
+            # quietly changing.
+            _sp_total = len([r for r in (results or []) if (r or {}).get("client")])
+            _sp_i = 0
             for r in (results or []):
                 r = r or {}
                 client = r.get("client") or ""
                 if not client:
                     continue
+                _sp_i += 1
                 try:
                     enrich_with_sharepoint(
                         r, run_date,
@@ -1117,6 +1140,10 @@ class Api(JobSettingsApi, CompanyCamApi):
                     "sharepoint_matches": sp_matches,
                     "sharepoint_new":     int(r.get("sharepoint_new") or 0),
                     "pics_count":         int(r.get("pics_count") or 0),
+                    # done/total drive the progress bar; the row splice
+                    # ignores them.
+                    "done":               _sp_i,
+                    "total":              _sp_total,
                 }
                 # Mirror onto the in-memory _last_rows so subsequent
                 # reads (last_audit / reaudit_one) carry the SP data. SP is
@@ -1142,7 +1169,7 @@ class Api(JobSettingsApi, CompanyCamApi):
             try:
                 self._emit(
                     "window.dispatchEvent(new CustomEvent("
-                    "'audit:sp_done', {detail: {}}));")
+                    "'audit:sp_done', {detail: {\"ok\": true}}));")
             except Exception:
                 pass
 
@@ -6820,8 +6847,12 @@ class Api(JobSettingsApi, CompanyCamApi):
                 _convert_root = pics_root if kind == "companycam" else pics_target
                 convert_heic_in_dir(_convert_root, progress_cb=_heic_progress)
                 organize_by_room(pics_target)
+                _emit_import_done(True)
             except Exception:
-                pass
+                # The bar has to land somewhere. Without this it stops at
+                # whatever fraction it reached and sits there, which reads
+                # as "still working" forever.
+                _emit_import_done(False)
 
         # Tick the matching Trello checklist item for what we imported:
         #   docusketch → PHYSICAL SKETCH (INITIAL - ADMIN)

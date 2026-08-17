@@ -3601,17 +3601,27 @@
     const el = document.getElementById("cmt-drawer");
     const tab = document.getElementById("cmt-tab");
     if (!el || !tab) return;
+    // Clear of the scrollbar: a fixed drawer sits at the viewport edge,
+    // which is exactly where the scrollbar lives.
     const sb = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
     tab.style.left = `-${30 + sb}px`;
-    let top = 12;
-    for (const sel of [".topbar", "header.topbar", "#topbar"]) {
-      const bar = document.querySelector(sel);
-      if (bar) {
-        const r = bar.getBoundingClientRect();
-        if (r.height) { top = Math.round(r.bottom) + 10; break; }
+    // Below ALL the chrome, not just the top bar. The audit panel stacks
+    // a topbar, a mode row and a toolbar, so anchoring to `.topbar`
+    // alone parked the tab on top of the filter chips. The main content
+    // element is the honest answer to "where does the page start".
+    let top = 0;
+    const main = document.querySelector("main");
+    if (main) top = main.getBoundingClientRect().top;
+    if (!top) {
+      for (const sel of [".mode-row", ".audit-toolbar", ".stats-bar",
+                         ".topbar", "header"]) {
+        for (const node of document.querySelectorAll(sel)) {
+          const r = node.getBoundingClientRect();
+          if (r.height) top = Math.max(top, r.bottom);
+        }
       }
     }
-    tab.style.top = `${top}px`;
+    tab.style.top = `${Math.round(top) + 10}px`;
   }
 
   function closeCommentsDrawer() {
