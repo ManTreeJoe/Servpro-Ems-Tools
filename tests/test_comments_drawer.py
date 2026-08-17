@@ -694,3 +694,20 @@ def test_an_overlay_scrollbar_is_inferred(detail_js):
     body = detail_js[detail_js.index("function _placeTab"):]
     body = body[:body.index(chr(10) + "  }")]
     assert "scrollHeight - node.clientHeight" in body
+
+
+def test_the_tab_hugs_the_panel_when_open(detail_js):
+    """Open, the drawer covers the pane's scrollbar itself, so the
+    clearance that is right when closed becomes a GAP between tab and
+    panel — and a gap is what stops it reading as one object."""
+    body = detail_js[detail_js.index("function _placeTab"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert 'commentsDrawerIsOpen() ? "-30px"' in body
+
+
+def test_closing_re_places_the_tab(detail_js):
+    """The offset differs by state, so closing has to recompute it or
+    the tab stays hugged to a drawer that is no longer there."""
+    body = detail_js[detail_js.index("function closeCommentsDrawer"):]
+    body = body[:body.index(chr(10) + "  }")]
+    assert "_placeTab()" in body

@@ -3620,7 +3620,12 @@
       // scrollable, so assume a normal one rather than sit under it.
       if (node.scrollHeight - node.clientHeight > 2) sb = Math.max(sb, 12);
     }
-    tab.style.left = `-${30 + sb}px`;
+    // OPEN, the drawer is on screen and covers that scrollbar itself, so
+    // the same offset becomes a gap between the tab and the panel — the
+    // tab has to hug the drawer's edge to read as one object. CLOSED,
+    // the drawer is parked off-screen and the tab is all that shows, so
+    // it needs the clearance.
+    tab.style.left = commentsDrawerIsOpen() ? "-30px" : `-${30 + sb}px`;
     // Below ALL the chrome, not just the top bar. The audit panel stacks
     // a topbar, a mode row and a toolbar, so anchoring to `.topbar`
     // alone parked the tab on top of the filter chips. The main content
@@ -3645,6 +3650,11 @@
     if (el) el.classList.remove("cmt-open");
     _lsSet(CMT_OPEN_KEY, "0");
     _setTabLabel(false);
+    // The offset differs by state — flush when open, clear of the pane's
+    // scrollbar when closed — so closing must re-place it too, or the tab
+    // stays hugged to a drawer that is no longer there and lands back on
+    // top of the scrollbar.
+    _placeTab();
   }
 
   function openCommentsDrawer(row, ctx) {
