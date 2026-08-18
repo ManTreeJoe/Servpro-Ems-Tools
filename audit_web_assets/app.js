@@ -113,6 +113,7 @@ window.addEventListener("pywebviewready", async () => {
   $("#clear-oneoff-btn")?.addEventListener("click", () => {
     state.oneoffHits = [];
     state.oneoffTried = "";
+    saveRecents();                 // clearing has to persist too
     renderList();
     renderDetail();
     setStatus("Cleared searched jobs", "ok");
@@ -242,6 +243,10 @@ window.addEventListener("pywebviewready", async () => {
     } catch (_) { /* no saved tab — Search is the default */ }
     // Chrome only: the data load below paints once, under the right tab.
     if (!state.userSwitchedMode) applyModeChrome(landing);
+    // After PanelState.init, so the saved list is in memory. Not awaited:
+    // it re-audits each job in turn, and the panel should be usable
+    // while that happens.
+    restoreRecents();
   }
 
   try {
@@ -2291,6 +2296,10 @@ function renderListRow(r, opts = {}) {
         : `<span class="list-status ok">✓</span>`);
 
   const subChips = [];
+  if (r._stale) {
+    subChips.push('<span class="mini-chip pending" title="From your last '
+      + 'session — re-checking now">⏳ not checked yet</span>');
+  }
   // No carrier chip on the LIST row. It still shows on the detail card,
   // where you're looking at one job — on the list it competed with the
   // chips that say something is wrong (aging, not-found, missing), and
@@ -2330,7 +2339,12 @@ function renderListRow(r, opts = {}) {
     subChips.push(`<span class="mini-chip misplaced" title="${misplacedCount} item(s) found in the wrong folder — see detail">⚠ ${misplacedCount} misfiled</span>`);
   }
 
-  const missClass = r.total_missing > 0 ? "miss-num" : "miss-num zero";
+  // A restored recent has not been audited yet, so its counts are
+  // placeholders. Rendering 0 in the "zero" style would read as CLEAN —
+  // the same stale-answer-shown-as-current trap this panel keeps
+  // hitting — so say "not checked yet" until the re-audit lands.
+  const missClass = r._stale ? "miss-num pending"
+    : (r.total_missing > 0 ? "miss-num" : "miss-num zero");
   const _starred = (state.starred_clients || []).includes((r.client || "").toLowerCase());
   // Parent (umbrella) header shows a campus rollup instead of its own
   // (noisy) missing count.
@@ -2469,6 +2483,63 @@ function buildAuditDetailCtx() {
       if (window.attachTrelloHover) window.attachTrelloHover(btn, cardId);
     },
   };
+}
+
+// ── Recents, remembered across restarts ──────────────────────────────
+//
+// The Search tab accumulates the jobs you pull up, and closing the app
+// threw the lot away — you came back in and re-typed the same names.
+// PanelState persists per-panel state to state.json on this machine, so
+// the list survives a restart.
+//
+// What is saved is the job's IDENTITY, never its audit numbers. A row
+// carries "3 missing" and a photo count, and those go stale the moment
+// someone drops a form in overnight; restoring them would show
+// yesterday's answer as though it were today's, which is the exact
+// failure this panel keeps having. Names come back instantly, and the
+// numbers are re-audited.
+const RECENTS_KEY = "recents";
+
+function saveRecents() {
+  try {
+    const list = (state.oneoffHits || []).slice(0, ONEOFF_MAX).map((r) => ({
+      client: r.client,
+      display_name: r.display_name || "",
+      row_key: r.row_key || "",
+      path: r.path || "",
+      trello_card_id: r.trello_card_id || "",
+    })).filter((r) => r.client);
+    PanelState.set({ [RECENTS_KEY]: list });
+  } catch (_) { /* persistence is a convenience, never a blocker */ }
+}
+
+// Restore the names immediately, then re-audit them in the background so
+// the counts are real. Sequential on purpose: a burst of parallel audits
+// would hammer the share for a list nobody is looking at yet.
+async function restoreRecents() {
+  let saved = [];
+  try { saved = PanelState.get(RECENTS_KEY, []) || []; } catch (_) { return; }
+  if (!Array.isArray(saved) || !saved.length) return;
+  state.oneoffHits = saved.map((r) => ({
+    ...r,
+    form_issues: [],
+    photo_issues: [],
+    total_missing: 0,
+    flagged: false,
+    found: true,
+    _stale: true,            // "from last session" until re-audited
+  }));
+  renderList();
+  for (const r of saved) {
+    if (!state.oneoffHits.some((h) => h.client === r.client)) break;  // cleared
+    try {
+      const re = await pywebview.api.reaudit_one(r.client);
+      if (re && re.ok && re.row) {
+        applyRow(re.row);
+        renderAll();
+      }
+    } catch (_) { /* leave it marked stale */ }
+  }
 }
 
 // Find a row by rowKey across BOTH the loaded list AND one-off search
@@ -3389,6 +3460,7 @@ async function runOneoffFromSearch(term, skipCanon, folderPath) {
       const seen = new Set(fresh.map(rowKey));
       const kept = (state.oneoffHits || []).filter((h) => !seen.has(rowKey(h)));
       state.oneoffHits = fresh.concat(kept).slice(0, ONEOFF_MAX);
+      saveRecents();
       // The job you picked is now ON the tab, so the term that found it has
       // done its work — and it's also a FILTER, so leaving it there hides
       // every other job you pulled up. Clear it: the box is ready for the

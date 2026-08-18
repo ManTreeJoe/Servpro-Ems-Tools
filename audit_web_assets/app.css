@@ -529,6 +529,19 @@ body { display: flex; flex-direction: column; }
   background: var(--chip-bg);
   color: var(--text-muted);
 }
+/* A restored recent, not yet re-audited. Deliberately NOT the green
+   "zero" look: its count is a placeholder, and dressing a placeholder as
+   a clean result is how a stale answer gets acted on. */
+.list-end .miss-num.pending {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px dashed var(--border);
+}
+.mini-chip.pending {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px dashed var(--border);
+}
 
 .list-empty {
   padding: 30px 14px;

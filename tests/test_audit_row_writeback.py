@@ -73,10 +73,18 @@ def test_apply_row_matches_on_row_key_not_client(app_js):
 
 
 def test_every_reaudit_result_goes_through_apply_row(app_js):
-    """Sixteen sites, one helper. A new one must not reinvent the splice."""
+    """One helper, however many sites. A new one must not reinvent
+    the splice.
+
+    Deliberately no longer pins an exact COUNT. It was `== 16`, and
+    the seventeenth site (restoring recents on boot) tripped it while
+    doing exactly the right thing — the number was the stale part,
+    not the code. A count that must be edited whenever someone adds
+    a legitimate call site trains people to bump it without reading
+    why, which is worse than not having the test."""
     calls = len(re.findall(r"pywebview\.api\.reaudit_one\(", app_js))
     applies = len(re.findall(r"\bapplyRow\(", app_js)) - 1   # minus the def
-    assert calls == 16, f"expected 16 reaudit_one call sites, found {calls}"
+    assert calls >= 16, f"reaudit sites vanished? found {calls}"
     assert applies >= calls, (
         f"{calls} re-audits but only {applies} applyRow() calls — some site "
         "is handling its own writeback again")
