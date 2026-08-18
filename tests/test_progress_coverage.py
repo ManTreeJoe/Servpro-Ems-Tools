@@ -174,9 +174,9 @@ def test_only_bulk_verbs_get_a_bar():
 
 @pytest.mark.parametrize("name", [
     "toggle_checklist_item", "add_checklist_item", "delete_checklist_item",
-    "post_comment", "set_folder_path", "pin_trello", "reaudit_one",
+    "post_comment", "set_folder_path", "reaudit_one",
     "get_card_comments", "search", "open_file", "last_audit",
-    "companycam_pin", "copy_path", "save_job_settings",
+    "copy_path", "save_job_settings", "unpin_trello",
 ])
 def test_ordinary_actions_stay_silent(name):
     """These are the ones that made it feel random."""
@@ -190,3 +190,45 @@ def test_ordinary_actions_stay_silent(name):
 ])
 def test_real_loads_still_get_one(name):
     assert _is_bulk(name), f"{name} is a load and should show a bar"
+
+
+def _is_pin(name):
+    """Mirror of the shim's pin rule, read from the shim itself."""
+    import re
+    js = _read("web_shared", "iframe_shim.js")
+    body = js[js.index("function isPin"):]
+    body = body[:body.index("}")]
+    m = re.search(r"return (/.+/)[.]test", body)
+    assert m, "could not read the pin pattern"
+    pat = m.group(1)[1:m.group(1).rindex("/")]
+    return re.search(pat, str(name)) is not None
+
+
+@pytest.mark.parametrize("name", [
+    "pin_trello",           # audit + snapshot
+    "pin_trello_for_item",  # APA
+    "pin_trello_card",      # WC audit
+    "companycam_pin",       # companycam / snapshot
+])
+def test_pinning_shows_a_bar_everywhere(name):
+    """Pinning looks like a one-line write and isn't: the panel re-reads
+    the card, resolves its board and lane, and usually re-audits the row
+    behind it. It is the one ordinary action that reliably makes you
+    wait, and it happens from four panels — so the rule matches the NAME
+    rather than a list of the call sites I happened to remember."""
+    assert _is_pin(name), f"{name} should show a loading bar"
+
+
+def test_unpinning_stays_silent():
+    """Dropping a pin is instant — there is nothing to wait for."""
+    assert not _is_pin("unpin_trello")
+    assert not _is_bulk("unpin_trello")
+
+
+def test_a_pin_gets_a_shorter_fuse_than_a_bulk_job():
+    """The point of the pin bar is to show the click landed. 1200ms of
+    nothing is most of the wait it is supposed to explain."""
+    js = _read("web_shared", "iframe_shim.js")
+    body = js[js.index("function _track"):]
+    body = body[:body.index(chr(10) + "    }")]
+    assert "pin ? 300 : SLOW_MS" in body

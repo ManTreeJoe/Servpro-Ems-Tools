@@ -79,20 +79,36 @@
       const n = String(name || "");
       return BULK_VERBS.some(function (v) { return n.indexOf(v) === 0; });
     }
+    // Pinning a Trello card looks like a one-line write and isn't. The
+    // panel re-reads the card, resolves its board and lane, and usually
+    // re-audits the row behind it, so it is the one ordinary ACTION that
+    // reliably makes you wait. Matches pin_trello, pin_trello_for_item,
+    // pin_trello_card and companycam_pin — the four entry points across
+    // the audit, APA, WC audit and snapshot panels — so it shows up
+    // wherever a card is pinned rather than only where I remembered.
+    // `unpin_*` is deliberately NOT matched: dropping a pin is instant.
+    function isPin(name) {
+      return /(^|_)pin(_|$)/.test(String(name || ""));
+    }
     const SLOW_MS = 1200;       // even a real load gets this long to finish
 
     let _slow = 0;
     function _track(name, p) {
       const P = window.Progress;
       if (!P || !p || typeof p.then !== "function") return p;
-      if (!isBulk(name)) return p;
+      const pin = isPin(name);
+      if (!isBulk(name) && !pin) return p;
       let armed = false;
+      // A pin gets a shorter fuse than a bulk job: the whole point is to
+      // show that the click landed, and 1200ms of nothing is most of the
+      // wait it is meant to explain.
+      const delay = pin ? 300 : SLOW_MS;
       const t = setTimeout(function () {
         if (P.active && P.active()) return;   // a real stream owns it
         armed = true;
         _slow += 1;
         P.start();
-      }, SLOW_MS);
+      }, delay);
       const settle = function () {
         clearTimeout(t);
         if (!armed) return;
