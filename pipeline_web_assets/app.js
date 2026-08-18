@@ -66,6 +66,10 @@ window.addEventListener("pywebviewready", async () => {
   $$("#ctx-menu button").forEach((btn) => {
     btn.addEventListener("click", () => onCtxAction(btn.dataset.action));
   });
+  // The bar rides the same stream as the status text: the text says
+  // what the workspace sync is on, the bar says how much is left.
+  if (window.Progress) window.Progress.bind("pipeline:sync-progress", "pipeline:sync-done");
+
   window.addEventListener("pipeline:sync-progress", onSyncProgress);
   window.addEventListener("pipeline:sync-done", onSyncDone);
 

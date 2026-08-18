@@ -88,6 +88,10 @@ window.addEventListener("pywebviewready", async () => {
     state.board = e.target.value; PanelState.set({ board: state.board }); renderFeed();
   });
   $("#show-open-jobs").addEventListener("change", onToggleOpenJobs);
+  // The bar rides the same stream as the status text: the text says
+  // what the board scan is on, the bar says how much is left.
+  if (window.Progress) window.Progress.bind("hygiene:scan-progress", "hygiene:scan-done");
+
   window.addEventListener("hygiene:scan-progress", (ev) => {
     const d = ev.detail || {};
     setScanState(`Scanning ${d.i || 0}/${d.n || "?"} · ${d.label || d.name || "…"}`);

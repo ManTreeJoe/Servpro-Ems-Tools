@@ -140,6 +140,16 @@
       _el.classList.remove("on", "err", "ind");
       _el.firstChild.style.width = "0%";
     },
+    // Is a bar currently showing, and is it the indeterminate kind?
+    // The shim's generic "something is taking a while" bar asks before
+    // arming, so it can never stomp a real determinate stream that is
+    // already reporting a position.
+    active: function () {
+      return !!(_el && _el.classList.contains("on"));
+    },
+    indeterminate: function () {
+      return !!(_el && _el.classList.contains("ind"));
+    },
     // Wire a progress event and its done event in one line.
     // `okOf` decides success from the done event's detail.
     bind: function (progressEvent, doneEvent, okOf) {

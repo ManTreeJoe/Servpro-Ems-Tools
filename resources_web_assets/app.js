@@ -167,17 +167,28 @@ async function rebuild() {
   btn.disabled = true;
   let r;
   try { r = await pywebview.api.rebuild(); }
-  catch (ex) { btn.disabled = false; setStatus(String(ex), "error"); return; }
+  catch (ex) {
+    btn.disabled = false;
+    if (window.Progress) window.Progress.fail();
+    setStatus(String(ex), "error");
+    return;
+  }
   if (!r || !r.ok) {
     btn.disabled = false;
     setStatus((r && r.error) || "Couldn't start", "warn");
     return;
   }
+  if (window.Progress) window.Progress.start();   // before the first poll
   const poll = setInterval(async () => {
     let p;
     try { p = await pywebview.api.rebuild_progress(); } catch (e) { return; }
     const d = (p && p.progress) || {};
     if (p && p.building) {
+      // This one POLLS rather than emitting events, so it drives the bar
+      // directly instead of through Progress.bind. Same bar, same
+      // meaning — 47 seconds is exactly long enough to want a position
+      // rather than a spinner.
+      if (window.Progress) window.Progress.set(d.done, d.total);
       setStatus(`↻ Rebuilding — ${d.done || 0}/${d.total || "?"} folders · `
                 + `${(d.files || 0).toLocaleString()} files`, "");
       return;
@@ -185,6 +196,7 @@ async function rebuild() {
     clearInterval(poll);
     btn.disabled = false;
     const res = (p && p.result) || {};
+    if (window.Progress) { if (res.ok) window.Progress.done(); else window.Progress.fail(); }
     setStatus(res.ok
       ? `✓ Indexed ${(res.files || 0).toLocaleString()} files in ${res.seconds}s`
       : `Rebuild failed: ${res.error || "?"}`, res.ok ? "ok" : "error");

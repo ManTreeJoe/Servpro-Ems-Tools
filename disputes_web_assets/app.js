@@ -32,6 +32,10 @@ window.addEventListener("pywebviewready", async () => {
     if (!r?.ok) { setStatus(`Export failed: ${r?.error || "?"}`, "error"); return; }
     setStatus(`📄 PDF saved · ${r.rows} rows · ${r.path}`, "ok");
   });
+  // The bar rides the same stream as the status text: the text says
+  // what the Trello board sync is on, the bar says how much is left.
+  if (window.Progress) window.Progress.bind("disputes:sync-progress", "disputes:sync-done");
+
   window.addEventListener("disputes:sync-progress", (ev) => {
     const d = ev.detail || {};
     setStatus(`🔄 Syncing ${d.i || 0}/${d.n || "?"} · ${d.name || "…"}`);
