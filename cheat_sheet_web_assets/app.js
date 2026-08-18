@@ -1,9 +1,10 @@
 "use strict";
-const state = { sections: [], active: 0, search: "" };
+const state = { sections: [], active: 0, search: "", shortcuts: [] };
 const $ = (s) => document.querySelector(s);
 
 window.addEventListener("pywebviewready", async () => {
   state.sections = await pywebview.api.sections() || [];
+  await loadShortcuts();
   render();
   $("#search-box").addEventListener("input", (e) => { state.search = e.target.value; render(); });
   document.getElementById("export-pdf-btn")?.addEventListener("click", async () => {
@@ -59,9 +60,111 @@ function floatHint(anchor, msg) {
   setTimeout(() => tip.remove(), 850);
 }
 
+// ── My Shortcuts ───────────────────────────────────────────────────
+//
+// The cheat sheet is a shipped markdown file — the same for everyone, and
+// read-only for good reason. But half of what anyone reaches for daily is
+// personal: a Workcenter URL, the office number, a snippet pasted twenty
+// times a day. Those had nowhere to live except a sticky note.
+//
+// Pinned as the FIRST entry in the contents rather than buried at the
+// bottom: it is the part that is yours, and the part you open the panel
+// for once the shipped pages are familiar.
+const MINE = -1;                 // the pinned section's pseudo-index
+
+async function loadShortcuts() {
+  try {
+    const r = await pywebview.api.quick_items();
+    state.shortcuts = (r && r.items) || [];
+  } catch (_) { state.shortcuts = []; }
+}
+
+async function persistShortcuts() {
+  try {
+    const r = await pywebview.api.save_quick_items(state.shortcuts);
+    if (r && r.ok === false) alert(`Couldn't save: ${r.error || "?"}`);
+  } catch (ex) { alert(`Couldn't save: ${ex}`); }
+}
+
+function renderShortcuts() {
+  const items = state.shortcuts || [];
+  const rows = items.map((it, i) => `
+    <div class="sc-row" data-i="${i}">
+      ${it.kind === "link"
+        ? `<button class="btn sc-go" data-i="${i}">🔗 ${esc(it.label)}</button>`
+        : `<button class="btn copy-btn sc-copy" data-copy="${
+             encodeURIComponent(it.value)}">📋 ${esc(it.label)}</button>`}
+      <code class="sc-val">${esc(it.value)}</code>
+      <button class="btn sc-edit" data-i="${i}" title="Rename or change it">✎</button>
+      <button class="btn sc-del" data-i="${i}" title="Remove">✕</button>
+    </div>`).join("");
+  return `<h2>⭐ My Shortcuts</h2>
+    <p class="muted">Yours only, saved on this computer. Links open in the
+      browser; copy buttons put the text on the clipboard.</p>
+    ${rows || `<p class="muted">Nothing here yet — add your first below.</p>`}
+    <div class="sc-add">
+      <select id="sc-kind" class="search">
+        <option value="copy">📋 Copy text</option>
+        <option value="link">🔗 Open link</option>
+      </select>
+      <input id="sc-label" class="search" placeholder="Button name (e.g. Office #)" />
+      <input id="sc-value" class="search" placeholder="Text to copy, or https://…" />
+      <button class="btn btn-primary" id="sc-save">＋ Add</button>
+    </div>`;
+}
+
+function wireShortcuts() {
+  const root = $("#content");
+  root.querySelectorAll(".sc-go").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const it = state.shortcuts[+b.dataset.i];
+      if (!it) return;
+      const r = await pywebview.api.open_link(it.value);
+      if (r && !r.ok) alert(r.error || "Couldn't open that link");
+    }));
+  root.querySelectorAll(".sc-del").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const it = state.shortcuts[+b.dataset.i];
+      if (!it || !confirm(`Remove "${it.label}"?`)) return;
+      state.shortcuts.splice(+b.dataset.i, 1);
+      await persistShortcuts();
+      render();
+    }));
+  root.querySelectorAll(".sc-edit").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const i = +b.dataset.i;
+      const it = state.shortcuts[i];
+      if (!it) return;
+      const label = prompt("Button name:", it.label);
+      if (label === null) return;
+      const value = prompt("Text to copy, or the link:", it.value);
+      if (value === null) return;
+      if (!label.trim() || !value.trim()) { alert("Both are needed."); return; }
+      state.shortcuts[i] = { ...it, label: label.trim(), value: value.trim() };
+      await persistShortcuts();
+      render();
+    }));
+  const add = root.querySelector("#sc-save");
+  if (add) add.addEventListener("click", async () => {
+    const label = (root.querySelector("#sc-label").value || "").trim();
+    const value = (root.querySelector("#sc-value").value || "").trim();
+    const kind = root.querySelector("#sc-kind").value === "link" ? "link" : "copy";
+    if (!label || !value) { alert("Give it a name and a value."); return; }
+    if (kind === "link" && !/^https?:\/\//i.test(value)) {
+      alert("Links have to start with http:// or https://");
+      return;
+    }
+    state.shortcuts.push({ label, kind, value });
+    await persistShortcuts();
+    render();
+  });
+}
+
 // ── Render ─────────────────────────────────────────────────────────
 function render() {
-  $("#toc").innerHTML = state.sections.map((s, i) =>
+  const mineTab = `<a class="${state.active === MINE ? "active" : ""}" `
+    + `data-i="${MINE}">⭐ My Shortcuts</a>`;
+  $("#toc").innerHTML = mineTab + state.sections.map((s, i) =>
     `<a class="${i === state.active ? "active" : ""}" data-i="${i}">${esc(s.title)}</a>`
   ).join("");
   document.querySelectorAll("#toc a").forEach((a) => a.addEventListener("click", () => {
@@ -69,6 +172,11 @@ function render() {
     render();
     $("#content").scrollTop = 0;
   }));
+  if (state.active === MINE) {
+    $("#content").innerHTML = renderShortcuts();
+    wireShortcuts();
+    return;
+  }
   const cur = state.sections[state.active];
   if (!cur) { $("#content").innerHTML = ""; return; }
   let html = `<h2>${esc(cur.title)}</h2>` + cur.subsections.map(renderSub).join("");

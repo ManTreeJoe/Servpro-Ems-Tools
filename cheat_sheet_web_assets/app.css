@@ -96,3 +96,28 @@
 .content li.chk-item { list-style: none; margin-left: -18px; }
 .content li.chk-item .chk { color: var(--green); }
 .content li.chk-item.done { color: var(--text-muted); }
+
+/* ── ⭐ My Shortcuts ─────────────────────────────────────────────────
+   The user's own links and copy buttons. The VALUE is shown next to each
+   button on purpose: two shortcuts called "Office #" are otherwise
+   indistinguishable, and you cannot tell what a copy button will paste
+   until you have already pasted it. */
+.sc-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.sc-row:last-of-type { border-bottom: 0; }
+.sc-row .btn { flex: none; }
+.sc-val {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 11.5px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sc-edit, .sc-del { padding: 2px 8px; font-size: 11px; }
+.sc-add {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--border); flex-wrap: wrap;
+}
+.sc-add .search { width: auto; flex: 1 1 160px; min-width: 120px; }
+.sc-add select.search { flex: 0 0 auto; }
