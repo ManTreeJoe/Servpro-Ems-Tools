@@ -103,7 +103,7 @@ def test_the_generic_bar_waits_before_showing():
     js = _read("web_shared", "iframe_shim.js")
     body = js[js.index("function _track"):]
     body = body[:body.index("\n    }")]
-    assert "400" in body
+    assert "SLOW_MS = 1200" in _read("web_shared", "iframe_shim.js")
 
 
 def test_the_generic_bar_never_stomps_a_real_stream():
@@ -139,3 +139,54 @@ def test_tracking_returns_the_original_promise():
 def test_the_bar_exposes_the_state_the_shim_asks_for():
     js = _read("web_shared", "progress_bar.js")
     assert "active: function" in js and "indeterminate: function" in js
+
+
+def _bulk_verbs():
+    """Read the shim's own verb list so the test and the code cannot
+    drift apart."""
+    import re
+    js = _read("web_shared", "iframe_shim.js")
+    i = js.index("const BULK_VERBS = [")
+    block = js[i:js.index("]", i)]
+    verbs = re.findall(r'"([^"]+)"', block)
+    assert verbs, "could not read the verb list from the shim"
+    return verbs
+
+
+def _is_bulk(name):
+    return any(str(name).startswith(v) for v in _bulk_verbs())
+
+
+def test_only_bulk_verbs_get_a_bar():
+    """The first version was a timing heuristic — "anything slower than
+    400ms" — and it caught ticking a checklist item, a ~600ms Trello
+    write. That is an ACTION, not a load: the checkbox and the status
+    line already say it is happening, and a bar on every tick trains
+    people to stop reading the bar, which costs you the real ones too.
+
+    Default is silence now. An unlisted slow method gets no bar, which
+    is exactly where it started."""
+    js = _read("web_shared", "iframe_shim.js")
+    body = js[js.index("function _track"):]
+    body = body[:body.index(chr(10) + "    }")]
+    assert "isBulk(name)" in body, "an allowlist, not a timing guess"
+
+
+@pytest.mark.parametrize("name", [
+    "toggle_checklist_item", "add_checklist_item", "delete_checklist_item",
+    "post_comment", "set_folder_path", "pin_trello", "reaudit_one",
+    "get_card_comments", "search", "open_file", "last_audit",
+    "companycam_pin", "copy_path", "save_job_settings",
+])
+def test_ordinary_actions_stay_silent(name):
+    """These are the ones that made it feel random."""
+    assert not _is_bulk(name), f"{name} must not raise a loading bar"
+
+
+@pytest.mark.parametrize("name", [
+    "sync_from_trello", "scan_workspace", "rebuild", "classify_rows",
+    "import_zip", "pull_photos", "generate_snapshot", "run_audit_day",
+    "reconcile_with_trello", "backfill_carriers", "export_pdf",
+])
+def test_real_loads_still_get_one(name):
+    assert _is_bulk(name), f"{name} is a load and should show a bar"

@@ -52,32 +52,47 @@
       const dir = parts[parts.length - 2] || "";
       ns = dir.replace(/_web_assets$/, "");
     } catch (_) { ns = ""; }
-    // ── "Something is taking a while" ───────────────────────────────
+    // ── "This is a big load" ────────────────────────────────────────
     //
     // Every panel's API call comes through this one function, which
     // makes it the only place a loading indicator can be added ONCE and
     // cover panels that never streamed progress — APA, Job Notes, KPI,
-    // Spreadsheets — instead of guessing which of their calls are slow.
+    // Settings — instead of guessing which of their calls are slow.
     //
-    // Deliberately modest:
-    //  * It waits 400ms first. A bar that flashes on every fast call is
-    //    noise, and noise is what makes people stop reading the bar.
-    //  * It never arms while a real stream is already showing a
-    //    POSITION — an indeterminate stripe replacing "62%" is a
-    //    downgrade.
-    //  * It refcounts, so ten overlapping calls are one bar, and it only
-    //    clears the bar it actually armed.
+    // It is an ALLOWLIST of bulk verbs, not a timing heuristic, and that
+    // is the whole lesson from the first attempt: "anything slower than
+    // 400ms" caught ticking a checklist item, which is a ~600ms Trello
+    // write. It is an ACTION, not a load — the checkbox and the status
+    // line already say it is happening — and a bar flashing on every
+    // tick trains people to stop reading the bar, which costs you the
+    // real ones too.
+    //
+    // Default is silence. A slow method that is not listed simply gets
+    // no bar, which is where it started; a fast one that IS listed still
+    // waits out the delay below.
+    const BULK_VERBS = [
+      "sync", "scan", "rebuild", "reindex", "build_", "index_", "classify",
+      "reconcile", "generate", "export", "import", "pull", "backfill",
+      "migrate", "refresh_all", "load_all", "run_audit", "audit_all",
+    ];
+    function isBulk(name) {
+      const n = String(name || "");
+      return BULK_VERBS.some(function (v) { return n.indexOf(v) === 0; });
+    }
+    const SLOW_MS = 1200;       // even a real load gets this long to finish
+
     let _slow = 0;
-    function _track(p) {
+    function _track(name, p) {
       const P = window.Progress;
       if (!P || !p || typeof p.then !== "function") return p;
+      if (!isBulk(name)) return p;
       let armed = false;
       const t = setTimeout(function () {
         if (P.active && P.active()) return;   // a real stream owns it
         armed = true;
         _slow += 1;
         P.start();
-      }, 400);
+      }, SLOW_MS);
       const settle = function () {
         clearTimeout(t);
         if (!armed) return;
@@ -96,10 +111,10 @@
         return function (...args) {
           const nsKey = ns + "_" + prop;
           if (typeof parentApi[nsKey] === "function") {
-            return _track(parentApi[nsKey](...args));
+            return _track(prop, parentApi[nsKey](...args));
           }
           if (typeof parentApi[prop] === "function") {
-            return _track(parentApi[prop](...args));
+            return _track(prop, parentApi[prop](...args));
           }
           console.warn("[shim] pywebview.api." + prop + " — neither "
             + nsKey + " nor " + prop + " on parent HomeApi");
