@@ -91,9 +91,34 @@ class CompanyCamApi:
             return {"ok": False, "error": "CompanyCam token not set"}
         try:
             res = cc.find_project(query or "")
-            return {"ok": True, "candidates": res.get("candidates", [])}
+            cands = list(res.get("candidates", []) or [])
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+        # Photo count per candidate, and drop the dead ones.
+        #
+        # Two projects for one loss routinely carry the SAME name — the
+        # Bell Mountain pair were both "Menifee Union School District
+        # (Bell Mountain ) - 8/14", identical address, and one of them
+        # 404s because it was deleted while still appearing in search
+        # results. Name and address alone make that choice a coin flip;
+        # "151 photos" against "gone" makes it obvious, and the count is
+        # what a person is really picking by.
+        #
+        # Capped: this is an API call per candidate, and nobody reads
+        # past the first handful.
+        for c in cands[:8]:
+            pid = str(c.get("id") or "")
+            if not pid:
+                continue
+            try:
+                photos = cc.list_project_photos(pid, per_page=100, max_pages=2)
+                c["photo_count"] = len(photos or [])
+                c["approx"] = len(photos or []) >= 200
+            except Exception:
+                # A project that cannot be read is not a choice — say so
+                # rather than offering it as though it were fine.
+                c["unavailable"] = True
+        return {"ok": True, "candidates": cands}
 
     def companycam_configured(self) -> dict:
         """Whether a CompanyCam token is set — lets a panel hide a

@@ -243,6 +243,8 @@
           <button class="action-btn" data-action="cc-pull"
                   ${hasPath ? "" : "disabled"}
                   title="Pull this job's NEW CompanyCam photos into its PICS folder"><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Pull CompanyCam</button>
+          <button class="action-btn" data-action="cc-relink"
+                  title="Auto-matching picked the wrong CompanyCam project? Change it here — the choice sticks."><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Change project</button>
           <button class="action-btn" data-action="attachments"
                   ${hasPin ? "" : "disabled"}
                   title="Browse + download the Trello card's photos/files"><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello Attachments</button>
@@ -849,13 +851,14 @@
     });
   }
 
-  function ccManualPick(row, ctx, defaultQuery) {
+  function ccManualPick(row, ctx, defaultQuery, opts) {
     return new Promise((resolve) => {
       if (!window.openModal) { resolve(null); return; }
+      const o = opts || {};
       const who = _firstLast(row.display_name || tc(ctx, row.client));
       const overlay = window.openModal({
-        title: "📷 Find CompanyCam project — " + who,
-        sub: "No auto-match. Search CompanyCam (projects are named by the insured) and pick the right one — it'll be remembered.",
+        title: (o.title || "📷 Find CompanyCam project — ") + who,
+        sub: o.sub || "No auto-match. Search CompanyCam (projects are named by the insured) and pick the right one — it'll be remembered.",
         body: `
           <div style="display:flex;gap:8px;">
             <input id="ccp-q" type="text" value="${escA(ctx, defaultQuery || "")}" placeholder="Search by insured name…"
@@ -888,12 +891,25 @@
               <div style="font-weight:600;">${esc(ctx, c.name || "(unnamed)")}</div>
               <div style="font-size:11px;color:var(--text-muted);">${esc(ctx, c.address || "")}</div>
             </div>
-            <span style="font-size:11px;color:var(--text-muted);">${c.score != null ? c.score + "%" : ""}</span>
+            <span style="font-size:11px;color:var(--text-muted);text-align:right;flex:none;">${
+              c.unavailable
+                ? '<b style="color:var(--amber);">unavailable</b>'
+                : (c.photo_count != null
+                    ? `<b>${c.photo_count}${c.approx ? "+" : ""}</b> photo${
+                        c.photo_count === 1 ? "" : "s"}` : "")
+              }${c.score != null ? `<br>${c.score}% name match` : ""}</span>
           </div>`).join("");
         listEl.querySelectorAll(".ccp-row").forEach((el) => {
           el.addEventListener("click", async () => {
             const c = cands[+el.dataset.i];
             if (!c || !c.id) return;
+            // Deleted projects keep showing up in search results. Linking
+            // one points the job at something that 404s on every pull.
+            if (c.unavailable) {
+              setStatus(ctx, "That project can't be opened — it looks "
+                             + "deleted. Pick another.", "warn");
+              return;
+            }
             try { await pywebview.api.companycam_pin(row.client, c.id, row.trello_card_id || ""); } catch (e) {}
             finish({ id: c.id, name: c.name });
           });
@@ -908,6 +924,35 @@
 
   async function detailAction(action, row, ctx) {
     const M = (ctx && ctx.modals) || {};
+    if (action === "cc-relink") {
+      // Auto-matching by name is right most of the time and wrong often
+      // enough to matter — two projects for one loss, or a near-name on
+      // another job. There was no way to correct it once it had matched:
+      // the manual picker only ever appeared when auto-match FAILED.
+      //
+      // A pick REPLACES the stored link (companycam_pin drops the
+      // others) and find_project_id consults that link before it
+      // consults names, so choosing once sticks and auto-matching
+      // continues for every job you have not corrected.
+      setStatus(ctx, "📷 Reading the current link…", "");
+      let cur = null;
+      try { cur = await pywebview.api.companycam_probe(row.client,
+                                                       row.trello_card_id || ""); }
+      catch (_) { /* offline — the picker still works */ }
+      const now = (cur && cur.matched && cur.matched_name)
+        ? `Currently linked to “${esc(ctx, cur.matched_name)}”`
+          + (cur.count != null ? ` (${cur.count} new photo${
+              cur.count === 1 ? "" : "s"})` : "")
+        : "Nothing is linked yet.";
+      const picked = await ccManualPick(
+        row, ctx, _firstLast(row.display_name || tc(ctx, row.client)),
+        { title: "📷 Change CompanyCam project — ",
+          sub: now + " Search below and pick the right one — it is "
+             + "remembered for this job and used by every later pull." });
+      if (!picked) { setStatus(ctx, "Left as it was", ""); return; }
+      setStatus(ctx, `📷 Now linked to “${picked.name}”`, "ok");
+      return;
+    }
     if (action === "comments") {
       toggleCommentsDrawer(row, ctx);
       return;
