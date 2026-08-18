@@ -1045,3 +1045,14 @@ body { display: flex; flex-direction: column; }
 .ni-fact.clash strong { text-decoration: underline; }
 .ni-keep { margin-top: 8px; align-self: flex-start; }
 .ni-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+
+/* The ▾ beside Pull CompanyCam. A caret rather than a second full
+   button: the pull is what people click all day and it stays one click,
+   while the thing you need once a month sits next to it instead of
+   taking up a slot in the row. */
+.action-btn.cc-more {
+  padding-left: 7px; padding-right: 7px;
+  margin-left: -1px;
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
+}
+.action-btn.cc-more + .action-btn { margin-left: 6px; }

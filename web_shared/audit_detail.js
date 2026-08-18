@@ -242,9 +242,10 @@
                   title="Import matching files from SharePoint into the OD job folder">📥 Import SP</button>
           <button class="action-btn" data-action="cc-pull"
                   ${hasPath ? "" : "disabled"}
-                  title="Pull this job's NEW CompanyCam photos into its PICS folder"><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Pull CompanyCam</button>
-          <button class="action-btn" data-action="cc-relink"
-                  title="Auto-matching picked the wrong CompanyCam project? Change it here — the choice sticks."><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Change project</button>
+                  title="Pull this job's NEW CompanyCam photos into its PICS folder"><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Pull CompanyCam</button><!--
+               --><button class="action-btn cc-more" data-action="cc-menu"
+                  ${hasPath ? "" : "disabled"}
+                  title="Auto-match grabbed the wrong project? Change which CompanyCam project this job pulls from.">▾</button>
           <button class="action-btn" data-action="attachments"
                   ${hasPin ? "" : "disabled"}
                   title="Browse + download the Trello card's photos/files"><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello Attachments</button>
@@ -924,6 +925,12 @@
 
   async function detailAction(action, row, ctx) {
     const M = (ctx && ctx.modals) || {};
+    if (action === "cc-menu") {
+      // One option today, so the caret just does it. A menu holding a
+      // single item is a click tax; when there is a second CompanyCam
+      // option this becomes a real menu.
+      return detailAction("cc-relink", row, ctx);
+    }
     if (action === "cc-relink") {
       // Auto-matching by name is right most of the time and wrong often
       // enough to matter — two projects for one loss, or a near-name on

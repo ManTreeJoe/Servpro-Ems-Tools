@@ -92,8 +92,18 @@ def test_search_still_works_when_counting_fails(api, monkeypatch):
 # ── the panel ────────────────────────────────────────────────────────
 def test_there_is_a_way_to_change_the_project(js):
     """The whole gap: the picker only opened when auto-match FAILED."""
-    assert 'data-action="cc-relink"' in js
+    assert 'data-action="cc-menu"' in js
     assert 'action === "cc-relink"' in js
+
+
+def test_the_pull_button_stays_one_click(js):
+    """The change lives on a caret BESIDE Pull, not on the button. Pull
+    is what people click all day; a menu on it would make the common
+    action cost two clicks to serve the monthly one."""
+    assert "cc-more" in js
+    body = js[js.index('if (action === "cc-menu")'):]
+    body = body[:body.index("}")]
+    assert "cc-relink" in body
 
 
 def test_relink_shows_what_is_linked_now(js):
