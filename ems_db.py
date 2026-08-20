@@ -117,3 +117,118 @@ def __dir__():
         return sorted(set(globals()) | set(dir(_backend())))
     except Exception:
         return sorted(globals())
+
+
+# ── merge: the one call that rewrites identity ──────────────────────────
+#
+# Defined here rather than left to __getattr__ on purpose. A merge folds
+# jobs together and DELETES rows; it is the single most destructive thing
+# the index can do, and it had neither a preview nor a way back. Putting
+# both at the façade means every caller gets them without being changed —
+# the same chokepoint argument as the shim's _track.
+#
+# Six of the seven callers route through here. `migrate_canon_carrier_keys`
+# imports ems_db_sqlite directly and so bypasses this; it is a one-off
+# maintenance script, and any NEW repair script should import ems_db.
+
+
+def merge_preview(into_key: str, from_keys) -> dict:
+    """What a merge would move, before it moves it.
+
+    Read-only. Returns the survivor, a per-loser breakdown, and totals —
+    including each child by NAME, because "3 children" and "Unit 585-G,
+    Unit 561-I, Unit 880-A" are very different things to read in a
+    confirmation dialog.
+    """
+    b = _backend()
+    into_key = (into_key or "").strip()
+    into = None
+    try:
+        into = b.get_job(into_key)
+    except Exception:
+        pass
+    into_dept = (into or {}).get("department")
+
+    losers, missing, conflicts = [], [], []
+    for fk in from_keys or ():
+        fk = (fk or "").strip()
+        if not fk or fk == into_key:
+            continue
+        try:
+            row = b.get_job(fk)
+        except Exception:
+            row = None
+        if row is None:
+            missing.append(fk)
+            continue
+        # Mirrors merge_jobs' own rule so the preview cannot promise a
+        # fold the merge will refuse.
+        if into_dept and row.get("department") and \
+                row["department"] != into_dept:
+            conflicts.append(fk)
+            continue
+        try:
+            aliases = list(b.get_aliases(fk) or [])
+        except Exception:
+            aliases = []
+        try:
+            links = list(b.get_links(fk) or [])
+        except Exception:
+            links = []
+        try:
+            kids = list(b.children_of(fk) or [])
+        except Exception:
+            kids = []
+        losers.append({
+            "canon_key": fk,
+            "display_name": row.get("display_name") or fk,
+            "aliases": len(aliases),
+            "links": len(links),
+            "link_types": sorted({l.get("link_type") for l in links
+                                  if l.get("link_type")}),
+            "children": [c.get("name") for c in kids],
+        })
+
+    return {
+        "into": {"canon_key": into_key,
+                 "display_name": (into or {}).get("display_name") or into_key,
+                 "exists": into is not None},
+        "from": losers,
+        "missing": missing,
+        "department_conflicts": conflicts,
+        "totals": {
+            "jobs": len(losers),
+            "aliases": sum(l["aliases"] for l in losers),
+            "links": sum(l["links"] for l in losers),
+            "children": sum(len(l["children"]) for l in losers),
+        },
+    }
+
+
+def merge_jobs(into_key: str, from_keys, *, undo: bool = True,
+               note: str = "") -> dict:
+    """Fold jobs together, recording a way back first.
+
+    The undo captures the SURVIVOR as well as the losers: a merge changes
+    the survivor too (it gains their aliases, links and children), so a
+    record of only the losers describes half the change.
+
+    `undo=False` exists for tests and for callers already inside their own
+    transaction. A failed capture does NOT block the merge — it downgrades
+    the safety net rather than breaking the tool — but `undo_id` is then
+    absent from the result, which is how a caller can tell.
+    """
+    keys = [into_key] + [k for k in (from_keys or ())]
+    rec = None
+    if undo:
+        try:
+            import job_undo
+            rec = job_undo.capture(
+                keys, op="merge",
+                note=note or f"merge {len(keys) - 1} into {into_key}")
+        except Exception:
+            rec = None
+    res = _backend().merge_jobs(into_key, from_keys) or {}
+    if isinstance(res, dict) and rec and rec.get("ok"):
+        res["undo_id"] = rec["id"]
+    return res
