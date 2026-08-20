@@ -94,12 +94,25 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
 
 def list_projects(query="", per_page=100, max_pages=20, modified_since=""):
     """Return raw project dicts. `query` filters by name / address-line-1
-    server-side (empty = all). Pages through until a short page or
-    `max_pages` (safety cap — 20×100 = 2000 projects). per_page maxes at
-    100 API-side."""
+    server-side (empty = all). Pages until a genuinely short page or
+    `max_pages`.
+
+    CompanyCam caps a page at 50 however large `per_page` is. The old
+    stop condition compared against the REQUESTED size, so page one —
+    50 rows against a request for 100 — looked like the last page: this
+    returned 50 of 287 projects and reported success. `find_project()`
+    is the auto-linker, so anything past the cap was invisible, and the
+    job read as "no CompanyCam project" or bound to a worse match.
+    (Same shape as the Supabase 1000-row cap, which hid two thirds of
+    job_lifecycle.)
+
+    So the page size is learned from the first response instead of
+    assumed.
+    """
     out = []
     per_page = max(1, min(int(per_page or 100), 100))
     page = 1
+    page_size = None
     while page <= max_pages:
         params = {"page": page, "per_page": per_page}
         if query:
@@ -107,11 +120,13 @@ def list_projects(query="", per_page=100, max_pages=20, modified_since=""):
         if modified_since:
             params["modified_since"] = modified_since
         batch = _call("/projects", params=params) or []
-        if not isinstance(batch, list):
+        if not isinstance(batch, list) or not batch:
             break
         out.extend(batch)
-        if len(batch) < per_page:
-            break                       # last page
+        if page_size is None:
+            page_size = len(batch)      # what the API actually gives
+        if len(batch) < page_size:
+            break                       # genuinely the last page
         page += 1
     return out
 
@@ -550,9 +565,19 @@ def _tag_disk_load():
         with open(p, "r", encoding="utf-8") as fh:
             raw = json.load(fh)
         if isinstance(raw, dict):
-            _TAG_DISK = {str(k): [str(t) for t in v]
-                         for k, v in raw.items()
-                         if isinstance(v, list) and v}
+            out = {}
+            for k, v in raw.items():
+                # New form {"t": [...], "u": "<photo updated_at>"}; the
+                # legacy form is a bare list, kept readable so an existing
+                # sidecar isn't thrown away. A legacy entry has no stamp,
+                # so it revalidates once and upgrades itself.
+                if isinstance(v, dict) and isinstance(v.get("t"), list):
+                    if v["t"]:
+                        out[str(k)] = {"t": [str(t) for t in v["t"]],
+                                       "u": str(v.get("u") or "")}
+                elif isinstance(v, list) and v:
+                    out[str(k)] = {"t": [str(t) for t in v], "u": ""}
+            _TAG_DISK = out
     except Exception:
         _TAG_DISK = {}
     return _TAG_DISK
@@ -589,22 +614,43 @@ def invalidate_tag_cache():
     _TAG_CACHE.clear()
 
 
-def photo_tags(photo_id):
+def photo_tags(photo_id, updated_at=""):
     """Tag display names for one photo. [] on any failure — a pull must
     never break because a label lookup did.
 
     Served from memory, then from the sidecar, then from the API.
+
+    `updated_at` is the photo's own stamp from the photo list, and it is
+    what stops the cache going stale. Techs tag LATE: a photo first read
+    carrying only "Initial Inspection" and tagged "Garage" an hour later
+    was frozen at the first answer forever, because the sidecar had no
+    expiry and no revalidation. Live, Adele Pacheco cached
+    ['Initial Inspection'] against ['Contents','Garage','Initial
+    Inspection'] on the API — the room tag was in CompanyCam and the pull
+    could not see it.
+
+    A cached entry whose stamp differs from the photo's current one is
+    re-fetched. Callers that don't pass a stamp keep the old behaviour.
     """
     global _TAG_DISK_DIRTY
     pid = str(photo_id or "").strip()
     if not pid:
         return []
-    if pid in _TAG_CACHE:
-        return _TAG_CACHE[pid]
+    stamp = str(updated_at or "")
+    # Memory and sidecar are both keyed by the photo's stamp, so a
+    # revalidation can't be defeated by an earlier stamp-less call in the
+    # same run seeding memory with the stale answer.
+    mem = _TAG_CACHE.get(pid)
+    if mem is not None and (not stamp or mem.get("u") == stamp):
+        return mem["t"]
     disk = _tag_disk_load()
-    if pid in disk:
-        _TAG_CACHE[pid] = disk[pid]
-        return disk[pid]
+    hit = disk.get(pid)
+    if hit is not None:
+        # No stamp on either side means "can't tell" — trust it, which is
+        # the pre-existing behaviour for callers that pass nothing.
+        if not stamp or hit.get("u") == stamp:
+            _TAG_CACHE[pid] = hit
+            return hit["t"]
     try:
         raw = _call(f"/photos/{pid}/tags") or []
     except Exception:
@@ -617,7 +663,7 @@ def photo_tags(photo_id):
             n = str(t or "").strip()
         if n:
             names.append(n)
-    _TAG_CACHE[pid] = names
+    _TAG_CACHE[pid] = {"t": names, "u": stamp}
     # Only TAGGED photos are written to disk. A photo with no tags is
     # usually one nobody has tagged YET — techs tag late, and the
     # suggest-a-stage feature exists precisely because shoots arrive
@@ -625,7 +671,7 @@ def photo_tags(photo_id):
     # untagged forever. Empties still cache in memory, so a single run
     # never asks twice.
     if names:
-        disk[pid] = names
+        disk[pid] = {"t": names, "u": stamp}
         _TAG_DISK_DIRTY += 1
     return names
 
@@ -644,7 +690,8 @@ def attach_tags(photos, *, cap=_TAG_FETCH_CAP):
         # any tags a caller supplied were overwritten.
         if p.get("tags"):
             continue
-        p["tags"] = photo_tags(p.get("id")) if i < cap else []
+        p["tags"] = (photo_tags(p.get("id"), p.get("updated_at") or "")
+                     if i < cap else [])
     # Save once per batch rather than per photo: this is the only place
     # that fetches tags in bulk, and the whole point is that the next
     # look at this job doesn't pay for them again — including after a
@@ -1035,8 +1082,17 @@ def _id_tokens_on_disk(dest_dir):
     return tokens
 
 
+# Stages belonging to the CONTENTS division rather than to PICS. A photo
+# tagged Contents IS contents work: the office already files it under
+# <job>\CONTENTS (99 live folders), and that is where the audit's
+# contents check looks. Leaving it at EMS\PICS\Contents put it somewhere
+# nothing reads.
+_CONTENTS_STAGES = {"contents"}
+
+
 def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
-                organize_by_tags=True, force_tech=False):
+                organize_by_tags=True, force_tech=False,
+                split_contents=False):
     """Where ONE photo lands, as (relative parts, room, stage, box).
 
     Extracted from the download loop so the pull PREVIEW and the pull
@@ -1046,6 +1102,13 @@ def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
     Layout is `<stage>\\<tech date>\\<room>\\<qualifier>`. Stage is the
     workflow phase from the photo's own tag; Equipment is a qualifier, not
     a stage, because it is gear photographed IN a room.
+
+    `split_contents` sends Contents-tagged photos to the CONTENTS
+    DIVISION instead, laid out `<tech date>\\<room>` — no stage folder,
+    because the division already says what they are. The returned
+    `division` tells the caller which base directory to join `parts`
+    onto. Off by default, so every existing caller lands exactly where it
+    always has.
     """
     room = stage = qualifier = ""
     if organize_by_tags:
@@ -1055,13 +1118,23 @@ def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
         qualifier = _safe_folder(qualifier)
     stage_dir = stage or subfolder
     box = tech_date_box(p, tech, force_tech=force_tech) if tech_date_folder else ""
+    division = "EMS"
+    if split_contents and stage_dir.strip().lower() in _CONTENTS_STAGES:
+        division = "CONTENTS"
+        stage_dir = ""
     parts = [x for x in (stage_dir, box, room, qualifier) if x]
     return {"parts": parts, "room": room, "stage": stage_dir,
-            "box": box, "qualifier": qualifier}
+            # What to CALL this shoot, which is not always a folder in the
+            # path: a contents photo has no stage folder (the division
+            # says it) but the preview must still read "Contents" rather
+            # than "(no stage tag)".
+            "stage_label": stage or subfolder or "",
+            "box": box, "qualifier": qualifier, "division": division}
 
 
 def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
-              tech_date_folder=True, organize_by_tags=True):
+              tech_date_folder=True, organize_by_tags=True,
+              contents_dir=""):
     """What a pull WOULD bring in, grouped by day and by what was done.
 
     Answers the question you actually have in front of a job: which
@@ -1074,7 +1147,7 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
     a room breakdown. Rows carry their photo ids so the caller can pull a
     subset.
     """
-    v = verify_project(project_id, dest_dir)
+    v = verify_project(project_id, dest_dir, also_dirs=(contents_dir,))
     if not v.get("ok"):
         return v
 
@@ -1099,9 +1172,13 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
         # overrides it per row afterwards if it's wrong.
         r = route_photo(p, subfolder=subfolder, tech=tech,
                         tech_date_folder=tech_date_folder,
-                        organize_by_tags=organize_by_tags)
+                        organize_by_tags=organize_by_tags,
+                        split_contents=bool(contents_dir))
         parts, room, stage, box = r["parts"], r["room"], r["stage"], r["box"]
-        key = (stage, box)
+        division, label = r["division"], r["stage_label"]
+        # Contents rows live under a different ROOT, so they must not be
+        # grouped with an EMS shoot that shares a stage and date.
+        key = (division, label, box)
         # `target` is the part of the path every photo in this shoot
         # SHARES — stage + tech-date box. It deliberately stops before
         # the room.
@@ -1113,12 +1190,16 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
         # to Kitchen. route_photo exists precisely so the preview and the
         # download cannot disagree, and this threw that away. The rooms
         # are listed separately, with counts.
+        base = contents_dir if division == "CONTENTS" else dest_dir
+        shared = [x for x in (stage, box) if x]
         g = groups.setdefault(key, {
-            "stage": stage or "(no stage tag)",
+            "stage": label or "(no stage tag)",
             "box": box,
+            "division": division,
             "date": date_label(p),
             "tech": tech_label(p, tech),
-            "target": os.path.join(*[x for x in (stage, box) if x]),
+            "target": os.path.join(*shared) if shared else "",
+            "dest": os.path.join(base, *shared) if base else "",
             "count": 0, "rooms": {}, "photo_ids": [],
         })
         g["count"] += 1
@@ -1139,8 +1220,13 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
             "extra_files": v.get("extra_files", 0)}
 
 
-def verify_project(project_id, dest_dir):
+def verify_project(project_id, dest_dir, *, also_dirs=()):
     """Compare CompanyCam against what's actually in the job folder.
+
+    `also_dirs` are additional roots that legitimately hold this
+    project's photos — the CONTENTS division, once contents-tagged
+    photos are split out of PICS. Without them every contents photo
+    reads as missing and is re-downloaded on every single pull.
 
     The high-water mark only records what has been SEEN — it cannot know
     whether the file survived. A folder cleaned out, a failed download, a
@@ -1157,9 +1243,12 @@ def verify_project(project_id, dest_dir):
         photos = list_project_photos(pid)
     except Exception as ex:
         return {"ok": False, "error": str(ex)}
-    on_disk = os.path.isdir(dest_dir)
-    have = _id_tokens_on_disk(dest_dir) if on_disk else set()
-    stamps = _capture_stamps_on_disk(dest_dir) if on_disk else set()
+    roots = [dest_dir] + [d for d in (also_dirs or ()) if d]
+    have, stamps = set(), set()
+    for root in roots:
+        if os.path.isdir(root):
+            have |= _id_tokens_on_disk(root)
+            stamps |= _capture_stamps_on_disk(root)
     present = _present_tokens(photos, have, stamps)
     missing = [p for p in photos if str(p.get("id") or "") not in present]
     known = {str(p.get("id") or "").lower() for p in photos}
@@ -1188,10 +1277,18 @@ def pull_missing_photos(project_id, dest_dir, **kw):
     return pull_new_photos(project_id, dest_dir, **kw)
 
 
+def _walk_all(roots):
+    """os.walk over several roots, skipping the ones that aren't there."""
+    for root in roots:
+        if root and os.path.isdir(root):
+            for triple in os.walk(root):
+                yield triple
+
+
 def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                     subfolder="", advance_watermark=True, tech="",
                     organize_by_tags=True, tech_date_folder=True,
-                    only_ids=None, force_tech=False):
+                    only_ids=None, force_tech=False, contents_dir=""):
     """Download NEW project photos into `dest_dir` and advance the per-
     project high-water mark.
 
@@ -1251,7 +1348,10 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
     # EVERYTHING once, on the first run after this naming change.
     existing = set()
     existing_tokens = set()
-    for _root, _dirs, _files in os.walk(dest_dir):
+    # The contents root holds this project's photos too once the
+    # split is on; leaving it out re-downloads them every pull.
+    _roots = [dest_dir] + ([contents_dir] if contents_dir else [])
+    for _root, _dirs, _files in _walk_all(_roots):
         for _f in _files:
             existing.add(_f.lower())
             stem = os.path.splitext(_f)[0]
@@ -1298,8 +1398,9 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
             stages_used[stage_dir] = stages_used.get(stage_dir, 0) + 1
         if box:
             boxes_used[box] = boxes_used.get(box, 0) + 1
-        photo_target = os.path.join(dest_dir, *r["parts"]) if r["parts"] \
-            else dest_dir
+        # Contents-tagged photos hang off the CONTENTS division, not PICS.
+        base = contents_dir if r["division"] == "CONTENTS" else dest_dir
+        photo_target = os.path.join(base, *r["parts"]) if r["parts"] else base
         tok = photo_id_token(p).lower()
         if fname.lower() in existing or str(p.get("id") or "") in already:
             skipped += 1

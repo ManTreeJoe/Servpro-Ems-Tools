@@ -138,7 +138,8 @@ def test_photo_tags_blank_id_costs_no_call(monkeypatch):
 
 
 def test_attach_tags_populates_in_place(monkeypatch):
-    monkeypatch.setattr(cc, "photo_tags", lambda pid: ["Attic"])
+    monkeypatch.setattr(cc, "photo_tags",
+                        lambda pid, updated_at="": ["Attic"])
     photos = [{"id": "a"}, {"id": "b"}]
     cc.attach_tags(photos)
     assert [p["tags"] for p in photos] == [["Attic"], ["Attic"]]
@@ -149,7 +150,7 @@ def test_attach_tags_respects_the_cap(monkeypatch):
     against the 240/min budget."""
     seen = []
 
-    def fake(pid):
+    def fake(pid, updated_at=""):
         seen.append(pid)
         return ["X"]
 

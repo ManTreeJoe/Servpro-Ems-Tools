@@ -182,8 +182,9 @@ def test_plan_loads_tags_before_grouping(monkeypatch):
     monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
     monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: set())
     monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
-    monkeypatch.setattr(cc, "photo_tags",
-                        lambda pid: ["Demo"] if pid == "a1" else ["Monitor"])
+    monkeypatch.setattr(
+        cc, "photo_tags",
+        lambda pid, updated_at="": ["Demo"] if pid == "a1" else ["Monitor"])
 
     r = cc.plan_pull("1", r"X:\job\PICS")
     stages = sorted(g["stage"] for g in r["groups"])

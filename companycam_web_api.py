@@ -243,6 +243,30 @@ class CompanyCamApi:
         except Exception:
             return []
 
+    def _cc_contents_dir(self, client: str) -> str:
+        r"""The job's CONTENTS folder — where contents-tagged photos go.
+
+        Derived from the resolved PICS path rather than re-resolving the
+        job, so the two can never point at different jobs. PICS sits at
+        `<job>\EMS\PICS`, so stripping the trailing PICS and the EMS
+        above it lands back on the job root.
+
+        Contents work is filed under `<job>\CONTENTS` by the office (99
+        live folders) and that is where the audit's contents check looks;
+        a photo tagged Contents left in `EMS\PICS\Contents` sits
+        somewhere nothing reads.
+        """
+        pics = self._cc_pics_dir(client)
+        if not pics:
+            return ""
+        parts = os.path.normpath(pics).split(os.sep)
+        while parts and parts[-1].strip().upper() in ("PICS", "EMS"):
+            parts.pop()
+        if not parts:
+            return ""
+        return os.path.join(os.sep.join(parts), "CONTENTS")
+
+
     def _cc_pics_dir(self, client: str) -> str:
         """The job's PICS folder, or "" when the job folder isn't resolved.
 
@@ -391,6 +415,7 @@ class CompanyCamApi:
             stage = ""
         try:
             r = cc.pull_missing_photos(pid, pics, subfolder=stage,
+                                       contents_dir=self._cc_contents_dir(client),
                                        tech=(tech or "")) or {}
             return {"ok": True, "pulled": r.get("downloaded", 0),
                     "skipped": r.get("skipped", 0), "pics": pics,
@@ -427,7 +452,8 @@ class CompanyCamApi:
         if stage.upper() == "AUTO":
             stage = ""
         try:
-            r = cc.plan_pull(pid, pics, subfolder=stage, tech=(tech or ""))
+            r = cc.plan_pull(pid, pics, subfolder=stage, tech=(tech or ""),
+                             contents_dir=self._cc_contents_dir(client))
             if r.get("ok"):
                 r["pics"] = pics
                 self._suggest_stages_from_run_doc(client, r.get("groups"))
@@ -516,6 +542,7 @@ class CompanyCamApi:
                     pid, pics, since_epoch=None, subfolder=stage,
                     tech=(row_tech or tech or ""), only_ids=ids,
                     force_tech=bool(row_tech),
+                    contents_dir=self._cc_contents_dir(client),
                     # Never advance past shoots deliberately skipped —
                     # they'd fall behind the mark and go unpullable.
                     advance_watermark=False) or {}
@@ -630,6 +657,7 @@ class CompanyCamApi:
             r = cc.pull_new_photos(
                 pid, pics, since_epoch=None, subfolder=stage,
                 tech=(tech or ""), only_ids=ids,
+                contents_dir=self._cc_contents_dir(client),
                 # The watermark must NOT advance past shoots deliberately
                 # skipped, or they go invisible to the next "anything new?"
                 # check and become silently unpullable.
@@ -685,7 +713,9 @@ class CompanyCamApi:
         if stage.upper() == "AUTO":
             stage = ""
         try:
-            r = cc.pull_new_photos(pid, pics, subfolder=stage, tech=(tech or "")) or {}
+            r = cc.pull_new_photos(
+                pid, pics, subfolder=stage, tech=(tech or ""),
+                contents_dir=self._cc_contents_dir(client)) or {}
             return {"ok": True, "pulled": r.get("downloaded", 0),
                     "skipped": r.get("skipped", 0), "pics": pics,
                     "stage": stage}
