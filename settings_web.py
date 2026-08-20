@@ -53,8 +53,19 @@ DEPT_FIELDS = [
     ("photos_root",           "Photos root folder",       "dir",     "Folders"),
     ("snapshot_template",     "Snapshot fillable PDF",    "file",    "Folders"),
     ("apa_monitor_root",      "APA Monitor docs folder",  "dir",     "Folders"),
+    ("snapshots_root",        "Snapshots folder",         "dir",     "Folders"),
+    ("dispute_tracker_path",  "Dispute tracker workbook", "file",    "Folders"),
+    # Blank = this franchise has no disputes board yet, so its tracker
+    # stays a plain editable workbook and syncs from nothing.
+    ("disputes_board_short_link", "Disputes board (Trello short link)",
+     "text", "Trello"),
     ("franchise_name",        "Franchise legal name",     "text",    "Identity"),
     ("office_phone",          "Office phone",             "text",    "Identity"),
+    # Each office has its own CompanyCam account. Blank means INHERIT the
+    # base token, which is how OC's projects were being created in IE's
+    # CompanyCam — the field has to exist before it can be set.
+    ("companycam_api_token",  "CompanyCam access token",  "secret",
+     "CompanyCam"),
 ]
 
 
@@ -165,7 +176,7 @@ class Api:
         """Current per-department browser commands + the department list."""
         try:
             base = config.load_base() or {}
-            depts = list((base.get("departments") or {}).keys()) or ["IE", "OC"]
+            depts = list((base.get("departments") or {}).keys())
             return {"ok": True,
                     "browsers": base.get("dept_browsers") or {},
                     "departments": depts,
@@ -192,6 +203,26 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    # ── Offices ──────────────────────────────────────────────────────
+    #
+    # Not a fixed IE/OC pair: an install may be one office, or three.
+
+    def add_department(self, key: str, label: str = "") -> dict:
+        try:
+            ok, err = config.add_department(key, label)
+            return {"ok": ok, "error": err, "departments":
+                    list((config.load_base().get("departments") or {}))}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def remove_department(self, key: str) -> dict:
+        try:
+            ok, err = config.remove_department(key)
+            return {"ok": ok, "error": err, "departments":
+                    list((config.load_base().get("departments") or {}))}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     # ── Multiple-department (OC / IE) config ─────────────────────────
     def dept_config(self):
         """State for the Departments settings section: whether it's on,
@@ -209,7 +240,12 @@ class Api:
                 out.append({
                     "key": k,
                     "label": (v.get("label") or k),
-                    "is_base": (k == "IE"),
+                    # No office is special. This said `k == "IE"`, so an
+                    # install that is only OC — or only LA — had a "base"
+                    # department it could never be. The base is whichever
+                    # one is active, or the first if none is.
+                    "is_base": (k == ((base.get("active_department") or "")
+                                      .strip() or next(iter(depts), ""))),
                     "overrides": {fk: v.get(fk, "") for fk in keyset},
                 })
             return {

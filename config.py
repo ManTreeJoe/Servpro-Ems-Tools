@@ -61,8 +61,18 @@ DEPT_OVERRIDE_KEYS = (
     # File-share roots — separate job/photo/run/APA folders
     "audit_base", "snapshot_template", "photos_root",
     "photos_extra_roots", "runs_dir", "apa_monitor_root",
+    # Franchise-owned WORKBOOKS. Both pointed at IE's share for every
+    # franchise, so OC's Snapshot panel listed IE's jobs and the dispute
+    # tracker was one shared file — the two franchises reading and
+    # writing each other's records without any sign of it.
+    "snapshots_root", "dispute_tracker_path",
+    "disputes_board_short_link",
     # Franchise identity — name + office phone on forms / DocuSign
     "franchise_name", "office_phone",
+    # CompanyCam — each office has its own account. Without this every
+    # department fell through to the BASE token, so OC's projects were
+    # created in IE's CompanyCam (reported 2026-08-20).
+    "companycam_api_token",
 )
 
 # The subset of DEPT_OVERRIDE_KEYS that answers "WHICH FRANCHISE is this?".
@@ -77,7 +87,28 @@ DEPT_IDENTITY_KEYS = (
     "trello_workspace_id",   # which Trello workspace = which franchise
     "audit_base",            # which job-folder share
     "runs_dir",              # which daily-run share
+    # Which CompanyCam ACCOUNT. IE is company 1478909 and OC is 1489448 —
+    # separate orgs — so two offices sharing this value means one is
+    # creating projects in the other's account. That is exactly what was
+    # happening before the key became department-scoped: OC inherited the
+    # base token and its projects landed in IE's CompanyCam.
+    "companycam_api_token",
 )
+
+
+# Franchise-owned DATA where a blank override does NOT mean "inherit".
+# Everywhere else blank-inherits is right: OC leaves `trello_token` empty
+# because it genuinely uses IE's account. But a blank RECORD path means
+# this franchise has none of its own YET, and inheriting hands it IE's
+# records to read and write. Blank here resolves to the franchise's own
+# default instead - a fresh, empty, editable workbook - and a blank board
+# link simply turns that franchise's sync off until a board exists.
+DEPT_NO_INHERIT_KEYS = (
+    "dispute_tracker_path",
+    "disputes_board_short_link",
+    "snapshots_root",
+)
+
 
 # Franchise identity defaults (Inland Empire) used when a config key is
 # absent, so nothing breaks on installs whose config.json predates these
@@ -116,6 +147,13 @@ def _apply_department(cfg, dept=None):
     for k in DEPT_OVERRIDE_KEYS:
         if k in prof and not _is_blank(prof[k]):
             merged[k] = prof[k]
+    # Records are not inherited. Only the franchise that owns the base
+    # values keeps them; everyone else falls through to their own
+    # default rather than opening IE's workbook.
+    if active != base_department(cfg):
+        for k in DEPT_NO_INHERIT_KEYS:
+            if _is_blank(prof.get(k, "")):
+                merged[k] = ""
     return merged
 
 
@@ -192,6 +230,25 @@ def user_config_path():
 
 
 # ── Department accessors ─────────────────────────────────────────────
+def base_department(cfg=None):
+    """Key of the franchise that owns the flat base values.
+
+    This used to be derived as "whichever franchise is active", which
+    made the base move every time you switched offices - and with it,
+    which franchise was allowed to inherit records. It is an explicit,
+    stored key now; unset, it falls back to the first franchise defined,
+    never to the active one."""
+    try:
+        base = cfg if isinstance(cfg, dict) else load_base()
+    except Exception:
+        return ""
+    explicit = (base.get("base_department") or "").strip()
+    depts = base.get("departments") or {}
+    if explicit and explicit in depts:
+        return explicit
+    return next(iter(depts), "")
+
+
 def is_multi_dept():
     """True when multiple-department mode is enabled."""
     try:
@@ -323,6 +380,64 @@ def check_department_integrity():
     return out
 
 
+def add_department(key, label=""):
+    """Create an office profile. Idempotent; returns (ok, error).
+
+    Offices are not a fixed pair. An install might be only IE, only OC,
+    or a new LA — the scaffold seeded exactly IE+OC, so anyone else got
+    two departments they did not want and no way to make the one they
+    did.
+
+    A new profile starts EMPTY, i.e. inheriting the base, so nothing is
+    silently pointed at another office's share. The Settings form is
+    where its own paths, Trello and CompanyCam token go in.
+    """
+    key = (key or "").strip().upper()
+    if not key:
+        return False, "office code required"
+    if not key.replace("_", "").isalnum():
+        return False, "office code must be letters/numbers"
+    base = load_base()
+    depts = base.get("departments")
+    if not isinstance(depts, dict):
+        depts = {}
+    if key in depts:
+        return False, f"{key} already exists"
+    depts[key] = {"label": (label or "").strip() or key}
+    base["departments"] = depts
+    if not (base.get("active_department") or "").strip():
+        base["active_department"] = key
+    if len(depts) > 1:
+        base["multi_department_enabled"] = True
+    save(base)
+    return True, ""
+
+
+def remove_department(key):
+    """Delete an office profile. Returns (ok, error).
+
+    Refuses the ACTIVE office and the last remaining one: removing either
+    leaves the app resolving paths through a profile that no longer
+    exists, which reads as "everything inherited the base" — the silent
+    cross-franchise wiring this file's other guards exist to prevent.
+    """
+    key = (key or "").strip().upper()
+    base = load_base()
+    depts = base.get("departments") or {}
+    if key not in depts:
+        return False, f"{key} is not an office"
+    if len(depts) <= 1:
+        return False, "that is the only office"
+    if key == (base.get("active_department") or "").strip():
+        return False, "switch to another office first"
+    depts.pop(key, None)
+    base["departments"] = depts
+    if len(depts) <= 1:
+        base["multi_department_enabled"] = False
+    save(base)
+    return True, ""
+
+
 def ensure_departments_scaffold():
     """Create the default IE + OC department profiles the first time
     multi-dept is turned on. IE inherits the current base values (empty
@@ -348,9 +463,9 @@ def ensure_departments_scaffold():
                 prof[k] = base[k]
         depts["IE"] = prof
         changed = True
-    if "OC" not in depts:
-        depts["OC"] = {"label": "Orange County"}
-        changed = True
+    # Deliberately NOT seeding a second office. An install that is only
+    # IE — or only OC, or only LA — was given two profiles and no way to
+    # add a different one. Offices are added in Settings now.
     if not (base.get("active_department") or "").strip():
         base["active_department"] = "IE"
         changed = True

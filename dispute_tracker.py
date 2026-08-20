@@ -151,27 +151,79 @@ DEFAULT_COLUMN_ORDER = (
 )
 
 
+def _franchise_default_path() -> str:
+    """Where a franchise with no tracker of its own keeps one.
+
+    The base franchise gets the shared X: workbook. Everyone else gets a
+    workbook beside their OWN job folders - blank must not mean "open
+    IE's", because that is one file two offices both write to."""
+    try:
+        cfg = config.load()
+        if config.base_department() in ("", config.active_department()):
+            return _DEFAULT_PATH
+        root = (cfg.get("audit_base") or "").strip()
+    except Exception:
+        return _DEFAULT_PATH
+    if not root:
+        return _DEFAULT_PATH
+    return os.path.join(root, "Dispute Tracker.xlsx")
+
+
 def path() -> str:
-    """Resolve the workbook path: config first, fall back to the OneDrive
-    Documents default. Override via `dispute_tracker_path` in config.json."""
+    """Resolve the workbook path: config first, else this franchise's own
+    default. Override via `dispute_tracker_path` in config.json."""
     try:
         cfg = config.load()
     except Exception:
         cfg = {}
     p = (cfg.get("dispute_tracker_path") or "").strip()
-    return p or _DEFAULT_PATH
+    return p or _franchise_default_path()
+
+
+def configured_board_link() -> str:
+    """The disputes board to sync FROM, or "" when this franchise has
+    none yet. Blank turns sync off rather than pulling another
+    franchise's cards into this tracker."""
+    try:
+        cfg = config.load()
+    except Exception:
+        return DISPUTES_BOARD_SHORT_LINK
+    if "disputes_board_short_link" in cfg:
+        return (cfg.get("disputes_board_short_link") or "").strip()
+    # Never configured at all: a single-office install keeps the board it
+    # has always used.
+    try:
+        if config.base_department() in ("", config.active_department()):
+            return DISPUTES_BOARD_SHORT_LINK
+    except Exception:
+        pass
+    return DISPUTES_BOARD_SHORT_LINK
 
 
 def set_path(p: str) -> None:
     """Persist a new workbook path. Lets the user move the file (e.g.
-    once Zac's copy is mirrored to X:\\IE_Public) without a code edit."""
+    once Zac's copy is mirrored to X:) without a code edit.
+
+    Writes to the ACTIVE FRANCHISE's profile, not the flat base. It used
+    to save the overlaid config wholesale, which copied every one of that
+    franchise's overrides into the base - so the next office to open the
+    panel inherited them."""
+    p = (p or "").strip()
     try:
-        cfg = config.load()
+        base = config.load_base()
     except Exception:
-        cfg = {}
-    cfg["dispute_tracker_path"] = (p or "").strip() or _DEFAULT_PATH
+        return
+    dept = ""
     try:
-        config.save(cfg)
+        dept = config.active_department()
+    except Exception:
+        pass
+    if dept and isinstance(base.get("departments"), dict)             and dept in base["departments"]:
+        base["departments"][dept]["dispute_tracker_path"] = p
+    else:
+        base["dispute_tracker_path"] = p or _DEFAULT_PATH
+    try:
+        config.save(base)
     except Exception:
         pass
 
@@ -252,13 +304,17 @@ def _ensure_workbook():
             except OSError:
                 pass
 
+    try:
+        os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+    except OSError:
+        pass
     wb = openpyxl.Workbook()
     default = wb.active
     wb.remove(default)
     ws = wb.create_sheet(SHEET_DATA)
     # Title rows mimic the template (rows 1+2 are merged title/blurb)
     ws.cell(1, 1, "Dispute / Claim Issue Tracker")
-    ws.cell(2, 1, "Generated locally — paste rows into Zac's copy.")
+    ws.cell(2, 1, "")
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=18)
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=18)
     # Header row
@@ -1125,7 +1181,7 @@ def upsert_from_trello_card(card: dict, lane_name: str = "") -> tuple[bool, int]
     return upsert(payload, source="Trello", merge_only_empty=existing)
 
 
-def sync_from_trello_board(*, board_short_link: str = DISPUTES_BOARD_SHORT_LINK,
+def sync_from_trello_board(*, board_short_link: str = "",
                             progress_cb=None) -> dict:
     """Walk every open card on the disputes board, upsert each into
     the tracker. Cards in RESOLVED lanes get status=Resolved on first
@@ -1138,11 +1194,20 @@ def sync_from_trello_board(*, board_short_link: str = DISPUTES_BOARD_SHORT_LINK,
     ``progress_cb(i, total, card_name)`` fires once per card if given.
 
     Network walk — call from a background thread.
+
+    A franchise with no board of its own syncs NOTHING. Falling back to
+    the default board would file another office's disputes into this
+    office's tracker, which is exactly what the tracker is meant to
+    keep straight.
     """
+    link = (board_short_link or "").strip() or configured_board_link()
+    if not link:
+        return {"added": 0, "merged": 0, "skipped_existing": 0, "errors": 0,
+                "no_board": True}
     import trello_client as _tc
     try:
         lists = _tc._call(
-            f"/boards/{board_short_link}/lists",
+            f"/boards/{link}/lists",
             params={"fields": "id,name", "filter": "open"},
         ) or []
     except Exception:
@@ -1151,7 +1216,7 @@ def sync_from_trello_board(*, board_short_link: str = DISPUTES_BOARD_SHORT_LINK,
     lane_name_by_id = {lst["id"]: lst.get("name", "") for lst in lists}
     try:
         cards = _tc._call(
-            f"/boards/{board_short_link}/cards",
+            f"/boards/{link}/cards",
             params={"fields": "id,name,desc,idList,shortUrl,closed",
                      "filter": "open"},
         ) or []

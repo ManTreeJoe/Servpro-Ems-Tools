@@ -43,15 +43,22 @@ def _base(**over):
         "trello_workspace_id": "ie-workspace",
         "audit_base": r"X:\IE_Public",
         "runs_dir": r"X:\IE_Public\Runs",
+        # CompanyCam joined the identity keys once the accounts proved to
+        # be separate orgs (IE 1478909, OC 1489448) — two franchises
+        # sharing this token means one is creating projects in the
+        # other's account, which is exactly what was happening.
+        "companycam_api_token": "ie-cc-token",
         "departments": {
             "IE": {"label": "Inland Empire",
                    "trello_workspace_id": "ie-workspace",
                    "audit_base": r"X:\IE_Public",
-                   "runs_dir": r"X:\IE_Public\Runs"},
+                   "runs_dir": r"X:\IE_Public\Runs",
+                   "companycam_api_token": "ie-cc-token"},
             "OC": {"label": "Orange County",
                    "trello_workspace_id": "oc-workspace",
                    "audit_base": r"C:\OC",
-                   "runs_dir": r"C:\OC\Runs"},
+                   "runs_dir": r"C:\OC\Runs",
+                   "companycam_api_token": "oc-cc-token"},
         },
     }
     cfg.update(over)
@@ -145,12 +152,16 @@ def test_scaffold_pins_ie_identity_explicitly(tmp_path, monkeypatch):
         "trello_workspace_id": "ie-workspace",
         "audit_base": r"X:\IE_Public",
         "runs_dir": r"X:\IE_Public\Runs",
+        "companycam_api_token": "ie-cc-token",
     }
     _write(tmp_path, monkeypatch, cfg)
     base = config.ensure_departments_scaffold()
     ie = base["departments"]["IE"]
+    # Only keys the base actually HAS can be pinned; an install with no
+    # CompanyCam token yet simply has nothing to copy down.
     for k in config.DEPT_IDENTITY_KEYS:
-        assert ie.get(k) == cfg[k], f"{k} not pinned onto IE"
+        if k in cfg:
+            assert ie.get(k) == cfg[k], f"{k} not pinned onto IE"
 
 
 class _StubSettings:

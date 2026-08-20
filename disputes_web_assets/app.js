@@ -20,7 +20,10 @@ window.addEventListener("pywebviewready", async () => {
   $("#paste-btn").addEventListener("click", openPasteDisputeModal);
   $("#sync-trello-btn").addEventListener("click", async () => {
     const r = await pywebview.api.sync_from_trello();
-    if (!r?.started) setStatus(`Sync busy: ${r?.reason || "?"}`, "warn");
+    // "busy" is the wrong word for "there is no board" - one is a wait,
+    // the other needs a setting.
+    if (r?.no_board) setStatus(r.reason, "warn");
+    else if (!r?.started) setStatus(`Sync busy: ${r?.reason || "?"}`, "warn");
     else setStatus("🔄 Syncing from Trello…");
   });
   $("#export-pdf-btn").addEventListener("click", async () => {
@@ -68,6 +71,10 @@ async function load() {
   state.rows = data.rows || [];
   state.statuses = data.statuses || [];
   state.workbook = data.workbook || "";
+  // No board for this franchise: the tracker is still fully usable as an
+  // editable workbook, so hide the pull rather than disabling the panel.
+  const sb = $("#sync-trello-btn");
+  if (sb) sb.style.display = data.has_board === false ? "none" : "";
   const wp = $("#workbook-path");
   if (wp) wp.textContent = state.workbook ? `📁 ${state.workbook}` : "";
   renderChips();

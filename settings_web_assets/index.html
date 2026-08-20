@@ -173,19 +173,23 @@
                   background: var(--surface); border: 1px solid var(--border);
                   border-radius: 8px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-      <div style="font-size: 13px; font-weight: 600;">🏢 Departments</div>
+      <div style="font-size: 13px; font-weight: 600;">🏢 Franchises</div>
       <label class="field bool" style="margin:0 0 0 auto;display:flex;align-items:center;gap:8px;">
         <input type="checkbox" id="dept-enable" />
-        <span style="font-size:12px;font-weight:600;">Enable multiple departments (OC / IE)</span>
+        <span style="font-size:12px;font-weight:600;">I run more than one franchise</span>
       </label>
     </div>
     <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
-      Run the tools against two SERVPRO departments, each with its own Trello
-      board, job/photo folders, and office identity. Switch between them from
-      the launcher. Give each department its <b>own</b> Trello workspace ID and
-      folder roots — a field left blank inherits the base, and a base edit can
-      then silently point that department at the other franchise.
-      CompanyCam, appearance, and feature flags stay shared.
+      One franchise is the default — leave this off and everything below is
+      simply your office. Turn it on to run the tools against several, each
+      with its own Trello board, job/photo folders, CompanyCam account and
+      office identity, and a switcher appears at the top of the launcher.
+      <br/><br/>
+      Give each franchise its <b>own</b> Trello workspace, folder roots and
+      CompanyCam token. A field left blank inherits the base, and a base edit
+      can then silently point that franchise at another one's data — which is
+      how OC's CompanyCam projects were being created in IE's account.
+      Appearance and feature flags stay shared.
     </div>
     <div id="dept-problems" style="display:none;margin-bottom:12px;"></div>
     <div id="dept-body" style="display:none;">
@@ -193,10 +197,24 @@
         <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);">Editing</label>
         <select id="dept-pick" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font:inherit;font-size:13px;"></select>
         <span id="dept-active-badge" class="muted" style="font-size:11px;"></span>
+        <span style="flex:1;"></span>
+        <input id="dept-new-key" type="text" maxlength="8" placeholder="LA"
+               title="Short code, e.g. LA"
+               style="width:74px;background:var(--surface-2);color:var(--text);
+                      border:1px solid var(--border);border-radius:6px;
+                      padding:7px 8px;font:inherit;font-size:13px;
+                      text-transform:uppercase;"/>
+        <input id="dept-new-label" type="text" placeholder="Los Angeles"
+               style="width:150px;background:var(--surface-2);color:var(--text);
+                      border:1px solid var(--border);border-radius:6px;
+                      padding:7px 10px;font:inherit;font-size:13px;"/>
+        <button class="btn" id="dept-add">＋ Add franchise</button>
+        <button class="btn" id="dept-remove"
+                title="Remove the franchise shown above">✕ Remove</button>
       </div>
       <div id="dept-fields"></div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
-        <button class="btn btn-primary" id="dept-save">💾 Save department</button>
+        <button class="btn btn-primary" id="dept-save">💾 Save franchise</button>
         <span id="dept-status" class="muted" style="font-size:12px;"></span>
       </div>
     </div>
@@ -205,10 +223,10 @@
   <section style="margin-bottom: 22px; padding: 14px 18px;
                   background: var(--surface); border: 1px solid var(--border);
                   border-radius: 8px;">
-    <div style="font-size: 13px; font-weight: 600; margin-bottom:6px;">🌐 Per-department browser</div>
+    <div style="font-size: 13px; font-weight: 600; margin-bottom:6px;">🌐 Per-franchise browser</div>
     <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
       Open Trello / XactAnalysis / CompanyCam links in a different browser per
-      department, so IE and OC logins stay separate. Point each side at a
+      franchise, so each one's logins stay separate. Point each side at a
       browser <b>.exe</b> (e.g. two Helium installs), or a command with
       <code>{url}</code> for a profile, e.g.
       <code>helium.exe --profile-directory=OC {url}</code>. Blank = system default.
@@ -409,6 +427,8 @@ async function showOriginHelp(origin) {
   });
   document.getElementById("dept-pick").addEventListener("change", renderDeptFields);
   document.getElementById("dept-save").addEventListener("click", saveDepartment);
+  document.getElementById("dept-add").addEventListener("click", addFranchise);
+  document.getElementById("dept-remove").addEventListener("click", removeFranchise);
 });
 
 // ── Shared job database (Supabase) ─────────────────────────────────
@@ -519,11 +539,60 @@ async function renderDepartments() {
   pick.innerHTML = (DEPT.departments || []).map((d) =>
     `<option value="${esc(d.key)}">${esc(d.label)} (${esc(d.key)})${d.is_base ? " · inherits main settings" : ""}</option>`
   ).join("");
-  // Default to editing the first NON-base department (OC) — that's the
-  // one that actually needs values typed in.
-  const oc = (DEPT.departments || []).find((d) => !d.is_base);
-  if (oc) pick.value = oc.key;
+  // Default to editing the first franchise that is NOT the active one —
+  // that's the one still needing values typed in. With a single
+  // franchise there is nothing to prefer, so it stays on that one.
+  const other = (DEPT.departments || []).find((d) => !d.is_base);
+  if (other) pick.value = other.key;
+  document.getElementById("dept-remove").disabled =
+    (DEPT.departments || []).length <= 1;
   renderDeptFields();
+}
+
+async function addFranchise() {
+  const keyEl = document.getElementById("dept-new-key");
+  const labelEl = document.getElementById("dept-new-label");
+  const key = (keyEl.value || "").trim().toUpperCase();
+  if (!key) { setDeptStatus("Give the franchise a short code, e.g. LA", "warn"); return; }
+  const res = await pywebview.api.add_department(key, (labelEl.value || "").trim());
+  if (!res || !res.ok) {
+    setDeptStatus((res && res.error) || "Could not add it", "error");
+    return;
+  }
+  keyEl.value = ""; labelEl.value = "";
+  await renderDepartments();
+  const pick = document.getElementById("dept-pick");
+  pick.value = key;                       // land on the new one to fill in
+  renderDeptFields();
+  setDeptStatus(`Added ${key} — give it its own folders, Trello and CompanyCam`, "ok");
+  try { window.parent?.postMessage({ type: "sidebar-reload" }, "*"); } catch (_) {}
+}
+
+async function removeFranchise() {
+  const pick = document.getElementById("dept-pick");
+  const key = pick.value;
+  if (!key) return;
+  // Deleting a franchise drops its folder/Trello/CompanyCam wiring, and
+  // nothing else records it — so ask, naming what goes.
+  if (!confirm(`Remove franchise ${key}?
+
+Its folder roots, Trello workspace `
+             + `and CompanyCam token are forgotten. Job data is untouched.`)) return;
+  const res = await pywebview.api.remove_department(key);
+  if (!res || !res.ok) {
+    setDeptStatus((res && res.error) || "Could not remove it", "error");
+    return;
+  }
+  await renderDepartments();
+  setDeptStatus(`Removed ${key}`, "ok");
+  try { window.parent?.postMessage({ type: "sidebar-reload" }, "*"); } catch (_) {}
+}
+
+function setDeptStatus(msg, kind) {
+  const el = document.getElementById("dept-status");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.className = kind === "error" ? "error" : (kind === "warn" ? "warn" : "muted");
 }
 
 // Cross-franchise misconfiguration banner. An ERROR here means one

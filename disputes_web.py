@@ -46,8 +46,13 @@ class Api:
         except Exception: rows = []
         shaped = [_shape(r) for r in rows]
         statuses = sorted({r["_status"] for r in shaped if r["_status"]})
+        try:
+            has_board = bool(dt.configured_board_link())
+        except Exception:
+            has_board = False
         return {"rows": shaped, "statuses": statuses,
-                "workbook": dt.path(), "total": len(shaped)}
+                "workbook": dt.path(), "total": len(shaped),
+                "has_board": has_board}
 
     def open_url(self, url):
         if not url: return False
@@ -232,6 +237,14 @@ class Api:
         import threading as _t
         if getattr(self, "_sync_running", False):
             return {"started": False, "reason": "sync already running"}
+        # A franchise with no disputes board of its own must SAY so. The
+        # sync would otherwise return a tidy zero-card result and read as
+        # "nothing to bring over" rather than "nowhere to bring it from".
+        if not dt.configured_board_link():
+            return {"started": False, "no_board": True,
+                    "reason": "No disputes board set for this franchise yet "
+                              "— the tracker stays an editable workbook "
+                              "until you add one in Settings."}
         self._sync_running = True
 
         def _bg():
