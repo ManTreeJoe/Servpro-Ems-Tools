@@ -28,6 +28,16 @@ KEEP = 7                      # dated copies per file
 _DIRNAME = "backups"
 _MIN_INTERVAL_H = 12          # don't re-copy on a quick restart
 
+# The shared database has been the source of truth since the cloud
+# cutover, which quietly demoted `ems_jobs.db` above to the offline
+# mirror — so the three files here back up two local files and a cache,
+# and the data every machine now READS from had no backup at all.
+#
+# Taken less often than the local copies: this one is a network pull on
+# someone's office connection, not a file copy.
+CLOUD_NAME = "cloud.json"
+_CLOUD_INTERVAL_H = 24
+
 
 def backup_dir():
     return paths.data(_DIRNAME)
@@ -53,8 +63,8 @@ def _prune(dest, base):
         pass
 
 
-def _recent_copy_exists(dest, base):
-    """True when one was taken within _MIN_INTERVAL_H.
+def _recent_copy_exists(dest, base, hours=None):
+    """True when one was taken within `hours` (default _MIN_INTERVAL_H).
 
     The app gets restarted several times in a row while working; without
     this the seven slots fill with copies of the same minute and the
@@ -68,7 +78,73 @@ def _recent_copy_exists(dest, base):
             default=0)
     except OSError:
         return False
-    return (time.time() - newest) < _MIN_INTERVAL_H * 3600
+    window = _MIN_INTERVAL_H if hours is None else hours
+    return (time.time() - newest) < window * 3600
+
+
+def _quiet_remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _note_failure(name, detail):
+    try:
+        import ems_log
+        ems_log.warn("backup", f"{name}: {detail}")
+    except Exception:
+        pass
+
+
+def _cloud_once(dest, stamp, force=False):
+    """Snapshot the shared database into the same dated rotation.
+
+    Returns a status string for the report, and never raises — this one
+    reaches the network, and a backup that can break startup is worse
+    than no backup.
+    """
+    try:
+        import ems_db
+        if ems_db.backend_name() != "supabase":
+            # Local backend: ems_jobs.db in FILES already IS the database.
+            return "skipped: local backend"
+    except Exception as ex:
+        return f"failed: {type(ex).__name__}"
+
+    if not force and _recent_copy_exists(dest, CLOUD_NAME,
+                                         hours=_CLOUD_INTERVAL_H):
+        return "recent"
+
+    final = os.path.join(dest, f"{CLOUD_NAME}.{stamp}")
+    # Leading dot, like the local copies above. Both _prune and
+    # _recent_copy_exists glob on "cloud.json.", so a temp named
+    # cloud.json.<stamp>.part would match them — a half-written snapshot
+    # would read as a recent one and suppress the next day's backup.
+    tmp = os.path.join(dest, f".{CLOUD_NAME}.{stamp}.snap")
+    try:
+        import ems_db_supabase
+        res = ems_db_supabase.snapshot(tmp)
+    except Exception as ex:
+        _quiet_remove(tmp)
+        _note_failure(CLOUD_NAME, ex)
+        return f"failed: {type(ex).__name__}"
+
+    if not res.get("ok"):
+        # A snapshot that lost a table must never become the file someone
+        # restores from — it would look complete at the worst moment.
+        _quiet_remove(tmp)
+        _note_failure(CLOUD_NAME, f"incomplete: {res.get('errors')}")
+        return "failed: incomplete"
+
+    try:
+        os.replace(tmp, final)
+    except OSError as ex:
+        _quiet_remove(tmp)
+        _note_failure(CLOUD_NAME, ex)
+        return f"failed: {type(ex).__name__}"
+    _prune(dest, CLOUD_NAME)
+    return "copied"
 
 
 def run_once(force=False):
@@ -100,11 +176,8 @@ def run_once(force=False):
             report[name] = "copied"
         except Exception as ex:
             report[name] = f"failed: {type(ex).__name__}"
-            try:
-                import ems_log
-                ems_log.warn("backup", f"{name}: {ex}")
-            except Exception:
-                pass
+            _note_failure(name, ex)
+    report[CLOUD_NAME] = _cloud_once(dest, stamp, force=force)
     return report
 
 

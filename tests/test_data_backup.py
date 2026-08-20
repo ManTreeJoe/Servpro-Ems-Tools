@@ -33,9 +33,22 @@ def _copies(data, name):
 # ── the basics ─────────────────────────────────────────────────────────
 def test_every_protected_file_is_copied(data):
     rep = db.run_once(force=True)
-    assert rep == {n: "copied" for n in db.FILES}
+    # Subset, not equality: the report also carries the cloud snapshot's
+    # status now, and pinning the whole dict meant adding anything to the
+    # rotation broke this test for no reason.
     for n in db.FILES:
+        assert rep[n] == "copied"
         assert len(_copies(data, n)) == 1
+
+
+def test_cloud_snapshot_is_skipped_on_the_local_backend(data):
+    """ems_jobs.db IS the database when the backend is sqlite, and it's
+    already in FILES — pulling a redundant copy over the network would be
+    pure waste. The suite runs on sqlite (conftest forces it), so this
+    also pins that no test reaches the live database."""
+    rep = db.run_once(force=True)
+    assert rep[db.CLOUD_NAME].startswith("skipped")
+    assert _copies(data, db.CLOUD_NAME) == []
 
 
 def test_the_copy_matches_the_original(data):
