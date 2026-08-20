@@ -645,6 +645,34 @@ REQUIRED_FORMS = [
 # unconditionally flagged 272 of 608 live jobs, 224 of which simply
 # hadn't had their inspection yet; gating on the photos gives 48, all
 # real. See `check_forms`.
+# The four that ARE "INITIAL PAPERWORK" on the Trello checklist. Scope
+# has its own item (PRELIMINARY SCOPE) and the photo report has another,
+# so neither belongs here.
+#
+# This exists because the tick used to fire on ANY file landing in
+# EMS/DOCS. A dry report is a reading, not a form — dropping one in DOCS
+# ticked INITIAL PAPERWORK on a job that had no signed paperwork at all,
+# and the checklist then said the intake was done.
+INITIAL_PAPERWORK_FORMS = ("Auth to Perform", "Customer Info Form",
+                           "Customer Equip Resp", "Cert of Satisfaction")
+
+
+def is_initial_paperwork(filename) -> bool:
+    """True when this file is one of the intake forms (ATP/CIF/CER/COS)."""
+    name = str(filename or "")
+    if not name:
+        return False
+    for label, pattern in REQUIRED_FORMS:
+        if label in INITIAL_PAPERWORK_FORMS and                 re.search(pattern, name, re.IGNORECASE):
+            return True
+    return False
+
+
+def any_initial_paperwork(names) -> bool:
+    """True when ANY of `names` is an intake form."""
+    return any(is_initial_paperwork(n) for n in (names or ()))
+
+
 IPR_FORM_NAME = "Initial Photo Report"
 # Misspellings are on the share for real ("Inital", "Intial") — matching
 # only the correct spelling flags jobs that HAVE the report. Equally, the
@@ -661,6 +689,49 @@ COMMERCIAL_FORM_NAMES = frozenset([
     "auth to perform", "customer info form",
     "customer equip resp", "cert of satisfaction",
 ])
+
+
+# Forms a SELF-PAY job needs and an insurance job doesn't. The customer
+# is contracting directly, so this is a home-improvement contract under
+# California law: the contract itself plus the 3-Day Right to Cancel
+# notice.
+#
+# Additive, unlike COMMERCIAL_FORM_NAMES which removes forms — marking a
+# job self-pay makes the audit ask for MORE, not less.
+SELF_PAY_FORMS = [
+    ("Home Improvement Contract", r"home\s*improve|\bhic\b"),
+    ("3 Day Right to Cancel",
+     r"(3|three)\s*[- ]?\s*day|right\s*to\s*cancel|\brtc\b"),
+]
+
+
+def self_pay_missing(ems_path):
+    """Which self-pay forms are missing from EMS (+ DOCS). [] when the
+    folder is absent — same rule as the contents check: unknown is not a
+    finding."""
+    if not ems_path or not os.path.isdir(ems_path):
+        return []
+    names = []
+    try:
+        with os.scandir(ems_path) as it:
+            for e in it:
+                if e.is_file():
+                    names.append(e.name)
+                elif e.is_dir() and e.name.upper() == "DOCS":
+                    try:
+                        with os.scandir(e.path) as it2:
+                            names += [s.name for s in it2 if s.is_file()]
+                    except OSError:
+                        pass
+    except OSError:
+        return []
+    return [label for label, pattern in SELF_PAY_FORMS
+            if not any(re.search(pattern, n, re.IGNORECASE) for n in names)]
+
+
+def is_self_pay_form(text):
+    return any(re.search(p, str(text or ""), re.IGNORECASE)
+               for _label, p in SELF_PAY_FORMS)
 
 
 def is_commercial_form(text):
@@ -1316,6 +1387,162 @@ def check_forms(ems_path, carrier=None):
     return missing
 
 
+# ── CONTENTS division ──────────────────────────────────────────────────
+#
+# Derived from the 99 live CONTENTS folders rather than guessed. By share
+# of jobs: invoice 74%, estimate 63%, inventory report 48-61%, pack-out
+# 56%. Those are near-universal, so they are required.
+#
+# Material Info and Job Diary are TWO forms even though they are often
+# scanned into one file ("Material Info-Job Diary.pdf") — checked
+# separately, because one being present says nothing about the other.
+REQUIRED_CONTENTS = [
+    ("Contents Estimate",      r"estimate"),
+    ("Photo Inventory Report", r"inventor(y|ies)"),
+    ("Contents Invoice",       r"invoice"),
+    ("Material Info",          r"material\s*[-_]?\s*info"),
+    ("Job Diary",              r"job\s*[-_]?\s*diary"),
+]
+
+# Material Info and Job Diary are on only ~22% of the live folders, so
+# requiring them everywhere flagged 79 and 76 of 99 jobs — a queue of 95
+# out of 99 is one nobody opens, and the four other requirements (25-50%)
+# are the actionable part.
+#
+# So these two apply from a cutoff FORWARD, leaving finished work alone —
+# the same instinct as the rule against retroactively rewriting historical
+# years. A job whose date isn't known is left alone too: a guess here
+# would put the noise straight back.
+CONTENTS_FORMS_REQUIRED_FROM = "2026-08-19"
+_CONTENTS_DATED_FORMS = {"Material Info", "Job Diary"}
+
+
+def _dated_form_applies(job_date, cutoff=CONTENTS_FORMS_REQUIRED_FROM):
+    """True when `job_date` (ISO yyyy-mm-dd) is on or after the cutoff."""
+    d = str(job_date or "").strip()[:10]
+    if len(d) != 10:
+        return False                    # unknown date -> don't flag
+    return d >= str(cutoff)[:10]
+
+# Specialty moves: when the folder MENTIONS one, an invoice naming it has
+# to exist. Live counts are small — PODs 7 jobs, safe 1, piano 1 — which
+# is why these are conditional and not required.
+#
+# Word boundaries are load-bearing. A substring test matched "fish"
+# inside the client name "Fisher Joel" and reported a fish tank on a job
+# that never had one; `\bfish\b` cannot, because a word character
+# follows. The client's own name is stripped first as well, for the
+# businesses literally called Vault or Safe.
+SPECIALTY_CONTENTS = [
+    ("POD",      r"\bpods?\b"),
+    ("Safe",     r"\bsafes?\b"),
+    ("Piano",    r"\bpianos?\b"),
+    ("Aquarium", r"\baquarium\b|\bfish\s*tanks?\b"),
+    ("Vault",    r"\bvaults?\b"),
+]
+
+_CONTENTS_JUNK = {"thumbs.db", "desktop.ini"}
+_CONTENTS_IMG = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff"}
+
+
+def _contents_names(contents_path):
+    """Every file and subfolder name in a CONTENTS folder, two deep.
+
+    Two levels because the documents sit loose at the top on some jobs
+    and inside a room or DOCS subfolder on others.
+    """
+    files, dirs = [], []
+    try:
+        with os.scandir(contents_path) as it:
+            entries = list(it)
+    except OSError:
+        return files, dirs
+    for e in entries:
+        try:
+            if e.is_file():
+                if e.name.lower() not in _CONTENTS_JUNK:
+                    files.append(e.name)
+                continue
+            if not e.is_dir(follow_symlinks=False):
+                continue
+        except OSError:
+            continue
+        dirs.append(e.name)
+        try:
+            with os.scandir(e.path) as it2:
+                for sub in it2:
+                    if sub.is_file() and \
+                            sub.name.lower() not in _CONTENTS_JUNK:
+                        files.append(sub.name)
+        except OSError:
+            pass
+    return files, dirs
+
+
+def _strip_client(text, client_name):
+    """Remove the client's own words, so a surname can't look like an item."""
+    out = text or ""
+    for w in re.split(r"[^A-Za-z0-9]+", client_name or ""):
+        if len(w) > 2:
+            out = re.sub(re.escape(w), " ", out, flags=re.IGNORECASE)
+    return out
+
+
+def _has_room_photos(contents_path):
+    """Photos filed in a subfolder, at ANY depth below CONTENTS.
+
+    A one-level check reported 88 of 99 live folders as missing room
+    photos while those same folders held 18,036 images: jobs nest them
+    as CONTENTS\\<stage>\\<room>\\ or deeper, not directly under a room.
+    Walks rather than scans, and stops at the first hit.
+    """
+    try:
+        for cur, subdirs, files in os.walk(contents_path):
+            if os.path.normcase(cur) == os.path.normcase(contents_path):
+                continue                    # loose top-level files aren't filed
+            for n in files:
+                if os.path.splitext(n)[1].lower() in _CONTENTS_IMG:
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def check_contents(contents_path, *, client_name="", job_date=""):
+    """Missing Contents paperwork. [] when the folder holds what it should.
+
+    A missing or empty CONTENTS folder returns [] rather than every
+    requirement. Unlike EMS, most jobs have no contents work at all —
+    only 99 of 623 client folders do — so flagging the rest would bury
+    the ones that matter. The folder existing IS the signal that this
+    division is running, which is the rule the office already follows on
+    disk.
+    """
+    if not os.path.isdir(contents_path):
+        return []
+    files, dirs = _contents_names(contents_path)
+    if not files and not dirs:
+        return []
+    hay = [_strip_client(n, client_name) for n in files]
+
+    dated_ok = _dated_form_applies(job_date)
+    missing = [label for label, pattern in REQUIRED_CONTENTS
+               if (dated_ok or label not in _CONTENTS_DATED_FORMS)
+               and not any(re.search(pattern, n, re.IGNORECASE) for n in hay)]
+
+    if not _has_room_photos(contents_path):
+        missing.append("Room photos")
+
+    blob = " ".join(hay + [_strip_client(d, client_name) for d in dirs])
+    invoices = [n for n in hay if re.search(r"invoice", n, re.IGNORECASE)]
+    for label, pattern in SPECIALTY_CONTENTS:
+        if not re.search(pattern, blob, re.IGNORECASE):
+            continue
+        if not any(re.search(pattern, n, re.IGNORECASE) for n in invoices):
+            missing.append(f"{label} invoice")
+    return missing
+
+
 def check_docusketch(ems_path):
     # Consistent with check_forms: a missing EMS folder means the
     # Docusketch folder is, by definition, also missing. Don't pass
@@ -1488,7 +1715,9 @@ def check_photos(pics_path, log_rows=None, raw_text=None):
         non-empty subfolder matching `pattern` (FOH / EQ). Recursive because
         techs nest these under a "<Tech> <date>" box, e.g.
         PICS\\Initial\\FB 07-01-2026\\Front of Structure — a direct-children
-        check missed those. Also still matches a loose file at the top level."""
+        check missed those. Also matches a PHOTO whose own
+        FILENAME carries the item at any depth, plus a loose file at
+        the top level."""
         if not d or not os.path.isdir(d):
             return False
         try:
@@ -1499,6 +1728,18 @@ def check_photos(pics_path, log_rows=None, raw_text=None):
                     if re.search(pattern, _sd, re.IGNORECASE):
                         if _has_files(os.path.join(_root, _sd)):
                             return True
+                # ...and a photo whose own NAME carries the item. CompanyCam
+                # bakes the tag into the filename, so the front-of-structure
+                # shot arrives as "Front of Structure Initial Inspection-1-
+                # Jul 18 2026 12_13pm-jNya.jpg" sitting in the tech/date box
+                # -- a file, at depth, never an FOH *folder*. The top-level
+                # fallback below could not reach it, so a job that HAD the
+                # photo still reported "FOH pics" missing. Extension-checked
+                # so a stray .docx named for the item cannot satisfy it.
+                for _f in _files:
+                    if (re.search(pattern, _f, re.IGNORECASE)
+                            and os.path.splitext(_f)[1].lower() in _img_exts):
+                        return True
             # Fallback: a loose file at the top level named for the item.
             for s in os.listdir(d):
                 if re.search(pattern, s, re.IGNORECASE) and os.path.isfile(

@@ -106,6 +106,40 @@ def test_foh_nested_under_tech_box(tmp_path):
     assert "FOH pics" not in check_photos(str(pics), raw_text="Initial Inspection")
 
 
+def test_foh_satisfied_by_companycam_filename(tmp_path):
+    """The FOH shot usually arrives as a FILE, not a folder.
+
+    CompanyCam bakes its tags into the exported filename, so the
+    front-of-structure photo lands as
+    "Front of Structure Initial Inspection-1-Jul 18 2026 12_13pm-jNya.jpg"
+    inside the tech/date box. Detection walked for matching FOLDERS at any
+    depth but checked FILES only at the top level, so a job that plainly
+    had the photo still reported "FOH pics" missing.
+    """
+    pics = tmp_path / "PICS"
+    box = pics / "Initial" / "FB 07-18-2026"
+    box.mkdir(parents=True)
+    (box / "Front of Structure Initial Inspection-1-Jul 18 2026 "
+           "12_13pm-jNya.jpg").write_bytes(b"x")
+    (pics / "Initial" / "a.jpg").write_bytes(b"x")
+    assert "FOH pics" not in check_photos(
+        str(pics), raw_text="Initial Inspection")
+
+
+def test_foh_filename_match_requires_an_image(tmp_path):
+    """A document named for the item is not the photo.
+
+    Widening the file check to any depth would otherwise let
+    "Front of Structure notes.docx" satisfy a PHOTO requirement.
+    """
+    pics = tmp_path / "PICS"
+    box = pics / "Initial" / "FB 07-18-2026"
+    box.mkdir(parents=True)
+    (box / "Front of Structure notes.docx").write_bytes(b"x")
+    (pics / "Initial" / "a.jpg").write_bytes(b"x")
+    assert "FOH pics" in check_photos(str(pics), raw_text="Initial Inspection")
+
+
 def test_eq_nested_under_tech_box(tmp_path):
     pics = tmp_path / "PICS"
     init = pics / "Initial"
