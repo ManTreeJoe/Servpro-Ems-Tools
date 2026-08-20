@@ -190,6 +190,19 @@ LINK_COMPANYCAM = "companycam_project"
 _STRONG_LINK_TYPES = (LINK_FOLDER, LINK_TRELLO, LINK_COMPANYCAM)
 
 
+def is_strong_link(link_type: str) -> bool:
+    """Does this type get its value normalized?
+
+    Membership on the exact type meant a division's link
+    (`trello_card_recon`) was not "strong", so `set_link` skipped
+    normalization and stored a pasted URL verbatim while the EMS card
+    stored a clean id — and reverse lookup then found one, not the other.
+    A division's link is the same kind of identifier as the EMS link it
+    mirrors, so the base type decides.
+    """
+    return base_link_type(link_type) in _STRONG_LINK_TYPES
+
+
 def _norm_link(link_type: str, value: str) -> str:
     """Normalize a link value so reverse lookup is stable no matter how the
     caller spelled it. Folder paths → normcase(normpath) (case/slash-
@@ -198,6 +211,12 @@ def _norm_link(link_type: str, value: str) -> str:
     v = (value or "").strip()
     if not v:
         return ""
+    # Compare the BASE type: `trello_card_recon` must normalize exactly
+    # like `trello_card`. Matching the full type meant the EMS card had
+    # its id pulled out of a pasted URL and lowercased while the Contents
+    # and Recon cards kept the raw URL — so reverse lookup found the EMS
+    # one and quietly missed the others.
+    link_type = base_link_type(link_type)
     if link_type == LINK_FOLDER:
         return os.path.normcase(os.path.normpath(v))
     if link_type == LINK_TRELLO:
@@ -328,6 +347,174 @@ def classify_child(name: str) -> tuple:
     if _UNIT_NAME_RE.search(nm):
         return (CHILD_UNIT, None)
     return (CHILD_SUBJOB, None)
+
+
+_CHILD_DATE_RE = re.compile(
+    r"[-(\s]\s*(?P<date>\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?)\s*\)?\s*$")
+_CHILD_UNIT_RE = re.compile(
+    r"\b(?:unit|apt|apartment|suite|ste)\s*#?\s*(?P<unit>[0-9]+[A-Za-z]?"
+    r"(?:-[A-Za-z0-9]+)?)\b", re.IGNORECASE)
+
+
+# ── divisions ──────────────────────────────────────────────────────────
+#
+# A job is worked by up to three divisions, and each keeps its own Trello
+# card and CompanyCam project. On disk they are already separate folders
+# inside the job — live, 166 of 623 client folders have RECON and 99 have
+# CONTENTS — so the FOLDER for a division is derived, never stored, and a
+# division's folder existing is what says that division has work. Some
+# jobs are recon-only; some have no contents.
+#
+# EMS keeps the unsuffixed link types. Every link recorded before this
+# existed is an EMS link, so the old names already mean the right thing
+# and no migration, and no reader change, is needed.
+DIV_EMS = "EMS"
+DIV_CONTENTS = "CONTENTS"
+DIV_RECON = "RECON"
+DIVISIONS = (DIV_EMS, DIV_CONTENTS, DIV_RECON)
+
+
+def normalize_division(value) -> str:
+    v = str(value or "").strip().upper()
+    if v in ("", "EMS", "MIT", "MITIGATION"):
+        return DIV_EMS
+    if v.startswith("CONTENT"):
+        return DIV_CONTENTS
+    if v.startswith("RECON") or v == "RC":
+        return DIV_RECON
+    return DIV_EMS
+
+
+def base_link_type(link_type: str) -> str:
+    """`trello_card_recon` -> `trello_card`. The inverse of
+    `division_link_type`, so anything switching on a link type (value
+    normalization, reverse lookup, the export allow-lists) treats a
+    division's link exactly like the EMS one it mirrors."""
+    t = (link_type or "").strip()
+    for d in DIVISIONS:
+        if d == DIV_EMS:
+            continue
+        suffix = "_" + d.lower()
+        if t.endswith(suffix):
+            return t[:-len(suffix)]
+    return t
+
+
+def division_of_link_type(link_type: str) -> str:
+    """Which division a link type belongs to."""
+    t = (link_type or "").strip()
+    for d in DIVISIONS:
+        if d != DIV_EMS and t.endswith("_" + d.lower()):
+            return d
+    return DIV_EMS
+
+
+def division_link_type(base_type: str, division=DIV_EMS) -> str:
+    """The link type holding `base_type` for one division.
+
+    EMS is the unsuffixed original — `trello_card`, not
+    `trello_card_ems` — so existing rows keep resolving unchanged.
+    """
+    d = normalize_division(division)
+    if d == DIV_EMS:
+        return base_type
+    return f"{base_type}_{d.lower()}"
+
+
+def division_folder(job_folder: str, division=DIV_EMS) -> str:
+    """`<job folder>\\<DIVISION>`, or "" without a job folder.
+
+    Derived, not stored: the office already writes these subfolders, and
+    a stored copy would be one more thing to drift.
+    """
+    import os as _os
+    base = (job_folder or "").strip().rstrip("\\/")
+    if not base:
+        return ""
+    return _os.path.join(base, normalize_division(division))
+
+
+def parse_child_levels(name: str) -> dict:
+    """Split a child folder name into {property, unit, claim_date}.
+
+    The office already writes the hierarchy into the folder name, and has
+    for years — these are live:
+
+        'Tres Lagos - Unit 3208 - 8.13.26'  -> Tres Lagos / 3208 / 8.13.26
+        'Unit 585-G'                        -> ''         / 585-G / ''
+        'Menifee School District - Bell Mountain - 8.14.26'
+                                            -> ... / '' / 8.14.26
+
+    Every field is optional and a miss returns "" rather than guessing:
+    depth varies (Avila is its own property; Aperto has a management
+    company above it), and inventing a unit number is exactly the kind of
+    confident-but-wrong answer this whole effort is removing.
+
+    The unit stays TEXT — '585-G' and '1416B' are real.
+    """
+    raw = (name or "").strip()
+    if not raw:
+        return {"property": "", "unit": "", "claim_date": ""}
+
+    date = ""
+    m = _CHILD_DATE_RE.search(raw)
+    if m:
+        date = m.group("date")
+        raw = raw[:m.start()].strip()
+
+    unit = ""
+    m = _CHILD_UNIT_RE.search(raw)
+    if m:
+        unit = m.group("unit")
+        # Whatever sat in front of the unit token is the property, minus
+        # the separator the office happened to use that day.
+        prop = _tidy_fragment(raw[:m.start()])
+    else:
+        prop = _tidy_fragment(raw)
+
+    return {"property": prop, "unit": unit, "claim_date": date}
+
+
+def _tidy_fragment(s: str) -> str:
+    """Trim separators, and never leave a dangling bracket behind.
+
+    Cutting "Avila Apartments (Unit 623)" at the unit token leaves
+    "Avila Apartments (" — and an unbalanced paren is precisely what
+    'aperto property management- (tres lagos' is. Stripping brackets
+    blindly instead would damage names that legitimately contain them,
+    like 'Claim 1 (water)', so only an UNMATCHED one is dropped.
+    """
+    s = (s or "").strip(" -–—,")
+    while s and s.count("(") > s.count(")") and s.endswith("("):
+        s = s[:-1].strip(" -–—,")
+    while s and s.count(")") > s.count("(") and s.endswith(")"):
+        s = s[:-1].strip(" -–—,")
+    return s
+
+
+def dedupe_child_name(name: str, taken) -> str:
+    """A free child name under the new parent, given the names already
+    `taken` there.
+
+    Merging two clients can bring two children of the same name together
+    — both properties really do have a "Unit 2" — and `job_children` is
+    UNIQUE (parent_canon, name). Renaming the incoming one keeps its
+    folder, card and CompanyCam link; the alternative (drop the row) is
+    silent data loss, and the alternative to THAT (let the insert fail)
+    aborts the merge halfway through.
+
+    Suffixes " (2)", " (3)", … so the collision stays visible to whoever
+    reads the list afterwards. That's deliberate: a silently-merged pair
+    of units is exactly the confusion this whole effort is undoing.
+    """
+    nm = (name or "").strip()
+    have = {str(t).strip().casefold() for t in (taken or ())}
+    if nm.casefold() not in have:
+        return nm
+    n = 2
+    while f"{nm} ({n})".casefold() in have:
+        n += 1
+    return f"{nm} ({n})"
 
 
 def _now_iso() -> str:

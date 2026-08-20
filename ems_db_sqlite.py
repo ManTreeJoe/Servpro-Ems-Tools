@@ -58,11 +58,12 @@ import paths as _paths
 from ems_db_common import (            # noqa: E402  (after module docstring)
     _UNIT_DETECT_PATTERNS, detect_property_and_unit, canon_key,
     LINK_FOLDER, LINK_TRELLO, LINK_COMPANYCAM, _STRONG_LINK_TYPES,
+    is_strong_link,
     _norm_link, invalidate_department_cache, department_for_path,
     split_department_path, rebase_department_path,
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
     EVENT_RENAMED, is_material_rename,
-    alias_probe_token, truncation_alias_is_ambiguous,
+    alias_probe_token, truncation_alias_is_ambiguous, dedupe_child_name,
 )
 from persistence import _canon_pin_key as _canon_pin_key_persistence
 
@@ -317,6 +318,21 @@ def _init_schema():
             # Trello card of its own, so the Hub is the only place that
             # record can live.
             "ALTER TABLE job_children ADD COLUMN metadata_json TEXT",
+            # v8 (supabase/007_child_levels.sql): the levels between a
+            # client and a claim. Live folders are already written
+            # "<property> - Unit <n> - <date filed>" — Tres Lagos, 6204,
+            # 8.17.26 — and all three were being crammed into `name`,
+            # which is how 'aperto property management- (tres lagos'
+            # became a truncated key with two units behind it.
+            #
+            # TEXT including the date, same rule as the CRM columns: the
+            # office types what it types ('8.13.26', '6/29/26', '7/20')
+            # and a DATE column would reject the row rather than store
+            # what we were told. `unit` is text because live units are
+            # '585G', '1416B', '311C'.
+            "ALTER TABLE job_children ADD COLUMN property TEXT",
+            "ALTER TABLE job_children ADD COLUMN unit TEXT",
+            "ALTER TABLE job_children ADD COLUMN claim_date TEXT",
         ) + tuple(
             # v6: promote the queryable job facts out of metadata_json.
             f"ALTER TABLE jobs ADD COLUMN {col} TEXT"
@@ -615,7 +631,7 @@ def set_link(canon_key_value: str, link_type: str, link_value: str, *,
     + `added_at` without duplicating. Pass `remove_link()` to drop."""
     # Normalize strong-identifier values so a folder path or Trello URL
     # written by one tool matches a lookup done by another.
-    if link_type in _STRONG_LINK_TYPES:
+    if is_strong_link(link_type):
         link_value = _norm_link(link_type, link_value)
     if not (canon_key_value and link_type and link_value):
         return
@@ -658,7 +674,7 @@ def remove_link(canon_key_value: str, link_type: str,
     """
     if not (canon_key_value and link_type):
         return
-    if link_value and link_type in _STRONG_LINK_TYPES:
+    if link_value and is_strong_link(link_type):
         link_value = _norm_link(link_type, link_value)
     with _LOCK, _connect() as c:
         if link_value:
@@ -686,6 +702,7 @@ def merge_jobs(into_key: str, from_keys) -> dict:
     if not into_key:
         return {"merged": 0}
     merged = 0
+    moved_kids = 0
     skipped_dept = []
     renames = []
     with _LOCK, _connect() as c:
@@ -737,6 +754,33 @@ def merge_jobs(into_key: str, from_keys) -> dict:
                         "VALUES (?, ?, ?, ?, ?)",
                         (into_key, row["display_name"], ac, "merge",
                          _now_iso()))
+            # Move the children before the job row goes.
+            #
+            # There is no foreign key on job_children.parent_canon here,
+            # so deleting the loser used to ORPHAN its units and claims:
+            # rows pointing at a canon_key that no longer names a job,
+            # invisible to children_of() forever after. The Supabase twin
+            # declares ON DELETE CASCADE and therefore DELETED them
+            # outright — same call, two backends, and neither one kept
+            # the data. `avana springs greystar` has seven such rows.
+            kids = c.execute(
+                "SELECT id, name FROM job_children WHERE parent_canon=?",
+                (fk,)).fetchall()
+            if kids:
+                taken = [r["name"] for r in c.execute(
+                    "SELECT name FROM job_children WHERE parent_canon=?",
+                    (into_key,)).fetchall()]
+                for kid in kids:
+                    # UNIQUE (parent_canon, name): two properties really
+                    # can both have a "Unit 2", so the incoming one is
+                    # renamed rather than dropped or left to fail.
+                    nm = dedupe_child_name(kid["name"], taken)
+                    c.execute(
+                        "UPDATE job_children SET parent_canon=?, name=?, "
+                        "updated_at=? WHERE id=?",
+                        (into_key, nm, _now_iso(), kid["id"]))
+                    taken.append(nm)
+                    moved_kids += 1
             c.execute("DELETE FROM jobs WHERE canon_key=?", (fk,))
             if row is not None:
                 merged += 1
@@ -754,6 +798,8 @@ def merge_jobs(into_key: str, from_keys) -> dict:
         except Exception:
             pass
     out = {"merged": merged}
+    if moved_kids:
+        out["children_moved"] = moved_kids
     if skipped_dept:
         out["skipped_department_conflict"] = skipped_dept
     return out
@@ -1283,10 +1329,16 @@ def iter_jobs() -> list[dict]:
 def set_child(parent_canon: str, name: str, *, kind: str = "",
               ordinal=None, folder_path: str = "", trello_card: str = "",
               companycam: str = "", department: str = "",
+              property: str = "", unit: str = "", claim_date: str = "",
               metadata: dict | None = None) -> dict:
     """Record (or update) one child of a client. Idempotent on
     (parent_canon, name); blank values never overwrite existing ones —
-    the same partial-update rule as upsert_job."""
+    the same partial-update rule as upsert_job.
+
+    `property` / `unit` / `claim_date` are the v8 levels between a client
+    and a claim. They shadow no builtin inside this function and are named
+    for their columns deliberately, so the storage and the API can't drift.
+    """
     parent_canon = (parent_canon or "").strip()
     name = (name or "").strip()
     if not (parent_canon and name):
@@ -1308,16 +1360,17 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
                 INSERT INTO job_children
                     (parent_canon, name, kind, ordinal, folder_path,
                      trello_card, companycam, department, created_at,
-                     updated_at, metadata_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     updated_at, metadata_json, property, unit, claim_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (parent_canon, name, kind, ordinal, fp, card,
-                  companycam, department, now, now, md))
+                  companycam, department, now, now, md,
+                  property, unit, claim_date))
         else:
             c.execute("""
                 UPDATE job_children SET
                     kind=?, ordinal=?, folder_path=?, trello_card=?,
                     companycam=?, department=?, updated_at=?,
-                    metadata_json=?
+                    metadata_json=?, property=?, unit=?, claim_date=?
                 WHERE parent_canon=? AND name=?
             """, (kind or row["kind"],
                   ordinal if ordinal is not None else row["ordinal"],
@@ -1325,6 +1378,12 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
                   companycam or row["companycam"],
                   department or row["department"], now,
                   md if md is not None else row["metadata_json"],
+                  # Blank never overwrites — the partial-update rule the
+                  # docstring promises. A caller setting only the card
+                  # must not wipe a unit number recorded earlier.
+                  property or row["property"],
+                  unit or row["unit"],
+                  claim_date or row["claim_date"],
                   parent_canon, name))
         c.commit()
         out = c.execute("SELECT * FROM job_children WHERE parent_canon=? "

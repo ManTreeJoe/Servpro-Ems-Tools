@@ -33,11 +33,12 @@ import supabase_client as _sb
 from ems_db_common import (            # noqa: F401 — re-exported as API
     _UNIT_DETECT_PATTERNS, detect_property_and_unit, canon_key,
     LINK_FOLDER, LINK_TRELLO, LINK_COMPANYCAM, _STRONG_LINK_TYPES,
+    is_strong_link,
     _norm_link, invalidate_department_cache, department_for_path,
     split_department_path, rebase_department_path,
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
     EVENT_RENAMED, is_material_rename,
-    alias_probe_token, truncation_alias_is_ambiguous,
+    alias_probe_token, truncation_alias_is_ambiguous, dedupe_child_name,
 )
 
 SCHEMA_VERSION = 5
@@ -333,7 +334,7 @@ def all_aliases() -> list:
 
 def set_link(canon_key_value: str, link_type: str, link_value: str, *,
              metadata: dict | None = None, added_by: str = "") -> None:
-    if link_type in _STRONG_LINK_TYPES:
+    if is_strong_link(link_type):
         link_value = _norm_link(link_type, link_value)
     if not (canon_key_value and link_type and link_value):
         return
@@ -656,7 +657,10 @@ def find_department_conflicts() -> list:
 def set_child(parent_canon: str, name: str, *, kind: str = "",
               ordinal=None, folder_path: str = "", trello_card: str = "",
               companycam: str = "", department: str = "",
+              property: str = "", unit: str = "", claim_date: str = "",
               metadata: dict | None = None) -> dict:
+    """See the SQLite twin. `property` / `unit` / `claim_date` are the v8
+    levels between a client and a claim (007_child_levels.sql)."""
     parent_canon = (parent_canon or "").strip()
     name = (name or "").strip()
     if not (parent_canon and name):
@@ -678,6 +682,8 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
             "trello_card": card or None, "companycam": companycam or None,
             "department": department or None,
             "created_at": now, "updated_at": now,
+            "property": property or None, "unit": unit or None,
+            "claim_date": claim_date or None,
             # Only sent when there is something to store. Sending it
             # unconditionally makes every set_child fail with PGRST204 on a
             # project where 004_job_settings.sql hasn't run yet — which
@@ -698,6 +704,11 @@ def set_child(parent_canon: str, name: str, *, kind: str = "",
                      "companycam": companycam or cur.get("companycam"),
                      "department": department or cur.get("department"),
                      "updated_at": now,
+                     # Blank never overwrites — a caller setting only the
+                     # card must not wipe a unit recorded earlier.
+                     "property": property or cur.get("property"),
+                     "unit": unit or cur.get("unit"),
+                     "claim_date": claim_date or cur.get("claim_date"),
                      **({"metadata_json": md} if md is not None else {}),
                  })
     return _one("job_children", parent_canon=f"eq.{parent_canon}",
@@ -806,6 +817,46 @@ def log_event(canon_key_value: str, event_type: str, *,
 
 # ── merge ───────────────────────────────────────────────────────────────
 
+def _reparent_children(from_key: str, into_key: str) -> int:
+    """Move a merged-away job's children onto the survivor.
+
+    MUST run before the `jobs` row is deleted. `job_children.parent_canon`
+    is declared `references jobs (canon_key) on delete cascade`
+    (003_job_children.sql:20), so deleting the loser takes every one of
+    its units and claims with it — silently, and with no orphan left
+    behind to notice afterwards, because the foreign key makes orphans
+    impossible by construction.
+
+    That was live: merging `avana springs greystar` would have destroyed
+    all seven of its unit rows, each carrying its own folder, Trello card
+    and CompanyCam project.
+
+    (The SQLite twin has no foreign key at all, so there the same merge
+    ORPHANED the children instead. Same function, opposite outcome — the
+    reason this now lives in both backends.)
+    """
+    kids = _rows("job_children", parent_canon=f"eq.{from_key}", select="*")
+    if not kids:
+        return 0
+    taken = [k.get("name") for k in
+             _rows("job_children", parent_canon=f"eq.{into_key}", select="name")]
+    moved = 0
+    for kid in kids:
+        name = dedupe_child_name(kid.get("name"), taken)
+        try:
+            _sb.rest("PATCH", "job_children",
+                     params={"id": f"eq.{kid['id']}"},
+                     body={"parent_canon": into_key, "name": name,
+                           "updated_at": _now_iso()})
+        except Exception:
+            # One stubborn row must not abort the merge mid-way and leave
+            # the job half-folded; the rest still move.
+            continue
+        taken.append(name)
+        moved += 1
+    return moved
+
+
 def merge_jobs(into_key: str, from_keys) -> dict:
     """Fold jobs together. Refuses across franchises, like SQLite."""
     into_key = (into_key or "").strip()
@@ -813,7 +864,7 @@ def merge_jobs(into_key: str, from_keys) -> dict:
         return {"merged": 0}
     into = get_job(into_key)
     into_dept = (into or {}).get("department")
-    merged, skipped = 0, []
+    merged, skipped, moved_kids = 0, [], 0
     for fk in from_keys or ():
         fk = (fk or "").strip()
         if not fk or fk == into_key:
@@ -841,6 +892,7 @@ def merge_jobs(into_key: str, from_keys) -> dict:
         # canon_key that no longer names a job — see the SQLite twin.
         _sb.rest("PATCH", "job_events", params={"canon_key": f"eq.{fk}"},
                  body={"canon_key": into_key})
+        moved_kids += _reparent_children(fk, into_key)
         _sb.rest("DELETE", "jobs", params={"canon_key": f"eq.{fk}"})
         # The fold IS the rename when the two names really differ.
         if is_material_rename(row.get("display_name"),
@@ -854,6 +906,8 @@ def merge_jobs(into_key: str, from_keys) -> dict:
                 pass
         merged += 1
     out = {"merged": merged}
+    if moved_kids:
+        out["children_moved"] = moved_kids
     if skipped:
         out["skipped_department_conflict"] = skipped
     return out
@@ -865,6 +919,88 @@ def backfill_departments(*a, **k):    _unsupported("backfill_departments")
 def export_db(*a, **k):               _unsupported("export_db")
 def import_db(*a, **k):               _unsupported("import_db")
 def reset_db_path(*a, **k):           _unsupported("reset_db_path")
+
+
+# ── backup snapshot ─────────────────────────────────────────────────────
+
+# Every table the cloud owns.
+#
+# Deliberately NOT export_db's list. export_db is a SHARING format: it
+# filters links down to Trello + folders and drops job_events outright,
+# because a machine-specific SharePoint cache means nothing on another
+# franchise's PC. A backup wants the opposite — it has to restore what
+# was actually there, so it takes everything verbatim, including the
+# tables that ARE a job's identity: job_children (the whole unit/claim
+# hierarchy), job_events (name history), and the companycam / workcenter
+# links export_db throws away.
+#
+# Reusing export_db here would have produced a backup that looked fine
+# and silently lacked every child row.
+_SNAPSHOT_TABLES = (
+    "jobs", "job_aliases", "job_links", "job_children", "job_events",
+    "job_lifecycle", "job_stage_transitions", "meta",
+    "app_user_departments",
+)
+
+
+def snapshot(path: str = "") -> dict:
+    """Dump every cloud table to JSON for disaster recovery.
+
+    Returns {ok, counts:{table: n}, errors:{table: str}, path}. Writing
+    is skipped when `path` is empty — the caller gets the payload back
+    under "data" instead, which is what the tests use.
+
+    A partial snapshot is NOT written. `ok` goes False, the errors come
+    back, and no file appears — so a file at this path is always a
+    complete one. Discovering a missing table at restore time is the one
+    moment it can't be fixed, and a short file that looks fine is worse
+    than an obvious absence.
+    """
+    import os
+
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "taken_at": _now_iso(),
+        "taken_by": os.environ.get("USERNAME", ""),
+        "tables": {},
+    }
+    counts, errors = {}, {}
+    for table in _SNAPSHOT_TABLES:
+        try:
+            rows = _rows(table)
+        except Exception as ex:
+            # Keep going. Losing app_user_departments to a permission
+            # rule should not cost us the jobs table too.
+            errors[table] = f"{type(ex).__name__}: {ex}"
+            continue
+        payload["tables"][table] = rows
+        counts[table] = len(rows)
+
+    out = {"ok": not errors, "counts": counts, "errors": errors, "path": path}
+    if not path:
+        out["data"] = payload
+        return out
+    if errors:
+        return out          # incomplete — leave no file behind at all
+
+    # Write to .part then rename, matching data_backup: a snapshot half
+    # written when the machine drops must not look like a usable one.
+    tmp = path + ".part"
+    try:
+        d = os.path.dirname(os.path.abspath(path))
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception as ex:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        out["ok"] = False
+        out["errors"]["_write"] = f"{type(ex).__name__}: {ex}"
+    return out
 
 
 # How many rows go in one PostgREST request. Big enough that a full
