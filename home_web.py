@@ -196,6 +196,28 @@ class HomeApi:
             except Exception:
                 pass
 
+    # ── Health, for every panel ──────────────────────────────────────
+    #
+    # Unprefixed on HomeApi on purpose: the iframe shim falls back to the
+    # bare name, so one shared banner script reaches these from every
+    # panel without each panel growing its own copy.
+
+    def health_state(self, force=False):
+        try:
+            import web_health
+            return web_health.state(force=bool(force))
+        except Exception as ex:
+            # The health check must never be the thing that breaks.
+            return {"ok": True, "problems": [],
+                    "error": f"{type(ex).__name__}: {ex}"}
+
+    def log_js_error(self, source="", message="", detail=""):
+        try:
+            import web_health
+            return web_health.log_js_error(source, message, detail)
+        except Exception:
+            return {"ok": False}
+
     # ── First-run welcome ────────────────────────────────────────────
     def first_run(self):
         """Tell the shell whether to show the one-time welcome modal.

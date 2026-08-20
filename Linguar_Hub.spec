@@ -86,6 +86,10 @@ hiddenimports = web_modules + [
     # Both are reached through a function-local import in run_audit_gui, so
     # list them explicitly rather than rely on static analysis.
     'msg_reader', 'olefile',
+    # The health banner reaches web_health through a function-local
+    # import on HomeApi. A shipped build where the failure reporter is
+    # the thing that silently went missing is the joke writing itself.
+    'web_health',
     # New-loss intake is a function-local import from audit_web; list it so
     # static analysis can't drop it from the build.
     'new_loss_intake',
