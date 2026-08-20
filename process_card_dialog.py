@@ -50,6 +50,23 @@ _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp",
                ".mp4", ".mov", ".m4v", ".avi"}
 
 
+def _has_initial_forms(folder: str) -> bool:
+    """True when EMS/DOCS holds an actual intake form (ATP/CIF/CER/COS).
+
+    `_has_any_file` was the old test, so a dry report — a reading, not
+    paperwork — ticked INITIAL PAPERWORK by itself.
+    """
+    if not folder or not os.path.isdir(folder):
+        return False
+    try:
+        import audit_logic
+        with os.scandir(folder) as it:
+            return any(e.is_file() and audit_logic.is_initial_paperwork(e.name)
+                       for e in it)
+    except Exception:
+        return False
+
+
 def _has_any_file(folder: str) -> bool:
     if not folder or not os.path.isdir(folder):
         return False
@@ -152,7 +169,9 @@ def _detect_state(job_path: str, sp_new_count: int = 0) -> dict:
     return {
         "missing_folders": _missing_ems_subs(job_path),
         "has_initial_photos": _has_any_image(pics_initial),
-        "has_initial_docs":   _has_any_file(docs),
+        # An intake FORM, not merely "a file in DOCS" — a dry report is
+        # a reading and used to tick INITIAL PAPERWORK on its own.
+        "has_initial_docs":   _has_initial_forms(docs),
         "has_docusketch":     _has_docusketch_folder(job_path),
         "has_scope":          _has_scope_pdf(job_path),
         "sp_new":             int(sp_new_count or 0),

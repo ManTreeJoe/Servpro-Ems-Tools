@@ -515,6 +515,23 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().match_diagnostic(client)
     def set_commercial(self, client, on):
         return self._aw().set_commercial(client, on)
+
+    # Snapshot renders the SAME shared detail card, so every call that
+    # card makes has to exist here too — the parity test is what caught
+    # this one missing.
+    def set_self_pay(self, client, on):
+        return self._aw().set_self_pay(client, on)
+
+    def plan_child(self, client, child_name, division=""):
+        return self._aw().plan_child(client, child_name, division)
+
+    def add_child(self, client, child_name, card_id="", project_id="",
+                  create_folder=True, create_project=False, division=""):
+        return self._aw().add_child(client, child_name, card_id, project_id,
+                                    create_folder, create_project, division)
+
+    def is_self_pay(self, client):
+        return self._aw().is_self_pay(client)
     def post_comment(self, client, body):
         return self._aw().post_comment(client, body)
     def xa_note_members(self, client):

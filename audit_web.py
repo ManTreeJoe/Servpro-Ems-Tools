@@ -500,6 +500,26 @@ def _shape_job(j, audit_result, pin_id, display_map=None,
     misplaced_photos = [m for m in (audit_result.get("misplaced_photos") or [])
                         if isinstance(m, dict)]
 
+    # Self-pay ADDS forms, where commercial removes them. The customer
+    # is contracting directly, so California wants the home-improvement
+    # contract and the 3-Day Right to Cancel — neither of which an
+    # insurance job needs. Appended after the commercial filter so the
+    # two flags can't cancel each other out.
+    is_self_pay = False
+    try:
+        is_self_pay = bool(persistence.is_self_pay(client_name))
+    except Exception:
+        is_self_pay = False
+    if is_self_pay:
+        try:
+            import os as _os
+            _ems = _os.path.join(audit_result.get("path") or "", "EMS")
+            for _lbl in (_al.self_pay_missing(_ems) or []):
+                if _lbl not in form_issues and not _is_resolved(_lbl):
+                    form_issues.append(_lbl)
+        except Exception:
+            pass
+
     # Re-derive `flagged` after filtering — if commercial removed
     # everything, the row should flip to clean instead of staying red.
     # Misplaced items keep the row flagged (it still needs re-filing).
@@ -619,6 +639,7 @@ def _shape_job(j, audit_result, pin_id, display_map=None,
         "flagged":          flagged,
         "trello_card_id":   pin_id or "",
         "is_commercial":    is_commercial,
+        "is_self_pay":      is_self_pay,
         "is_starred":       _safe_is_starred(j.get("client")),
         # Multi-unit context — both empty for single-unit jobs.
         "unit":             str(unit_val),
@@ -770,6 +791,31 @@ def _group_audit_candidates(raw):
 
 from companycam_web_api import CompanyCamApi
 from job_settings_api import JobSettingsApi
+
+
+def _looks_like_claim_or_address(text):
+    """Is this worth scanning claim numbers / addresses for?
+
+    Claim numbers and street addresses both contain digits; personal
+    names essentially never do. Without this gate every keystroke of an
+    ordinary name search would scan the jobs table.
+    """
+    t = str(text or "").strip()
+    return len(t) >= 3 and any(c.isdigit() for c in t)
+
+
+def _folder_of_job(job):
+    """The job's pinned folder, or "" — best effort, never raises."""
+    try:
+        import ems_db as _db
+        for l in (_db.get_links(job.get("canon_key") or "",
+                                _db.LINK_FOLDER) or []):
+            v = l.get("link_value") or ""
+            if v:
+                return v
+    except Exception:
+        pass
+    return ""
 
 
 class Api(JobSettingsApi, CompanyCamApi):
@@ -1866,6 +1912,35 @@ class Api(JobSettingsApi, CompanyCamApi):
                      c.get("path") or "", sc)
         except Exception:
             pass
+
+        # 3b. Claim number / address.
+        #
+        # Schema v6 promoted both to real columns, and neither was ever
+        # searched: typing a claim number or a street found nothing, even
+        # though the office often has the claim number in front of them
+        # and not the spelling of the name.
+        #
+        # Gated on the text LOOKING like one (a digit, 3+ characters), so
+        # an ordinary name search doesn't pay for a jobs scan on every
+        # keystroke.
+        if _looks_like_claim_or_address(typed):
+            try:
+                needle = _norm(typed)
+                for j in ems_db.iter_jobs():
+                    nm = j.get("display_name") or ""
+                    if not nm:
+                        continue
+                    claim = _norm(j.get("claim_number") or "")
+                    addr = _norm(j.get("address") or "")
+                    if claim and needle in claim:
+                        _add(nm, "claim",
+                             f"Claim {j.get('claim_number')}",
+                             _folder_of_job(j), 92)
+                    elif addr and needle in addr:
+                        _add(nm, "address", j.get("address") or "",
+                             _folder_of_job(j), 88)
+            except Exception:
+                pass
 
         # 4. LIVE Trello card search.
         #
@@ -3168,14 +3243,77 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    # Ticking one of these IS the act it describes, so the comment the
+    # office would otherwise post by hand goes with it. Names are matched
+    # normalized — a live item is literally " INITIAL PAPERWORK", with a
+    # leading space.
+    #
+    # "ORDER DOCUSKETCH" is a request, not a completion, which is why it
+    # maps to request_docusketch: that posts the canonical request AND
+    # records the pending entry Hygiene tracks until the zip lands.
+    _TICK_POSTS = {
+        "initial photos/photo report": ("canned", "ipr"),
+        "initial upload":              ("canned", "upload"),
+        "order docusketch":            ("docusketch", ""),
+    }
+
+    @staticmethod
+    def tick_post_overrides() -> dict:
+        """Admin edits layered over `_TICK_POSTS`.
+
+        The checklist item names live on Trello and get renamed there.
+        When that happens the tick stops posting its comment — silently,
+        because an unmapped item is just an ordinary tick. Editing this
+        beats waiting for a code change.
+
+        Stored under `audit_tick_posts` as {item name: "ipr" | "upload" |
+        "docusketch"}, matched normalized (case and spacing), and read
+        fresh so an edit needs no restart. "" removes a built-in.
+        """
+        try:
+            import persistence as _per
+            raw = _per.get("audit_tick_posts") or {}
+        except Exception:
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        return {str(k): str(v).strip().lower()
+                for k, v in raw.items() if str(k).strip()}
+
+    @classmethod
+    def tick_post_map(cls) -> dict:
+        """The built-in map with admin overrides applied."""
+        m = dict(cls._TICK_POSTS)
+        for name, action in cls.tick_post_overrides().items():
+            key = cls._tick_key(name)
+            if not action:
+                m.pop(key, None)
+            elif action == "docusketch":
+                m[key] = ("docusketch", "")
+            else:
+                m[key] = ("canned", action)
+        return m
+
+    @staticmethod
+    def _tick_key(name):
+        import re as _re
+        return _re.sub(r"\s+", " ", str(name or "").strip()).lower()
+
     def toggle_checklist_item(self, card_id: str, item_id: str,
-                               complete) -> dict:
+                               complete, item_name: str = "",
+                               client: str = "") -> dict:
         """Tick / un-tick one checklist item on a Trello card. `complete`
         is truthy for done. Updates the in-memory checklist cache so a
-        subsequent re-render shows the new state without a re-fetch."""
+        subsequent re-render shows the new state without a re-fetch.
+
+        Ticking a mapped item also posts its comment — see `_TICK_POSTS`.
+        Only on the way to COMPLETE, and only when the item wasn't already
+        complete, so an un-tick/re-tick doesn't post twice.
+        """
         if not card_id or not item_id:
             return {"ok": False, "error": "card_id + item_id required"}
         state = "complete" if complete else "incomplete"
+        was_complete = self._item_is_complete(card_id, item_id)
         try:
             import trello_client as tc
             ok = bool(tc.set_check_item_state(card_id, item_id, state))
@@ -3194,7 +3332,104 @@ class Api(JobSettingsApi, CompanyCamApi):
                                     it["complete"] = bool(complete)
                 except Exception:
                     pass
-        return {"ok": ok}
+        out = {"ok": ok}
+        if ok and complete and not was_complete:
+            posted = self._post_for_tick(card_id, item_name, client)
+            if posted:
+                out.update(posted)
+                self._remember_tick_comment(card_id, item_id,
+                                            posted.get("action_id", ""))
+        elif ok and not complete:
+            # Un-ticking retracts the announcement. Leaving it would have
+            # the card claiming something that is no longer true, and the
+            # trackers grep these phrases.
+            removed = self._forget_tick_comment(card_id, item_id)
+            if removed:
+                out["comment_deleted"] = removed
+        return out
+
+    _TICK_COMMENT_KEY = "tick_comment_actions"
+
+    def _remember_tick_comment(self, card_id, item_id, action_id):
+        if not action_id:
+            return
+        try:
+            import persistence
+            book = dict(persistence.get(self._TICK_COMMENT_KEY) or {})
+            book[f"{card_id}|{item_id}"] = action_id
+            # Bounded: this is a convenience record, not history. Without
+            # a cap it grows for every tick ever made.
+            if len(book) > 400:
+                for k in list(book)[:len(book) - 400]:
+                    book.pop(k, None)
+            persistence.set_value(self._TICK_COMMENT_KEY, book)
+        except Exception:
+            pass
+
+    def _forget_tick_comment(self, card_id, item_id):
+        """Delete the comment this tick posted, if we still know it."""
+        try:
+            import persistence
+            book = dict(persistence.get(self._TICK_COMMENT_KEY) or {})
+            action_id = book.pop(f"{card_id}|{item_id}", "")
+            if not action_id:
+                return False
+            import trello_client as tc
+            gone = bool(tc.delete_comment(action_id))
+            # Forget it either way: a comment deleted by hand on Trello
+            # would otherwise be retried forever.
+            persistence.set_value(self._TICK_COMMENT_KEY, book)
+            return gone
+        except Exception:
+            return False
+
+    def _item_is_complete(self, card_id, item_id):
+        """Best-effort read of the cached state before we change it.
+        Unknown counts as NOT complete: posting a comment the office
+        expects is better than silently skipping it."""
+        for attr in ("_inprog_cl_cache", "_initial_cl_cache"):
+            cache = getattr(self, attr, None)
+            if not cache or card_id not in cache:
+                continue
+            try:
+                _ts, payload = cache[card_id]
+                for cl in (payload.get("checklists")
+                           or [{"items": payload.get("items") or []}]):
+                    for it in cl.get("items") or []:
+                        if it.get("id") == item_id:
+                            return bool(it.get("complete"))
+            except Exception:
+                pass
+        return False
+
+    def _post_for_tick(self, card_id, item_name, client):
+        """Fire the comment tied to a checklist item, if it has one.
+
+        Never raises and never fails the tick: the checklist state is the
+        user's action and it already succeeded. A comment that didn't post
+        is reported so the UI can say so, rather than the tick appearing
+        to fail and being clicked again.
+        """
+        kind, key = self.tick_post_map().get(self._tick_key(item_name),
+                                             ("", ""))
+        if not kind:
+            return None
+        try:
+            if kind == "canned":
+                r = self.post_canned(card_id, key)
+                return {"comment": r.get("text", ""),
+                        "comment_ok": bool(r.get("ok")),
+                        "comment_error": r.get("error", ""),
+                        # Carried through so an un-tick can delete THIS
+                        # comment rather than guessing from the text.
+                        "action_id": r.get("action_id", "")}
+            r = self.request_docusketch(client or "", card_id)
+            return {"comment": "Docusketch requested",
+                    "comment_ok": bool(r.get("ok")),
+                    "comment_error": r.get("error", "")}
+        except Exception as ex:
+            return {"comment_ok": False,
+                    "comment_error": f"{type(ex).__name__}: {ex}"}
 
     def get_initial_checklists(self, client: str) -> dict:
         """Return the 'INITIAL' + 'INITIAL - ADMIN' Trello checklists for a
@@ -3847,8 +4082,9 @@ class Api(JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": "card_id + valid key required"}
         try:
             import trello_client as tc
-            tc.post_comment(card_id, text)
-            return {"ok": True, "text": text}
+            action = tc.post_comment(card_id, text) or {}
+            return {"ok": True, "text": text,
+                    "action_id": str(action.get("id") or "")}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
@@ -6045,6 +6281,95 @@ class Api(JobSettingsApi, CompanyCamApi):
         return {"ok": True, "cleared": cleared}
 
     # ── P0: Commercial toggle (per-job sticky) ──────────────────────
+    # ── Add a claim / unit ────────────────────────────────────────
+    #
+    # Two calls on purpose: the dialog PREVIEWS (read-only) before it
+    # writes, because the whole point is showing what already exists so
+    # the office adopts it instead of making a second one.
+
+    def plan_child(self, client: str, child_name: str,
+                   division: str = "") -> dict:
+        """What adding this claim/unit would adopt and what it would
+        create. Writes nothing."""
+        key = self._child_parent_key(client)
+        if not key:
+            return {"ok": False, "error": f"no job matched {client!r}"}
+        try:
+            import child_provision as cp
+            return cp.plan_child(key, child_name, division=division)
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def add_child(self, client: str, child_name: str, card_id: str = "",
+                  project_id: str = "", create_folder: bool = True,
+                  create_project: bool = False, division: str = "") -> dict:
+        """Create/adopt the pieces and record the child.
+
+        Returns per-step results — a child whose folder was made but
+        whose CompanyCam project failed says so, rather than reporting
+        success because something worked.
+        """
+        key = self._child_parent_key(client)
+        if not key:
+            return {"ok": False, "error": f"no job matched {client!r}"}
+        try:
+            import child_provision as cp
+            res = cp.apply_child(key, child_name, card_id=card_id,
+                                 project_id=project_id,
+                                 create_folder=create_folder,
+                                 create_project=create_project,
+                                 division=division)
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+        # The detail pane reads children from the row, so re-audit the
+        # parent or the new child is invisible until a manual refresh —
+        # the same writeback trap as the re-audit sites.
+        try:
+            if res.get("ok"):
+                self.reaudit_one(client)
+        except Exception:
+            pass
+        return res
+
+    def _child_parent_key(self, client: str) -> str:
+        """The canon_key for a client name, or ""."""
+        name = (client or "").strip()
+        if not name:
+            return ""
+        try:
+            j = ems_db.find_job_by_name(name)
+            return (j or {}).get("canon_key") or ""
+        except Exception:
+            return ""
+
+    def is_self_pay(self, client: str) -> bool:
+        """Sticky per-client self-pay flag — read."""
+        if not client:
+            return False
+        try:
+            return bool(persistence.is_self_pay(client))
+        except Exception:
+            return False
+
+    def set_self_pay(self, client: str, on: bool) -> dict:
+        """Sticky per-client self-pay flag — write.
+
+        The mirror of `set_commercial`, and deliberately NOT symmetric:
+        commercial RESOLVES the four insurance forms because they stop
+        applying, whereas self-pay ADDS two (Home Improvement Contract,
+        3 Day Right to Cancel). Adding a requirement must never
+        auto-resolve anything — there is nothing to forgive, the forms
+        are simply now due. The next re-audit surfaces them.
+        """
+        if not client:
+            return {"ok": False, "error": "no client"}
+        try:
+            persistence.set_self_pay(client, bool(on))
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+        return {"ok": True, "self_pay": bool(on),
+                "forms": [lbl for lbl, _p in audit_logic.SELF_PAY_FORMS]}
+
     def is_commercial(self, client: str) -> bool:
         """Sticky per-client commercial flag — read."""
         if not client:
@@ -6891,7 +7216,13 @@ class Api(JobSettingsApi, CompanyCamApi):
                 else:
                     if pics_count:
                         _ev.append("wc_photos_initial")
-                    if docs_count:
+                    # Gated on an actual intake FORM, not on "a file
+                    # landed in DOCS". A dry report is a reading, not
+                    # paperwork; importing one used to tick INITIAL
+                    # PAPERWORK and the checklist then claimed the intake
+                    # was done on a job with nothing signed.
+                    if docs_count and audit_logic.any_initial_paperwork(
+                            _docs_landed_names):
                         _ev.append("wc_docs_imported")
                 # FINAL PAPERWORK — only when the COS itself was imported,
                 # regardless of which import kind delivered it.

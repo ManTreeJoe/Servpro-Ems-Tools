@@ -410,16 +410,30 @@ def test_the_search_term_is_escaped_before_it_is_highlighted(detail_js):
     assert "\\\\$&" in body, "regex metacharacters in the query must be escaped"
 
 
-def test_the_canned_buttons_match_the_canonical_phrases(detail_js):
-    """These strings are what the office greps for. If the drawer's copy
-    drifts from post_canned's, the same event exists under two wordings
-    and the trackers stop matching."""
+def test_the_canonical_phrases_have_exactly_one_home(detail_js):
+    """These strings are what the office greps for, so the same event
+    must not exist under two wordings.
+
+    The drawer used to carry its own copy on the IPR / Upload quick-post
+    buttons. Those are gone: ticking the checklist item posts the phrase
+    now, so post_canned is the single place it is written and the JS must
+    not reintroduce a second spelling.
+    """
     import inspect
     src = inspect.getsource(audit_web.Api.post_canned)
     for phrase in ("Initial Photo Report Created and Uploaded to OD.",
                    "Initial Upload submitted To WC."):
         assert phrase in src, f"post_canned lost {phrase!r}"
-        assert phrase in detail_js, f"drawer lost {phrase!r}"
+        assert phrase not in detail_js, (
+            f"{phrase!r} is back in the JS - the tick posts it now, and a "
+            "second copy is how one event acquires two wordings")
+
+
+def test_the_ticked_items_map_to_those_phrases():
+    """The mapping that replaced the buttons."""
+    vals = set(audit_web.Api._TICK_POSTS.values())
+    assert ("canned", "ipr") in vals
+    assert ("canned", "upload") in vals
 
 
 def test_posting_rereads_the_thread(detail_js):

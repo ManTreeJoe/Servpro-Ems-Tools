@@ -646,6 +646,27 @@ body { display: flex; flex-direction: column; }
 }
 .detail-chip.commercial-chip.on:hover { background: #A055C0; }
 
+/* Self-pay — the mirror of commercial. Deliberately a DIFFERENT hue:
+   these two flags mean opposite things (one drops forms, one adds them)
+   and a job can carry both, so they must not read as the same state. */
+.detail-chip.selfpay-chip {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  cursor: pointer;
+  transition: all 100ms ease;
+}
+.detail-chip.selfpay-chip:hover {
+  border-color: #2E9E7B;
+  color: #2E9E7B;
+}
+.detail-chip.selfpay-chip.on {
+  background: #1E7A5E;
+  color: #FFFFFF;
+  border: 1px solid #1E7A5E;
+}
+.detail-chip.selfpay-chip.on:hover { background: #279268; }
+
 .detail-section {
   margin: 18px 0;
 }

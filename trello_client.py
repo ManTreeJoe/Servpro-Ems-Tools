@@ -635,6 +635,23 @@ def set_check_item_state(card_id, check_item_id, state):
         return False
 
 
+def delete_comment(action_id):
+    """Delete a comment by its ACTION id. True on success.
+
+    A comment is an action on Trello, so removing one is
+    DELETE /actions/{id}. Used when a checklist tick is undone: the tick
+    posted the comment, so un-ticking should take it back rather than
+    leave the card claiming something that is no longer true.
+    """
+    if not action_id:
+        return False
+    try:
+        _call(f"/actions/{action_id}", method="DELETE")
+        return True
+    except Exception:
+        return False
+
+
 def delete_check_item(checklist_id, check_item_id):
     """Permanently remove a checklist item from a Trello checklist.
 

@@ -151,6 +151,14 @@
                   title="Toggle commercial — auto-resolves ATP/CIF/CER/CoS">
                   🏢 ${r.is_commercial ? "Commercial" : "Mark commercial"}
                 </span>`);
+    // The mirror of the commercial chip, and NOT symmetric with it:
+    // commercial drops the four insurance forms, self-pay ADDS the home
+    // improvement contract + 3-day right to cancel.
+    chips.push(`<span class="detail-chip selfpay-chip ${r.is_self_pay ? "on" : ""}"
+                  data-selfpay-client="${escA(ctx, r.client)}"
+                  title="Toggle self-pay — requires Home Improvement Contract + 3 Day Right to Cancel">
+                  💵 ${r.is_self_pay ? "Self-pay" : "Mark self-pay"}
+                </span>`);
     for (const a of r.activity || []) {
       chips.push(`<span class="detail-chip activity" data-act="${escA(ctx, a)}">${esc(ctx, a)}</span>`);
     }
@@ -242,10 +250,7 @@
                   title="Import matching files from SharePoint into the OD job folder">📥 Import SP</button>
           <button class="action-btn" data-action="cc-pull"
                   ${hasPath ? "" : "disabled"}
-                  title="Pull this job's NEW CompanyCam photos into its PICS folder"><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Pull CompanyCam</button><!--
-               --><button class="action-btn cc-more" data-action="cc-menu"
-                  ${hasPath ? "" : "disabled"}
-                  title="Auto-match grabbed the wrong project? Change which CompanyCam project this job pulls from.">▾</button>
+                  title="Pull this job's NEW CompanyCam photos into its PICS folder&#10;Right-click: change which CompanyCam project this job pulls from"><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Pull CompanyCam</button>
           <button class="action-btn" data-action="attachments"
                   ${hasPin ? "" : "disabled"}
                   title="Browse + download the Trello card's photos/files"><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello Attachments</button>
@@ -279,8 +284,10 @@
                   title="Post the dated visit comment — pick the stage and who was there">📆 Activity comment</button>
           <button class="action-btn" data-action="call-note" ${hasPin ? "" : "disabled"}
                   title="Log a call or contact on the card, timestamped">📞 Call note</button>
-          <button class="action-btn" data-action="docusketch" ${hasPin ? "" : "disabled"}>📐 Docusketch</button>
           <button class="action-btn" data-action="request-items">📨 Request items</button>
+          <button class="action-btn" data-action="add-child"
+                  ${hasPath ? "" : "disabled"}
+                  title="Add another claim or unit under this client - finds the existing folder/card first">➕ Claim / Unit</button>
           <button class="action-btn" data-action="add-note" title="Add a tracked to-do note for this job">📝 Note</button>
           ${r.section === "sp_recent" ? `
             <button class="action-btn" data-action="sp-rundoc"
@@ -318,6 +325,20 @@
   function wireDetail(container, r, ctx) {
     container.querySelectorAll(".action-btn[data-action]").forEach((b) => {
       b.addEventListener("click", () => detailAction(b.dataset.action, r, ctx));
+      // Changing the CompanyCam project is a correction, not a routine
+      // step — it had its own caret button next to Pull, which spent
+      // permanent space on something used rarely. Right-click keeps it
+      // one gesture away without the clutter.
+      if (b.dataset.action === "cc-pull") {
+        b.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          // The container has its own contextmenu handler (the row menu).
+          // Without this, right-clicking here opens BOTH.
+          e.stopPropagation();
+          if (b.disabled) return;
+          detailAction("cc-relink", r, ctx);
+        });
+      }
     });
     // Inject the collapse styles once (checklists + ⋯ More).
     if (!document.getElementById("detail-collapse-css")) {
@@ -449,6 +470,31 @@
       spChip.addEventListener("click", (e) => {
         e.stopPropagation();
         if (ctx.modals && ctx.modals.openSpImport) ctx.modals.openSpImport(r);
+      });
+    }
+    const selfPayChip = container.querySelector(".selfpay-chip");
+    if (selfPayChip) {
+      selfPayChip.style.cursor = "pointer";
+      selfPayChip.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const cur = !!r.is_self_pay;
+        const label = (on) => (on ? "💵 Self-pay" : "💵 Mark self-pay");
+        selfPayChip.textContent = "Working…";
+        const res = await pywebview.api.set_self_pay(r.client, !cur);
+        if (!res || !res.ok) {
+          setStatus(ctx, `Toggle failed: ${(res && res.error) || "?"}`, "error");
+          selfPayChip.textContent = label(cur);
+          return;
+        }
+        r.is_self_pay = res.self_pay;
+        selfPayChip.classList.toggle("on", !!res.self_pay);
+        selfPayChip.textContent = label(!!res.self_pay);
+        // Turning it ON adds requirements, so name them — otherwise the
+        // row just goes red and the user has to work out what appeared.
+        setStatus(ctx, res.self_pay
+          ? `💵 Self-pay · now needs ${(res.forms || []).join(" + ")}`
+          : "Unmarked self-pay", "ok");
+        if (ctx.reauditAndRerender) ctx.reauditAndRerender(r.client);
       });
     }
     const commChip = container.querySelector(".commercial-chip");
@@ -926,9 +972,9 @@
   async function detailAction(action, row, ctx) {
     const M = (ctx && ctx.modals) || {};
     if (action === "cc-menu") {
-      // One option today, so the caret just does it. A menu holding a
-      // single item is a click tax; when there is a second CompanyCam
-      // option this becomes a real menu.
+      // The caret button is gone — right-clicking Pull CompanyCam is the
+      // gesture now. Kept as an alias so any older caller still lands on
+      // the picker rather than silently doing nothing.
       return detailAction("cc-relink", row, ctx);
     }
     if (action === "cc-relink") {
@@ -1225,11 +1271,8 @@
       openCallNoteModal(row, ctx);
     } else if (action === "comment") {
       if (M.openComment) M.openComment(row);
-    } else if (action === "docusketch") {
-      const res = await pywebview.api.request_docusketch(
-        row.client, row.trello_card_id || "");
-      setStatus(ctx, (res && res.ok) ? "📐 Docusketch requested" :
-        `Docusketch failed: ${(res && res.error) || "?"}`, (res && res.ok) ? "ok" : "error");
+    } else if (action === "add-child") {
+      await openAddChildModal(row, ctx);
     } else if (action === "closeout") {
       openCloseoutModal(row, ctx);                // shared CLOSE OUT checklist
     } else if (action === "sp-rundoc") {
@@ -1562,13 +1605,12 @@
         <div class="cl-pane" data-clpane="${escA(ctx, b.key)}"${i === 0 ? "" : " hidden"}>
           ${b.checklists.map(groupHtml).join("")}
         </div>`).join("")}` : "";
-    const cannedHtml = `
-      <div class="canned-comments">
-        <button class="action-btn" data-canned="ipr"
-                title="Post comment: Initial Photo Report Created and Uploaded to OD.">📷 IPR → comment</button>
-        <button class="action-btn" data-canned="upload"
-                title="Post comment: Initial Upload submitted To WC.">📤 Initial Upload → comment</button>
-      </div>`;
+    // The canned-comment buttons are gone: ticking the checklist item
+    // posts the comment now (INITIAL PHOTOS/PHOTO REPORT, INITIAL
+    // UPLOAD, ORDER DOCUSKETCH). Two ways to record one fact meant the
+    // tick and the comment could disagree, and the comment was the half
+    // that got forgotten.
+    const cannedHtml = "";
     bodyEl.innerHTML =
       (clHtml || `<div class="muted" style="padding:4px 0 2px;">No checklists on this card.</div>`)
       + cannedHtml;
@@ -1640,7 +1682,14 @@
         cb.disabled = true;
         let ok = false;
         try {
-          const r = await pywebview.api.toggle_checklist_item(cardId, itemId, want);
+          // The item NAME decides whether a comment goes with the tick
+          // (Initial Photo Report, Initial Upload, Order Docusketch).
+          // It lives in the sibling span, so read it rather than
+          // threading it through every render.
+          const _nm = cb.parentElement.querySelector("span");
+          const r = await pywebview.api.toggle_checklist_item(
+            cardId, itemId, want, _nm ? _nm.textContent.trim() : "",
+            (typeof clientName !== "undefined" && clientName) || "");
           ok = !!(r && r.ok);
         } catch (_) { ok = false; }
         cb.disabled = false;
@@ -1648,15 +1697,6 @@
         const span = cb.parentElement.querySelector("span");
         if (span) span.className = want ? "cl-done" : "";
         setStatus(ctx, want ? "Ticked ✓" : "Un-ticked", "ok");
-      });
-    });
-    bodyEl.querySelectorAll("button[data-canned]").forEach((b) => {
-      b.addEventListener("click", async () => {
-        b.disabled = true;
-        const r = await pywebview.api.post_canned(cardId, b.dataset.canned);
-        b.disabled = false;
-        setStatus(ctx, (r && r.ok) ? `💬 Posted: ${r.text}` : `Post failed: ${(r && r.error) || "?"}`,
-                  (r && r.ok) ? "ok" : "error");
       });
     });
   }
@@ -1692,7 +1732,14 @@
         cb.disabled = true;
         let ok = false;
         try {
-          const r = await pywebview.api.toggle_checklist_item(cardId, itemId, want);
+          // The item NAME decides whether a comment goes with the tick
+          // (Initial Photo Report, Initial Upload, Order Docusketch).
+          // It lives in the sibling span, so read it rather than
+          // threading it through every render.
+          const _nm = cb.parentElement.querySelector("span");
+          const r = await pywebview.api.toggle_checklist_item(
+            cardId, itemId, want, _nm ? _nm.textContent.trim() : "",
+            (typeof clientName !== "undefined" && clientName) || "");
           ok = !!(r && r.ok);
         } catch (_) { ok = false; }
         cb.disabled = false;
@@ -2012,13 +2059,12 @@
             </label></li>`).join("")}
         </ul>
       </div>`).join("");
-    const cannedHtml = `
-      <div class="canned-comments">
-        <button class="action-btn" data-canned="ipr"
-                title="Post comment: Initial Photo Report Created and Uploaded to OD.">📷 IPR → comment</button>
-        <button class="action-btn" data-canned="upload"
-                title="Post comment: Initial Upload submitted To WC.">📤 Initial Upload → comment</button>
-      </div>`;
+    // The canned-comment buttons are gone: ticking the checklist item
+    // posts the comment now (INITIAL PHOTOS/PHOTO REPORT, INITIAL
+    // UPLOAD, ORDER DOCUSKETCH). Two ways to record one fact meant the
+    // tick and the comment could disagree, and the comment was the half
+    // that got forgotten.
+    const cannedHtml = "";
     bodyEl.innerHTML =
       (clHtml || `<div class="muted" style="padding:4px 0 2px;">No INITIAL checklist on this card.</div>`)
       + cannedHtml;
@@ -2030,7 +2076,14 @@
         cb.disabled = true;
         let ok = false;
         try {
-          const r = await pywebview.api.toggle_checklist_item(cardId, itemId, want);
+          // The item NAME decides whether a comment goes with the tick
+          // (Initial Photo Report, Initial Upload, Order Docusketch).
+          // It lives in the sibling span, so read it rather than
+          // threading it through every render.
+          const _nm = cb.parentElement.querySelector("span");
+          const r = await pywebview.api.toggle_checklist_item(
+            cardId, itemId, want, _nm ? _nm.textContent.trim() : "",
+            (typeof clientName !== "undefined" && clientName) || "");
           ok = !!(r && r.ok);
         } catch (_) { ok = false; }
         cb.disabled = false;
@@ -2038,15 +2091,6 @@
         const span = cb.parentElement.querySelector("span");
         if (span) span.className = want ? "cl-done" : "";
         setStatus(ctx, want ? "Ticked ✓" : "Un-ticked", "ok");
-      });
-    });
-    bodyEl.querySelectorAll("button[data-canned]").forEach((b) => {
-      b.addEventListener("click", async () => {
-        b.disabled = true;
-        const r = await pywebview.api.post_canned(cardId, b.dataset.canned);
-        b.disabled = false;
-        setStatus(ctx, (r && r.ok) ? `💬 Posted: ${r.text}` : `Post failed: ${(r && r.error) || "?"}`,
-                  (r && r.ok) ? "ok" : "error");
       });
     });
   }
@@ -2391,6 +2435,175 @@
       if (btn && w.contains(btn)) w.remove();
     });
     return w;
+  }
+
+  // ── ➕ Add claim / unit (shared) ────────────────────────────────────
+  //
+  // Adopt-first. Work starts in Trello here, so the dialog SHOWS what
+  // already exists — the folder on disk, cards that look like this job,
+  // a CompanyCam project — before it offers to make anything. A
+  // provision-everything flow would create a second card beside the one
+  // somebody already made, which is the duplicate-identity problem this
+  // whole effort has been unwinding.
+  async function openAddChildModal(row, ctx) {
+    const w = mkModal({
+      title: "Add a claim or unit",
+      sub: row.client,
+      width: 660,
+      body: `
+        <label style="display:block;font-size:11px;text-transform:uppercase;
+                      letter-spacing:.08em;color:var(--text-muted);">
+          Name it as the folder should read</label>
+        <input id="ac-name" type="text" spellcheck="false"
+               placeholder="Tres Lagos - Unit 6204 - 8.17.26"
+               style="width:100%;margin:6px 0 4px;padding:8px 10px;
+                      background:var(--surface);color:var(--text);
+                      border:1px solid var(--border);border-radius:6px;
+                      font-family:ui-monospace,Consolas,monospace;"/>
+        <div id="ac-levels" style="font-size:11px;color:var(--text-muted);
+                                   min-height:16px;"></div>
+        <div id="ac-found" style="margin-top:14px;"></div>
+        <footer style="display:flex;gap:8px;justify-content:flex-end;
+                       margin-top:18px;">
+          <button class="action-btn modal-close">Cancel</button>
+          <button class="action-btn" id="ac-go" disabled>Check first…</button>
+        </footer>`,
+    });
+
+    const nameEl = w.querySelector("#ac-name");
+    const levelsEl = w.querySelector("#ac-levels");
+    const foundEl = w.querySelector("#ac-found");
+    const goEl = w.querySelector("#ac-go");
+    let plan = null, timer = null;
+
+    function chosenCard() {
+      const el = w.querySelector('input[name="ac-card"]:checked');
+      return el && el.value !== "__none__" ? el.value : "";
+    }
+
+    async function preview() {
+      const name = nameEl.value.trim();
+      plan = null;
+      goEl.disabled = true;
+      if (!name) { levelsEl.textContent = ""; foundEl.innerHTML = ""; return; }
+      goEl.textContent = "Checking…";
+      let res;
+      try {
+        res = await pywebview.api.plan_child(row.client, name, "");
+      } catch (err) { res = { ok: false, error: String(err) }; }
+      if (!res || !res.ok) {
+        foundEl.innerHTML =
+          `<div style="color:var(--red);font-size:12px;">${
+            _escapeHtml((res && res.error) || "Lookup failed")}</div>`;
+        goEl.textContent = "Add";
+        return;
+      }
+      plan = res;
+      const lv = res.levels || {};
+      levelsEl.textContent =
+        [lv.property && `property ${lv.property}`,
+         lv.unit && `unit ${lv.unit}`,
+         lv.claim_date && `date ${lv.claim_date}`]
+          .filter(Boolean).join("  ·  ") || "no property/unit/date detected";
+
+      const parts = [];
+      if (res.existing_child) {
+        parts.push(`<div style="padding:8px 10px;border-radius:6px;
+             background:var(--surface-2);border:1px solid var(--amber,#B4562A);
+             font-size:12px;margin-bottom:10px;">
+             This claim/unit already exists — adding it will UPDATE it,
+             not create a second one.</div>`);
+      }
+      parts.push(`<div style="font-size:12px;margin-bottom:4px;">
+          <b>Folder</b> — ${res.folder.exists
+            ? "already there, will be adopted"
+            : "will be created"}<br/>
+          <span style="font-family:ui-monospace,Consolas,monospace;
+                       font-size:11px;color:var(--text-muted);">${
+            _escapeHtml(res.folder.path)}</span></div>`);
+
+      const cards = res.cards || [];
+      parts.push('<div style="font-size:12px;margin-top:12px;"><b>Trello</b>');
+      if (!cards.length) {
+        parts.push(`<div style="font-size:11px;color:var(--text-muted);">
+            No matching card. You can pin one later — a unit often exists
+            before its card does.</div>`);
+      } else {
+        cards.forEach((c, i) => {
+          parts.push(`<label style="display:flex;gap:8px;align-items:center;
+               padding:5px 0;font-size:12px;cursor:pointer;">
+               <input type="radio" name="ac-card" value="${_escapeAttr(c.id)}"
+                      ${i === 0 ? "checked" : ""}/>
+               <span style="font-family:ui-monospace,Consolas,monospace;
+                            font-size:11px;">${_escapeHtml(c.name)}</span>
+               <span style="color:var(--text-muted);font-size:10px;">${
+                 _escapeHtml(c.board || "")}</span></label>`);
+        });
+        parts.push(`<label style="display:flex;gap:8px;align-items:center;
+             padding:5px 0;font-size:12px;cursor:pointer;">
+             <input type="radio" name="ac-card" value="__none__"/>
+             <span style="color:var(--text-muted);">None of these</span>
+             </label>`);
+      }
+      parts.push("</div>");
+
+      const proj = res.project;
+      parts.push(`<div style="font-size:12px;margin-top:12px;"><b>CompanyCam</b>
+        ${proj
+          ? `<div style="font-size:11px;color:var(--text-muted);">
+               ${_escapeHtml(proj.name)} — will be adopted</div>`
+          : `<label style="display:flex;gap:8px;align-items:center;
+                 padding:5px 0;font-size:12px;cursor:pointer;">
+               <input type="checkbox" id="ac-mkproj"/>
+               <span>No project found — create one</span></label>`}
+        </div>`);
+      foundEl.innerHTML = parts.join("");
+      goEl.disabled = false;
+      goEl.textContent = res.existing_child ? "Update" : "Add";
+    }
+
+    nameEl.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(preview, 350);   // it hits Trello — don't per-key
+    });
+    nameEl.focus();
+
+    goEl.addEventListener("click", async () => {
+      if (!plan) return;
+      const name = nameEl.value.trim();
+      const mk = w.querySelector("#ac-mkproj");
+      goEl.disabled = true;
+      goEl.textContent = "Working…";
+      let res;
+      try {
+        res = await pywebview.api.add_child(
+          row.client, name, chosenCard(),
+          (plan.project && plan.project.id) || "",
+          true, !!(mk && mk.checked), "");
+      } catch (err) { res = { ok: false, error: String(err) }; }
+
+      // Per-step, always. A child whose folder was made but whose
+      // CompanyCam project failed has to SAY so — reporting success
+      // because something worked is the half-provisioned lie.
+      const steps = (res && res.steps) || {};
+      const line = Object.keys(steps).map((k) => {
+        const s = steps[k];
+        return `${s.ok ? "✓" : "✕"} ${k}${
+          s.error ? ` (${s.error})` : s.action ? ` — ${s.action}` : ""}`;
+      }).join("   ");
+      if (res && res.ok) {
+        setStatus(ctx, `➕ ${name}   ${line}`, "ok");
+        w.remove();
+        if (ctx.reauditAndRerender) ctx.reauditAndRerender(row.client);
+      } else {
+        goEl.disabled = false;
+        goEl.textContent = "Retry";
+        foundEl.innerHTML =
+          `<div style="color:var(--red);font-size:12px;">${
+            _escapeHtml((res && res.error) || "Failed")}<br/>${
+            _escapeHtml(line)}</div>` + foundEl.innerHTML;
+      }
+    });
   }
 
   // ── 📋 CLOSE OUT checklist modal (shared) ──────────────────────────
@@ -3431,8 +3644,6 @@
       '  <textarea id="cmt-new" rows="2" placeholder="Write a comment…  (Ctrl+Enter posts)"></textarea>' +
       '  <div class="cmt-btns">' +
       '    <button class="action-btn" id="cmt-post" title="Post to the pinned Trello card">💬 Post</button>' +
-      '    <button class="action-btn" id="cmt-ipr" title="Initial Photo Report Created and Uploaded to OD.">📷 IPR</button>' +
-      '    <button class="action-btn" id="cmt-upload" title="Initial Upload submitted To WC.">📤 Upload</button>' +
       '  </div>' +
       '</footer>';
     document.body.appendChild(el);
@@ -3475,12 +3686,9 @@
     }
     el.querySelector("#cmt-post").addEventListener("click", (e) =>
       post(el.querySelector("#cmt-new").value, e.currentTarget));
-    // The two canned phrases the office already uses verbatim — typing
-    // them by hand is how they drift into three spellings.
-    el.querySelector("#cmt-ipr").addEventListener("click", (e) =>
-      post("Initial Photo Report Created and Uploaded to OD.", e.currentTarget));
-    el.querySelector("#cmt-upload").addEventListener("click", (e) =>
-      post("Initial Upload submitted To WC.", e.currentTarget));
+    // The canned IPR / Upload buttons lived here too. Ticking the
+    // checklist item posts those phrases now, so the drawer keeps only
+    // free-text posting — one place records the fact, one way.
     el.querySelector("#cmt-new").addEventListener("keydown", (e) => {
       if (_mentionKey(el, e)) return;          // the picker owns this key
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -4016,6 +4224,7 @@
     decorateIssueListsWithCheckboxes,
     mkModal,
     openCloseoutModal,
+    openAddChildModal,
     openPinModal,
     openCopyPicsToXaModal,
   };

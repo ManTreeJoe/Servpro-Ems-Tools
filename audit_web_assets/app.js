@@ -2962,13 +2962,10 @@ async function loadInitialChecklists(row) {
           </label></li>`).join("")}
       </ul>
     </div>`).join("");
-  const cannedHtml = `
-    <div class="canned-comments">
-      <button class="action-btn" data-canned="ipr"
-              title="Post comment: Initial Photo Report Created and Uploaded to OD.">📷 IPR → comment</button>
-      <button class="action-btn" data-canned="upload"
-              title="Post comment: Initial Upload submitted To WC.">📤 Initial Upload → comment</button>
-    </div>`;
+  // Gone: ticking the checklist item posts the comment now. Two ways to
+  // record one fact meant the tick and the comment could disagree, and
+  // the comment was the half that got forgotten.
+  const cannedHtml = "";
   bodyEl.innerHTML =
     (clHtml || `<div class="muted" style="padding:4px 0 2px;">No INITIAL checklist on this card.</div>`)
     + cannedHtml;
@@ -2980,7 +2977,14 @@ async function loadInitialChecklists(row) {
       cb.disabled = true;
       let ok = false;
       try {
-        const r = await pywebview.api.toggle_checklist_item(cardId, itemId, want);
+        // The item NAME decides whether a comment goes with the tick
+        // (Initial Photo Report, Initial Upload, Order Docusketch).
+        // It lives in the sibling span, so read it rather than
+        // threading it through every render.
+        const _nm = cb.parentElement.querySelector("span");
+        const r = await pywebview.api.toggle_checklist_item(
+          cardId, itemId, want, _nm ? _nm.textContent.trim() : "",
+          (typeof clientName !== "undefined" && clientName) || "");
         ok = !!(r && r.ok);
       } catch (_) { ok = false; }
       cb.disabled = false;
@@ -2988,15 +2992,6 @@ async function loadInitialChecklists(row) {
       const span = cb.parentElement.querySelector("span");
       if (span) span.className = want ? "cl-done" : "";
       setStatus(want ? "Ticked ✓" : "Un-ticked", "ok");
-    });
-  });
-  bodyEl.querySelectorAll("button[data-canned]").forEach((b) => {
-    b.addEventListener("click", async () => {
-      b.disabled = true;
-      const r = await pywebview.api.post_canned(cardId, b.dataset.canned);
-      b.disabled = false;
-      setStatus(r?.ok ? `💬 Posted: ${r.text}` : `Post failed: ${r?.error || "?"}`,
-                r?.ok ? "ok" : "error");
     });
   });
 }

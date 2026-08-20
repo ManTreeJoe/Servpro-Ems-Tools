@@ -1022,6 +1022,31 @@ def set_commercial(client, checked):
     _save(state)
 
 
+# ── Self-pay ────────────────────────────────────────────────────────────────
+#
+# The mirror image of `commercial`: that flag REMOVES the four insurance
+# forms, this one ADDS two. A self-pay job is a home-improvement contract
+# with a consumer, so California requires the contract itself and the
+# 3-Day Right to Cancel notice — neither of which an insurance job needs.
+
+def is_self_pay(client):
+    sp = _load().get("self_pay", {})
+    key = _canon_pin_key(client)
+    return bool(sp.get(key) or sp.get(client))
+
+
+def set_self_pay(client, checked):
+    state = _load()
+    sp = state.setdefault("self_pay", {})
+    key = _canon_pin_key(client)
+    if checked:
+        sp[key] = True
+    else:
+        sp.pop(key, None)
+        sp.pop(client, None)
+    _save(state)
+
+
 # ── Window geometry per app (size + position survive close) ──────────────────
 
 def get_geometry(app_id):
