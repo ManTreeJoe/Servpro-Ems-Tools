@@ -767,13 +767,24 @@ class Api:
         "pending review":           apa.SEC_PENDING_REVIEW,
         # Estimator lanes — combo lanes default to FIRST listed name
         "juantes":   "JUAN",  "kim+esteban": "KIM",
-        "samantha / al jr": "SAMANTHA",   "samantha/al jr": "SAMANTHA",
+        # Combo lanes normally take the FIRST listed name, but Samantha
+        # has no APA section — so "SAMANTHA / AL JR" routed to a section
+        # that does not exist and the item silently kept yesterday's.
+        # The Al Jr half is the one that can actually receive work
+        # (user 2026-08-20), so the shared lane goes there.
+        "samantha / al jr": "AARON L",    "samantha/al jr": "AARON L",
+        "samantha": "AARON L",
         "al jr": "AARON L",   "aaron l": "AARON L",
         "juan": "JUAN",       "aaron": "AARON",
         "johnny": "JOHNNY",   "kim": "KIM",
-        "zac": "ZAC",         "esteban": "ESTEBAN",
+        # Esteban has no APA section of his own, so his lane routed to a
+        # section that does not exist and the item silently kept
+        # yesterday's. He shares KIM's lane ("kim+esteban"), which is the
+        # half that can receive work (user 2026-08-20) — same resolution
+        # as Samantha's shared lane going to AARON L.
+        "zac": "ZAC",         "esteban": "KIM",
         "victoria": "VICTORIA", "pablo": "PABLO",
-        "samantha": "SAMANTHA", "recon": "RECON",
+        "recon": "RECON",
         # Job-stage lanes
         "initial inspections": apa.SEC_INITIAL_UPLOADS,
         "initial inspection":  apa.SEC_INITIAL_UPLOADS,
@@ -794,6 +805,19 @@ class Api:
         "office questions":    apa.SEC_FINAL_UPLOADS,
         "audit rejection":     apa.SEC_AUDIT_REJECTION,
         "audit dispute":       apa.SEC_AUDIT_DISPUTE,
+        # Lanes that carried items were landing on with NO mapping, so
+        # they kept yesterday's section on every new day — the "it never
+        # changes when we transfer it over" complaint.
+        #
+        # The substring walk looks for a KEY inside the LANE, so a key
+        # longer than the lane can never match: "tbs new loss" cannot
+        # match a lane literally called "NEW LOSS".
+        "new loss":            apa.SEC_INITIAL_UPLOADS,
+        # Every other waiting lane on the WIP board already routes to
+        # Final Uploads (on hold, pending approval, pending ins, self
+        # pay, office questions); UPCOMING/PENDING is the same family.
+        "upcoming/pending":    apa.SEC_FINAL_UPLOADS,
+        "upcoming":            apa.SEC_FINAL_UPLOADS,
     }
     _LANE_TO_SUB = {
         "initial inspections":   "Initial Inspections/Re-Inspections",
@@ -831,10 +855,46 @@ class Api:
         "initial":               "Initial",
     }
 
+    @staticmethod
+    def lane_section_overrides() -> dict:
+        """Admin edits layered over `_LANE_TO_SECTION`.
+
+        Trello changes: lanes get renamed, estimators arrive and leave.
+        Every time that happened the fix was a code edit — and until
+        somebody made it, cards in the changed lane silently kept
+        yesterday's section (SAMANTHA and ESTEBAN both sat like that).
+
+        Stored under `apa_lane_sections` as {lane substring: section},
+        the same shape as the built-in table, and read fresh each call so
+        an edit takes effect without a restart. A value of "" REMOVES a
+        built-in entry, which is how a lane that should route nowhere is
+        expressed.
+        """
+        try:
+            import persistence as _per
+            raw = _per.get("apa_lane_sections") or {}
+        except Exception:
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        return {str(k).strip().lower(): str(v).strip()
+                for k, v in raw.items() if str(k).strip()}
+
+    @classmethod
+    def lane_section_map(cls) -> dict:
+        """The built-in table with admin overrides applied."""
+        m = dict(cls._LANE_TO_SECTION)
+        for lane, section in cls.lane_section_overrides().items():
+            if section:
+                m[lane] = section
+            else:
+                m.pop(lane, None)      # "" means: route this nowhere
+        return m
+
     def _suggest_section_for_lane(self, lane_name: str) -> str:
         ln = (lane_name or "").strip().lower()
         if not ln: return ""
-        m = self._LANE_TO_SECTION
+        m = self.lane_section_map()
         if ln in m: return m[ln]
         for k, v in m.items():
             if k in ln: return v
