@@ -92,8 +92,11 @@ grant).
 
 ## Building the current version
 
-Inno Setup is **not** installed on this machine, so there is no installer
-right now. For two PCs the folder build is simpler anyway:
+Inno Setup **is** installed (per-user, under `%LOCALAPPDATA%`), and a real
+installer has shipped since v1.3.2. This section used to say otherwise; the
+tool was there the whole time and was simply not on `PATH`.
+
+For a quick two-PC copy the folder build is still simpler:
 
 ```
 cd scripts
@@ -112,3 +115,56 @@ python _packaging/make_shipped_config.py
 
 `tests/test_shipped_config.py` guards it both ways — a missing shared key
 fails, and so does a personal token or a `C:\Users\...` path sneaking in.
+
+---
+
+## Keeping a way back
+
+Updates are one-way: `version.txt` names the newest build and every PC
+follows it on the next launch. That is fine right up until the newest
+build is the problem — and then the previous installer exists only on
+whichever machine happened to build it.
+
+After a release is confirmed working on a real machine, keep it:
+
+```
+python -c "import release_keep as r; print(r.record(
+    r'dist\Linguar-Hub-Setup-1.3.4.exe',
+    r'X:\IE_Public\Front Operation\EMS Admin\Linguar Hub\known-good',
+    '1.3.4', notes='confirmed on the front desk PC'))"
+```
+
+It copies the installer under `known-good\<version>\`, records its
+SHA-256, and keeps the last three. The hash is the point: a file on a
+share is only a rollback if it is still the file you put there, and
+without a hash "we have a known-good installer" is a belief you test on
+the worst possible day.
+
+Check the kept copies are still intact — do this occasionally, not only
+in an emergency:
+
+```
+python -c "import release_keep as r; print(r.verify(
+    r'X:\IE_Public\Front Operation\EMS Admin\Linguar Hub\known-good'))"
+```
+
+To go back, ask which version to go back TO, then run that installer by
+hand:
+
+```
+python -c "import release_keep as r; print(r.rollback_target(
+    r'X:\IE_Public\Front Operation\EMS Admin\Linguar Hub\known-good'))"
+```
+
+It prints a path and never installs anything — that is a decision made
+at a machine, by a person. Remember to point `version.txt` back as well,
+or every PC will "update" straight to the broken build again on next
+launch.
+
+## Setup check
+
+`python trial_preflight.py` still works, but the same checks now run
+inside the app: on the welcome screen of a fresh machine, and any time
+from **⚙ Settings → Run setup check**. A check that requires somebody to
+open a terminal is a check that does not happen on the machines that
+need it most.

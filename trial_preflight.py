@@ -11,6 +11,8 @@ of those is the reason if the answer is no.
 Read-only unless you pass --cloud. Nothing here writes to the shared
 database.
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -28,8 +30,34 @@ def check(label, state, detail="", fix=""):
     print(f"[{state}] {label}" + (f" — {detail}" if detail else ""))
 
 
-def main():
-    go_cloud = "--cloud" in sys.argv
+def run_checks() -> list:
+    """The same checks the CLI runs, returned as data.
+
+    Exists so the first-run screen can show them IN the app. A setup step
+    that only happens when somebody remembers to open a terminal and type
+    a script name is a setup step that does not happen — and then the
+    first sign of a misconfigured PC is two offices quietly disagreeing
+    about the job list.
+
+    Read-only: `--cloud` is never passed from here. Switching a machine
+    to the shared database is a decision, not a side effect of looking.
+    """
+    global _results
+    _results = []
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            main(argv=[])
+    except Exception as ex:                    # never break the panel
+        _results.append((FAIL, "Preflight itself failed",
+                         f"{type(ex).__name__}: {ex}", ""))
+    return [{"state": s.strip().lower(), "label": lb, "detail": d, "fix": f}
+            for s, lb, d, f in _results]
+
+
+def main(argv=None):
+    argv = sys.argv if argv is None else argv
+    go_cloud = "--cloud" in argv
     print("=" * 68)
     print("  Linguar Hub — shared database preflight")
     print("=" * 68)

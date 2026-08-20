@@ -120,6 +120,18 @@
                 padding:8px 10px;border-left:3px solid var(--amber);
                 background:var(--surface-2);border-radius:0 6px 6px 0;"></div>
 
+    <!-- Setup check, re-runnable. The welcome screen shows it once on a
+         fresh machine; a PC that drifts later (an unmapped X:, an expired
+         token) needs somewhere to ask again without a terminal. -->
+    <div style="margin-bottom:12px;">
+      <button class="btn" id="pf-run" type="button">Run setup check</button>
+      <span class="muted" style="font-size:11.5px;margin-left:8px;">
+        Checks config, sign-in, franchise access and folder paths on THIS PC.</span>
+      <div id="pf-out" style="display:none;font-size:12.5px;margin-top:10px;
+           padding:10px 12px;border-radius:8px;background:var(--surface-2);
+           border:1px solid var(--border);"></div>
+    </div>
+
     <div style="display:flex;flex-wrap:wrap;gap:8px;">
       <button class="btn" id="sb-use-cloud">☁ Use the shared database</button>
       <button class="btn" id="sb-use-local">💾 Use the local database</button>
@@ -287,6 +299,7 @@ window.addEventListener("pywebviewready", async () => {
   render();
   await renderFirstRunWizard();
   await loadBrowsers();
+  document.getElementById("pf-run").addEventListener("click", runPreflight);
   document.getElementById("save").addEventListener("click", save);
   document.getElementById("reload").addEventListener("click", async () => {
     VALUES = await pywebview.api.load() || {};
@@ -493,6 +506,41 @@ async function refreshSupabase() {
   } else {
     q.style.display = "none";
   }
+}
+
+async function runPreflight() {
+  const btn = document.getElementById("pf-run");
+  const box = document.getElementById("pf-out");
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "Checking…";
+  box.style.display = "";
+  box.textContent = "Checking this PC…";
+  let r;
+  try { r = await pywebview.api.preflight(); }
+  catch (e) { r = null; }
+  btn.disabled = false;
+  btn.textContent = label;
+  if (!r || r.error) {
+    box.textContent = "Setup check could not run" + (r?.error ? `: ${r.error}` : ".");
+    return;
+  }
+  const bad = (r.checks || []).filter((c) => c.state !== "ok");
+  if (!bad.length) {
+    box.innerHTML = `<b>✓ This PC is set up correctly.</b>
+      <span class="muted">All ${r.total} checks passed.</span>`;
+    return;
+  }
+  bad.sort((a, b) => (a.state === "fail" ? 0 : 1) - (b.state === "fail" ? 0 : 1));
+  box.innerHTML = `<b>${r.fails ? `${r.fails} to fix` : `${r.warns} warning(s)`}</b>
+    <span class="muted">· ${r.total - bad.length}/${r.total} passed</span>
+    <ul style="margin:8px 0 0;padding-left:18px;">` +
+    bad.map((c) => `<li style="margin:4px 0;">
+      <span style="color:${c.state === "fail" ? "var(--red)" : "var(--amber)"};">
+        ${c.state === "fail" ? "✕" : "⚠"}</span>
+      ${esc(c.label)}${c.detail ? ` — <span class="muted">${esc(c.detail)}</span>` : ""}
+      ${c.fix ? `<div class="muted" style="margin-top:2px;">→ ${esc(c.fix)}</div>` : ""}
+    </li>`).join("") + "</ul>";
 }
 
 async function sbSendCode() {

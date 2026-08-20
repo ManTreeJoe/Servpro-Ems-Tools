@@ -62,6 +62,11 @@
       <p class="fr-note">Your settings are saved to your own PC
          (<code>%APPDATA%\Linguar Hub</code>) — nothing is shared.</p>
     </div>
+    <!-- Setup check. Filled in by app.js; hidden until it has run, so a
+         healthy machine sees no extra noise on the welcome screen. -->
+    <div id="fr-preflight" style="display:none;margin:14px 0 0;padding:10px 12px;
+         border-radius:8px;background:var(--surface-2,#1b1c20);
+         border:1px solid var(--border,#2c2d33);font-size:12.5px;"></div>
     <div class="fr-actions">
       <button class="fr-btn fr-secondary" id="fr-later">I'll do it later</button>
       <button class="fr-btn fr-primary" id="fr-settings">Open Settings</button>

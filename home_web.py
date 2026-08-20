@@ -236,6 +236,28 @@ class HomeApi:
         except Exception:
             return {"show": False, "trello_ready": True}
 
+    def preflight(self):
+        """Run the setup checks and return them as data.
+
+        The checks already existed as `trial_preflight.py`, which meant
+        they only ran when somebody remembered to open a terminal on a
+        new PC. Nobody does that, and the first sign of a machine that
+        was never checked is two offices disagreeing about the job list.
+
+        Read-only — it never switches the backend.
+        """
+        try:
+            import trial_preflight
+            rows = trial_preflight.run_checks()
+        except Exception as ex:
+            return {"ok": False, "checks": [],
+                    "error": f"{type(ex).__name__}: {ex}"}
+        fails = [r for r in rows if r["state"] == "fail"]
+        warns = [r for r in rows if r["state"] == "warn"]
+        return {"ok": not fails, "checks": rows,
+                "fails": len(fails), "warns": len(warns),
+                "total": len(rows)}
+
     def dismiss_first_run(self):
         """Drop the `.configured` marker so the welcome doesn't reappear."""
         try:

@@ -271,6 +271,46 @@ async function maybeShowFirstRun() {
     if (item) navigate("settings", item.src);
   };
   overlay.classList.remove("hidden");
+
+  // Run the setup checks right here, on the one screen a new user is
+  // guaranteed to look at. They used to live in a terminal script, so on
+  // a machine nobody checked, the first symptom was two offices quietly
+  // disagreeing about the job list.
+  runPreflightInto("#fr-preflight");
+}
+
+async function runPreflightInto(sel) {
+  const box = $(sel);
+  if (!box) return;
+  box.style.display = "";
+  box.textContent = "Checking this PC…";
+  let r;
+  try { r = await pywebview.api.preflight(); }
+  catch (e) { box.textContent = "Setup check could not run."; return; }
+  if (!r || r.error) {
+    box.textContent = "Setup check could not run" + (r?.error ? `: ${r.error}` : ".");
+    return;
+  }
+  const bad = (r.checks || []).filter((c) => c.state !== "ok");
+  if (!bad.length) {
+    box.innerHTML = `<b>✓ This PC is set up correctly.</b>
+      <span style="opacity:.75;">All ${r.total} checks passed.</span>`;
+    return;
+  }
+  // Blockers first: a warning listed above a FAIL buries the thing that
+  // actually stops the app working.
+  bad.sort((a, b) => (a.state === "fail" ? 0 : 1) - (b.state === "fail" ? 0 : 1));
+  box.innerHTML =
+    `<b>${r.fails ? `${r.fails} thing${r.fails === 1 ? "" : "s"} to fix`
+                  : `${r.warns} warning${r.warns === 1 ? "" : "s"}`}</b>
+     <span style="opacity:.75;">· ${r.total - bad.length}/${r.total} checks passed</span>
+     <ul style="margin:8px 0 0;padding-left:18px;">` +
+    bad.map((c) => `<li style="margin:4px 0;">
+        <span style="color:${c.state === "fail" ? "var(--red,#E06C6C)" : "var(--amber,#D6A34A)"};">
+          ${c.state === "fail" ? "✕" : "⚠"}</span>
+        ${esc(c.label)}${c.detail ? ` — <span style="opacity:.8;">${esc(c.detail)}</span>` : ""}
+        ${c.fix ? `<div style="opacity:.7;margin-top:2px;">→ ${esc(c.fix)}</div>` : ""}
+      </li>`).join("") + "</ul>";
 }
 
 function renderWelcome() {
