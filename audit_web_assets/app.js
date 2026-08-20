@@ -5313,10 +5313,10 @@ function openNewLossModal() {
 
       <label id="nl-cc-row" style="display:none;align-items:center;gap:6px;
              margin-top:14px;font-size:12px;">
-        <input type="checkbox" id="nl-make-companycam" />
+        <input type="checkbox" id="nl-make-companycam" checked />
         <span>Also create the <b>CompanyCam project</b> now and pin it
               <span class="muted">— so photos don't have to be matched by
-              name later</span></span>
+              name later. An EXISTING project is pinned either way.</span></span>
       </label>
 
       <div class="modal-footer" style="margin-top:16px;display:flex;gap:8px;align-items:center;">

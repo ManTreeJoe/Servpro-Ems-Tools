@@ -2393,17 +2393,24 @@ class Api(JobSettingsApi, CompanyCamApi):
             except Exception as ex:
                 folder = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
             res["folder"] = folder
-        if make_companycam:
-            try:
-                res["companycam"] = nli.create_companycam_project(
-                    fields,
-                    card_name=res.get("name") or "",
-                    trello_card=res.get("card_id") or "",
-                    folder_path=(res.get("folder") or {}).get("path") or "",
-                    confirm_create=True)
-            except Exception as ex:
-                res["companycam"] = {"ok": False,
-                                     "error": f"{type(ex).__name__}: {ex}"}
+        # ALWAYS run this, and let the checkbox govern CREATION only.
+        #
+        # It used to be skipped entirely when the box was unticked, so a
+        # project that already existed in CompanyCam was never pinned --
+        # which is why 44 jobs had a CompanyCam link against 341 with a
+        # Trello card. Adopting an existing project posts nothing and
+        # tells no one; it just records the id, so there is no reason to
+        # make somebody opt in to it.
+        try:
+            res["companycam"] = nli.create_companycam_project(
+                fields,
+                card_name=res.get("name") or "",
+                trello_card=res.get("card_id") or "",
+                folder_path=(res.get("folder") or {}).get("path") or "",
+                confirm_create=bool(make_companycam))
+        except Exception as ex:
+            res["companycam"] = {"ok": False,
+                                 "error": f"{type(ex).__name__}: {ex}"}
         return res
 
     # ── P0: XactAnalysis quick link from right-click menu ────────────
