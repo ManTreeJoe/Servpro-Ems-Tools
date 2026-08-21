@@ -157,10 +157,18 @@ class CompanyCamApi:
             # a replacement, not an addition. (Trello cards are
             # deliberately many-per-job, which is why this is not done
             # for them.)
-            removed = []
+            # If this half fails, the pin is RECORDED AND IGNORED — the
+            # old link keeps winning and the user is told it worked. It
+            # used to swallow the error and still return ok:True, which
+            # is the exact "half-applied, reported green" failure the pin
+            # is meant to fix. Say so instead.
+            removed, problem = [], ""
             try:
                 job = ems_db.find_job_by_name(client)
-                if job:
+                if not job:
+                    problem = (f"pinned, but no job named {client!r} to pin it "
+                               f"to — the old project may still win")
+                else:
                     ck = job["canon_key"]
                     for ln in (ems_db.get_links(ck, ems_db.LINK_COMPANYCAM)
                                or []):
@@ -168,8 +176,23 @@ class CompanyCamApi:
                         if val and val != project_id:
                             ems_db.remove_link(ck, ems_db.LINK_COMPANYCAM, val)
                             removed.append(val)
-            except Exception:
-                pass
+                    # Prove it: re-read what the resolver will actually
+                    # see, rather than trusting that the writes landed.
+                    now = ems_db.get_link(ck, ems_db.LINK_COMPANYCAM)
+                    if str(now or "") != project_id:
+                        problem = (f"pin did not take — the job still "
+                                   f"resolves to {now or 'nothing'}")
+            except Exception as ex:
+                problem = f"could not clear the old project: {ex}"
+            if problem:
+                try:
+                    import ems_log
+                    ems_log.error("companycam", f"pin {client!r} -> "
+                                                f"{project_id}: {problem}")
+                except Exception:
+                    pass
+                return {"ok": False, "project_id": project_id,
+                        "replaced": removed, "error": problem}
             return {"ok": True, "project_id": project_id,
                     "replaced": removed}
         except Exception as ex:

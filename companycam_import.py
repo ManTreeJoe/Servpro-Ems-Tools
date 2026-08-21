@@ -64,6 +64,7 @@ _STAGE_RULES = [
     # exactly the mistake Contents made above. As a stage it can be
     # routed, and route_photo sends it to the job's DOCS folder.
     ("scope",             "Scope"),
+    ("sketch",            "Sketch"),
     ("reinspection",      "Reinspection"),
     ("reinspect",         "Reinspection"),
     ("initial inspection", "Initial"),

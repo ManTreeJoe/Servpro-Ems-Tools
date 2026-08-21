@@ -109,3 +109,16 @@ def test_scope_is_a_stage_not_a_room():
     import companycam_import as cci
     assert cci.room_stage_from_label("Scope") == ("", "Scope")
     assert cc.classify_tags(["Scope", "Kitchen"]) == ("Kitchen", "Scope", "")
+
+
+# ── Sketch rides with Scope ────────────────────────────────────────────
+
+def test_sketch_also_goes_to_docs():
+    r = cc.route_photo(_photo("Sketch"), split_docs=True)
+    assert r["division"] == "DOCS"
+    assert r["stage_label"] == "Sketch"
+
+
+def test_sketch_is_a_stage_not_a_room():
+    import companycam_import as cci
+    assert cci.room_stage_from_label("Sketch") == ("", "Sketch")

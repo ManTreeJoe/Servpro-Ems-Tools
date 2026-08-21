@@ -1111,7 +1111,7 @@ _CONTENTS_STAGES = {"contents"}
 # in the middle of the PICS stage folders where nobody filing paperwork
 # would look for it. "Scope" is the exact tag on the account (id
 # 26578715) — checked, not assumed.
-_DOCS_STAGES = {"scope"}
+_DOCS_STAGES = {"scope", "sketch"}
 
 
 def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,

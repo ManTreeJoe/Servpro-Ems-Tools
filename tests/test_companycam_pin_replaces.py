@@ -99,3 +99,45 @@ def test_get_link_returning_the_oldest_is_what_made_this_bite():
     import ems_db_sqlite
     src = inspect.getsource(ems_db_sqlite.get_link)
     assert "ASC" in src and "LIMIT 1" in src
+
+
+# ── and when the replacement CANNOT be made ────────────────────────────
+#
+# The removal half used to sit in a bare `except Exception: pass` and the
+# function returned ok:True regardless. So a pin that was recorded and
+# then ignored — the exact bug this file exists for — reported success.
+
+def test_a_failed_replacement_is_not_reported_as_success(api, job,
+                                                         monkeypatch):
+    name, ck = job
+    api.companycam_pin(name, "OLD")
+
+    def _boom(*a, **k):
+        raise RuntimeError("shared database unreachable")
+
+    monkeypatch.setattr(ems_db, "remove_link", _boom)
+    r = api.companycam_pin(name, "NEW")
+    assert r["ok"] is False
+    assert "old project" in (r.get("error") or "")
+
+
+def test_it_re_reads_what_the_resolver_will_see(api, job, monkeypatch):
+    """Trusting that the writes landed is how this went unnoticed for so
+    long. The pin proves itself by reading back what the RESOLVER will
+    get — not by assuming its own writes worked.
+
+    get_link is stubbed rather than left to timing: two pins land in the
+    same second, `added_at` ties, and which row wins is then arbitrary.
+    """
+    name, ck = job
+    monkeypatch.setattr(ems_db, "remove_link", lambda *a, **k: None)
+    monkeypatch.setattr(ems_db, "get_link", lambda *a, **k: "STALE")
+    r = api.companycam_pin(name, "NEW")
+    assert r["ok"] is False
+    assert "did not take" in (r.get("error") or "")
+
+
+def test_no_job_to_pin_to_is_reported(api, monkeypatch):
+    monkeypatch.setattr(ems_db, "find_job_by_name", lambda n: None)
+    r = api.companycam_pin("Nobody At All", "NEW")
+    assert r["ok"] is False
