@@ -641,6 +641,9 @@ class Api(JobSettingsApi, CompanyCamApi):
     # Snapshot they opened a viewer that could not read anything.
     def od_contents(self, path):
         return self._aw().od_contents(path)
+
+    def file_preview(self, path, max_px=1400):
+        return self._aw().file_preview(path, max_px)
     def job_work_log(self, client):
         return self._aw().job_work_log(client)
     def save_job_work_log(self, client):

@@ -165,6 +165,19 @@ def main():
                 log.write(json.dumps({"into": p["into"], "from": p["from"],
                                       "undo_id": uid}) + "\n")
                 log.flush()
+                # The DB is only half of it: this PC caches folder
+                # paths, Trello card ids and activity logs by NAME, and
+                # after the merge the loser's name is gone from the index
+                # while its cache still answers to it.
+                for lost in p["from_names"]:
+                    try:
+                        import persistence
+                        m = persistence.rename_client(lost, p["into_name"])
+                        if m:
+                            print(f"      local state: "
+                                  + ", ".join(f"{k} {v}" for k, v in m.items()))
+                    except Exception as ex:
+                        print(f"      local state NOT carried over: {ex}")
                 print(f"  merged -> {p['into_name']!r}   undo={uid}")
                 done += 1
             except Exception as ex:

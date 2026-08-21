@@ -1432,6 +1432,95 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception:
             return False
 
+    # Extensions the in-app viewer can render itself. Everything else
+    # keeps going to the system handler — a viewer that opens a .xlsx
+    # badly is worse than one that hands it to Excel.
+    _VIEW_IMAGE = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
+                   ".heic", ".heif", ".tif", ".tiff"}
+    _VIEW_TEXT = {".txt", ".csv", ".log", ".md", ".json", ".xml"}
+    _VIEW_MAX_BYTES = 80 * 1024 * 1024
+
+    def file_preview(self, path: str, max_px: int = 1400) -> dict:
+        """Render one file for the in-app viewer.
+
+        Images come back as a DOWNSCALED jpeg data URI, never the
+        original bytes. A job's photos are 4-12MB each straight off a
+        phone; handing the webview a dozen at full size is how you turn
+        browsing a folder into an out-of-memory restart on a laptop that
+        already has none to spare.
+
+        Anything this cannot render says so and names the reason, so the
+        caller can fall back to the system handler rather than showing an
+        empty frame.
+        """
+        if not path or not os.path.isfile(path):
+            return {"ok": False, "error": "file not found"}
+        ext = os.path.splitext(path)[1].lower()
+        name = os.path.basename(path)
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+        base = {"ok": True, "name": name, "path": path, "size": size,
+                "ext": ext}
+
+        if size > self._VIEW_MAX_BYTES:
+            return {**base, "kind": "external",
+                    "reason": "too big to preview"}
+
+        if ext in self._VIEW_IMAGE:
+            try:
+                import base64
+                import io as _io
+                if ext in (".heic", ".heif"):
+                    # Phone photos. Without this they raise
+                    # UnidentifiedImageError and read as "not an image".
+                    try:
+                        import pillow_heif
+                        pillow_heif.register_heif_opener()
+                    except Exception:
+                        return {**base, "kind": "external",
+                                "reason": "HEIC support unavailable"}
+                from PIL import Image, ImageOps
+                with Image.open(path) as im:
+                    # EXIF orientation: a phone portrait shot is stored
+                    # landscape with a rotate flag, so skipping this shows
+                    # every one of them on its side.
+                    im = ImageOps.exif_transpose(im)
+                    im.thumbnail((int(max_px), int(max_px)))
+                    if im.mode not in ("RGB", "L"):
+                        im = im.convert("RGB")
+                    buf = _io.BytesIO()
+                    im.save(buf, "JPEG", quality=82, optimize=True)
+                    w, h = im.size
+                return {**base, "kind": "image", "width": w, "height": h,
+                        "data": "data:image/jpeg;base64,"
+                                + base64.b64encode(buf.getvalue()).decode()}
+            except Exception as ex:
+                return {**base, "kind": "external",
+                        "reason": f"{type(ex).__name__}: {ex}"}
+
+        if ext == ".pdf":
+            # read_pdf_b64 returns RAW base64 under `b64`, not a data URI.
+            r = self.read_pdf_b64(path)
+            if r.get("ok") and r.get("b64"):
+                return {**base, "kind": "pdf",
+                        "data": "data:application/pdf;base64," + r["b64"]}
+            return {**base, "kind": "external",
+                    "reason": r.get("error") or "could not read the PDF"}
+
+        if ext in self._VIEW_TEXT:
+            try:
+                with open(path, "r", encoding="utf-8",
+                          errors="replace") as fh:
+                    text = fh.read(200_000)
+                return {**base, "kind": "text", "text": text}
+            except OSError as ex:
+                return {**base, "kind": "external", "reason": str(ex)}
+
+        return {**base, "kind": "external",
+                "reason": f"no in-app viewer for {ext or 'this file'}"}
+
     def read_pdf_b64(self, path: str) -> dict:
         """Read a PDF off disk and return its bytes base64-encoded.
         Used by the Scope modal's inline PDF preview — pywebview

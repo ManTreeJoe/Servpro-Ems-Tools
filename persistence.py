@@ -2656,3 +2656,65 @@ def cleanup_stale_keys(audit_base, max_per_day=True):
     _save(state)
     return {"removed": removed,
             "total": sum(len(v) for v in removed.values())}
+
+
+# ── carrying local state across a merge ────────────────────────────────
+#
+# `merge_jobs` rewrites the shared database, but these caches live on THIS
+# PC, keyed by client NAME. After a merge the loser's name is gone from
+# the index while its cached folder path, Trello card ids and activity log
+# sit here still answering to it — so a lookup by the old name gets a
+# stale answer from a job that no longer exists.
+#
+# Stores keyed by a bare client name. Composite-key stores
+# (`resolved_issues` = "date::client::issue", `apa_message_notes`,
+# `audit_cache`) are deliberately NOT touched: rewriting half a compound
+# key is how you turn stale data into wrong data.
+_NAME_KEYED_STORES = (
+    ("folder_paths", True),          # True = keyed by _canon_pin_key
+    ("trello_card_ids", True),
+    ("job_activity_log", False),
+    ("apa_franchise_tags", False),
+    ("apa_extended_history", False),
+    ("sp_match_rejects", False),
+    ("sp_match_overrides", False),
+    ("commercial", False),
+)
+
+
+def rename_client(old_name, new_name):
+    """Move this PC's cached state from `old_name` onto `new_name`.
+
+    The survivor always wins a collision: it is the row the index kept,
+    so its cached answers are the current ones. The loser's entry is
+    dropped either way — leaving it behind is what strands it.
+
+    Returns {store: action} for the caller to report. Never raises.
+    """
+    if not (old_name and new_name):
+        return {}
+    moved = {}
+    try:
+        state = _load()
+    except Exception:
+        return {}
+    for store, canon in _NAME_KEYED_STORES:
+        d = state.get(store)
+        if not isinstance(d, dict):
+            continue
+        ok = _canon_pin_key(old_name) if canon else str(old_name).strip().lower()
+        nk = _canon_pin_key(new_name) if canon else str(new_name).strip().lower()
+        if not ok or ok == nk or ok not in d:
+            continue
+        val = d.pop(ok)
+        if nk in d:
+            moved[store] = "dropped (survivor already had one)"
+        else:
+            d[nk] = val
+            moved[store] = "moved"
+    if moved:
+        try:
+            _save(state)
+        except Exception:
+            return {}
+    return moved

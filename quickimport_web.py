@@ -229,6 +229,12 @@ class Api:
         return self._aw().open_od_for_client(client, path)
     def open_folder(self, path):
         return self._aw().open_folder(path)
+
+    def file_preview(self, path, max_px=1400):
+        return self._aw().file_preview(path, max_px)
+
+    def od_contents(self, path):
+        return self._aw().od_contents(path)
     def open_trello_card(self, card_id):
         return self._aw().open_trello_card(card_id)
     def open_xa_link(self, client, card_id=""):
