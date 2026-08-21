@@ -1440,6 +1440,73 @@ class Api(JobSettingsApi, CompanyCamApi):
     _VIEW_TEXT = {".txt", ".csv", ".log", ".md", ".json", ".xml"}
     _VIEW_MAX_BYTES = 80 * 1024 * 1024
 
+    def od_summary(self, path: str, max_dirs: int = 40) -> dict:
+        """What is actually IN a job folder, at a glance.
+
+        Two levels only, and capped. The audit already spends most of its
+        11 seconds waiting on the share, and a full recursive walk per
+        selected job would put that cost back — a job with a season of
+        photos is thousands of entries deep. Two levels is enough to
+        answer the question people open the folder to ask: which stages
+        exist and roughly how much is in each.
+
+        Returns {ok, path, groups:[{name, files, subs:[{name, files}]}],
+        files} where `files` is the loose-file count at the top.
+        """
+        if not path or not os.path.isdir(path):
+            return {"ok": False, "error": "folder not found", "groups": []}
+
+        def count(d):
+            """Files directly inside `d`. scandir in a `with` block —
+            a bare loop leaves the directory handle open and Windows
+            then refuses to rename or move the folder."""
+            n = 0
+            try:
+                with os.scandir(d) as it:
+                    for e in it:
+                        try:
+                            if e.is_file(follow_symlinks=False) and                                     e.name.lower() != "desktop.ini":
+                                n += 1
+                        except OSError:
+                            continue
+            except OSError:
+                return 0
+            return n
+
+        groups, loose = [], 0
+        try:
+            with os.scandir(path) as it:
+                tops = sorted(it, key=lambda e: e.name.lower())
+        except OSError as ex:
+            return {"ok": False, "error": str(ex), "groups": []}
+
+        for e in tops[:max_dirs]:
+            try:
+                if e.is_file(follow_symlinks=False):
+                    if e.name.lower() != "desktop.ini":
+                        loose += 1
+                    continue
+                if not e.is_dir(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
+            subs = []
+            try:
+                with os.scandir(e.path) as it2:
+                    kids = sorted(it2, key=lambda x: x.name.lower())
+                for k in kids[:max_dirs]:
+                    try:
+                        if k.is_dir(follow_symlinks=False):
+                            subs.append({"name": k.name, "path": k.path,
+                                         "files": count(k.path)})
+                    except OSError:
+                        continue
+            except OSError:
+                pass
+            groups.append({"name": e.name, "path": e.path,
+                           "files": count(e.path), "subs": subs})
+        return {"ok": True, "path": path, "groups": groups, "files": loose}
+
     def file_preview(self, path: str, max_px: int = 1400) -> dict:
         """Render one file for the in-app viewer.
 

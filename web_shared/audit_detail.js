@@ -228,6 +228,7 @@
       ${misplacedSection}
       ${cleanSection}
       ${metaSection}
+      <div id="od-summary" class="od-summary" style="display:none;"></div>
       <footer class="detail-actions">
         <div class="action-row">
           <button class="action-btn primary" data-action="open-folder"
@@ -322,7 +323,75 @@
   // ── Wire the rendered card: buttons, chips, hover, right-click,
   //    then kick off the async sections. `container` is the element the
   //    detail HTML was written into. ──────────────────────────────────
+  // ── folder contents, inline ─────────────────────────────────────────
+  //
+  // The whole point is not having to open Explorer to find out whether
+  // the photos are actually there. Two levels, counts only; clicking a
+  // group opens the browser at that folder.
+  async function loadOdSummary(container, r, ctx) {
+    const box = container.querySelector("#od-summary");
+    if (!box) return;
+    const path = r.path || "";
+    if (!path) return;
+    box.style.display = "";
+    box.innerHTML = '<div class="muted" style="font-size:11px;">Reading folder…</div>';
+    let res;
+    try { res = await pywebview.api.od_summary(path); }
+    catch (e) { res = { ok: false, error: String(e) }; }
+    if (!res || !res.ok) {
+      box.innerHTML = `<div class="muted" style="font-size:11px;">` +
+        `Folder not readable — ${esc(ctx, (res && res.error) || "unknown")}</div>`;
+      return;
+    }
+    const groups = res.groups || [];
+    if (!groups.length && !res.files) {
+      box.innerHTML = '<div class="muted" style="font-size:11px;">Folder is empty</div>';
+      return;
+    }
+    const total = groups.reduce((n, g) =>
+      n + g.files + g.subs.reduce((m, s) => m + s.files, 0), res.files || 0);
+    box.innerHTML =
+      `<div class="muted" style="font-size:10px;letter-spacing:.05em;
+            text-transform:uppercase;margin:10px 0 6px;">
+         In the folder · ${total} file${total === 1 ? "" : "s"}</div>` +
+      groups.map((g) => {
+        const subs = (g.subs || []).filter((x) => x.files > 0);
+        const empty = (g.subs || []).filter((x) => !x.files);
+        return `<div style="display:flex;gap:8px;align-items:baseline;
+                     padding:3px 0;font-size:12px;">
+          <button class="od-jump" data-path="${escA(ctx, g.path)}"
+                  style="background:none;border:none;padding:0;cursor:pointer;
+                         color:var(--text);font:inherit;font-weight:600;">
+            📁 ${esc(ctx, g.name)}</button>
+          <span class="muted" style="font-size:11.5px;">` +
+          (subs.length
+            ? subs.map((x) => `${esc(ctx, x.name)} (${x.files})`).join(" · ")
+            : (g.files ? `${g.files} file${g.files === 1 ? "" : "s"}` : "")) +
+          // Naming the EMPTY ones is the useful half: "PICS (0)" is the
+          // answer to "are the photos in yet?", and a row that simply
+          // omitted it would read as though nothing were missing.
+          (empty.length
+            ? `<span style="opacity:.65;"> · ${empty.map((x) =>
+                 esc(ctx, x.name) + " (0)").join(" · ")}</span>`
+            : "") +
+          `</span></div>`;
+      }).join("") +
+      (res.files ? `<div class="muted" style="font-size:11.5px;padding:3px 0;">
+          ${res.files} loose file${res.files === 1 ? "" : "s"} at the top</div>` : "");
+
+    box.querySelectorAll(".od-jump").forEach((b) =>
+      b.addEventListener("click", () => {
+        const M = (ctx && ctx.modals) || {};
+        (M.showOdContents || ((row, pth) => defaultOdContents(ctx, row, pth)))(
+          r, b.dataset.path);
+      }));
+  }
+
   function wireDetail(container, r, ctx) {
+    // What is in the folder, without opening the folder. Loaded per
+    // SELECTED job, never per row: it costs ~700ms on the share, which
+    // is fine once and unaffordable times fifty.
+    loadOdSummary(container, r, ctx);
     container.querySelectorAll(".action-btn[data-action]").forEach((b) => {
       b.addEventListener("click", () => detailAction(b.dataset.action, r, ctx));
       // Changing the CompanyCam project is a correction, not a routine
@@ -2835,13 +2904,114 @@
         (files.length ? `<div class="muted" style="font-size:10px;letter-spacing:.05em;margin-top:8px;">FILES · ${files.length}</div>${filesHtml}` : "");
       listEl.querySelectorAll(".od-folder").forEach((b) =>
         b.addEventListener("click", () => { stack.push(curPath); curPath = b.dataset.path; load(); }));
+      // Files open IN the app. Shelling out to the system handler meant
+      // leaving the audit to look at one photo, and coming back to a
+      // panel that had lost its place.
       listEl.querySelectorAll(".od-file").forEach((b) =>
-        b.addEventListener("click", async () => {
-          const ok = await pywebview.api.open_file(b.dataset.path);
-          if (!ok) setStatus(ctx, "Couldn't open file", "warn");
-        }));
+        b.addEventListener("click", () =>
+          openFileViewer(ctx, files.map((f) => f.path), b.dataset.path)));
     }
     load();
+  }
+
+  // ── file viewer ─────────────────────────────────────────────────────
+  //
+  // Renders what it can (images, PDFs, text) and hands everything else to
+  // the system handler rather than showing an empty frame. Arrow keys and
+  // the on-screen arrows step through the SAME folder listing the user was
+  // looking at, so flicking through a day's photos does not mean closing
+  // and reopening for each one.
+  async function openFileViewer(ctx, paths, startPath) {
+    document.getElementById("fv-modal")?.remove();
+    let i = Math.max(0, paths.indexOf(startPath));
+
+    const wrap = document.createElement("div");
+    wrap.id = "fv-modal";
+    wrap.style.cssText = "position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.82);" +
+      "display:flex;flex-direction:column;";
+    wrap.innerHTML = `
+      <header style="display:flex;align-items:center;gap:12px;padding:10px 16px;
+                     background:var(--surface);border-bottom:1px solid var(--border);">
+        <span id="fv-name" style="font-size:13px;font-weight:600;flex:1;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        <span class="muted" id="fv-pos" style="font-size:11px;"></span>
+        <button class="btn" id="fv-prev" title="Previous (←)">‹</button>
+        <button class="btn" id="fv-next" title="Next (→)">›</button>
+        <button class="btn" id="fv-open" title="Open in the default app">Open ↗</button>
+        <button class="btn" id="fv-close" title="Close (Esc)">✕</button>
+      </header>
+      <div id="fv-body" style="flex:1;display:flex;align-items:center;
+           justify-content:center;overflow:auto;padding:14px;"></div>`;
+    document.body.appendChild(wrap);
+
+    const body = wrap.querySelector("#fv-body");
+    const close = () => { document.removeEventListener("keydown", onKey); wrap.remove(); };
+    function onKey(e) {
+      if (e.key === "Escape") close();
+      else if (e.key === "ArrowLeft") step(-1);
+      else if (e.key === "ArrowRight") step(1);
+    }
+    document.addEventListener("keydown", onKey);
+    wrap.querySelector("#fv-close").addEventListener("click", close);
+    wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+    wrap.querySelector("#fv-prev").addEventListener("click", () => step(-1));
+    wrap.querySelector("#fv-next").addEventListener("click", () => step(1));
+    wrap.querySelector("#fv-open").addEventListener("click", async () => {
+      const ok = await pywebview.api.open_file(paths[i]);
+      if (!ok) setStatus(ctx, "Couldn't open file", "warn");
+    });
+
+    function step(d) {
+      if (!paths.length) return;
+      i = (i + d + paths.length) % paths.length;
+      render();
+    }
+
+    async function render() {
+      const path = paths[i];
+      wrap.querySelector("#fv-name").textContent =
+        path.split(/[\/]/).pop() || path;
+      wrap.querySelector("#fv-pos").textContent =
+        paths.length > 1 ? `${i + 1} / ${paths.length}` : "";
+      body.innerHTML = '<div class="muted">Loading…</div>';
+      let r;
+      try { r = await pywebview.api.file_preview(path); }
+      catch (e) { r = { ok: false, error: String(e) }; }
+      if (!r || !r.ok) {
+        body.innerHTML = `<div class="muted">${esc(ctx, (r && r.error) || "Couldn't read that file")}</div>`;
+        return;
+      }
+      if (r.kind === "image") {
+        body.innerHTML =
+          `<img src="${r.data}" alt="${escA(ctx, r.name)}"
+                style="max-width:100%;max-height:100%;object-fit:contain;
+                       border-radius:6px;"/>`;
+      } else if (r.kind === "pdf") {
+        body.innerHTML =
+          `<iframe src="${r.data}" title="${escA(ctx, r.name)}"
+                   style="width:100%;height:100%;border:none;background:#fff;
+                          border-radius:6px;"></iframe>`;
+      } else if (r.kind === "text") {
+        body.innerHTML =
+          `<pre style="width:100%;height:100%;overflow:auto;margin:0;padding:14px;
+                       background:var(--surface);border-radius:6px;
+                       font:12.5px/1.5 ui-monospace,Consolas,monospace;
+                       white-space:pre-wrap;">${esc(ctx, r.text || "")}</pre>`;
+      } else {
+        // Say WHY there is no preview, and offer the thing that works.
+        body.innerHTML =
+          `<div style="text-align:center;">
+             <div class="muted" style="margin-bottom:10px;">
+               ${esc(ctx, r.reason || "No in-app preview for this file type")}</div>
+             <button class="btn" id="fv-ext">Open in the default app</button>
+           </div>`;
+        body.querySelector("#fv-ext").addEventListener("click", async () => {
+          const ok = await pywebview.api.open_file(path);
+          if (!ok) setStatus(ctx, "Couldn't open file", "warn");
+        });
+      }
+    }
+    render();
   }
 
   function defaultWorkLog(ctx, row) {

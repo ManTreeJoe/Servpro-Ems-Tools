@@ -644,6 +644,9 @@ class Api(JobSettingsApi, CompanyCamApi):
 
     def file_preview(self, path, max_px=1400):
         return self._aw().file_preview(path, max_px)
+
+    def od_summary(self, path, max_dirs=40):
+        return self._aw().od_summary(path, max_dirs)
     def job_work_log(self, client):
         return self._aw().job_work_log(client)
     def save_job_work_log(self, client):

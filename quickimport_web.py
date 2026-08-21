@@ -233,6 +233,9 @@ class Api:
     def file_preview(self, path, max_px=1400):
         return self._aw().file_preview(path, max_px)
 
+    def od_summary(self, path, max_dirs=40):
+        return self._aw().od_summary(path, max_dirs)
+
     def od_contents(self, path):
         return self._aw().od_contents(path)
     def open_trello_card(self, card_id):
