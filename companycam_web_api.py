@@ -267,6 +267,27 @@ class CompanyCamApi:
         return os.path.join(os.sep.join(parts), "CONTENTS")
 
 
+    def _cc_docs_dir(self, client: str) -> str:
+        r"""The job's `EMS\DOCS` folder — where Scope-tagged photos go.
+
+        A scope is paperwork. Left in PICS it sat among the stage folders,
+        which is not where anyone filing or reading paperwork looks, and
+        the audit's document checks never saw it.
+
+        Derived from the resolved PICS path so the two can never point at
+        different jobs: PICS is `<job>\EMS\PICS`, so its sibling is
+        `<job>\EMS\DOCS`.
+        """
+        pics = self._cc_pics_dir(client)
+        if not pics:
+            return ""
+        parts = os.path.normpath(pics).split(os.sep)
+        if parts and parts[-1].strip().upper() == "PICS":
+            parts.pop()
+        if not parts:
+            return ""
+        return os.path.join(os.sep.join(parts), "DOCS")
+
     def _cc_pics_dir(self, client: str) -> str:
         """The job's PICS folder, or "" when the job folder isn't resolved.
 
@@ -416,6 +437,7 @@ class CompanyCamApi:
         try:
             r = cc.pull_missing_photos(pid, pics, subfolder=stage,
                                        contents_dir=self._cc_contents_dir(client),
+                                       docs_dir=self._cc_docs_dir(client),
                                        tech=(tech or "")) or {}
             return {"ok": True, "pulled": r.get("downloaded", 0),
                     "skipped": r.get("skipped", 0), "pics": pics,
@@ -453,7 +475,8 @@ class CompanyCamApi:
             stage = ""
         try:
             r = cc.plan_pull(pid, pics, subfolder=stage, tech=(tech or ""),
-                             contents_dir=self._cc_contents_dir(client))
+                             contents_dir=self._cc_contents_dir(client),
+                             docs_dir=self._cc_docs_dir(client))
             if r.get("ok"):
                 r["pics"] = pics
                 self._suggest_stages_from_run_doc(client, r.get("groups"))
@@ -543,6 +566,7 @@ class CompanyCamApi:
                     tech=(row_tech or tech or ""), only_ids=ids,
                     force_tech=bool(row_tech),
                     contents_dir=self._cc_contents_dir(client),
+                    docs_dir=self._cc_docs_dir(client),
                     # Never advance past shoots deliberately skipped —
                     # they'd fall behind the mark and go unpullable.
                     advance_watermark=False) or {}
@@ -658,6 +682,7 @@ class CompanyCamApi:
                 pid, pics, since_epoch=None, subfolder=stage,
                 tech=(tech or ""), only_ids=ids,
                 contents_dir=self._cc_contents_dir(client),
+                docs_dir=self._cc_docs_dir(client),
                 # The watermark must NOT advance past shoots deliberately
                 # skipped, or they go invisible to the next "anything new?"
                 # check and become silently unpullable.
@@ -715,7 +740,8 @@ class CompanyCamApi:
         try:
             r = cc.pull_new_photos(
                 pid, pics, subfolder=stage, tech=(tech or ""),
-                contents_dir=self._cc_contents_dir(client)) or {}
+                contents_dir=self._cc_contents_dir(client),
+                docs_dir=self._cc_docs_dir(client)) or {}
             return {"ok": True, "pulled": r.get("downloaded", 0),
                     "skipped": r.get("skipped", 0), "pics": pics,
                     "stage": stage}

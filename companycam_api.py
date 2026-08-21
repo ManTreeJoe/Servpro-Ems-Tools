@@ -1106,10 +1106,17 @@ def _id_tokens_on_disk(dest_dir):
 # nothing reads.
 _CONTENTS_STAGES = {"contents"}
 
+# A Scope is paperwork, not a room photo. It is the scope sheet shot on a
+# phone, and it belongs with the rest of the job's documents rather than
+# in the middle of the PICS stage folders where nobody filing paperwork
+# would look for it. "Scope" is the exact tag on the account (id
+# 26578715) — checked, not assumed.
+_DOCS_STAGES = {"scope"}
+
 
 def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
                 organize_by_tags=True, force_tech=False,
-                split_contents=False):
+                split_contents=False, split_docs=False):
     """Where ONE photo lands, as (relative parts, room, stage, box).
 
     Extracted from the download loop so the pull PREVIEW and the pull
@@ -1139,6 +1146,14 @@ def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
     if split_contents and stage_dir.strip().lower() in _CONTENTS_STAGES:
         division = "CONTENTS"
         stage_dir = ""
+    elif split_docs and stage_dir.strip().lower() in _DOCS_STAGES:
+        # DOCS, under the visit that produced it. No stage folder (the
+        # division says what it is) and no room folder — a scope covers
+        # the job, not a room, so a "Kitchen" tag on it would otherwise
+        # bury it one level down from every other scope.
+        division = "DOCS"
+        stage_dir = ""
+        room = qualifier = ""
     parts = [x for x in (stage_dir, box, room, qualifier) if x]
     return {"parts": parts, "room": room, "stage": stage_dir,
             # What to CALL this shoot, which is not always a folder in the
@@ -1149,9 +1164,25 @@ def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
             "box": box, "qualifier": qualifier, "division": division}
 
 
+def _base_for(division, dest_dir, contents_dir="", docs_dir=""):
+    """Which root a routed photo hangs off.
+
+    One function, used by both the preview and the download, because a
+    preview that shows a different folder than the download uses is worse
+    than no preview at all. Falls back to dest_dir when the division's
+    directory was not supplied, so a caller that has not been taught
+    about DOCS yet keeps working exactly as before.
+    """
+    if division == "CONTENTS" and contents_dir:
+        return contents_dir
+    if division == "DOCS" and docs_dir:
+        return docs_dir
+    return dest_dir
+
+
 def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
               tech_date_folder=True, organize_by_tags=True,
-              contents_dir=""):
+              contents_dir="", docs_dir=""):
     """What a pull WOULD bring in, grouped by day and by what was done.
 
     Answers the question you actually have in front of a job: which
@@ -1164,7 +1195,8 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
     a room breakdown. Rows carry their photo ids so the caller can pull a
     subset.
     """
-    v = verify_project(project_id, dest_dir, also_dirs=(contents_dir,))
+    v = verify_project(project_id, dest_dir,
+                       also_dirs=(contents_dir, docs_dir))
     if not v.get("ok"):
         return v
 
@@ -1190,7 +1222,8 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
         r = route_photo(p, subfolder=subfolder, tech=tech,
                         tech_date_folder=tech_date_folder,
                         organize_by_tags=organize_by_tags,
-                        split_contents=bool(contents_dir))
+                        split_contents=bool(contents_dir),
+                        split_docs=bool(docs_dir))
         parts, room, stage, box = r["parts"], r["room"], r["stage"], r["box"]
         division, label = r["division"], r["stage_label"]
         # Contents rows live under a different ROOT, so they must not be
@@ -1207,7 +1240,7 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
         # to Kitchen. route_photo exists precisely so the preview and the
         # download cannot disagree, and this threw that away. The rooms
         # are listed separately, with counts.
-        base = contents_dir if division == "CONTENTS" else dest_dir
+        base = _base_for(division, dest_dir, contents_dir, docs_dir)
         shared = [x for x in (stage, box) if x]
         g = groups.setdefault(key, {
             "stage": label or "(no stage tag)",
@@ -1305,7 +1338,8 @@ def _walk_all(roots):
 def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                     subfolder="", advance_watermark=True, tech="",
                     organize_by_tags=True, tech_date_folder=True,
-                    only_ids=None, force_tech=False, contents_dir=""):
+                    only_ids=None, force_tech=False, contents_dir="",
+                    docs_dir=""):
     """Download NEW project photos into `dest_dir` and advance the per-
     project high-water mark.
 
@@ -1367,7 +1401,9 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
     existing_tokens = set()
     # The contents root holds this project's photos too once the
     # split is on; leaving it out re-downloads them every pull.
-    _roots = [dest_dir] + ([contents_dir] if contents_dir else [])
+    _roots = ([dest_dir]
+              + ([contents_dir] if contents_dir else [])
+              + ([docs_dir] if docs_dir else []))
     for _root, _dirs, _files in _walk_all(_roots):
         for _f in _files:
             existing.add(_f.lower())
@@ -1416,7 +1452,7 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         if box:
             boxes_used[box] = boxes_used.get(box, 0) + 1
         # Contents-tagged photos hang off the CONTENTS division, not PICS.
-        base = contents_dir if r["division"] == "CONTENTS" else dest_dir
+        base = _base_for(r["division"], dest_dir, contents_dir, docs_dir)
         photo_target = os.path.join(base, *r["parts"]) if r["parts"] else base
         tok = photo_id_token(p).lower()
         if fname.lower() in existing or str(p.get("id") or "") in already:

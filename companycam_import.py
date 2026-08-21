@@ -59,6 +59,11 @@ _STAGE_RULES = [
     ("pack-in",           "Contents"),
     ("packin",            "Contents"),
     ("contents",          "Contents"),
+    # A Scope is paperwork, not a place. Unrecognized, "Scope" fell
+    # through to the room branch and became a ROOM folder called Scope —
+    # exactly the mistake Contents made above. As a stage it can be
+    # routed, and route_photo sends it to the job's DOCS folder.
+    ("scope",             "Scope"),
     ("reinspection",      "Reinspection"),
     ("reinspect",         "Reinspection"),
     ("initial inspection", "Initial"),
