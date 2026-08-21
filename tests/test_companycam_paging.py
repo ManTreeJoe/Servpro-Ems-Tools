@@ -66,3 +66,59 @@ def test_max_pages_is_still_a_hard_stop(monkeypatch):
 def test_no_results_is_not_an_error(monkeypatch):
     _pager(monkeypatch, total=0, cap=50)
     assert cc.list_projects() == []
+
+
+# ── deleted and archived projects are not projects ─────────────────────
+
+def _pages(monkeypatch, rows, size=50):
+    """Serve `rows` in pages of `size` through the low-level _call."""
+    import companycam_api as cc
+    pages = [rows[i:i + size] for i in range(0, len(rows), size)] or [[]]
+
+    def _call(path, params=None, **k):
+        p = (params or {}).get("page", 1)
+        return pages[p - 1] if 1 <= p <= len(pages) else []
+
+    monkeypatch.setattr(cc, "_call", _call)
+    return cc
+
+
+def test_deleted_projects_are_excluded(monkeypatch):
+    """The API returns them with status='deleted'. Nothing filtered them,
+    so a job was auto-linked to a deleted project and then showed zero
+    photos forever."""
+    cc = _pages(monkeypatch, [
+        {"id": 1, "name": "Live", "status": "active"},
+        {"id": 2, "name": "Gone", "status": "deleted"},
+    ])
+    assert [p["id"] for p in cc.list_projects()] == [1]
+
+
+def test_archived_projects_are_excluded(monkeypatch):
+    cc = _pages(monkeypatch, [
+        {"id": 1, "name": "Live", "status": "active"},
+        {"id": 2, "name": "Filed", "status": "active", "archived": True},
+    ])
+    assert [p["id"] for p in cc.list_projects()] == [1]
+
+
+def test_they_can_be_asked_for_explicitly(monkeypatch):
+    """A cleanup report still needs to SEE them — it just must not treat
+    them as live."""
+    cc = _pages(monkeypatch, [
+        {"id": 1, "name": "Live", "status": "active"},
+        {"id": 2, "name": "Gone", "status": "deleted"},
+    ])
+    got = cc.list_projects(include_deleted=True)
+    assert [p["id"] for p in got] == [1, 2]
+
+
+def test_filtering_happens_after_paging(monkeypatch):
+    """Dropping rows mid-page would make a full page look short and stop
+    the walk — the 50-of-287 bug wearing a different hat. 50 deleted rows
+    on page one must not hide page two."""
+    rows = ([{"id": i, "name": f"D{i}", "status": "deleted"} for i in range(50)]
+            + [{"id": 100 + i, "name": f"L{i}", "status": "active"} for i in range(20)])
+    cc = _pages(monkeypatch, rows, size=50)
+    got = cc.list_projects()
+    assert len(got) == 20, "page two was never fetched"

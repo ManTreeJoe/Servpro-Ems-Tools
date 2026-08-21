@@ -92,10 +92,19 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
 
 # ── Projects ────────────────────────────────────────────────────────────
 
-def list_projects(query="", per_page=100, max_pages=20, modified_since=""):
+def list_projects(query="", per_page=100, max_pages=20, modified_since="",
+                  include_deleted=False, include_archived=False):
     """Return raw project dicts. `query` filters by name / address-line-1
     server-side (empty = all). Pages until a genuinely short page or
     `max_pages`.
+
+    DELETED AND ARCHIVED PROJECTS ARE EXCLUDED BY DEFAULT. The API returns
+    them alongside live ones with `status: "deleted"` / `archived: true`,
+    and nothing here filtered them, so they were treated as real: a job
+    got auto-linked to a deleted project (which then had zero photos
+    forever), and a duplicate report listed five already-deleted shells as
+    things to go and delete. A project the user cannot see in CompanyCam
+    is not a project.
 
     CompanyCam caps a page at 50 however large `per_page` is. The old
     stop condition compared against the REQUESTED size, so page one —
@@ -128,6 +137,14 @@ def list_projects(query="", per_page=100, max_pages=20, modified_since=""):
         if len(batch) < page_size:
             break                       # genuinely the last page
         page += 1
+
+    # Filter AFTER paging, never before: dropping rows mid-page would make
+    # a full page look short and stop the walk early — the 50-of-287 bug
+    # wearing a different hat.
+    if not include_deleted:
+        out = [p for p in out if str(p.get("status") or "").lower() != "deleted"]
+    if not include_archived:
+        out = [p for p in out if not p.get("archived")]
     return out
 
 
