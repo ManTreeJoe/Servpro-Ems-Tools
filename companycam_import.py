@@ -79,6 +79,17 @@ _STAGE_RULES = [
     ("initial",           "Initial"),
     ("inspection",        "Initial"),
     ("post",              "Post"),
+    # AFTER "post" deliberately. These rules return on the FIRST match,
+    # so putting Cleaning earlier would re-file every existing
+    # "Post Cleaning" photo as stage Cleaning with a ROOM called "Post".
+    # Here, "Post Cleaning" keeps filing exactly as it does today and a
+    # plain "Cleaning" tag — which is a real tag on the account — finally
+    # becomes a stage instead of a room called Cleaning.
+    #
+    # Only the exact word. "Clean Up" is deliberately NOT matched: the
+    # account has a project literally named "PCM - (Homeless Encampment
+    # Clean Up)", and a looser rule would file it as a cleaning stage.
+    ("cleaning",          "Cleaning"),
 ]
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".jfif",

@@ -37,6 +37,10 @@ STAGES = [
     ("Mold Clearance",     False, ""),
     ("Recon",              False, ""),
     ("Reinspection",       True,  "Reinspection pics"),
+    # needs_photos=False deliberately: making it required would flag
+    # every existing job as missing cleaning photos nobody ever asked
+    # them for. It is nameable now; requiring it is a separate decision.
+    ("Cleaning",           False, ""),
 ]
 
 LABELS         = [s[0] for s in STAGES]
