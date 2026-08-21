@@ -532,8 +532,8 @@ class Api(JobSettingsApi, CompanyCamApi):
 
     def is_self_pay(self, client):
         return self._aw().is_self_pay(client)
-    def post_comment(self, client, body):
-        return self._aw().post_comment(client, body)
+    def post_comment(self, *a, **k):
+        return self._aw().post_comment(*a, **k)
     def xa_note_members(self, client):
         return self._aw().xa_note_members(client)
     def post_xa_note(self, client, note, tag="", card_id=""):
@@ -624,8 +624,8 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().comment_image(client, attachment_id, big)
     def invalidate_comments_cache(self, client=""):
         return self._aw().invalidate_comments_cache(client)
-    def toggle_checklist_item(self, card_id, item_id, want):
-        return self._aw().toggle_checklist_item(card_id, item_id, want)
+    def toggle_checklist_item(self, *a, **k):
+        return self._aw().toggle_checklist_item(*a, **k)
     def post_canned(self, card_id, kind):
         return self._aw().post_canned(card_id, kind)
     def initial_email_draft(self, client, card_id=""):
@@ -822,8 +822,8 @@ class Api(JobSettingsApi, CompanyCamApi):
     # 📎 Trello attachments manager
     def list_card_attachments(self, card_id):
         return self._aw().list_card_attachments(card_id)
-    def fetch_trello_image(self, url):
-        return self._aw().fetch_trello_image(url)
+    def fetch_trello_image(self, *a, **k):
+        return self._aw().fetch_trello_image(*a, **k)
     def download_card_attachments(self, card_id, attachment_ids, client=""):
         return self._aw().download_card_attachments(card_id, attachment_ids, client)
     # SharePoint import flow

@@ -258,8 +258,8 @@ class Api:
         return self._aw().list_year_folders()
     def pin_folder(self, client, path):
         return self._aw().set_folder_path(client, path)
-    def set_folder_path(self, client, path):
-        return self._aw().set_folder_path(client, path)
+    def set_folder_path(self, *a, **k):
+        return self._aw().set_folder_path(*a, **k)
     def clear_folder_path(self, client):
         return self._aw().clear_folder_path(client)
     # Import (auto-split by stage/day) + native multi-file pick.

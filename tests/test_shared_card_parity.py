@@ -120,3 +120,52 @@ def test_attachments_modal_is_called_with_an_object():
     js = _card_js()
     for m in re.findall(r"openTrelloAttachmentsModal\(([^)]*)\)", js):
         assert "cardId" in m, f"positional call: openTrelloAttachmentsModal({m})"
+
+
+# ── existing is not enough: it has to accept the same ARGUMENTS ────────
+#
+# toggle_checklist_item grew `item_name` and `client` when ticks started
+# posting and deleting Trello comments. Audit got the new signature;
+# Snapshot's proxy kept the old three-parameter one. The method still
+# EXISTED, so this file passed — and every tick in Snapshot raised
+# TypeError and reported "Trello update failed".
+
+def _params(fn):
+    import inspect
+    try:
+        return list(inspect.signature(fn).parameters.values())
+    except (TypeError, ValueError):
+        return None
+
+
+@pytest.mark.parametrize("panel_name", ["snapshot_web", "quickimport_web"])
+def test_proxies_accept_everything_the_real_method_does(panel_name):
+    import importlib
+
+    import audit_web
+    panel = importlib.import_module(panel_name)
+
+    bad = []
+    for name in dir(panel.Api):
+        if name.startswith("_"):
+            continue
+        real = getattr(audit_web.Api, name, None)
+        proxy = getattr(panel.Api, name, None)
+        if not (callable(real) and callable(proxy)):
+            continue
+        pr, pp = _params(real), _params(proxy)
+        if pr is None or pp is None:
+            continue
+        # *a / **k forwards everything — that is the drift-proof form.
+        if any(x.kind in (x.VAR_POSITIONAL, x.VAR_KEYWORD) for x in pp):
+            continue
+        n_real = len([x for x in pr if x.name != "self"])
+        n_proxy = len([x for x in pp if x.name != "self"])
+        if n_proxy < n_real:
+            bad.append(f"{panel_name}.{name}: audit takes {n_real} arg(s), "
+                       f"the proxy takes {n_proxy}")
+    assert not bad, (
+        "a proxy cannot forward what the shared card sends:\n  "
+        + "\n  ".join(bad)
+        + "\n\nUse `def name(self, *a, **k): return self._aw().name(*a, **k)` "
+          "so it cannot drift again.")
