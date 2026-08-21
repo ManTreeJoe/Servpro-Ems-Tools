@@ -236,6 +236,12 @@ class Api:
     def od_summary(self, path, max_dirs=40):
         return self._aw().od_summary(path, max_dirs)
 
+    def companycam_plan_tags(self, *a, **k):
+        return self._aw().companycam_plan_tags(*a, **k)
+
+    def companycam_apply_tags(self, *a, **k):
+        return self._aw().companycam_apply_tags(*a, **k)
+
     def od_contents(self, path):
         return self._aw().od_contents(path)
     def open_trello_card(self, card_id):

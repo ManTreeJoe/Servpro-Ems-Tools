@@ -693,6 +693,121 @@ def photo_tags(photo_id, updated_at=""):
     return names
 
 
+def plan_stage_tagging(project_id, stage, *, on_date="", tech="",
+                       only_untagged=True):
+    """Which photos WOULD get `stage`, and which would be skipped and why.
+
+    Reads only. The caller shows this and the user approves before
+    anything is written, because there is no way to remove a tag
+    afterwards except by hand in the CompanyCam app.
+
+    `on_date` is "MM-DD-YYYY" as `date_label` renders it — the same form
+    the pull already puts in the folder name, so "the photos from the
+    8/14 visit" means the same thing in both places.
+
+    `only_untagged` is the second guard: a photo that already carries a
+    stage tag is somebody's classification, and overwriting it from a
+    run-doc line is not a tidy-up. Those come back as skipped, named, so
+    the user can see what was left alone rather than wondering.
+    """
+    stage = str(stage or "").strip()
+    if not (project_id and stage):
+        return {"ok": False, "error": "project and stage are both needed"}
+    try:
+        photos = list_project_photos(project_id)
+    except Exception as ex:
+        return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+    try:
+        attach_tags(photos)
+    except Exception:
+        pass
+
+    take, skip = [], []
+    for p in photos:
+        tags = p.get("tags") or []
+        row = {"id": str(p.get("id") or ""),
+               "when": date_label(p), "who": p.get("creator_name") or "",
+               "tags": list(tags)}
+        if on_date and row["when"] != on_date:
+            continue                       # a different visit entirely
+        if tech and tech.strip().lower() not in (row["who"] or "").lower():
+            continue
+        if stage in tags:
+            skip.append({**row, "why": "already tagged " + stage})
+            continue
+        if only_untagged:
+            _, existing_stage, _ = classify_tags(tags)
+            if existing_stage:
+                skip.append({**row,
+                             "why": f"already classified as {existing_stage}"})
+                continue
+        take.append(row)
+    return {"ok": True, "stage": stage, "project": str(project_id),
+            "tag": take, "skip": skip,
+            "note": "tags cannot be removed by this app — only in CompanyCam"}
+
+
+def apply_stage_tagging(rows, stage):
+    """Write the approved rows. Per-photo results; a partial write is
+    never reported as a success."""
+    stage = str(stage or "").strip()
+    if not stage:
+        return {"ok": False, "error": "no stage"}
+    done, failed = [], []
+    for r in (rows or []):
+        pid = str((r or {}).get("id") or "")
+        if not pid:
+            continue
+        res = add_photo_tags(pid, [stage])
+        (done if res.get("ok") else failed).append(
+            {"id": pid, "error": res.get("error", "")})
+    return {"ok": not failed, "tagged": len(done), "failed": failed,
+            "stage": stage}
+
+
+def forget_photo_tags(photo_id):
+    """Drop ONE photo's cached tags, memory and sidecar both.
+
+    Needed because a tag write does NOT change the photo's `updated_at` —
+    verified against the live API. `photo_tags` revalidates on that stamp,
+    so without this the cache keeps serving the pre-write answer and a tag
+    you just added looks like it never landed.
+    """
+    pid = str(photo_id or "")
+    if not pid:
+        return
+    _TAG_CACHE.pop(pid, None)
+    global _TAG_DISK, _TAG_DISK_DIRTY
+    if isinstance(_TAG_DISK, dict) and pid in _TAG_DISK:
+        _TAG_DISK.pop(pid, None)
+        _TAG_DISK_DIRTY += 1
+
+
+def add_photo_tags(photo_id, tags):
+    """Add tags to one photo. Returns {ok, tags, error}.
+
+    The API APPENDS — a POST does not replace what is already there, and
+    the response echoes only what was added. That is what makes this safe
+    to call on a photo that already carries a room tag: the room survives.
+
+    There is NO removal endpoint. Five shapes were tried against the live
+    API (DELETE on the photo-tag, on the tag-photo, trailing slash, PUT
+    with an empty list, POST with replace) and every one 404s or no-ops.
+    So a tag written here can only be taken off in the CompanyCam app —
+    which is the whole reason the caller previews before writing.
+    """
+    pid = str(photo_id or "")
+    names = [str(t).strip() for t in (tags or []) if str(t).strip()]
+    if not (pid and names):
+        return {"ok": False, "error": "photo id and at least one tag needed"}
+    try:
+        _call(f"/photos/{pid}/tags", method="POST", data={"tags": names})
+    except Exception as ex:
+        return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+    forget_photo_tags(pid)
+    return {"ok": True, "tags": names}
+
+
 def attach_tags(photos, *, cap=_TAG_FETCH_CAP):
     """Populate `tags` on each shaped photo, in place. Returns the list.
 

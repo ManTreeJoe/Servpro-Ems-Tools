@@ -647,6 +647,12 @@ class Api(JobSettingsApi, CompanyCamApi):
 
     def od_summary(self, path, max_dirs=40):
         return self._aw().od_summary(path, max_dirs)
+
+    def companycam_plan_tags(self, *a, **k):
+        return self._aw().companycam_plan_tags(*a, **k)
+
+    def companycam_apply_tags(self, *a, **k):
+        return self._aw().companycam_apply_tags(*a, **k)
     def job_work_log(self, client):
         return self._aw().job_work_log(client)
     def save_job_work_log(self, client):

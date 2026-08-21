@@ -130,6 +130,43 @@ class CompanyCamApi:
         except Exception as ex:
             return {"ok": False, "configured": False, "error": str(ex)}
 
+    def companycam_plan_tags(self, client: str, stage: str,
+                             on_date: str = "", tech: str = "",
+                             card_id: str = "") -> dict:
+        """Preview: which of this job's photos would get `stage`.
+
+        Reads only. There is no way to remove a CompanyCam tag from the
+        app -- the API has no endpoint for it -- so nothing is written
+        until the user has seen this and said yes.
+        """
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        if not cc.is_configured():
+            return {"ok": False, "error": "CompanyCam token not set"}
+        pid, mname = self._cc_resolve(client, card_id)
+        if not pid:
+            return {"ok": False, "error": f"No CompanyCam project for {client!r}"}
+        out = cc.plan_stage_tagging(pid, stage, on_date=on_date, tech=tech)
+        if isinstance(out, dict):
+            out["matched_name"] = mname
+        return out
+
+    def companycam_apply_tags(self, client: str, stage: str,
+                              photo_ids=None, card_id: str = "") -> dict:
+        """Write the approved tags. `photo_ids` is what the user actually
+        ticked -- never the plan re-run, or a photo tagged between the
+        preview and the click would be tagged without being shown."""
+        try:
+            import companycam_api as cc
+        except Exception as ex:
+            return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
+        ids = [str(x) for x in (photo_ids or []) if str(x).strip()]
+        if not ids:
+            return {"ok": False, "error": "nothing selected"}
+        return cc.apply_stage_tagging([{"id": i} for i in ids], stage)
+
     def companycam_pin(self, client: str, project_id: str,
                        card_id: str = "") -> dict:
         """Remember a manually-picked CompanyCam project for a job so every
