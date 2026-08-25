@@ -1,6 +1,6 @@
 {
-  "version": "1.3.4",
+  "version": "1.4.0",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.3.4/Linguar-Hub-Setup-1.3.4.exe",
-  "notes": "Searching for a job that isn't in the index: one click on \"Search folders\" now audits it, instead of scanning and waiting for a second click. When a folder search really does turn up several matches you still get to pick. Buttons that fail now say why in the status bar instead of doing nothing."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.4.0/Linguar-Hub-Setup-1.4.0.exe",
+  "notes": "Jobs can now be tracked from intake through closeout with a Trello-style horizontal board and an adjustable Snapshot queue. Run docs have a compact editor with drag-and-drop, CompanyCam scope images can be filed into DOCS, contract comments remain editable, and a global shortcut can bring the app forward. Property-management templates and contacts are now saved in the shared database and editable from Settings."
 }
