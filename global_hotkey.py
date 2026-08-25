@@ -105,4 +105,3 @@ class Manager:
         if registered_for:
             user32.UnregisterHotKey(None, 1)
         user32.KillTimer(None, 1)
-
