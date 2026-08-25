@@ -32,6 +32,24 @@
   .status { font-size: 12px; margin-right: auto; align-self: center; }
   .status.ok { color: var(--green); }
   .status.error { color: var(--red); }
+  .pm-grid { display:grid; grid-template-columns:minmax(180px,1.35fr) 1fr auto;
+    gap:8px; align-items:center; }
+  .pm-row { padding:9px 0; border-top:1px solid var(--border); }
+  .pm-row:first-child { border-top:0; }
+  .pm-inactive { opacity:.58; }
+  .pm-edit { margin-top:12px; padding:12px; background:var(--surface-2);
+    border:1px solid var(--border); border-radius:8px; }
+  .pm-fields { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .pm-fields label { display:flex; flex-direction:column; gap:5px; font-size:11px;
+    font-weight:700; color:var(--text-muted); }
+  .pm-fields input, .pm-fields textarea { width:100%; }
+  .pm-span { grid-column:1 / -1; }
+  @media (max-width:620px) {
+    .pm-grid { grid-template-columns:1fr auto; }
+    .pm-template { grid-column:1 / -1; }
+    .pm-fields { grid-template-columns:1fr; }
+    .pm-span { grid-column:auto; }
+  }
 </style>
 </head>
 <body>
@@ -163,6 +181,22 @@
       <button class="btn" id="ji-backfill" title="Seed the graph from existing folder + Trello pins">🌱 Backfill from pins</button>
     </div>
     <div id="ji-result" style="margin-top:12px;"></div>
+  </section>
+
+  <section style="margin-bottom: 22px; padding: 14px 18px;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div style="font-size:13px;font-weight:600;">🏘 Property managers</div>
+      <button class="btn" id="pm-add" style="margin-left:auto;">＋ Add company</button>
+    </div>
+    <div class="muted" style="font-size:11px;margin-bottom:10px;">
+      Saved in the job database with each company's Trello template, contacts,
+      and job-name format. Edit a company here when its name or manager changes.
+    </div>
+    <div id="pm-status" class="muted" style="font-size:11px;margin-bottom:6px;"></div>
+    <div id="pm-list"></div>
+    <div id="pm-editor" class="pm-edit" style="display:none;"></div>
   </section>
 
   <section style="margin-bottom: 22px; padding: 14px 18px;
@@ -402,6 +436,8 @@ async function showOriginHelp(origin) {
   });
   // Shared job database (Supabase).
   await refreshSupabase();
+  await renderPropertyManagers();
+  document.getElementById("pm-add").addEventListener("click", () => openPropertyManager({active:true}));
   document.getElementById("sb-send-code").addEventListener("click", sbSendCode);
   document.getElementById("sb-email").addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); sbSendCode(); }
@@ -445,6 +481,85 @@ async function showOriginHelp(origin) {
   document.getElementById("dept-add").addEventListener("click", addFranchise);
   document.getElementById("dept-remove").addEventListener("click", removeFranchise);
 });
+
+// ── Property-management directory ─────────────────────────────────
+let PM_ROWS = [];
+let PM_DEFAULT_NAMING = "";
+
+async function renderPropertyManagers() {
+  const list = document.getElementById("pm-list");
+  const status = document.getElementById("pm-status");
+  if (!list) return;
+  status.textContent = "Loading…";
+  const res = await pywebview.api.property_managers();
+  if (!res?.ok) { status.textContent = `Could not load: ${res?.error || "unknown error"}`; return; }
+  PM_ROWS = res.records || [];
+  PM_DEFAULT_NAMING = res.default_naming || "";
+  status.textContent = `${PM_ROWS.length} saved companies`;
+  list.innerHTML = PM_ROWS.map((r) => `<div class="pm-grid pm-row ${r.active === false ? "pm-inactive" : ""}">
+    <div><b>${esc(r.company_name || "Unnamed")}</b><div class="muted" style="font-size:10.5px;">${esc(r.contact_name || "No contact saved")}${r.contact_role ? " · " + esc(r.contact_role) : ""}</div></div>
+    <div class="pm-template muted" style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.template_card_name || "")}">${esc(r.template_card_name || "No Trello template linked")}</div>
+    <button class="btn pm-edit-btn" data-id="${esc(r.id)}">Edit</button>
+  </div>`).join("");
+  list.querySelectorAll(".pm-edit-btn").forEach((b) => b.addEventListener("click", () => {
+    openPropertyManager(PM_ROWS.find((r) => r.id === b.dataset.id) || {});
+  }));
+}
+
+function pmInput(id, label, value, span=false, kind="input") {
+  const cls = span ? "pm-span" : "";
+  if (kind === "textarea") return `<label class="${cls}">${label}<textarea id="${id}" rows="2">${esc(value || "")}</textarea></label>`;
+  return `<label class="${cls}">${label}<input id="${id}" type="text" value="${esc(value || "")}" /></label>`;
+}
+
+function openPropertyManager(r) {
+  const box = document.getElementById("pm-editor");
+  box.style.display = "block";
+  box.dataset.id = r.id || "";
+  box.innerHTML = `<div style="font-size:12px;font-weight:700;margin-bottom:10px;">${r.id ? "Edit company" : "Add company"}</div>
+    <div class="pm-fields">
+      ${pmInput("pm-company", "Company name", r.company_name)}
+      ${pmInput("pm-contact", "Contact name", r.contact_name)}
+      ${pmInput("pm-role", "Contact role", r.contact_role)}
+      ${pmInput("pm-phone", "Phone", r.phone)}
+      ${pmInput("pm-email", "Email", r.email)}
+      ${pmInput("pm-card-id", "Trello template card ID", r.template_card_id)}
+      ${pmInput("pm-card-name", "Trello template title", r.template_card_name, true)}
+      ${pmInput("pm-naming", "Job-name format", r.naming_format || PM_DEFAULT_NAMING, true)}
+      ${pmInput("pm-notes", "Other contacts or notes", r.notes, true, "textarea")}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:12px;font-size:11px;">
+      <label><input id="pm-active" type="checkbox" ${r.active === false ? "" : "checked"}/> Active</label>
+      <label title="Renames only this template card; existing job cards are left alone."><input id="pm-rename-trello" type="checkbox"/> Also rename the Trello template</label>
+      <span style="flex:1"></span>
+      <button class="btn" id="pm-cancel">Cancel</button>
+      <button class="btn btn-primary" id="pm-save">Save changes</button>
+    </div>`;
+  document.getElementById("pm-cancel").addEventListener("click", () => { box.style.display = "none"; });
+  document.getElementById("pm-save").addEventListener("click", savePropertyManager);
+  document.getElementById("pm-company").focus();
+  box.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+async function savePropertyManager() {
+  const box = document.getElementById("pm-editor");
+  const button = document.getElementById("pm-save");
+  const value = (id) => document.getElementById(id)?.value || "";
+  const record = {id:box.dataset.id || "", company_name:value("pm-company"),
+    contact_name:value("pm-contact"), contact_role:value("pm-role"),
+    phone:value("pm-phone"), email:value("pm-email"),
+    template_card_id:value("pm-card-id"), template_card_name:value("pm-card-name"),
+    naming_format:value("pm-naming"), notes:value("pm-notes"),
+    active:document.getElementById("pm-active").checked};
+  button.disabled = true; button.textContent = "Saving…";
+  const rename = document.getElementById("pm-rename-trello").checked;
+  const res = await pywebview.api.save_property_manager(record, rename);
+  button.disabled = false; button.textContent = "Save changes";
+  if (!res?.ok) { document.getElementById("pm-status").textContent = `Save failed: ${res?.error || "unknown error"}`; return; }
+  box.style.display = "none";
+  await renderPropertyManagers();
+  document.getElementById("pm-status").textContent = res.warning || (res.trello_updated ? "Saved here and renamed in Trello ✓" : "Saved ✓");
+}
 
 // ── Shared job database (Supabase) ─────────────────────────────────
 //

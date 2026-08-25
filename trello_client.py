@@ -1426,6 +1426,14 @@ def update_card_desc(card_id, desc):
     return _call(f"/cards/{card_id}", method="PUT", data={"desc": desc})
 
 
+def update_card_name(card_id, name):
+    """Rename one card. Used by the editable template directory only."""
+    if not card_id or not (name or "").strip():
+        return None
+    return _call(f"/cards/{card_id}", method="PUT",
+                 data={"name": name.strip()})
+
+
 _COMMENTS_DIRTY = set()
 
 

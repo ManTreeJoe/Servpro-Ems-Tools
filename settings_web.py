@@ -116,6 +116,41 @@ class Api:
         except Exception:
             return {}
 
+    # ── Property-management directory ───────────────────────────────
+    def property_managers(self):
+        try:
+            import property_managers as pm
+            return {"ok": True, "records": pm.list_records(),
+                    "default_naming": pm.DEFAULT_NAMING}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def save_property_manager(self, values, rename_trello=False):
+        try:
+            import property_managers as pm
+            record, old = pm.save_record(values)
+            trello_updated = False
+            warning = ""
+            if rename_trello and record.get("template_card_id"):
+                record["previous_company_name"] = (old or {}).get(
+                    "company_name", "")
+                new_title = pm.trello_name(record)
+                import trello_client
+                updated = trello_client.update_card_name(
+                    record["template_card_id"], new_title)
+                if updated:
+                    record["template_card_name"] = (updated.get("name")
+                                                    or new_title)
+                    record.pop("previous_company_name", None)
+                    record, _ = pm.save_record(record)
+                    trello_updated = True
+                else:
+                    warning = "Saved here, but Trello did not accept the rename."
+            return {"ok": True, "record": record,
+                    "trello_updated": trello_updated, "warning": warning}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def save(self, values):
         if not isinstance(values, dict):
             return {"ok": False, "error": "values must be a dict"}
