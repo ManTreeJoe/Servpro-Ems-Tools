@@ -4308,7 +4308,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         remaining = total_cents - deposit_cents
         first, final = remaining // 2, remaining - (remaining // 2)
         money = lambda cents: f"{cents / 100:,.2f}"
-        text = "\n".join((
+        text = "\n\n".join((
             f"Long Form contract total - {money(total_cents)}",
             f"Deposit - {money(deposit_cents)}",
             f"1st day of job - {money(first)}",
@@ -4320,10 +4320,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "final": money(final)}
 
     def post_long_form_contract_comment(self, card_id: str, total,
-                                        deductible="1000") -> dict:
+                                        deductible="1000",
+                                        comment_text="") -> dict:
         built = self.long_form_contract_comment_text(total, deductible)
         if not built.get("ok"):
             return built
+        edited = str(comment_text or "").strip()
+        if edited:
+            built["text"] = edited
         if not card_id:
             return {"ok": False, "error": "no Trello card pinned"}
         try:

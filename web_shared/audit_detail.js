@@ -2641,7 +2641,10 @@
           <label class="modal-lbl" for="lf-deposit">Deductible / deposit</label>
           <input id="lf-deposit" class="search" inputmode="decimal" value="1,000.00" />
         </div>
-        <pre id="lf-preview" class="activity-preview">Enter the contract total.</pre>
+        <label class="modal-lbl" for="lf-preview" style="display:block;margin-top:12px;">Comment — editable before posting</label>
+        <textarea id="lf-preview" class="activity-preview" rows="10"
+          style="display:block;width:100%;box-sizing:border-box;resize:vertical;"
+          placeholder="Enter the contract total above."></textarea>
         <div class="canned-comments">
           <button class="action-btn" id="lf-post" disabled>💬 Post + open XA</button>
           <button class="action-btn" id="lf-copy" disabled>📋 Copy</button>
@@ -2658,16 +2661,20 @@
       try { r = await pywebview.api.long_form_contract_comment_text(total.value, deposit.value); }
       catch (ex) { r = { ok: false, error: String(ex) }; }
       current = r && r.ok ? r.text : "";
-      preview.textContent = current || ((r && r.error) || "Enter the contract total.");
+      preview.value = current || ((r && r.error) || "");
       post.disabled = copy.disabled = !current;
     }
     const queue = () => { clearTimeout(timer); timer = setTimeout(refresh, 100); };
     [total, deposit].forEach((el) => el.addEventListener("input", queue));
+    preview.addEventListener("input", () => {
+      current = preview.value.trim();
+      post.disabled = copy.disabled = !current;
+    });
     post.addEventListener("click", async () => {
       post.disabled = true;
       let r;
       try { r = await pywebview.api.post_long_form_contract_comment(
-        row.trello_card_id, total.value, deposit.value); }
+        row.trello_card_id, total.value, deposit.value, preview.value); }
       catch (ex) { r = { ok: false, error: String(ex) }; }
       post.disabled = !current;
       if (r && r.ok) {
@@ -2677,7 +2684,7 @@
       } else setStatus(ctx, `Post failed: ${(r && r.error) || "?"}`, "error");
     });
     copy.addEventListener("click", async () => {
-      const ok = await copyText(ctx, current);
+      const ok = await copyText(ctx, preview.value.trim());
       setStatus(ctx, ok ? "Contract payment copied" : "Copy failed", ok ? "ok" : "error");
     });
     total.focus();

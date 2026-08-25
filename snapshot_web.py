@@ -695,8 +695,10 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().post_activity_comment(card_id, stage, tech, date_iso)
     def long_form_contract_comment_text(self, total, deductible="1000"):
         return self._aw().long_form_contract_comment_text(total, deductible)
-    def post_long_form_contract_comment(self, card_id, total, deductible="1000"):
-        return self._aw().post_long_form_contract_comment(card_id, total, deductible)
+    def post_long_form_contract_comment(self, card_id, total, deductible="1000",
+                                        comment_text=""):
+        return self._aw().post_long_form_contract_comment(
+            card_id, total, deductible, comment_text)
     def call_note_text(self, body, time_text="", date_iso=""):
         return self._aw().call_note_text(body, time_text, date_iso)
     def call_note_phrases(self):

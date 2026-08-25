@@ -5,10 +5,10 @@ def test_contract_comment_uses_deposit_then_splits_remainder():
     r = audit_web.Api.long_form_contract_comment_text("4,928.11", "1,000")
     assert r["ok"]
     assert r["text"] == (
-        "Long Form contract total - 4,928.11\n"
-        "Deposit - 1,000.00\n"
-        "1st day of job - 1,964.05\n"
-        "Final day / eq pulled - 1,964.06\n"
+        "Long Form contract total - 4,928.11\n\n"
+        "Deposit - 1,000.00\n\n"
+        "1st day of job - 1,964.05\n\n"
+        "Final day / eq pulled - 1,964.06\n\n"
         "@nathan_bupte")
 
 
@@ -46,3 +46,15 @@ def test_post_opens_the_xa_link_resolved_from_the_same_card(monkeypatch):
     r = api.post_long_form_contract_comment("card1", "4928.11", "1000")
     assert r["xa_opened"] is True
     assert opened == ["https://xa.example/job"]
+
+
+def test_edited_comment_is_the_exact_text_posted(monkeypatch):
+    import trello_client as tc
+    sent = []
+    monkeypatch.setattr(tc, "post_comment", lambda card, text: sent.append(text) or {})
+    monkeypatch.setattr(tc, "get_card_lite", lambda card: {"desc": ""})
+    api = object.__new__(audit_web.Api)
+    edited = "Edited total\n\nEdited payment plan\n\n@nathan_bupte"
+    r = api.post_long_form_contract_comment("card1", "4928.11", "1000", edited)
+    assert r["ok"] and r["text"] == edited
+    assert sent == [edited]
