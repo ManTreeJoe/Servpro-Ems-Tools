@@ -798,11 +798,18 @@ function render() {
       </div>`;
     }
     if (f.kind === "choice") {
+      const choiceLabels = {
+        "ctrl+alt+space": "Ctrl + Alt + Space",
+        "ctrl+shift+space": "Ctrl + Shift + Space",
+        "alt+shift+space": "Alt + Shift + Space",
+        "ctrl+alt+h": "Ctrl + Alt + H",
+      };
       return `<div class="field">
         <label>${esc(f.label)}</label>
         <select id="f-${esc(f.key)}" data-key="${esc(f.key)}">
-          ${(f.choices || []).map((c) => `<option ${c === String(v||"") ? "selected" : ""}>${esc(c)}</option>`).join("")}
+          ${(f.choices || []).map((c) => `<option value="${esc(c)}" ${c === String(v||"") ? "selected" : ""}>${esc(choiceLabels[c] || c)}</option>`).join("")}
         </select>
+        ${f.key === "global_hotkey" ? '<div class="muted" style="font-size:11px;margin-top:5px;">Works while Linguar Hub is open, even when another program is in front.</div>' : ''}
       </div>`;
     }
     const inputType = f.kind === "secret" ? "password" : "text";
@@ -938,6 +945,14 @@ async function save() {
       : `Save failed: ${res?.error || "?"}`,
     res?.ok ? "ok" : "error");
   if (res?.ok) { VALUES = out; await renderFirstRunWizard(); }
+  if (res?.ok && out.global_hotkey_enabled) {
+    setTimeout(async () => {
+      let h = null;
+      try { h = await pywebview.api.hotkey_status(); } catch (_) {}
+      if (h && h.registered) setStatus(`💾 Saved — ${h.label} now shows Linguar Hub`, "ok");
+      else if (h && h.error) setStatus(`Saved, but shortcut is unavailable: ${h.error}`, "error");
+    }, 1800);
+  }
 }
 let st = null;
 function setStatus(m, k="") {

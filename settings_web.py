@@ -37,6 +37,10 @@ FIELDS = [
     ("appearance",          "Appearance",                 "choice", ["system","light","dark"]),
     ("ui_scale",            "UI scale",                   "choice",
                             ["auto","1.0","1.25","1.5","1.75","2.0","2.25","2.5"]),
+    ("global_hotkey_enabled", "Use a shortcut to show Linguar Hub", "bool"),
+    ("global_hotkey",       "Show-app shortcut",           "choice",
+                            ["ctrl+alt+space", "ctrl+shift+space",
+                             "alt+shift+space", "ctrl+alt+h"]),
 ]
 
 

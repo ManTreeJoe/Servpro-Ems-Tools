@@ -194,6 +194,7 @@ class HomeApi:
         self._window = None
         self._subs = {}
         self._sidebar_active = None
+        self._hotkey = None
         # Instantiate every sub-Api at startup so state caches
         # survive across iframe navigations (e.g. audit's last-run
         # results aren't wiped when the user clicks APA Monitor then
@@ -390,6 +391,12 @@ class HomeApi:
             return {"ok": True}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+
+    def hotkey_status(self):
+        if not self._hotkey:
+            return {"supported": os.name == "nt", "enabled": False,
+                    "registered": False, "error": "Hotkey service not started"}
+        return self._hotkey.status()
 
     # ── Top-level methods used by the shell itself ───────────────────
     def header(self):
@@ -958,11 +965,21 @@ def main(argv=None):
         min_size=(960, 600),
     )
     api.attach(win)
+    try:
+        import global_hotkey
+        api._hotkey = global_hotkey.Manager(api.focus_window)
+        api._hotkey.start()
+    except Exception:
+        api._hotkey = None
     # http_server=True serves the parent dir of the URL — by rooting
     # at scripts/, every <tool>_web_assets/ folder is reachable as a
     # sibling. Same-origin everywhere → iframe shim's
     # window.parent.pywebview access works.
-    webview.start(debug=False, http_server=True)
+    try:
+        webview.start(debug=False, http_server=True)
+    finally:
+        if api._hotkey:
+            api._hotkey.stop()
 
 
 if __name__ == "__main__":
