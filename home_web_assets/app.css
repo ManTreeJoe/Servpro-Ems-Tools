@@ -59,7 +59,7 @@ body { background: var(--bg); }
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
-  transition: all 90ms ease;
+  transition: background-color 90ms ease, color 90ms ease, padding 90ms ease;
   user-select: none;
 }
 .sb-item:hover { background: #2A2A2A; color: var(--text); }
@@ -104,7 +104,7 @@ body { background: var(--bg); }
   cursor: pointer;
   font: inherit; font-size: 13px;
   display: flex; align-items: center; justify-content: center;
-  transition: all 100ms ease;
+  transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
 }
 .sb-foot-btn:hover { background: var(--surface-2); color: var(--text); }
 .sb-foot-btn.spinning {
@@ -177,7 +177,7 @@ body { background: var(--bg); }
   padding: 14px 16px;
   cursor: pointer;
   text-align: left;
-  transition: all 120ms ease;
+  transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
 }
 .welcome-tile:hover {
   transform: translateY(-2px);
@@ -187,3 +187,58 @@ body { background: var(--bg); }
 .welcome-tile .wt-icon { font-size: 22px; }
 .welcome-tile .wt-name { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 4px; }
 .welcome-tile .wt-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* Focused job workspace — Snapshot is the final step of a job, so it
+   opens above Jobs instead of competing for a permanent sidebar slot. */
+.tool-workspace {
+  position: fixed;
+  inset: 14px;
+  z-index: 1800;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid #3f5f4a;
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .62), 0 0 0 100vmax rgba(5, 8, 7, .72);
+}
+.tool-workspace-head {
+  min-height: 58px;
+  padding: 9px 12px 9px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: linear-gradient(90deg, #1d2d23, var(--surface));
+  border-bottom: 1px solid #3f5f4a;
+}
+.tool-workspace-kicker {
+  color: #8fc8a3;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.tool-workspace-title {
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 650;
+}
+.tool-workspace-close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.tool-workspace-close:hover { background: var(--border); }
+.tool-workspace-close:focus-visible { outline: 2px solid #8fc8a3; outline-offset: 2px; }
+.tool-workspace-frame { width: 100%; height: 100%; border: 0; background: var(--bg); }
+
+@media (max-width: 720px) {
+  .tool-workspace { inset: 0; border-radius: 0; border: 0; }
+}

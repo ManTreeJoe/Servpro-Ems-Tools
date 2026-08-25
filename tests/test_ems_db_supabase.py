@@ -142,6 +142,22 @@ def test_find_job_by_name_prefers_the_direct_hit(fake):
     assert sup.find_job_by_name("Smith, Robert")["display_name"] == "Direct"
 
 
+def test_new_supabase_job_starts_lifecycle_once(fake):
+    fake.tables = {"jobs": []}
+    sup.upsert_job(display_name="Smith, Robert", status="new_loss")
+    posts = [c for c in fake.calls if c[0] == "POST"]
+    assert [c[1] for c in posts] == ["jobs", "job_events"]
+    assert posts[1][3]["event_type"] == "job_created"
+
+
+def test_existing_supabase_job_does_not_repeat_created_event(fake):
+    fake.tables = {"jobs": [{"canon_key": "smith, robert",
+                              "display_name": "Smith, Robert"}]}
+    sup.upsert_job(display_name="Smith, Robert", status="active")
+    assert not [c for c in fake.calls
+                if c[0] == "POST" and c[1] == "job_events"]
+
+
 def test_find_job_by_name_falls_back_to_alias(fake):
     fake.tables = {
         "jobs": [{"canon_key": "real job", "display_name": "Real"}],
@@ -211,6 +227,18 @@ def test_trello_link_never_stamps_a_department(fake, monkeypatch):
     fake.tables = {"job_links": [], "jobs": []}
     sup.set_link("job1", sup.LINK_TRELLO, "card1")
     assert not [c for c in fake.calls if c[0] == "PATCH" and c[1] == "jobs"]
+
+
+def test_delete_job_removes_children_then_the_job(fake):
+    fake.tables = {
+        "jobs": [{"canon_key": "wrong job", "display_name": "Wrong Job"}],
+        "job_children": [{"id": 1, "parent_canon": "wrong job"}],
+    }
+    res = sup.delete_job("wrong job")
+    deletes = [(c[1], c[2]) for c in fake.calls if c[0] == "DELETE"]
+    assert res == {"deleted": 1, "display_name": "Wrong Job",
+                   "children_deleted": 1}
+    assert [table for table, _params in deletes] == ["job_children", "jobs"]
 
 
 def test_resolve_and_link_refuses_a_cross_franchise_match(fake, monkeypatch):

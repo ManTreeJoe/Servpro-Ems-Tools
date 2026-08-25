@@ -230,7 +230,9 @@
       ${metaSection}
       <div id="od-summary" class="od-summary" style="display:none;"></div>
       <footer class="detail-actions">
-        <div class="action-row">
+        <div class="action-row" data-group="open">
+          <span class="action-group-label">Open</span>
+          <div class="action-buttons">
           <button class="action-btn primary" data-action="open-folder"
                   ${hasPath ? "" : "disabled"}>📁 OD folder</button>
           <button class="action-btn" data-action="open-trello"
@@ -243,8 +245,13 @@
           <button class="action-btn" data-action="open-companycam"
                   title="Open this job's CompanyCam project (reads the CompanyCam link from the Trello card)"
                   ${hasPin ? "" : "disabled"}><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>CompanyCam</button>
+          <button class="action-btn" data-action="open-workcenter"
+                  title="Open WorkCenter in your browser">↗ WorkCenter</button>
+          </div>
         </div>
-        <div class="action-row">
+        <div class="action-row" data-group="import">
+          <span class="action-group-label">Import</span>
+          <div class="action-buttons">
           <button class="action-btn primary" data-action="job-import"
                   title="Import photos/forms into this job's OD folder (WC zip, DocuSign packet, etc.)">📥 Import</button>
           <button class="action-btn" data-action="sp-import"
@@ -255,8 +262,11 @@
           <button class="action-btn" data-action="attachments"
                   ${hasPin ? "" : "disabled"}
                   title="Browse + download the Trello card's photos/files"><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello Attachments</button>
+          </div>
         </div>
-        <div class="action-row">
+        <div class="action-row" data-group="details">
+          <span class="action-group-label">Job details</span>
+          <div class="action-buttons">
           <button class="action-btn primary" data-action="job-info"
                   title="Carrier, claim number, adjuster, date of loss — edit here and it syncs with the Trello card">⚙ Job info</button>
           <button class="action-btn" data-action="copy-client">📋 Copy name</button>
@@ -266,16 +276,23 @@
           <button class="action-btn" data-action="copy-claim"
                   title="Copy the claim number from this job's Trello card"
                   ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
-          <button class="action-btn" data-action="copy-email" id="copy-email-btn" disabled
-                  title="Copy the customer / adjuster email from this Trello card">📧 Copy email</button>
+          <button class="action-btn" data-action="copy-email" id="copy-email-btn"
+                  title="Copy the customer or adjuster email saved on Trello or the job">📧 Copy email</button>
           <button class="action-btn" data-action="copy-address"
                   title="Copy the loss address from this Trello card"
                   ${hasPin ? "" : "disabled"}>📋 Copy address</button>
+          <button class="action-btn" data-action="copy-job-summary" data-track="copy_job_summary"
+                  title="Preview and copy the essential job facts">📋 Copy job summary</button>
           <button class="action-btn" data-action="copy-pics"
                   title="Stage every image in a PICS subfolder into a TEMP folder + open it in Explorer — drag into XactAnalysis from there. Auto-deletes after 1 min."
                   ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
+          </div>
         </div>
-        <div class="action-row">
+        <div class="action-row" data-group="update">
+          <span class="action-group-label">Update</span>
+          <div class="action-buttons">
+          <button class="action-btn primary-action" data-action="add-update" ${hasPin ? "" : "disabled"}
+                  title="Choose the kind of update, preview it, then post">＋ Add update</button>
           <button class="action-btn" data-action="comment" ${hasPin ? "" : "disabled"}>💬 Comment</button>
           <button class="action-btn" data-action="initial-email" ${hasPin ? "" : "disabled"}
                   title="Draft the Initial Inspection email from the card's notes, copy it, open XactAnalysis, then log it on the card">✉ Initial email</button>
@@ -295,8 +312,20 @@
                     title="Open the run-doc for this SP folder's date (parsed from name, e.g. '3-19-26' → 3/19)">📄 Run-doc</button>` : ""}
           <button class="action-btn" type="button" id="detail-more-btn"
                   title="Less-used actions">⋯ More</button>
+          </div>
         </div>
-        <div class="action-row detail-more" id="detail-more" style="display:none;">
+        ${ctx && ctx.openSnapshot ? `
+        <div class="action-row closeout-row" data-group="closeout">
+          <span class="action-group-label">Finish</span>
+          <div class="action-buttons">
+            <button class="action-btn closeout-btn" data-action="snapshot-closeout"
+                    title="Open the close-out snapshot for this job">📸 Close Out Job</button>
+            <span class="action-hint">Review the job and prepare its final snapshot.</span>
+          </div>
+        </div>` : ""}
+        <div class="action-row detail-more" id="detail-more" data-group="tools" style="display:none;">
+          <span class="action-group-label">Tools</span>
+          <div class="action-buttons">
           <button class="action-btn" data-action="find-folder">${r.found ? "🔀 Change folder" : "🔎 Find folder"}</button>
           <button class="action-btn" data-action="pin-card">📌 ${hasPin ? "Re-pin" : "Pin"} Trello</button>
           <button class="action-btn" data-action="scope"
@@ -304,6 +333,9 @@
           <button class="action-btn" data-action="xa-prep" title="Xactimate 'new estimate from scratch' prep — carrier price list + copy-paste fields">🧮 Xactimate prep</button>
           <button class="action-btn" data-action="match-diag">🔎 Match diagnostic</button>
           <button class="action-btn" data-action="reaudit">↻ Re-audit</button>
+          <button class="action-btn" data-action="manage-job"
+                  title="Merge a duplicate job or remove a mistaken Hub record">⚖ Merge / delete…</button>
+          </div>
         </div>
       </footer>
       ${hasPin ? `<section class="detail-section" id="all-cl">
@@ -634,11 +666,10 @@
       btn.disabled = true;
       const res = await pywebview.api.post_xa_note(row.client, note, tag, row.trello_card_id || "");
       if (!res || !res.ok) { btn.disabled = false; setStatus(ctx, "Post failed: " + ((res && res.error) || "?"), "error"); return; }
-      await copyText(ctx, note);                              // for pasting into XA
-      let xaOpened = false;
-      try { xaOpened = await pywebview.api.open_xa_link(row.client, row.trello_card_id || ""); } catch (e) {}
+      const copied = await copyText(ctx, res.comment || note); // exact posted text
+      const xaOpened = !!res.xa_opened;
       try { window.closeModal("modal-overlay"); } catch (e) { overlay.remove(); }
-      setStatus(ctx, `🗒 Posted to Trello + copied${xaOpened ? " · XA opened" : " · no XA link on card"}`, "ok");
+      setStatus(ctx, `🗒 Posted to Trello${copied ? " + copied" : " · copy failed"}${xaOpened ? " · XA opened" : " · no XA link on card"}`, copied ? "ok" : "warn");
     });
   }
 
@@ -1108,7 +1139,7 @@
       return;
     }
     if (action === "add-note") {
-      if (window.openAuditNotes) window.openAuditNotes(row.client);
+      openAddUpdateModal(row, ctx, "note");
       return;
     }
     if (action === "open-folder") {
@@ -1153,6 +1184,9 @@
     } else if (action === "open-companycam") {
       const ok = await pywebview.api.open_companycam_link(row.client);
       if (!ok) setStatus(ctx, "No CompanyCam link on this card yet — add a 'CompanyCam Link' line to the Trello card's LINKS section.", "warn");
+    } else if (action === "open-workcenter") {
+      const res = await pywebview.api.open_workcenter();
+      if (!res?.ok) setStatus(ctx, `Couldn't open WorkCenter: ${res?.error || "unknown error"}`, "warn");
     } else if (action === "xa-note") {
       openXaNoteModal(row, ctx);
     } else if (action === "attachments") {
@@ -1265,10 +1299,40 @@
       }
     } else if (action === "copy-email") {
       const btn = document.getElementById("copy-email-btn");
-      const email = btn ? (btn.dataset.email || "") : "";
-      if (!email) { setStatus(ctx, "No email on this card yet", "warn"); return; }
+      if (!btn) return;
+      let email = btn.dataset.email || "";
+      let kind = btn.dataset.emailKind || "Email";
+      let source = btn.dataset.emailSource || "Trello";
+      if (!email) {
+        const old = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Getting email…";
+        let res;
+        try {
+          res = await pywebview.api.get_job_email(
+            row.client, row.trello_card_id || "");
+        } catch (ex) {
+          res = { ok: false, error: String(ex) };
+        } finally {
+          btn.disabled = false;
+          btn.textContent = old;
+        }
+        if (!res?.ok || !res.email) {
+          setStatus(ctx, res?.error || "No customer or adjuster email was found", "warn");
+          return;
+        }
+        email = res.email;
+        kind = res.kind || kind;
+        source = res.source || source;
+        btn.dataset.email = email;
+        btn.dataset.emailKind = kind;
+        btn.dataset.emailSource = source;
+      }
       const ok = await copyText(ctx, email);
-      setStatus(ctx, ok ? `📧 Copied ${email}` : "Couldn't copy", ok ? "ok" : "warn");
+      setStatus(ctx, ok ? `📧 Copied ${kind.toLowerCase()} email: ${email} · ${source}` : "Couldn't copy",
+                ok ? "ok" : "warn");
+    } else if (action === "copy-job-summary") {
+      await openCopyJobSummaryModal(row, ctx);
     } else if (action === "grab-cat-class") {
       setStatus(ctx, "Reading initial notes from Trello comments…", "info");
       const res = await pywebview.api.get_initial_cat_class(
@@ -1326,20 +1390,26 @@
       if (M.openMatchDiag) M.openMatchDiag(row);
     } else if (action === "reaudit") {
       if (ctx.reauditAndRerender) ctx.reauditAndRerender(row.client);
+    } else if (action === "manage-job") {
+      await openManageJobModal(row, ctx);
+    } else if (action === "snapshot-closeout") {
+      if (ctx && ctx.openSnapshot) ctx.openSnapshot(row);
     } else if (action === "find-folder") {
       if (M.openFindFolder) M.openFindFolder(row);
     } else if (action === "pin-card") {
       openPinModal(row, ctx);                     // shared — real persisted pin
     } else if (action === "initial-email") {
       openInitialEmailModal(row, ctx);
+    } else if (action === "add-update") {
+      openAddUpdateModal(row, ctx, "general");
     } else if (action === "job-log-comment") {
-      openJobLogModal(row, ctx);
+      openAddUpdateModal(row, ctx, "job_log");
     } else if (action === "activity-comment") {
-      openActivityCommentModal(row, ctx);
+      openAddUpdateModal(row, ctx, "activity");
     } else if (action === "call-note") {
-      openCallNoteModal(row, ctx);
+      openAddUpdateModal(row, ctx, "call");
     } else if (action === "comment") {
-      if (M.openComment) M.openComment(row);
+      openAddUpdateModal(row, ctx, "general");
     } else if (action === "add-child") {
       await openAddChildModal(row, ctx);
     } else if (action === "closeout") {
@@ -1438,8 +1508,9 @@
     const email = r.customer_email || r.adjuster_email || "";
     const emailBtn = document.getElementById("copy-email-btn");
     if (emailBtn && email) {
-      emailBtn.disabled = false;
       emailBtn.dataset.email = email;
+      emailBtn.dataset.emailKind = r.customer_email ? "Customer" : "Adjuster";
+      emailBtn.dataset.emailSource = "Trello";
     }
     (bodyEl ? [...bodyEl.querySelectorAll(".tr-email")] : []).forEach((a) =>
       a.addEventListener("click", async (e) => {
@@ -2506,6 +2577,334 @@
     return w;
   }
 
+  function openAddUpdateModal(row, ctx, initialType) {
+    if (!row || !row.trello_card_id) {
+      setStatus(ctx, "Pin a Trello card first", "warn");
+      return;
+    }
+    const types = [
+      ["general", "General comment", "A free-form update posted to the Trello card."],
+      ["job_log", "Job log / work performed", "What happened, who was there, and the work date."],
+      ["activity", "Site visit / activity", "Stage, technician, date, and a posting preview."],
+      ["long_contract", "Long-form contract payment", "Split the balance after the deductible/deposit between the first and final day."],
+      ["call", "Call or contact", "A timestamped contact note with reusable phrases."],
+      ["note", "Internal reminder / note", "A tracked internal to-do that is not posted as a Trello comment."],
+    ];
+    const chosen = types.some(t => t[0] === initialType) ? initialType : "general";
+    const wrap = mkModal({
+      title: "＋ Add update",
+      sub: _firstLast(row.display_name || tc(ctx, row.client)),
+      width: 590,
+      body: `
+        <label class="modal-lbl" for="au-type">Update type</label>
+        <select id="au-type" class="search" style="width:100%;margin-bottom:12px;">
+          ${types.map(t => `<option value="${t[0]}"${t[0] === chosen ? " selected" : ""}>${t[1]}</option>`).join("")}
+        </select>
+        <div id="au-preview" class="activity-preview"></div>
+        <div class="modal-footer">
+          <button class="btn modal-close">Cancel</button>
+          <button class="btn btn-primary" id="au-continue">Continue</button>
+        </div>`,
+    });
+    const select = wrap.querySelector("#au-type");
+    const preview = wrap.querySelector("#au-preview");
+    const refresh = () => {
+      const found = types.find(t => t[0] === select.value);
+      preview.textContent = found ? found[2] : "";
+    };
+    select.addEventListener("change", refresh);
+    refresh();
+    wrap.querySelector("#au-continue").addEventListener("click", () => {
+      const type = select.value;
+      wrap.remove();
+      if (type === "job_log") openJobLogModal(row, ctx);
+      else if (type === "activity") openActivityCommentModal(row, ctx);
+      else if (type === "long_contract") openLongContractModal(row, ctx);
+      else if (type === "call") openCallNoteModal(row, ctx);
+      else if (type === "note") {
+        if (window.openAuditNotes) window.openAuditNotes(row.client);
+      } else if (M.openComment) M.openComment(row);
+    });
+    select.focus();
+  }
+
+  function openLongContractModal(row, ctx) {
+    if (!row || !row.trello_card_id) return;
+    const wrap = mkModal({
+      title: "Long-form contract payment",
+      sub: _firstLast(row.display_name || tc(ctx, row.client)),
+      width: 520,
+      body: `
+        <div class="activity-row">
+          <label class="modal-lbl" for="lf-total">Contract total</label>
+          <input id="lf-total" class="search" inputmode="decimal" placeholder="4,928.11" />
+          <label class="modal-lbl" for="lf-deposit">Deductible / deposit</label>
+          <input id="lf-deposit" class="search" inputmode="decimal" value="1,000.00" />
+        </div>
+        <pre id="lf-preview" class="activity-preview">Enter the contract total.</pre>
+        <div class="canned-comments">
+          <button class="action-btn" id="lf-post" disabled>💬 Post + open XA</button>
+          <button class="action-btn" id="lf-copy" disabled>📋 Copy</button>
+        </div>`,
+    });
+    const total = wrap.querySelector("#lf-total");
+    const deposit = wrap.querySelector("#lf-deposit");
+    const preview = wrap.querySelector("#lf-preview");
+    const post = wrap.querySelector("#lf-post");
+    const copy = wrap.querySelector("#lf-copy");
+    let current = "", timer = 0;
+    async function refresh() {
+      let r;
+      try { r = await pywebview.api.long_form_contract_comment_text(total.value, deposit.value); }
+      catch (ex) { r = { ok: false, error: String(ex) }; }
+      current = r && r.ok ? r.text : "";
+      preview.textContent = current || ((r && r.error) || "Enter the contract total.");
+      post.disabled = copy.disabled = !current;
+    }
+    const queue = () => { clearTimeout(timer); timer = setTimeout(refresh, 100); };
+    [total, deposit].forEach((el) => el.addEventListener("input", queue));
+    post.addEventListener("click", async () => {
+      post.disabled = true;
+      let r;
+      try { r = await pywebview.api.post_long_form_contract_comment(
+        row.trello_card_id, total.value, deposit.value); }
+      catch (ex) { r = { ok: false, error: String(ex) }; }
+      post.disabled = !current;
+      if (r && r.ok) {
+        const copied = await copyText(ctx, r.text || current);
+        wrap.remove();
+        setStatus(ctx, `Contract payment posted${copied ? " + copied" : " · copy failed"}${r.xa_opened ? " · XA opened" : " · no XA link on card"}`, copied ? "ok" : "warn");
+      } else setStatus(ctx, `Post failed: ${(r && r.error) || "?"}`, "error");
+    });
+    copy.addEventListener("click", async () => {
+      const ok = await copyText(ctx, current);
+      setStatus(ctx, ok ? "Contract payment copied" : "Copy failed", ok ? "ok" : "error");
+    });
+    total.focus();
+  }
+
+  async function openCopyJobSummaryModal(row, ctx) {
+    let saved;
+    try {
+      saved = await pywebview.api.job_summary_data(
+        row.client, row.trello_card_id || "");
+    } catch (ex) { saved = { ok: false, error: String(ex) }; }
+    if (!saved || !saved.ok) {
+      setStatus(ctx, `Couldn't build summary: ${(saved && saved.error) || "?"}`, "error");
+      return;
+    }
+    const techs = Array.isArray(row.techs) ? row.techs.join(", ") : (row.techs || "");
+    const missing = [...(row.form_issues || []), ...(row.photo_issues || [])].join(", ");
+    const values = [
+      ["job", "Job", saved.job || row.client, true],
+      ["carrier", "Carrier", saved.carrier, true],
+      ["claim", "Claim #", saved.claim_number, true],
+      ["address", "Loss address", saved.address, true],
+      ["customer_email", "Customer email", saved.customer_email, false],
+      ["adjuster", "Adjuster", [saved.adjuster_name, saved.adjuster_email].filter(Boolean).join(" — "), false],
+      ["techs", "Technicians", techs, false],
+      ["stage", "Current stage", row.activity || row.stage || "", true],
+      ["missing", "Missing", missing, true],
+      ["folder", "OD folder", row.path || "", false],
+      ["trello", "Trello", saved.trello, false],
+      ["companycam", "CompanyCam", saved.companycam, false],
+      ["xa", "XactAnalysis", saved.xactanalysis, false],
+    ].filter(v => v[2]);
+    const wrap = mkModal({
+      title: "📋 Copy job summary",
+      sub: "Choose what to include. The preview is copied exactly as shown.",
+      width: 650,
+      body: `
+        <div class="summary-options">
+          ${values.map(v => `<label><input type="checkbox" data-summary-key="${v[0]}" ${v[3] ? "checked" : ""}> ${esc(ctx, v[1])}</label>`).join("")}
+        </div>
+        <pre id="job-summary-preview" class="activity-preview"></pre>
+        <div class="modal-footer">
+          <button class="btn modal-close">Cancel</button>
+          <button class="btn btn-primary" id="job-summary-copy" data-track="copy_job_summary_confirm">Copy summary</button>
+        </div>`,
+    });
+    const preview = wrap.querySelector("#job-summary-preview");
+    const refresh = () => {
+      const selected = new Set(Array.from(wrap.querySelectorAll("[data-summary-key]:checked"))
+        .map(el => el.dataset.summaryKey));
+      preview.textContent = values.filter(v => selected.has(v[0]))
+        .map(v => `${v[1]}: ${v[2]}`).join("\n");
+    };
+    wrap.querySelectorAll("[data-summary-key]").forEach(el =>
+      el.addEventListener("change", refresh));
+    refresh();
+    wrap.querySelector("#job-summary-copy").addEventListener("click", async () => {
+      if (!preview.textContent) {
+        setStatus(ctx, "Choose at least one field", "warn"); return;
+      }
+      const ok = await copyText(ctx, preview.textContent);
+      if (ok) wrap.remove();
+      setStatus(ctx, ok ? "📋 Job summary copied" : "Copy failed",
+                ok ? "ok" : "error");
+    });
+  }
+
+  // ── ⚖ Merge / delete job ──────────────────────────────────────────
+  // Both operations are preview-first. External systems are deliberately
+  // out of scope: this manages the Hub's identity graph, never a folder or
+  // a Trello/CompanyCam/WorkCenter record.
+  async function openManageJobModal(row, ctx) {
+    const currentRef = row.display_name || row.client;
+    let current = null;
+    try { current = await pywebview.api.job_delete_preview(currentRef); }
+    catch (ex) { current = { ok: false, error: String(ex) }; }
+    if (!current?.ok) {
+      setStatus(ctx, `Job management: ${current?.error || "job not found"}`, "warn");
+      return;
+    }
+    const job = current.job || {};
+    const key = job.canon_key || "";
+    const name = job.display_name || currentRef;
+    const countLine = (p) => {
+      const t = p || {};
+      return `${t.aliases || 0} aliases · ${t.links || 0} links · ${t.children || 0} claims/units`;
+    };
+    const w = mkModal({
+      title: "Merge or delete job",
+      sub: name,
+      width: 700,
+      body: `
+        <section style="padding:12px;border:1px solid var(--border);border-radius:8px;">
+          <div style="font-weight:650;margin-bottom:3px;">Merge a duplicate into this job</div>
+          <div class="muted" style="font-size:11px;margin-bottom:10px;">
+            Search for the other job, then choose which name survives.</div>
+          <input id="jm-search" class="search" type="text" autocomplete="off"
+                 placeholder="Search for the duplicate job" style="width:100%;" />
+          <div id="jm-results" style="margin-top:6px;"></div>
+          <div id="jm-merge-plan" style="margin-top:10px;"></div>
+        </section>
+        <details id="jm-delete" style="margin-top:12px;padding:12px;
+                 border:1px solid color-mix(in srgb,var(--red) 45%,var(--border));
+                 border-radius:8px;">
+          <summary style="cursor:pointer;color:var(--red);font-weight:650;">
+            Delete this mistaken Hub record</summary>
+          <div style="font-size:12px;margin-top:10px;">
+            This removes <b>${esc(ctx, name)}</b> from Linguar Hub, including
+            ${current.aliases.length} aliases, ${current.links.length} links, and
+            ${current.children.length} claims/units.
+          </div>
+          <div style="margin:9px 0;padding:8px 10px;border-radius:6px;
+                      background:color-mix(in srgb,var(--amber,#b7791f) 14%,transparent);
+                      font-size:11px;line-height:1.45;">
+            OD folders, Trello cards, CompanyCam projects, and WorkCenter jobs
+            are not deleted. If one is still active, a later sync may find the job again.
+          </div>
+          <label style="display:block;font-size:11px;color:var(--text-muted);">
+            Type the full job name to confirm</label>
+          <input id="jm-delete-confirm" class="search" type="text"
+                 placeholder="${escA(ctx, name)}" style="width:100%;margin:5px 0 9px;" />
+          <button id="jm-delete-go" class="action-btn" disabled
+                  style="border-color:var(--red);color:var(--red);">Delete Hub record</button>
+        </details>
+        <footer style="display:flex;justify-content:flex-end;margin-top:14px;">
+          <button class="action-btn modal-close">Close</button>
+        </footer>`,
+    });
+
+    const search = w.querySelector("#jm-search");
+    const results = w.querySelector("#jm-results");
+    const planEl = w.querySelector("#jm-merge-plan");
+    let timer = null, other = null;
+
+    async function showMergePlan() {
+      if (!other) return;
+      planEl.innerHTML = `<div class="muted">Building merge preview…</div>`;
+      const keepCurrent = w.querySelector('input[name="jm-keep"]:checked')?.value !== "other";
+      const keepKey = keepCurrent ? key : other.canon_key;
+      const dropKey = keepCurrent ? other.canon_key : key;
+      let p;
+      try { p = await pywebview.api.job_merge_preview(keepKey, dropKey); }
+      catch (ex) { p = { ok: false, error: String(ex) }; }
+      if (!p?.ok) {
+        planEl.innerHTML = `<div style="color:var(--red);font-size:12px;">${esc(ctx, p?.error || "Preview failed")}</div>`;
+        return;
+      }
+      const dropName = p.drop.display_name;
+      const conflicts = p.conflicts || [];
+      const blocked = (p.preview?.department_conflicts || []).length > 0;
+      planEl.innerHTML = `
+        <div style="padding:9px 10px;background:var(--surface-2);border-radius:6px;font-size:12px;line-height:1.5;">
+          <b>${esc(ctx, dropName)}</b> will fold into <b>${esc(ctx, p.keep.display_name)}</b><br/>
+          <span class="muted">${esc(ctx, countLine(p.preview?.totals))}</span>
+          ${(p.carried || []).length ? `<br/>Fills empty fields: ${esc(ctx, p.carried.join(", "))}` : ""}
+          ${conflicts.length ? `<br/><span style="color:var(--amber,#b7791f);">Keeps survivor values where these differ: ${esc(ctx, conflicts.join(", "))}</span>` : ""}
+          ${blocked ? `<br/><span style="color:var(--red);">These jobs belong to different departments and cannot be merged.</span>` : ""}
+        </div>
+        <label style="display:block;font-size:11px;color:var(--text-muted);margin-top:9px;">
+          Type the folded job’s full name to confirm</label>
+        <input id="jm-merge-confirm" class="search" type="text"
+               placeholder="${escA(ctx, dropName)}" style="width:100%;margin:5px 0 9px;" />
+        <button id="jm-merge-go" class="action-btn primary" ${blocked ? "disabled" : ""}>Merge jobs</button>`;
+      const conf = planEl.querySelector("#jm-merge-confirm");
+      const go = planEl.querySelector("#jm-merge-go");
+      if (!blocked) {
+        conf.addEventListener("input", () => { go.disabled = conf.value.trim() !== dropName; });
+        go.disabled = true;
+        go.addEventListener("click", async () => {
+          go.disabled = true; go.textContent = "Merging…";
+          let res;
+          try { res = await pywebview.api.job_merge_apply(keepKey, dropKey, conf.value); }
+          catch (ex) { res = { ok: false, error: String(ex) }; }
+          if (!res?.ok) {
+            setStatus(ctx, `Merge failed: ${res?.error || "?"}`, "error");
+            go.disabled = false; go.textContent = "Merge jobs"; return;
+          }
+          w.remove();
+          setStatus(ctx, `Merged into ${res.keep_name}${res.undo_id ? " · undo saved" : ""}`, "ok");
+          if (ctx.reauditAndRerender) ctx.reauditAndRerender(res.keep_name);
+        });
+      }
+    }
+
+    search.addEventListener("input", () => {
+      clearTimeout(timer); other = null; planEl.innerHTML = "";
+      const q = search.value.trim();
+      if (q.length < 2) { results.innerHTML = ""; return; }
+      timer = setTimeout(async () => {
+        let res;
+        try { res = await pywebview.api.job_admin_suggest(q, key, 8); }
+        catch (ex) { res = { ok: false, error: String(ex), rows: [] }; }
+        if (!res?.ok) { results.innerHTML = `<div style="color:var(--red);">${esc(ctx, res?.error || "Search failed")}</div>`; return; }
+        results.innerHTML = (res.rows || []).map((r, i) => `
+          <button class="action-btn jm-result" data-i="${i}" style="width:100%;text-align:left;margin:2px 0;">
+            ${esc(ctx, r.display_name)} <span class="muted">${esc(ctx, r.department || "")}</span>
+          </button>`).join("") || `<div class="muted" style="font-size:11px;">No other jobs found.</div>`;
+        results.querySelectorAll(".jm-result").forEach((b) => b.addEventListener("click", () => {
+          other = res.rows[+b.dataset.i];
+          results.innerHTML = `
+            <div style="font-size:12px;margin:7px 0 5px;">Duplicate: <b>${esc(ctx, other.display_name)}</b></div>
+            <label style="display:block;padding:5px 0;"><input type="radio" name="jm-keep" value="current" checked/> Keep <b>${esc(ctx, name)}</b></label>
+            <label style="display:block;padding:5px 0;"><input type="radio" name="jm-keep" value="other"/> Keep <b>${esc(ctx, other.display_name)}</b></label>`;
+          results.querySelectorAll('input[name="jm-keep"]').forEach((r) => r.addEventListener("change", showMergePlan));
+          showMergePlan();
+        }));
+      }, 250);
+    });
+
+    const delConfirm = w.querySelector("#jm-delete-confirm");
+    const delGo = w.querySelector("#jm-delete-go");
+    delConfirm.addEventListener("input", () => { delGo.disabled = delConfirm.value.trim() !== name; });
+    delGo.addEventListener("click", async () => {
+      delGo.disabled = true; delGo.textContent = "Deleting…";
+      let res;
+      try { res = await pywebview.api.job_delete_apply(key, delConfirm.value); }
+      catch (ex) { res = { ok: false, error: String(ex) }; }
+      if (!res?.ok) {
+        setStatus(ctx, `Delete failed: ${res?.error || "?"}`, "error");
+        delGo.disabled = false; delGo.textContent = "Delete Hub record"; return;
+      }
+      w.remove();
+      setStatus(ctx, `Deleted ${name} from Linguar Hub${res.undo_id ? " · undo saved" : ""}. External jobs were untouched.`, "ok");
+    });
+    search.focus();
+  }
+
   // ── ➕ Add claim / unit (shared) ────────────────────────────────────
   //
   // Adopt-first. Work starts in Trello here, so the dialog SHOWS what
@@ -2935,10 +3334,10 @@
         <span id="fv-name" style="font-size:13px;font-weight:600;flex:1;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
         <span class="muted" id="fv-pos" style="font-size:11px;"></span>
-        <button class="btn" id="fv-prev" title="Previous (←)">‹</button>
-        <button class="btn" id="fv-next" title="Next (→)">›</button>
+        <button class="btn" id="fv-prev" title="Previous (←)" aria-label="Previous file">‹</button>
+        <button class="btn" id="fv-next" title="Next (→)" aria-label="Next file">›</button>
         <button class="btn" id="fv-open" title="Open in the default app">Open ↗</button>
-        <button class="btn" id="fv-close" title="Close (Esc)">✕</button>
+        <button class="btn" id="fv-close" title="Close (Esc)" aria-label="Close file viewer">✕</button>
       </header>
       <div id="fv-body" style="flex:1;display:flex;align-items:center;
            justify-content:center;overflow:auto;padding:14px;"></div>`;
@@ -3159,6 +3558,13 @@
       <div id="jl-acts" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">
         ${acts.map((a) => `<button type="button" class="action-btn jl-act"
              data-act="${escA(ctx, a)}">${esc(ctx, a)}</button>`).join("")}
+        <button type="button" class="action-btn jl-custom-toggle" id="jl-act-custom-toggle"
+                aria-expanded="false">＋ Custom…</button>
+      </div>
+      <div id="jl-act-custom-row" style="display:none;margin:-4px 0 10px;">
+        <input id="jl-act-custom" class="search" type="text"
+               placeholder="What happened? e.g. Set containment"
+               aria-label="Custom job activity" style="width:100%;" />
       </div>
       <label class="modal-lbl">Who was there
         <span class="muted" style="font-weight:400;">— leads show as initials</span></label>
@@ -3166,6 +3572,13 @@
         ${techs.map((t) => `<button type="button" class="action-btn jl-tech${t.on_today ? " on" : ""}"
              data-name="${escA(ctx, t.name)}" title="${t.lead ? "Lead" : "Helper"}${t.on_today ? " · on today's run doc" : ""}"
              >${esc(ctx, t.label)}${t.on_today ? " •" : ""}</button>`).join("")}
+        <button type="button" class="action-btn jl-custom-toggle" id="jl-tech-custom-toggle"
+                aria-expanded="false">＋ Custom…</button>
+      </div>
+      <div id="jl-tech-custom-row" style="display:none;margin:-4px 0 10px;">
+        <input id="jl-tech-custom" class="search" type="text"
+               placeholder="Who was there? Enter a name"
+               aria-label="Custom technician name" style="width:100%;" />
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
         <label class="modal-lbl" for="jl-date">Date</label>
@@ -3186,13 +3599,22 @@
       const st = document.createElement("style");
       st.id = "jl-css";
       st.textContent =
-        ".jl-act.on,.jl-tech.on{background:var(--green);color:#FFF;border-color:var(--green);}";
+        ".jl-act.on,.jl-tech.on,.jl-custom-toggle.on{background:var(--green);color:#FFF;border-color:var(--green);}";
       document.head.appendChild(st);
     }
 
     const sel = (q) => Array.from(wrap.querySelectorAll(q));
-    const chosenActs = () => sel(".jl-act.on").map((b) => b.dataset.act);
-    const chosenTechs = () => sel(".jl-tech.on").map((b) => b.dataset.name);
+    const customValue = (id) => (wrap.querySelector(id)?.value || "").trim();
+    const chosenActs = () => {
+      const picked = sel(".jl-act.on").map((b) => b.dataset.act);
+      const custom = customValue("#jl-act-custom");
+      return custom ? picked.concat([custom]) : picked;
+    };
+    const chosenTechs = () => {
+      const picked = sel(".jl-tech.on").map((b) => b.dataset.name);
+      const custom = customValue("#jl-tech-custom");
+      return custom ? picked.concat([custom]) : picked;
+    };
     const prev = wrap.querySelector("#jl-preview");
     let current = "";
 
@@ -3216,6 +3638,26 @@
     // taps each otherwise, and this is a several-times-a-day job.
     sel(".jl-act, .jl-tech").forEach((b) =>
       b.addEventListener("click", () => { b.classList.toggle("on"); refresh(); }));
+    // "Custom…" opens one inline field in the exact section it belongs
+    // to. Typing makes the custom choice live immediately in the preview;
+    // clearing the field removes it again. Presets stay multi-select.
+    [
+      ["act", "#jl-act-custom"],
+      ["tech", "#jl-tech-custom"],
+    ].forEach(([kind, inputSel]) => {
+      const toggle = wrap.querySelector(`#jl-${kind}-custom-toggle`);
+      const rowEl = wrap.querySelector(`#jl-${kind}-custom-row`);
+      const input = wrap.querySelector(inputSel);
+      toggle.addEventListener("click", () => {
+        rowEl.style.display = "";
+        toggle.setAttribute("aria-expanded", "true");
+        input.focus();
+      });
+      input.addEventListener("input", () => {
+        toggle.classList.toggle("on", !!input.value.trim());
+        refresh();
+      });
+    });
     ["#jl-date", "#jl-lead"].forEach((q) =>
       wrap.querySelector(q).addEventListener("change", refresh));
     await refresh();
@@ -3782,7 +4224,19 @@
       ".cmt-compose{position:relative;}" +
       ".cmt-at-pop{position:absolute;left:12px;right:12px;bottom:100%;margin-bottom:4px;background:var(--surface,#262626);border:1px solid var(--border,#333);border-radius:7px;box-shadow:0 -4px 14px rgba(0,0,0,.4);max-height:190px;overflow-y:auto;z-index:2;}" +
       ".cmt-at-item{padding:6px 10px;font-size:12px;cursor:pointer;}" +
-      ".cmt-at-item.on,.cmt-at-item:hover{background:var(--surface-2,#2e2e2e);}";
+      ".cmt-at-item.on,.cmt-at-item:hover{background:var(--surface-2,#2e2e2e);}" +
+      // Snapshot is a working form, so its comments are a true second
+      // pane rather than an overlay. Jobs keeps the existing overlay.
+      "body.snapshot-panel{transition:padding-right .16s ease-out;}" +
+      "body.snapshot-panel.cmt-docked{padding-right:var(--cmt-dock-width,380px);}" +
+      "@media(max-width:820px){" +
+      "body.snapshot-panel{transition:padding-bottom .16s ease-out;}" +
+      "body.snapshot-panel.cmt-docked{padding-right:0;padding-bottom:min(46vh,420px);}" +
+      "body.snapshot-panel .cmt-drawer{top:auto;bottom:0;width:100%!important;height:min(46vh,420px);border-left:0;border-top:1px solid var(--border,#333);transform:translateY(100%);}" +
+      "body.snapshot-panel .cmt-drawer.cmt-open{transform:translateY(0);}" +
+      "body.snapshot-panel .cmt-grip{display:none;}" +
+      "body.snapshot-panel .cmt-tab{display:none;}" +
+      "}";
     document.head.appendChild(st);
   }
 
@@ -3801,8 +4255,8 @@
       '<header class="cmt-head">' +
       '  <div class="cmt-title" id="cmt-title">Comments</div>' +
       '  <div class="cmt-actions">' +
-      '    <button class="action-btn" id="cmt-refresh" title="Re-read the thread from Trello">↻</button>' +
-      '    <button class="action-btn" id="cmt-close" title="Close (Esc)">✕</button>' +
+      '    <button class="action-btn" id="cmt-refresh" title="Re-read the thread from Trello" aria-label="Refresh Trello thread">↻</button>' +
+      '    <button class="action-btn" id="cmt-close" title="Close (Esc)" aria-label="Close comments">✕</button>' +
       '  </div>' +
       '</header>' +
       '<div class="cmt-filter">' +
@@ -3891,6 +4345,7 @@
       const w = Math.min(CMT_MAX_W,
                          Math.max(CMT_MIN_W, window.innerWidth - e.clientX));
       el.style.width = w + "px";
+      _syncCommentsDock(el);
     });
     window.addEventListener("mouseup", () => {
       if (!dragging) return;
@@ -4078,6 +4533,7 @@
   function closeCommentsDrawer() {
     const el = document.getElementById("cmt-drawer");
     if (el) el.classList.remove("cmt-open");
+    document.body.classList.remove("cmt-docked");
     _lsSet(CMT_OPEN_KEY, "0");
     _setTabLabel(false);
     // The offset differs by state — flush when open, clear of the pane's
@@ -4091,10 +4547,19 @@
     if (!row) return;
     const el = _ensureCommentsDrawer();
     el.classList.add("cmt-open");
+    _syncCommentsDock(el);
     _lsSet(CMT_OPEN_KEY, "1");
     _setTabLabel(true);
     _placeTab();
     loadCommentsInto(row, ctx, false);
+  }
+
+  function _syncCommentsDock(el) {
+    if (!document.body.classList.contains("snapshot-panel")) return;
+    const width = Math.min(CMT_MAX_W, Math.max(CMT_MIN_W,
+      parseInt(el?.style.width, 10) || _cmtWidth()));
+    document.body.style.setProperty("--cmt-dock-width", width + "px");
+    document.body.classList.toggle("cmt-docked", !!(el && el.classList.contains("cmt-open")));
   }
 
   function toggleCommentsDrawer(row, ctx) {
@@ -4388,6 +4853,8 @@
     loadTrelloInfo,
     loadActivityLog,
     openActivityCommentModal,
+    openAddUpdateModal,
+    openCopyJobSummaryModal,
     loadInProgressChecklist,
     loadInitialChecklists,
     loadCloseoutChecklist,

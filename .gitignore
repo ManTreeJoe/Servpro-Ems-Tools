@@ -27,6 +27,7 @@ audit_backlog.json
 *.pdf
 *.db
 *.sqlite*
+*_undo.jsonl
 
 # ── Logs ───────────────────────────────────────────────
 logs/
@@ -56,6 +57,8 @@ skills-lock.json
 # Side-path builds used when the app is running and holds dist/
 dist_next/
 build_next/
+dist_release/
+build_release/
 
 # Inno Setup compiler output — installers are release artifacts, not source
 Output/

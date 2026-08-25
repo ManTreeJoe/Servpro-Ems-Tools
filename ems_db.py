@@ -232,3 +232,28 @@ def merge_jobs(into_key: str, from_keys, *, undo: bool = True,
     if isinstance(res, dict) and rec and rec.get("ok"):
         res["undo_id"] = rec["id"]
     return res
+
+
+def delete_job(canon_key: str, *, undo: bool = True,
+               note: str = "") -> dict:
+    """Remove one Hub job record, recording its identity first.
+
+    This never deletes an OD folder or an external Trello/CompanyCam job;
+    those are links recorded on the job, not resources owned by this index.
+    """
+    canon_key = (canon_key or "").strip()
+    if not canon_key:
+        return {"deleted": 0}
+    rec = None
+    if undo:
+        try:
+            import job_undo
+            rec = job_undo.capture(
+                [canon_key], op="delete",
+                note=note or f"delete {canon_key}")
+        except Exception:
+            rec = None
+    res = _backend().delete_job(canon_key) or {}
+    if isinstance(res, dict) and rec and rec.get("ok"):
+        res["undo_id"] = rec["id"]
+    return res

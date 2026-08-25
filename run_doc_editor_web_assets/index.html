@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../web_shared/usage_track.js?v=20260825a"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Run Doc Editor — Linguar Hub</title>
+  <link rel="stylesheet" href="../web_shared/theme.css" />
+  <link rel="stylesheet" href="app.css?v=20260825d" />
+  <script src="../web_shared/health_banner.js?v=20260820a"></script>
+  <script src="../web_shared/progress_bar.js?v=20260817a"></script>
+  <script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+  <script src="../web_shared/panel_state.js?v=20260811a"></script>
+</head>
+<body>
+  <header class="topbar editor-topbar">
+    <div class="brand">
+      <span class="clipboard-mark" aria-hidden="true"></span>
+      <div><div class="eyebrow">Daily dispatch</div><div class="brand-name">Run Doc Editor</div></div>
+      <span class="mode-chip">Single editor</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn icon-btn" id="day-prev" title="Previous day">←</button>
+      <button class="btn" id="day-today">Today</button>
+      <button class="btn icon-btn" id="day-next" title="Next day">→</button>
+      <button class="btn" id="open-word">Open in Word</button>
+      <button class="btn" id="undo-btn" disabled>Undo</button>
+      <button class="btn btn-primary save-btn" id="save-btn" disabled>Save changes</button>
+    </div>
+  </header>
+  <main class="editor-shell">
+    <section class="day-heading" aria-labelledby="day-title">
+      <div>
+        <div class="department" id="department">—</div>
+        <h1 id="day-title">Loading today’s run…</h1>
+        <div class="file-meta" id="file-meta"></div>
+      </div>
+      <div class="save-state clean" id="save-state"><span></span>Saved</div>
+    </section>
+    <div class="notice hidden" id="notice" role="status"></div>
+    <div class="empty hidden" id="empty"></div>
+    <section class="run-board hidden" id="run-board" aria-label="Run document sections">
+      <nav class="section-rail" id="section-rail" aria-label="Run document sections"></nav>
+      <div class="section-editor">
+        <header class="section-head">
+          <div><span class="section-kicker" id="section-kicker">Dispatch section</span><h2 id="section-title">—</h2></div>
+          <span class="section-count" id="section-count">0 rows</span>
+        </header>
+        <div class="rows" id="section-rows"></div>
+        <button class="add-row" id="add-row">＋ Add row</button>
+      </div>
+    </section>
+  </main>
+  <div class="item-composer hidden" id="item-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
+    <div class="composer-card">
+      <header class="composer-head">
+        <div><div class="eyebrow">Run item</div><h2 id="composer-title">Format dispatch item</h2></div>
+        <button class="btn icon-btn" id="composer-close" aria-label="Close">×</button>
+      </header>
+      <div class="composer-body">
+        <p class="composer-help" id="composer-help"></p>
+        <div class="composer-grid">
+          <label class="wide"><span>Job or site</span><input id="field-job" autocomplete="off" /></label>
+          <label class="wide"><span>Address</span><input id="field-address" autocomplete="off" /></label>
+          <label><span>Phone</span><input id="field-phone" autocomplete="off" /></label>
+          <label><span>Task</span><input id="field-task" autocomplete="off" placeholder="Demo, monitoring, pickup…" /></label>
+          <label class="date-field"><span>Date</span><input id="field-date" autocomplete="off" placeholder="Wed 8/26" /></label>
+          <label><span>Time</span><input id="field-time" autocomplete="off" placeholder="9–11 or 1 PM" /></label>
+          <label><span>Crew or owner</span><input id="field-crew" autocomplete="off" /></label>
+          <label class="wide"><span>Status or next step</span><input id="field-status" autocomplete="off" /></label>
+        </div>
+        <div class="composer-preview"><span>Word line preview</span><div id="composer-preview"></div></div>
+      </div>
+      <footer class="composer-foot"><button class="btn" id="composer-cancel">Cancel</button><button class="btn btn-primary" id="composer-apply">Use this line</button></footer>
+    </div>
+  </div>
+  <footer class="statusbar"><span>Choose a section, then drag numbered tabs to reorder its rows.</span><span id="status-msg">Ctrl+S saves</span></footer>
+  <script src="app.js?v=20260825d"></script>
+</body>
+</html>

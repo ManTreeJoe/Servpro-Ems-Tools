@@ -1269,6 +1269,11 @@ def route_photo(p, *, subfolder="", tech="", tech_date_folder=True,
         division = "DOCS"
         stage_dir = ""
         room = qualifier = ""
+        # The field Scope is the document itself, not a photo shoot.  Keep
+        # it directly in DOCS so the office can always find DOCS\Scope.jpg.
+        # Sketch keeps its visit box because several sketch sets may exist.
+        if (stage or "").strip().lower() == "scope":
+            box = ""
     parts = [x for x in (stage_dir, box, room, qualifier) if x]
     return {"parts": parts, "room": room, "stage": stage_dir,
             # What to CALL this shoot, which is not always a folder in the
@@ -1547,7 +1552,6 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
     already = _present_tokens(photos, existing_tokens)
     rooms_used, stages_used, boxes_used, untagged = {}, {}, {}, 0
     for p in photos:
-        fname = _photo_filename(p, tech_label(p, tech, force=force_tech))
         # Room tag → subfolder under the stage, matching the zip import's
         # layout. No room tag means the photo stays at the stage level
         # rather than landing in an "Unsorted" bucket nobody looks in.
@@ -1556,7 +1560,20 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         # never disagree about where a photo lands.
         r = route_photo(p, subfolder=subfolder, tech=tech,
                         tech_date_folder=tech_date_folder,
-                        organize_by_tags=organize_by_tags)
+                        organize_by_tags=organize_by_tags,
+                        split_contents=bool(contents_dir),
+                        split_docs=bool(docs_dir),
+                        force_tech=force_tech)
+        is_scope_doc = (r["division"] == "DOCS"
+                        and (r["stage_label"] or "").strip().lower() == "scope")
+        if is_scope_doc:
+            ext = os.path.splitext(urllib.parse.urlparse(
+                p.get("original_url") or "").path)[1].lower()
+            if ext not in (".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif"):
+                ext = ".jpg"
+            fname = "Scope" + ext
+        else:
+            fname = _photo_filename(p, tech_label(p, tech, force=force_tech))
         room, stage_dir, box = r["room"], r["stage"], r["box"]
         if room:
             rooms_used[room] = rooms_used.get(room, 0) + 1
@@ -1570,11 +1587,35 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         base = _base_for(r["division"], dest_dir, contents_dir, docs_dir)
         photo_target = os.path.join(base, *r["parts"]) if r["parts"] else base
         tok = photo_id_token(p).lower()
-        if fname.lower() in existing or str(p.get("id") or "") in already:
+        # A plain Scope filename intentionally has no CompanyCam id.  Its
+        # capture time is retained as the file timestamp, which lets a
+        # repair/full pull recognize it without changing the visible name.
+        scope_already = False
+        if is_scope_doc and os.path.isdir(photo_target):
+            try:
+                cap = float(int(p.get("captured_at")))
+                scope_already = any(
+                    name.lower().startswith("scope")
+                    and os.path.splitext(name)[1].lower() in
+                        (".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif")
+                    and abs(os.path.getmtime(os.path.join(photo_target, name))
+                            - cap) < 1
+                    for name in os.listdir(photo_target))
+            except (TypeError, ValueError, OSError):
+                scope_already = False
+        if (scope_already
+                or (not is_scope_doc and fname.lower() in existing)
+                or str(p.get("id") or "") in already):
             skipped += 1
         else:
             os.makedirs(photo_target, exist_ok=True)
             dest = os.path.join(photo_target, fname)
+            if is_scope_doc and os.path.exists(dest):
+                stem, ext = os.path.splitext(dest)
+                n = 2
+                while os.path.exists(f"{stem} ({n}){ext}"):
+                    n += 1
+                dest = f"{stem} ({n}){ext}"
             try:
                 _download(p["original_url"], dest)
             except Exception as ex:

@@ -40,11 +40,10 @@ def test_a_room_tag_does_not_bury_it():
     assert "Kitchen" not in r["parts"]
 
 
-def test_the_visit_folder_is_kept():
-    """Several scopes across several visits must not collide."""
+def test_scope_lands_directly_in_docs_without_a_visit_folder():
     r = cc.route_photo(_photo("Scope"), tech="FB", split_docs=True,
                        force_tech=True)
-    assert r["parts"], "expected the tech/date box"
+    assert r["parts"] == []
 
 
 def test_it_still_reads_as_scope_in_the_preview():
@@ -117,6 +116,30 @@ def test_sketch_also_goes_to_docs():
     r = cc.route_photo(_photo("Sketch"), split_docs=True)
     assert r["division"] == "DOCS"
     assert r["stage_label"] == "Sketch"
+
+
+def test_scope_download_is_a_plain_named_image_in_docs(monkeypatch, tmp_path):
+    pics = tmp_path / "EMS" / "PICS"
+    docs = tmp_path / "EMS" / "DOCS"
+    p = _photo("Scope")
+    p.update({"processing_status": "processed",
+              "original_url": "https://example.test/original.png"})
+    monkeypatch.setattr(cc, "new_photos", lambda *a, **k: [p])
+    monkeypatch.setattr(cc, "attach_tags", lambda photos: photos)
+    monkeypatch.setattr(cc, "_download",
+                        lambda url, dest, **k: open(dest, "wb").write(b"img"))
+
+    result = cc.pull_new_photos("project", str(pics), since_epoch=None,
+                                advance_watermark=False, docs_dir=str(docs))
+
+    assert result["downloaded"] == 1
+    assert result["files"] == [str(docs / "Scope.png")]
+    assert (docs / "Scope.png").read_bytes() == b"img"
+
+    again = cc.pull_new_photos("project", str(pics), since_epoch=None,
+                               advance_watermark=False, docs_dir=str(docs))
+    assert again["downloaded"] == 0
+    assert again["skipped"] == 1
 
 
 def test_sketch_is_a_stage_not_a_room():

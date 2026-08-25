@@ -14,6 +14,9 @@ import web_health
 def no_cache(monkeypatch):
     monkeypatch.setattr(web_health, "_grant_cache", {})
     monkeypatch.setattr(web_health, "_grant_at", 0.0)
+    monkeypatch.setattr(web_health, "_local_checks", lambda: [])
+    monkeypatch.setattr(web_health, "_backup_check",
+                        lambda: {"ok": True, "checks": []})
 
 
 @pytest.fixture
@@ -117,6 +120,40 @@ def test_a_local_install_is_not_degraded(monkeypatch):
     st = web_health.state()
     assert st["ok"] is True
     assert st["grant"]["checked"] is False
+
+
+def test_missing_required_local_path_has_a_recovery_action(monkeypatch):
+    monkeypatch.setattr(web_health, "_backend_name", lambda: "sqlite")
+    monkeypatch.setattr(web_health, "_offline_state", lambda: {})
+    monkeypatch.setattr(web_health, "_local_checks", lambda: [{
+        "code": "run_docs", "label": "Run Doc folder", "ok": False,
+        "required": True, "action": "Settings → set Run Doc folder",
+    }])
+    st = web_health.state()
+    assert st["problems"][0]["code"] == "run_docs"
+    assert st["problems"][0]["action"].startswith("Settings")
+
+
+def test_optional_connector_does_not_create_a_warning(monkeypatch):
+    monkeypatch.setattr(web_health, "_backend_name", lambda: "sqlite")
+    monkeypatch.setattr(web_health, "_offline_state", lambda: {})
+    monkeypatch.setattr(web_health, "_local_checks", lambda: [{
+        "code": "companycam_config", "label": "CompanyCam", "ok": False,
+        "required": False, "action": "Settings → connect CompanyCam",
+    }])
+    assert web_health.state()["problems"] == []
+
+
+def test_stale_backup_is_visible(monkeypatch):
+    monkeypatch.setattr(web_health, "_backend_name", lambda: "sqlite")
+    monkeypatch.setattr(web_health, "_offline_state", lambda: {})
+    monkeypatch.setattr(web_health, "_backup_check", lambda: {
+        "ok": False,
+        "checks": [{"name": "state.json", "ok": False, "state": "stale"}],
+    })
+    p = web_health.state()["problems"][0]
+    assert p["code"] == "backup_stale"
+    assert "state.json" in p["detail"]
 
 
 # ── it must never be the thing that breaks ─────────────────────────────

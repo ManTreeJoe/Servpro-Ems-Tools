@@ -5,11 +5,13 @@ cd /d "%~dp0"
 echo === Linguar Hub build ===
 echo.
 
-REM Install/upgrade PyInstaller and runtime deps the first time
-where pyinstaller >nul 2>nul
+REM Reproduce the reviewed runtime/build dependency set every time.
+py -m pip install -r requirements-build.txt
 if errorlevel 1 (
-    echo PyInstaller not found. Installing...
-    py -m pip install --upgrade pyinstaller pillow python-docx pdfrw reportlab
+    echo.
+    echo DEPENDENCY INSTALL FAILED.
+    pause
+    exit /b 1
 )
 
 REM Wipe previous build outputs

@@ -222,9 +222,17 @@ def restore(rec_id: str, *, dry_run: bool = True) -> dict:
         row = j.get("job") or {}
         try:
             if row.get("display_name"):
+                # Restore the whole CRM row, not only carrier + claim. A
+                # delete undo that resurrected the name but lost address,
+                # adjuster, XA/WC ids and loss details was not an undo.
+                from ems_db_sqlite import CRM_COLUMNS, _TEXT_COLUMNS
+                values = {f: row.get(f) or "" for f in _TEXT_COLUMNS}
+                values.update({f: row.get(f) or "" for f in CRM_COLUMNS})
                 db.upsert_job(display_name=row["display_name"],
-                              claim_number=row.get("claim_number") or "",
-                              carrier=row.get("carrier") or "")
+                              year=row.get("year"),
+                              department=row.get("department") or "",
+                              metadata=row.get("metadata") or None,
+                              **values)
         except Exception as ex:
             errors.append(f"job {key}: {ex}")
         for a in j.get("aliases") or []:
@@ -255,7 +263,11 @@ def restore(rec_id: str, *, dry_run: bool = True) -> dict:
                              folder_path=c.get("folder_path") or "",
                              trello_card=c.get("trello_card") or "",
                              companycam=c.get("companycam") or "",
-                             department=c.get("department") or "")
+                             department=c.get("department") or "",
+                             property=c.get("property") or "",
+                             unit=c.get("unit") or "",
+                             claim_date=c.get("claim_date") or "",
+                             metadata=c.get("metadata") or None)
             except Exception as ex:
                 errors.append(f"child {key}/{c.get('name')}: {ex}")
 

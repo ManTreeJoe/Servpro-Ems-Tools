@@ -22,6 +22,28 @@ _CACHE_LOCK  = threading.Lock()
 _CACHE       = None   # most recent state dict, or None when never loaded
 _CACHE_MTIME = None   # mtime when _CACHE was populated; mismatch → reload
 
+_REPLACE_DELAYS = (0.02, 0.05, 0.10, 0.20)
+
+
+def _replace_with_retry(src: str, dst: str) -> None:
+    """Atomic replace with short bounded backoff for Windows file locks.
+
+    Antivirus, OneDrive, and backup scanners can hold state.json for a few
+    milliseconds. The write is already safely staged in `src`; retrying the
+    replace preserves atomicity without repeating JSON serialization.
+    """
+    last = None
+    for attempt in range(len(_REPLACE_DELAYS) + 1):
+        try:
+            os.replace(src, dst)
+            return
+        except OSError as ex:
+            last = ex
+            if attempt >= len(_REPLACE_DELAYS):
+                raise
+            time.sleep(_REPLACE_DELAYS[attempt])
+    raise last  # pragma: no cover - loop either returns or raises
+
 
 def _json_default(obj):
     """Coerce non-JSON-native values to safe shapes for json.dump.
@@ -313,7 +335,7 @@ def _save(state):
                     continue
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(snapshot, f, indent=2, default=_json_default)
-            os.replace(tmp, _STATE_PATH)
+            _replace_with_retry(tmp, _STATE_PATH)
             _CACHE = state
             try:
                 _CACHE_MTIME = os.path.getmtime(_STATE_PATH)
@@ -410,7 +432,7 @@ def _sidecar_save(key, value):
         try:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(value, f, default=_json_default)
-            os.replace(tmp, path)
+            _replace_with_retry(tmp, path)
             try:
                 _SIDECAR_CACHE[key] = (value, os.path.getmtime(path))
             except OSError:

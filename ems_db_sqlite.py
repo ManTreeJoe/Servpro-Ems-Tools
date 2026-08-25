@@ -62,7 +62,7 @@ from ems_db_common import (            # noqa: E402  (after module docstring)
     _norm_link, invalidate_department_cache, department_for_path,
     split_department_path, rebase_department_path,
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
-    EVENT_RENAMED, is_material_rename,
+    EVENT_CREATED, EVENT_RENAMED, is_material_rename,
     alias_probe_token, truncation_alias_is_ambiguous, dedupe_child_name,
 )
 from persistence import _canon_pin_key as _canon_pin_key_persistence
@@ -502,10 +502,12 @@ def upsert_job(*, display_name: str,
     parent_canon_value = None
     unit_num = None
     renamed_from = ""
+    created = False
     with _LOCK, _connect() as c:
         existing = c.execute(
             "SELECT * FROM jobs WHERE canon_key = ?", (key,)).fetchone()
         if existing is None:
+            created = True
             cols = ["canon_key", "display_name", "year", "first_seen_at",
                     "last_seen_at", "metadata_json", "parent_canon",
                     "unit_number", "department"] + list(_TEXT_COLUMNS)
@@ -557,6 +559,14 @@ def upsert_job(*, display_name: str,
                 [new_vals[c_] for c_ in set_cols]
                 + [new_parent, new_unit, new_dept, key])
         c.commit()
+    # Creation is the first durable point in the job lifecycle. Keep the
+    # event best-effort, like rename history: indexing a new job must still
+    # succeed if the audit-trail write is briefly unavailable.
+    if created:
+        try:
+            log_event(key, EVENT_CREATED)
+        except Exception:
+            pass
     # After the commit, and outside the connection: the old spelling stays
     # searchable as an alias, and the change itself is on the record.
     # Best-effort — a job must never fail to save because its history
@@ -805,6 +815,29 @@ def merge_jobs(into_key: str, from_keys) -> dict:
     return out
 
 
+def delete_job(canon_key_value: str) -> dict:
+    """Delete one local job graph row; external folders/cards stay put."""
+    key = (canon_key_value or "").strip()
+    if not key:
+        return {"deleted": 0}
+    with _LOCK, _connect() as c:
+        row = c.execute(
+            "SELECT display_name FROM jobs WHERE canon_key=?", (key,)
+        ).fetchone()
+        if row is None:
+            return {"deleted": 0}
+        child_count = c.execute(
+            "SELECT COUNT(*) AS n FROM job_children WHERE parent_canon=?",
+            (key,)).fetchone()["n"]
+        # job_children intentionally has no SQLite FK; remove it explicitly.
+        c.execute("DELETE FROM job_children WHERE parent_canon=?", (key,))
+        # aliases, links and events cascade from jobs.
+        c.execute("DELETE FROM jobs WHERE canon_key=?", (key,))
+        c.commit()
+    return {"deleted": 1, "display_name": row["display_name"],
+            "children_deleted": int(child_count or 0)}
+
+
 def backfill_departments(*, overwrite: bool = False) -> dict:
     """Stamp `department` on every job we can identify, from its folder
     links. Idempotent and re-runnable.
@@ -931,6 +964,35 @@ def log_event(canon_key_value: str, event_type: str, *,
             VALUES (?, ?, ?, ?)
         """, (canon_key_value, event_type, _now_iso(), pj))
         c.commit()
+
+
+def list_events(canon_key_value: str, event_type: str = "",
+                limit: int = 100) -> list[dict]:
+    """Newest-first structured events for one job."""
+    try:
+        limit = max(1, min(1000, int(limit)))
+    except (TypeError, ValueError):
+        limit = 100
+    sql = ("SELECT id, canon_key, event_type, event_at, payload_json "
+           "FROM job_events WHERE canon_key=?")
+    args = [canon_key_value]
+    if event_type:
+        sql += " AND event_type=?"
+        args.append(event_type)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    with _LOCK, _connect() as c:
+        rows = c.execute(sql, args).fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["payload"] = json.loads(item.pop("payload_json") or "{}")
+        except (TypeError, ValueError):
+            item["payload"] = {}
+            item.pop("payload_json", None)
+        out.append(item)
+    return out
 
 
 # ── Read API ────────────────────────────────────────────────────────────

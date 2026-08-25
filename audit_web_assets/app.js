@@ -28,6 +28,8 @@ const state = {
   dayOffset: 0,            // 0 = today, -1 = yesterday …
   auditForDay: undefined,  // which day the in-flight audit was started for
   queuedAudit: null,       // a day picked while an audit was running
+  selectedDate: "",        // YYYY-MM-DD currently shown by the day walker
+  calendar: { year: 0, month: 0, dates: new Set(), seq: 0 },
 };
 
 // Commercial-parent groups (e.g. "Menifee Union School District") the
@@ -80,6 +82,15 @@ window.addEventListener("pywebviewready", async () => {
   $("#day-prev").addEventListener("click", () => walkDay(-1));
   $("#day-today").addEventListener("click", () => walkDay(0));
   $("#day-next").addEventListener("click", () => walkDay(+1));
+  $("#audit-date-label").addEventListener("click", (event) => {
+    event.stopPropagation(); toggleRunCalendar();
+  });
+  $("#calendar-prev").addEventListener("click", (event) => {
+    event.stopPropagation(); shiftCalendarMonth(-1);
+  });
+  $("#calendar-next").addEventListener("click", (event) => {
+    event.stopPropagation(); shiftCalendarMonth(1);
+  });
   $("#open-doc-btn").addEventListener("click",
     () => pywebview.api.open_run_doc(state.dayOffset || 0));
   $("#new-loss-btn")?.addEventListener("click", () => openNewLossModal());
@@ -96,6 +107,10 @@ window.addEventListener("pywebviewready", async () => {
   // OUTSIDE the wrapper so picking a row isn't cancelled before it fires.
   document.addEventListener("click", (e) => {
     if (!e.target.closest?.("#search-wrap")) hideSuggestions();
+    if (!e.target.closest?.("#run-calendar-anchor")) closeRunCalendar();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeRunCalendar();
   });
   // ↓/↑ to walk the list, Enter to take the top hit, Esc to dismiss.
   $("#search-box").addEventListener("keydown", (e) => {
@@ -538,9 +553,101 @@ async function refreshDayLabel() {
   // Clicking through days fast means several of these are in flight; only
   // the one for the day still selected may paint.
   if ((state.dayOffset || 0) !== want) return;
-  $("#audit-date-label").textContent = r.date_label || "—";
+  state.selectedDate = r.date_iso || "";
+  $("#audit-date-text").textContent = r.date_label || "—";
   $("#open-doc-btn").disabled = !r.exists;
   $("#open-doc-btn").style.opacity = r.exists ? "1" : "0.5";
+  if (!$("#run-calendar").classList.contains("hidden")) renderRunCalendar();
+}
+
+// ── Month calendar — dots mark dates with real run documents ─────
+function toggleRunCalendar() {
+  const popover = $("#run-calendar");
+  if (!popover.classList.contains("hidden")) { closeRunCalendar(); return; }
+  const selected = parseIsoDate(state.selectedDate) || new Date();
+  state.calendar.year = selected.getFullYear();
+  state.calendar.month = selected.getMonth() + 1;
+  popover.classList.remove("hidden");
+  $("#audit-date-label").setAttribute("aria-expanded", "true");
+  loadRunCalendarMonth();
+}
+
+function closeRunCalendar() {
+  $("#run-calendar")?.classList.add("hidden");
+  $("#audit-date-label")?.setAttribute("aria-expanded", "false");
+}
+
+function shiftCalendarMonth(delta) {
+  const d = new Date(state.calendar.year, state.calendar.month - 1 + delta, 1);
+  state.calendar.year = d.getFullYear();
+  state.calendar.month = d.getMonth() + 1;
+  loadRunCalendarMonth();
+}
+
+async function loadRunCalendarMonth() {
+  const { year, month } = state.calendar;
+  const seq = ++state.calendar.seq;
+  $("#calendar-title").textContent = new Intl.DateTimeFormat(undefined, {
+    month: "long", year: "numeric"
+  }).format(new Date(year, month - 1, 1));
+  $("#calendar-grid").innerHTML = '<div class="calendar-loading">Finding run documents…</div>';
+  $("#calendar-count").textContent = "";
+  let result;
+  try { result = await pywebview.api.run_doc_calendar(year, month); }
+  catch (error) { result = { ok: false, error: String(error), dates: [] }; }
+  if (seq !== state.calendar.seq) return;
+  state.calendar.dates = new Set(result?.dates || []);
+  renderRunCalendar();
+  $("#calendar-count").textContent = result?.ok
+    ? `${state.calendar.dates.size} run day${state.calendar.dates.size === 1 ? "" : "s"}`
+    : "Couldn’t scan this month";
+}
+
+function renderRunCalendar() {
+  const { year, month, dates } = state.calendar;
+  if (!year || !month) return;
+  const firstWeekday = new Date(year, month - 1, 1).getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const today = localIso(new Date());
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i += 1) cells.push('<span class="calendar-blank"></span>');
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const hasRun = dates.has(iso);
+    const classes = ["calendar-day", hasRun ? "has-run" : "no-run"];
+    if (iso === today) classes.push("today");
+    if (iso === state.selectedDate) classes.push("selected");
+    const label = new Date(year, month - 1, day).toLocaleDateString(undefined, {
+      weekday: "long", month: "long", day: "numeric", year: "numeric"
+    });
+    cells.push(`<button class="${classes.join(" ")}" data-date="${iso}"
+      aria-label="${escapeHtml(label)}${hasRun ? ", run document available" : ", no run document"}">${day}</button>`);
+  }
+  $("#calendar-grid").innerHTML = cells.join("");
+  $("#calendar-grid").querySelectorAll(".calendar-day").forEach((button) =>
+    button.addEventListener("click", () => selectCalendarDate(button.dataset.date)));
+}
+
+async function selectCalendarDate(iso) {
+  const chosen = parseIsoDate(iso);
+  if (!chosen) return;
+  const today = new Date();
+  state.dayOffset = Math.round((
+    Date.UTC(chosen.getFullYear(), chosen.getMonth(), chosen.getDate()) -
+    Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  ) / 86400000);
+  closeRunCalendar();
+  await refreshDayLabel();
+  requestAudit(true);
+}
+
+function parseIsoDate(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
+}
+
+function localIso(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 // Ask for an audit of the CURRENT day, coping with one already running.
@@ -1818,8 +1925,11 @@ function onAuditDone(ev) {
     state.selected_client = rowKey(firstFlagged || state.rows[0]);
   }
   renderAll();
+  const refreshBits = state.meta.use_cache
+    ? `${state.meta.rechecked || 0} rechecked · ${state.meta.cached || 0} unchanged`
+    : `${state.meta.rechecked || state.meta.total || 0} rechecked · full scan`;
   setStatus(
-    `Audit complete · ${state.meta.flagged || 0} flagged / ${state.meta.ok || 0} OK`,
+    `Audit complete · ${state.meta.flagged || 0} flagged / ${state.meta.ok || 0} OK · ${refreshBits}`,
     "ok");
 }
 
@@ -2003,6 +2113,13 @@ function renderList() {
       // Selection keys off row_key so two Avila Apartments rows
       // (Unit 1413 + Unit 1416) are individually selectable.
       state.selected_client = row.dataset.rowKey || row.dataset.client;
+      // Opening a job from Recents is fresh activity. Promote that exact
+      // row to the top and persist the new order, just like re-running the
+      // audit would. This also handles a job found by typing in Search and
+      // then clicking its already-present Recent row.
+      if (state.mode === "search") {
+        touchRecentRow(state.selected_client, row.dataset.client);
+      }
       // Stash this job in the recent-jobs list (localStorage).
       // Shared sidebar/launcher reads it for the "recently opened"
       // section so the user can jump back across panels.
@@ -2466,6 +2583,13 @@ function buildAuditDetailCtx() {
     },
     rerender: () => renderDetail(),
     rerenderList: () => renderList(),
+    openSnapshot: (row) => {
+      window.parent.postMessage({
+        type: "ems-open-tool-modal",
+        key: "snapshot",
+        focus: row.client || row.display_name || "",
+      }, "*");
+    },
     reauditAndRerender: async (client) => {
       const re = await pywebview.api.reaudit_one(client);
       if (re?.ok) {
@@ -2499,6 +2623,19 @@ function buildAuditDetailCtx() {
 // failure this panel keeps having. Names come back instantly, and the
 // numbers are re-audited.
 const RECENTS_KEY = "recents";
+
+function touchRecentRow(key, client) {
+  if (!Array.isArray(state.oneoffHits) || !state.oneoffHits.length) return;
+  let ix = state.oneoffHits.findIndex((r) => rowKey(r) === key);
+  if (ix < 0 && client) {
+    ix = state.oneoffHits.findIndex((r) =>
+      (r.client || "").trim().toLowerCase() === client.trim().toLowerCase());
+  }
+  if (ix <= 0) return;
+  const [hit] = state.oneoffHits.splice(ix, 1);
+  state.oneoffHits.unshift(hit);
+  saveRecents();
+}
 
 function saveRecents() {
   try {
@@ -2695,7 +2832,10 @@ function filterRows() {
   const q = state.search.trim().toLowerCase();
   if (q) {
     rows = rows.filter((r) => {
-      const hay = [r.client, ...r.techs, ...r.form_issues, ...r.photo_issues]
+      const techs = Array.isArray(r.techs) ? r.techs : [];
+      const formIssues = Array.isArray(r.form_issues) ? r.form_issues : [];
+      const photoIssues = Array.isArray(r.photo_issues) ? r.photo_issues : [];
+      const hay = [r.client || "", ...techs, ...formIssues, ...photoIssues]
         .join(" ").toLowerCase();
       return hay.includes(q);
     });
@@ -4119,10 +4259,12 @@ renderDetail = function () {
   if (!r) return;
   const actions = document.querySelector(".detail-actions");
   if (!actions) return;
-  // Append Phase 2 buttons (Scope / Find folder / Re-audit / More) INTO
-  // the last section-row ("Tools") so they stay grouped with the other
-  // tools instead of dangling on a loose line below the groups.
-  const toolsRow = actions.querySelector(".action-row:last-child") || actions;
+  // The shared card owns Scope / Re-audit / More. Audit used to append
+  // another copy here after every render, creating duplicate controls.
+  // Keep this extension point only for mode-specific actions.
+  const toolsRow = actions.querySelector(".detail-more .action-buttons")
+    || actions.querySelector(".action-row:last-child .action-buttons")
+    || actions;
   const add = (label, cls, fn) => {
     const b = document.createElement("button");
     b.className = "action-btn" + (cls ? " " + cls : "");
@@ -4131,17 +4273,11 @@ renderDetail = function () {
     toolsRow.appendChild(b);
     return b;
   };
-  // 📥 Import now lives in the static footer (main row, after Copy
-  // claim) so the button order is stable; everything below is "the
-  // rest" — appended after the footer's own buttons.
-  add("📋 Scope", "", () => openScopeDialog(r));
   // When the audit couldn't resolve a folder, surface the find-
   // folder action prominently instead of burying it in the menu.
   if (!r.found) {
     add("🔎 Find folder", "primary", () => openFindFolderModal(r));
   }
-  add("↻ Re-audit", "", () => doReaudit(r));
-  add("⋯ More actions", "", (ev) => showCtxMenu(ev, r));
   // Backlog mode: extra "Closed" button to manually drop a job from the backlog
   if (state.mode === "backlog") {
     add("🏁 Closed", "", async () => {
@@ -4716,8 +4852,21 @@ async function maybeStampImportDates(res) {
 async function openJobImportModal(row) {
   const overlay = createOverlay({
     title: "📥 Import for " + row.client,
-    sub:   "Scans Downloads for WC / DocuSign zips relevant to this job",
+    sub:   "Review sources and destinations. Nothing imports until you press Extract or choose a file.",
+    width: 860,
     body: `
+      <section class="import-hub-section">
+        <div class="import-hub-title">Sources</div>
+        <div class="import-source-grid">
+          <button class="import-source active" id="job-source-downloads" data-track="import_source_downloads"><span>⬇</span><b>Downloads</b><small>Scan local exports</small></button>
+          <button class="import-source" id="job-import-pick" data-track="import_source_manual"><span>📁</span><b>Choose files</b><small>Pick a local file</small></button>
+          <button class="import-source" id="job-source-sp" data-track="import_source_sharepoint"><span>☁</span><b>SharePoint</b><small>Review cloud candidates</small></button>
+          <button class="import-source" id="job-source-cc" data-track="import_source_companycam" ${row.trello_card_id ? "" : "disabled"}><span>📷</span><b>CompanyCam</b><small>Open job project</small></button>
+          <button class="import-source" id="job-source-trello" data-track="import_source_trello" ${row.trello_card_id ? "" : "disabled"}><span>📎</span><b>Trello</b><small>Review attachments</small></button>
+        </div>
+      </section>
+      <section class="import-hub-section">
+      <div class="import-hub-title">Downloads ready to review</div>
       <div class="muted" id="job-import-path">Scanning Downloads…</div>
       <div class="candidates" id="job-import-candidates"
            style="margin-top:14px;"></div>
@@ -4730,17 +4879,35 @@ async function openJobImportModal(row) {
           <button class="btn" id="job-ds-via-trello">✍ Send DocuSign via Trello</button>
         </div>
       </div>
+      </section>
+      <section class="import-hub-section import-results" aria-live="polite">
+        <div class="import-hub-title">This import session</div>
+        <div class="muted" id="job-import-result-empty">No files imported yet.</div>
+        <div id="job-import-result-list"></div>
+      </section>
       <div class="modal-footer" style="align-items:center;">
         <label id="job-import-side" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none;"
                title="Route this import into the CONTENTS side (CONTENTS/PICS, CONTENTS/DOCS) instead of EMS — a separate tree outside EMS">
           <input type="checkbox" id="job-import-contents" style="cursor:pointer;" /> 📦 Contents side
         </label>
-        <button class="btn" id="job-import-pick">📁 Pick a file…</button>
         <button class="btn" id="job-import-rescan">↻ Re-scan</button>
         <span style="flex:1;"></span>
         <button class="btn modal-close">Close</button>
       </div>`,
   });
+
+  const sessionResults = [];
+  function addImportResult(ok, source, details) {
+    sessionResults.push({ ok, source, details });
+    overlay.querySelector("#job-import-result-empty")?.classList.add("hidden");
+    const list = overlay.querySelector("#job-import-result-list");
+    if (!list) return;
+    list.innerHTML = sessionResults.map(r => `
+      <div class="import-result ${r.ok ? "ok" : "failed"}">
+        <span aria-hidden="true">${r.ok ? "✓" : "!"}</span>
+        <div><b>${escapeHtml(r.source)}</b><small>${escapeHtml(r.details)}</small></div>
+      </div>`).join("");
+  }
 
   async function scan() {
     const data = await pywebview.api.scan_downloads(row.client);
@@ -4804,6 +4971,8 @@ async function openJobImportModal(row) {
                 row.client, cand.kind, cand.paths, assignments, gside);
               if (!res?.ok) {
                 b.textContent = "Failed"; card.classList.add("failed");
+                addImportResult(false, cand.kind_label,
+                                res?.error || "Import failed");
                 setStatus(`Import failed: ${res?.error || "?"}`, "error");
                 return;
               }
@@ -4812,6 +4981,8 @@ async function openJobImportModal(row) {
                 .map(([f, n]) => `${n} → PICS/${f}`);
               if (res.failed && res.failed.length)
                 parts.push(`⚠ ${res.failed.length} failed`);
+              addImportResult(!(res.failed || []).length, cand.kind_label,
+                              parts.join(" · ") || "Imported");
               setStatus(`✓ ${row.client}: ${parts.join(" · ")}`, "ok");
               const reRes = await pywebview.api.reaudit_one(row.client);
               if (reRes?.ok) {
@@ -4820,6 +4991,7 @@ async function openJobImportModal(row) {
               }
             } catch (ex) {
               b.textContent = "Failed"; card.classList.add("failed");
+              addImportResult(false, cand.kind_label, String(ex));
               setStatus(`Import error: ${ex}`, "error");
             } finally {
               if (state.importBtn === b) state.importBtn = null;
@@ -4850,6 +5022,8 @@ async function openJobImportModal(row) {
           if (!res?.ok) {
             b.textContent = "Failed";
             card.classList.add("failed");
+            addImportResult(false, cand.kind_label,
+                            res?.error || "Import failed");
             setStatus(`Import failed: ${res?.error || "?"}`, "error");
             return;
           }
@@ -4859,6 +5033,8 @@ async function openJobImportModal(row) {
           if (res.pics_count) bits.push(`${res.pics_count} → PICS/${res.subfolder || "Initial"}`);
           if (res.docs_count) bits.push(`${res.docs_count} → DOCS`);
           if (res.sketches_count) bits.push(`${res.sketches_count} → DOCS/Docusketch`);
+          addImportResult(true, cand.kind_label,
+                          bits.join(" · ") || "Imported");
           setStatus(`✓ ${row.client}: ${bits.join(" · ")}`, "ok");
           // Offer to date any photos that landed with no metadata.
           await maybeStampImportDates(res);
@@ -4871,6 +5047,7 @@ async function openJobImportModal(row) {
         } catch (ex) {
           b.textContent = "Failed";
           card.classList.add("failed");
+          addImportResult(false, cand.kind_label, String(ex));
           setStatus(`Import error: ${ex}`, "error");
         } finally {
           if (state.importBtn === b) state.importBtn = null;
@@ -4879,12 +5056,23 @@ async function openJobImportModal(row) {
   }
 
   overlay.querySelector("#job-import-rescan").addEventListener("click", scan);
+  overlay.querySelector("#job-source-downloads").addEventListener("click", scan);
+  overlay.querySelector("#job-source-sp").addEventListener("click", () =>
+    openSpImportModal(row));
+  overlay.querySelector("#job-source-cc").addEventListener("click", async () => {
+    const ok = await pywebview.api.open_companycam_link(row.client);
+    if (!ok) setStatus("No CompanyCam link is saved for this job", "warn");
+  });
+  overlay.querySelector("#job-source-trello").addEventListener("click", () =>
+    window.openTrelloAttachmentsModal({
+      cardId: row.trello_card_id, client: row.client }));
   // Manual file picker — always available, regardless of what the
   // auto-scanner found. Lets the user import any loose file or
   // renamed export the scanner missed.
   overlay.querySelector("#job-import-pick").addEventListener("click",
     async () => {
       const btn = overlay.querySelector("#job-import-pick");
+      const buttonHtml = btn.innerHTML;
       const choice = await window.pickPicsStage({ client: row.client, allowAuto: true, allowDocs: true });
       if (choice === null) return;                   // cancelled
       const dest = choice === "AUTO" ? "" : choice;
@@ -4904,12 +5092,16 @@ async function openJobImportModal(row) {
         if (res?.cancelled) {
           // User closed the picker — no-op, just restore the button.
         } else if (!res?.ok) {
+          addImportResult(false, "Chosen file",
+                          res?.error || "Import failed");
           setStatus(`Import failed: ${res?.error || "?"}`, "error");
         } else {
           const bits = [];
           if (res.pics_count) bits.push(`${res.pics_count} → PICS/${res.subfolder || "Initial"}`);
           if (res.docs_count) bits.push(`${res.docs_count} → DOCS`);
           if (res.sketches_count) bits.push(`${res.sketches_count} → DOCS/Docusketch`);
+          addImportResult(true, "Chosen file",
+                          bits.join(" · ") || "Imported");
           setStatus(`✓ ${row.client}: ${bits.join(" · ") || "imported"}`, "ok");
           // Offer to date any photos that landed with no metadata.
           await maybeStampImportDates(res);
@@ -4922,14 +5114,15 @@ async function openJobImportModal(row) {
           await scan();  // refresh candidate list (sources got trashed)
         }
       } catch (ex) {
+        addImportResult(false, "Chosen file", String(ex));
         setStatus(`Import error: ${ex}`, "error");
       } finally {
         if (state.importBtn === btn) state.importBtn = null;
-        btn.disabled = false; btn.textContent = "📁 Pick a file…";
+        btn.disabled = false; btn.innerHTML = buttonHtml;
       }
     });
   overlay.querySelector("#job-open-wc").addEventListener("click", () =>
-    pywebview.api.open_url("https://app.workcenter.servpro.net/"));
+    pywebview.api.open_workcenter());
   overlay.querySelector("#job-open-ds").addEventListener("click", () =>
     pywebview.api.open_url("https://app.docusign.com/"));
   overlay.querySelector("#job-ds-via-trello").addEventListener("click",

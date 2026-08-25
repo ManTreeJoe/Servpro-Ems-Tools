@@ -11,8 +11,9 @@ in July with "Access is denied" while two builds fought over the file,
 and twelve Trello pins were later found stranded in an abandoned data
 folder. Both were recoverable only because someone went looking.
 
-Runs once per launch, on a thread, and never raises: a backup that can
-break startup is worse than no backup.
+Runs at launch and checks again hourly on daemon threads. The per-file
+intervals below prevent redundant copies. It never raises: a backup that
+can break startup is worse than no backup.
 """
 import os
 import shutil
@@ -37,6 +38,13 @@ _MIN_INTERVAL_H = 12          # don't re-copy on a quick restart
 # someone's office connection, not a file copy.
 CLOUD_NAME = "cloud.json"
 _CLOUD_INTERVAL_H = 24
+
+# A long-running desktop session still needs to reach the 12/24 hour
+# backup intervals. A one-hour check is cheap because run_once() exits
+# immediately for every copy that is still recent.
+_BACKGROUND_CHECK_S = 60 * 60
+_TIMER_LOCK = threading.Lock()
+_NEXT_TIMER = None
 
 
 def backup_dir():
@@ -182,15 +190,43 @@ def run_once(force=False):
 
 
 def start_background(force=False):
-    """Fire and forget at launch. Never blocks, never raises."""
+    """Run asynchronously and keep scheduling due checks after launch.
+
+    ``force=True`` is intentionally one-shot for manual runs and tests.
+    Normal launch calls schedule another check after the worker finishes.
+    """
     def _go():
         try:
             run_once(force=force)
         except Exception:
             pass
+        finally:
+            if not force:
+                _schedule_next()
     t = threading.Thread(target=_go, daemon=True, name="data-backup")
     t.start()
     return t
+
+
+def _scheduled_run():
+    global _NEXT_TIMER
+    with _TIMER_LOCK:
+        _NEXT_TIMER = None
+    start_background()
+
+
+def _schedule_next():
+    """Keep at most one pending backup timer in this process."""
+    global _NEXT_TIMER
+    with _TIMER_LOCK:
+        if _NEXT_TIMER is not None and _NEXT_TIMER.is_alive():
+            return _NEXT_TIMER
+        timer = threading.Timer(_BACKGROUND_CHECK_S, _scheduled_run)
+        timer.daemon = True
+        timer.name = "data-backup-timer"
+        _NEXT_TIMER = timer
+        timer.start()
+        return timer
 
 
 def list_backups():
@@ -205,7 +241,7 @@ def list_backups():
         if f.startswith("."):
             continue
         base, _, stamp = f.rpartition(".")
-        if base not in FILES:
+        if base not in FILES + (CLOUD_NAME,):
             continue
         p = os.path.join(dest, f)
         try:
@@ -215,6 +251,45 @@ def list_backups():
         out.append({"name": base, "stamp": stamp, "path": p, "size": size})
     out.sort(key=lambda r: (r["stamp"], r["name"]), reverse=True)
     return out
+
+
+def health() -> dict:
+    """Read-only backup freshness summary for Data & Sync Health."""
+    import time
+    rows = list_backups()
+    latest = {}
+    for row in rows:
+        latest.setdefault(row["name"], row)
+
+    try:
+        import config
+        cloud_required = ((config.load().get("ems_db_backend") or "sqlite")
+                          .strip().lower() == "supabase")
+    except Exception:
+        cloud_required = False
+
+    checks = []
+    now = time.time()
+    for name in FILES + ((CLOUD_NAME,) if cloud_required else ()):
+        row = latest.get(name)
+        max_age_h = 36 if name != CLOUD_NAME else 60
+        if not row:
+            checks.append({"name": name, "ok": False, "state": "missing",
+                           "last_success": "", "age_hours": None})
+            continue
+        try:
+            age_h = max(0.0, (now - os.path.getmtime(row["path"])) / 3600)
+        except OSError:
+            age_h = max_age_h + 1
+        checks.append({
+            "name": name,
+            "ok": age_h <= max_age_h,
+            "state": "ok" if age_h <= max_age_h else "stale",
+            "last_success": row["stamp"],
+            "age_hours": round(age_h, 1),
+        })
+    return {"ok": all(c["ok"] for c in checks), "checks": checks,
+            "dir": backup_dir()}
 
 
 if __name__ == "__main__":

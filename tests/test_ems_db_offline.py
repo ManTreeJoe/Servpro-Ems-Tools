@@ -127,6 +127,16 @@ def test_bulk_operations_refuse_rather_than_queue(sandbox, monkeypatch):
     assert off.queued() == []
 
 
+def test_delete_refuses_offline_instead_of_replaying_later(sandbox,
+                                                            monkeypatch):
+    key = ems_db_sqlite.upsert_job(display_name="Do Not Replay")
+    monkeypatch.setattr(ems_db_supabase, "delete_job", _unreachable)
+    with pytest.raises(off.OfflineRefused):
+        off.delete_job(key)
+    assert ems_db_sqlite.get_job(key) is not None
+    assert off.queued() == []
+
+
 def test_unqueueable_write_is_not_applied_locally(sandbox, monkeypatch):
     """A write we cannot replay must not be applied locally either. Doing
     half of it leaves this machine permanently out of step with the shared

@@ -61,7 +61,7 @@ _WRITES = frozenset({
     "add_alias", "backfill_departments", "backfill_stage_entered_dates",
     "import_db", "lifecycle_delete", "lifecycle_mark_actions_synced",
     "lifecycle_purge_where", "lifecycle_set_stage_entered",
-    "lifecycle_upsert", "log_event", "merge_jobs", "prune_dead_folder_links",
+    "delete_job", "lifecycle_upsert", "log_event", "merge_jobs", "prune_dead_folder_links",
     "remove_child", "remove_link", "reset_db_path", "resolve_and_link",
     "set_child", "set_department", "set_link", "sync_from_trello",
     "upsert_job",
@@ -78,7 +78,7 @@ _READS = frozenset({
     "get_aliases", "get_job", "get_link", "get_links", "group_by_property",
     "iter_jobs", "job_identity", "lifecycle_counts_by_stage",
     "lifecycle_get", "lifecycle_list", "lifecycle_needs_action_enrichment",
-    "list_transitions", "name_history",
+    "list_events", "list_transitions", "name_history",
 })
 
 # Writes that must never be replayed later. Each is either a bulk rewrite
@@ -87,7 +87,7 @@ _READS = frozenset({
 # (reset_db_path, import_db). Offline, these raise rather than pretend.
 _NO_QUEUE = frozenset({
     "backfill_departments", "backfill_stage_entered_dates", "import_db",
-    "lifecycle_purge_where", "merge_jobs", "prune_dead_folder_links",
+    "delete_job", "lifecycle_purge_where", "merge_jobs", "prune_dead_folder_links",
     "reset_db_path", "sync_from_trello",
 })
 

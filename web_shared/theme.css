@@ -151,3 +151,26 @@ option, optgroup {
   background-color: #2E2E2E;
   color: #E8E8E8;
 }
+
+/* Shared compact chrome for panels opened in a narrow app window. */
+@media (max-width: 1180px) {
+  .topbar { padding: 8px 12px; gap: 9px; }
+  .topbar-actions { gap: 5px; min-width: 0; }
+  .topbar .btn { padding: 5px 9px; font-size: 11px; white-space: nowrap; }
+  .topbar .search { width: min(220px, 28vw); padding: 5px 9px; }
+  .brand { gap: 7px; }
+  .brand-tag { display: none; }
+}
+
+@media (max-width: 860px) {
+  .topbar { align-items: flex-start; flex-wrap: wrap; }
+  .topbar-actions { width: 100%; flex-wrap: wrap; }
+  .topbar .search { flex: 1 1 180px; width: auto; }
+  .topbar .btn { flex: 0 1 auto; padding: 4px 8px; }
+}
+
+@media (max-width: 520px) {
+  .topbar { padding: 7px 9px; }
+  .topbar .btn { font-size: 10px; }
+  .topbar-actions { gap: 4px; }
+}

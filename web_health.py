@@ -49,6 +49,56 @@ def _offline_state() -> dict:
         return {}
 
 
+def _local_checks() -> list[dict]:
+    """Fast, read-only startup checks with no network calls."""
+    import os
+    try:
+        cfg = config.load() or {}
+    except Exception:
+        cfg = {}
+    checks = []
+
+    def path_check(code, label, key, kind="dir", required=True):
+        value = (cfg.get(key) or "").strip()
+        exists = bool(value) and (os.path.isfile(value) if kind == "file"
+                                  else os.path.isdir(value))
+        checks.append({"code": code, "label": label, "ok": exists,
+                       "required": required, "value_set": bool(value),
+                       "action": f"Settings → set {label}"})
+
+    path_check("jobs_root", "Jobs folder", "audit_base")
+    path_check("run_docs", "Run Doc folder", "runs_dir")
+    path_check("snapshot_output", "Snapshot output folder", "snapshot_output")
+    path_check("snapshot_template", "Snapshot template", "snapshot_template",
+               kind="file")
+
+    trello_ok = bool((cfg.get("trello_api_key") or "").strip()
+                     and (cfg.get("trello_token") or "").strip())
+    checks.append({"code": "trello_config", "label": "Trello",
+                   "ok": trello_ok, "required": True, "value_set": trello_ok,
+                   "action": "Settings → connect Trello"})
+
+    cc_ok = bool((cfg.get("companycam_api_token") or "").strip())
+    checks.append({"code": "companycam_config", "label": "CompanyCam",
+                   "ok": cc_ok, "required": False, "value_set": cc_ok,
+                   "action": "Settings → connect CompanyCam"})
+
+    wc_enabled = bool(cfg.get("enable_workcenter_alpha"))
+    checks.append({"code": "workcenter_config", "label": "WorkCenter",
+                   "ok": wc_enabled, "required": False,
+                   "value_set": wc_enabled,
+                   "action": "Settings → enable WorkCenter"})
+    return checks
+
+
+def _backup_check() -> dict:
+    try:
+        import data_backup
+        return data_backup.health()
+    except Exception as ex:
+        return {"ok": False, "checks": [], "error": str(ex)}
+
+
 def grant_state(force: bool = False) -> dict:
     """Which franchises the signed-in user may actually SEE.
 
@@ -139,6 +189,29 @@ def state(force: bool = False) -> dict:
     """
     problems: list[dict] = []
 
+    local_checks = _local_checks()
+    for check in local_checks:
+        if check.get("required") and not check.get("ok"):
+            problems.append({
+                "code": check["code"],
+                "title": f"{check['label']} is unavailable",
+                "detail": "The related workflow cannot run until this "
+                          "location or connection is restored.",
+                "action": check.get("action") or "Open Settings",
+            })
+
+    backup = _backup_check()
+    if not backup.get("ok"):
+        bad = [c for c in backup.get("checks", []) if not c.get("ok")]
+        names = ", ".join(c.get("name", "backup") for c in bad)
+        problems.append({
+            "code": "backup_stale",
+            "title": "Backups need attention",
+            "detail": (f"Missing or stale: {names}." if names else
+                       "Backup status could not be verified."),
+            "action": "Settings → Backups → Run backup now",
+        })
+
     off = _offline_state()
     if off.get("degraded"):
         queued = int(off.get("queued") or 0)
@@ -177,6 +250,8 @@ def state(force: bool = False) -> dict:
         "queued": int(off.get("queued") or 0),
         "grant": grant,
         "backend": _backend_name(),
+        "checks": local_checks,
+        "backup": backup,
     }
 
 

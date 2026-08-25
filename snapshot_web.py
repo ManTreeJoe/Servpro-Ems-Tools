@@ -119,9 +119,10 @@ def _merge_log_row(existing: dict, incoming: dict) -> dict:
 
 from companycam_web_api import CompanyCamApi
 from job_settings_api import JobSettingsApi
+from job_admin_api import JobAdminApi
 
 
-class Api(JobSettingsApi, CompanyCamApi):
+class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
     def __init__(self): self._window = None
     def attach(self, w): self._window = w
 
@@ -294,15 +295,19 @@ class Api(JobSettingsApi, CompanyCamApi):
                     "error": f"{client} has no Trello pin — pin a card first."}
         attached = False
         posted = False
+        attachment = None
+        errors = []
         try:
             import trello_client as tc
             try:
-                tc.attach_file(card_id, pdf_path,
-                                name=os.path.basename(pdf_path),
-                                mime="application/pdf")
-                attached = True
-            except Exception:
-                attached = False
+                attachment = tc.attach_file(
+                    card_id, pdf_path, name=os.path.basename(pdf_path),
+                    mime="application/pdf")
+                attached = bool(attachment and attachment.get("id"))
+                if not attached:
+                    errors.append("Trello did not confirm the PDF attachment")
+            except Exception as ex:
+                errors.append(f"PDF attachment failed: {ex}")
             # Consolidated missing-items comment
             if missing_items:
                 body = "📸 Snapshot generated.\n\n**Missing items:**\n"
@@ -310,14 +315,23 @@ class Api(JobSettingsApi, CompanyCamApi):
             else:
                 body = "📸 Snapshot generated — all items present."
             try:
-                tc.post_comment(card_id, body)
-                posted = True
-            except Exception:
-                posted = False
+                posted = bool(tc.post_comment(card_id, body))
+                if not posted:
+                    errors.append("Trello did not confirm the comment")
+            except Exception as ex:
+                errors.append(f"Comment failed: {ex}")
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
-        return {"ok": True, "attached": attached, "posted": posted,
-                "card_id": card_id}
+        return {
+            "ok": attached and posted,
+            "attached": attached,
+            "posted": posted,
+            "card_id": card_id,
+            "attachment_id": (attachment or {}).get("id", ""),
+            "attachment_url": (attachment or {}).get("url", ""),
+            "errors": errors,
+            "error": "; ".join(errors),
+        }
 
     # ── P1: Scope dialog + Flag missing (proxied to audit_web) ──────
     def parse_comments_blob(self, raw):
@@ -493,6 +507,12 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().open_xa_link(client, card_id)
     def open_companycam_link(self, client):
         return self._aw().open_companycam_link(client)
+    def open_workcenter(self):
+        return self._aw().open_workcenter()
+    def get_job_email(self, client, card_id=""):
+        return self._aw().get_job_email(client, card_id)
+    def job_summary_data(self, client, card_id=""):
+        return self._aw().job_summary_data(client, card_id)
     def companycam_probe(self, client, card_id=""):
         return self._aw().companycam_probe(client, card_id)
     def companycam_pull_one(self, client, dest_subfolder="", tech="", card_id=""):
@@ -673,6 +693,10 @@ class Api(JobSettingsApi, CompanyCamApi):
         return self._aw().activity_comment_text(stage, tech, date_iso)
     def post_activity_comment(self, card_id, stage, tech, date_iso=""):
         return self._aw().post_activity_comment(card_id, stage, tech, date_iso)
+    def long_form_contract_comment_text(self, total, deductible="1000"):
+        return self._aw().long_form_contract_comment_text(total, deductible)
+    def post_long_form_contract_comment(self, card_id, total, deductible="1000"):
+        return self._aw().post_long_form_contract_comment(card_id, total, deductible)
     def call_note_text(self, body, time_text="", date_iso=""):
         return self._aw().call_note_text(body, time_text, date_iso)
     def call_note_phrases(self):
@@ -884,14 +908,7 @@ class Api(JobSettingsApi, CompanyCamApi):
 
     # ── Generation flow ──────────────────────────────────────────────
     def candidate_jobs(self):
-        """Jobs the user might want to snapshot — cards in the
-        Estimating board's SNAPSHOT lane. Only that source: the
-        user explicitly asked NOT to mix in run-doc jobs (those
-        belong to the Daily Run audit + Photo Folders panels, not
-        here). Walks every board whose name contains 'ESTIMATING'
-        (handles 'Estimating - 2026' etc.) and pulls every lane
-        whose name contains 'SNAPSHOT'.
-        """
+        """Open cards on Estimating boards, annotated for Snapshot toggle."""
         out = []
         seen = set()
         try:
@@ -909,30 +926,94 @@ class Api(JobSettingsApi, CompanyCamApi):
                         params={"fields": "id,name"}) or []
                 except Exception:
                     continue
-                for lst in lists:
-                    lane_name = lst.get("name") or ""
-                    if "SNAPSHOT" not in lane_name.upper():
+                by_id = {lst.get("id"): lst.get("name") or "" for lst in lists}
+                snapshot_lists = [lst for lst in lists
+                                  if "SNAPSHOT" in (lst.get("name") or "").upper()]
+                if not snapshot_lists:
+                    continue
+                configured = (config.load().get("trello_snapshot_list_id") or "").strip()
+                target = next((lst for lst in snapshot_lists
+                               if lst.get("id") == configured), snapshot_lists[0])
+                try:
+                    cards = tc._call(f"/boards/{bid}/cards", params={
+                        "fields": "id,name,shortUrl,idBoard,idList,closed",
+                        "filter": "open"}) or []
+                except Exception:
+                    cards = []
+                for c in cards:
+                    client = (c.get("name") or "").strip()
+                    card_id = c.get("id") or ""
+                    if not client or not card_id or card_id in seen:
                         continue
-                    try:
-                        cards = tc.cards_in_list(lst.get("id")) or []
-                    except Exception:
-                        cards = []
-                    for c in cards:
-                        client = (c.get("name") or "").strip()
-                        if not client or client.lower() in seen:
-                            continue
-                        seen.add(client.lower())
-                        out.append({
-                            "client":  client,
-                            "source":  "estimating",
-                            "card_id": c.get("id") or "",
-                            "lane":    lane_name,
-                            "board":   b.get("name") or "",
-                            "short_url": c.get("shortUrl") or "",
-                        })
+                    seen.add(card_id)
+                    lane_id = c.get("idList") or ""
+                    is_snapshot = lane_id in {lst.get("id") for lst in snapshot_lists}
+                    out.append({
+                        "client": client, "source": "estimating",
+                        "card_id": card_id, "lane": by_id.get(lane_id, ""),
+                        "lane_id": lane_id, "board": b.get("name") or "",
+                        "board_id": bid, "short_url": c.get("shortUrl") or "",
+                        "snapshot": is_snapshot,
+                        "snapshot_list_id": target.get("id") or "",
+                        "snapshot_lane": target.get("name") or "Snapshot",
+                    })
         except Exception:
             pass
         return out
+
+    def set_snapshot(self, card_id: str, enabled: bool,
+                     snapshot_list_id: str = "") -> dict:
+        """Toggle a card into/out of its Estimating Snapshot lane."""
+        card_id = (card_id or "").strip()
+        target_id = (snapshot_list_id or "").strip()
+        if not card_id:
+            return {"ok": False, "error": "No Trello card selected"}
+        try:
+            import trello_client as tc
+            card = tc.get_card_lite(card_id, fields="id,name,idBoard,idList") or {}
+            current = card.get("idList") or ""
+            if not current:
+                return {"ok": False, "error": "Could not read the card's current lane"}
+            if enabled:
+                target = tc.get_list(target_id) or {}
+                if (not target_id or "SNAPSHOT" not in
+                        (target.get("name") or "").upper()
+                        or target.get("idBoard") != card.get("idBoard")):
+                    return {"ok": False, "error": "Snapshot lane is not valid for this board"}
+                if current == target_id:
+                    return {"ok": True, "snapshot": True,
+                            "lane": target.get("name") or "Snapshot"}
+                previous = persistence.get("snapshot_previous_lanes") or {}
+                previous[card_id] = current
+                persistence.set_value("snapshot_previous_lanes", previous)
+                if not tc.move_card(card_id, target_id):
+                    return {"ok": False, "error": "Trello did not move the card"}
+                return {"ok": True, "snapshot": True,
+                        "lane": target.get("name") or "Snapshot"}
+
+            previous = persistence.get("snapshot_previous_lanes") or {}
+            return_id = previous.get(card_id) or ""
+            if not return_id:
+                actions = tc._call(f"/cards/{card_id}/actions", params={
+                    "filter": "updateCard:idList", "limit": "50"}) or []
+                for action in actions:
+                    data = action.get("data") or {}
+                    before, after = data.get("listBefore") or {}, data.get("listAfter") or {}
+                    if after.get("id") == current and before.get("id"):
+                        return_id = before["id"]
+                        break
+            return_lane = tc.get_list(return_id) or {}
+            if (not return_id or return_lane.get("idBoard") != card.get("idBoard")):
+                return {"ok": False,
+                        "error": "Trello has no previous lane to return this card to"}
+            if not tc.move_card(card_id, return_id):
+                return {"ok": False, "error": "Trello did not move the card"}
+            previous.pop(card_id, None)
+            persistence.set_value("snapshot_previous_lanes", previous)
+            return {"ok": True, "snapshot": False,
+                    "lane": return_lane.get("name") or "Previous lane"}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     # ── 📋 CLOSE OUT checklist (mirrors Tk open_close_out_dialog) ──
     # Resolves the client's Trello card, finds its CLOSE OUT (or
@@ -1719,6 +1800,16 @@ class Api(JobSettingsApi, CompanyCamApi):
                 first_visit=first, cause=cause, subs=subs, logs=logs)
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+        revision_result = {"ok": False, "error": "revision was not saved"}
+        try:
+            import snapshot_revisions as _sr
+            card_id = persistence.get_trello_card_id(insured) or ""
+            revision_result = _sr.save_revision(
+                insured, payload, pdf_path=output_path, card_id=card_id,
+                source_refs={"trello_card_id": card_id})
+        except Exception as ex:
+            revision_result = {"ok": False,
+                               "error": f"{type(ex).__name__}: {ex}"}
         # Auto-mark the Trello card as "snapshot drafted" so the
         # Closeout Hygiene section stops nagging this client.
         # Mirrors snapshot_gui.py:4679 — generating IS the strongest
@@ -1731,7 +1822,20 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception:
             pass
         return {"ok": True, "path": output_path,
-                "rows_logs": len(logs), "rows_subs": len(subs)}
+                "rows_logs": len(logs), "rows_subs": len(subs),
+                "revision": revision_result.get("revision"),
+                "snapshot_id": revision_result.get("snapshot_id", ""),
+                "revision_saved": bool(revision_result.get("ok")),
+                "revision_error": revision_result.get("error", "")}
+
+    def snapshot_history(self, client: str, limit: int = 100) -> dict:
+        try:
+            import snapshot_revisions as _sr
+            rows = _sr.list_revisions(client, limit=limit)
+            return {"ok": True, "revisions": rows, "count": len(rows)}
+        except Exception as ex:
+            return {"ok": False, "revisions": [],
+                    "error": f"{type(ex).__name__}: {ex}"}
 
 
 def main(argv=None):

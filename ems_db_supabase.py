@@ -37,7 +37,7 @@ from ems_db_common import (            # noqa: F401 — re-exported as API
     _norm_link, invalidate_department_cache, department_for_path,
     split_department_path, rebase_department_path,
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
-    EVENT_RENAMED, is_material_rename,
+    EVENT_CREATED, EVENT_RENAMED, EVENT_SNAPSHOT_REVISION, is_material_rename,
     alias_probe_token, truncation_alias_is_ambiguous, dedupe_child_name,
 )
 
@@ -172,6 +172,12 @@ def upsert_job(*, display_name: str, claim_number: str = "",
             body[col] = supplied.get(col) or None
         _sb.rest("POST", "jobs", body=body,
                  prefer="resolution=merge-duplicates")
+        # Start the same append-only lifecycle used by the local backend.
+        # Best-effort so an event logging problem cannot hide the job itself.
+        try:
+            log_event(key, EVENT_CREATED)
+        except Exception:
+            pass
         return key
     # Captured before the PATCH overwrites it — see the SQLite backend.
     renamed_from = (existing.get("display_name")
@@ -815,6 +821,30 @@ def log_event(canon_key_value: str, event_type: str, *,
     _sb.rest("POST", "job_events", body=body)
 
 
+def list_events(canon_key_value: str, event_type: str = "",
+                limit: int = 100) -> list[dict]:
+    """Newest-first structured events for one job."""
+    try:
+        limit = max(1, min(1000, int(limit)))
+    except (TypeError, ValueError):
+        limit = 100
+    params = {"canon_key": f"eq.{canon_key_value}",
+              "select": "id,canon_key,event_type,event_at,payload_json,actor",
+              "order": "id.desc", "limit": str(limit)}
+    if event_type:
+        params["event_type"] = f"eq.{event_type}"
+    out = []
+    for row in _rows("job_events", **params):
+        item = dict(row)
+        raw = item.pop("payload_json", None)
+        try:
+            item["payload"] = json.loads(raw or "{}")
+        except (TypeError, ValueError):
+            item["payload"] = {}
+        out.append(item)
+    return out
+
+
 # ── merge ───────────────────────────────────────────────────────────────
 
 def _reparent_children(from_key: str, into_key: str) -> int:
@@ -911,6 +941,25 @@ def merge_jobs(into_key: str, from_keys) -> dict:
     if skipped:
         out["skipped_department_conflict"] = skipped
     return out
+
+
+def delete_job(canon_key_value: str) -> dict:
+    """Delete one shared job graph row; external folders/cards stay put."""
+    key = (canon_key_value or "").strip()
+    if not key:
+        return {"deleted": 0}
+    row = get_job(key)
+    if row is None:
+        return {"deleted": 0}
+    kids = _rows("job_children", parent_canon=f"eq.{key}", select="id")
+    # Explicit for parity with SQLite and to make the returned count honest;
+    # the database FK would cascade these rows as well.
+    if kids:
+        _sb.rest("DELETE", "job_children",
+                 params={"parent_canon": f"eq.{key}"})
+    _sb.rest("DELETE", "jobs", params={"canon_key": f"eq.{key}"})
+    return {"deleted": 1, "display_name": row.get("display_name") or key,
+            "children_deleted": len(kids)}
 
 
 # ── bulk / maintenance: SQLite-side only ────────────────────────────────

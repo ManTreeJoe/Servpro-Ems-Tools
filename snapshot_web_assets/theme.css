@@ -157,3 +157,15 @@ option, optgroup {
   background-color: #2E2E2E;
   color: #E8E8E8;
 }
+/* Append-only Snapshot revision viewer. */
+.snapshot-history-list { display:grid; gap:8px; }
+.snapshot-history-row { border:1px solid var(--border); border-radius:7px; background:var(--surface-2); }
+.snapshot-history-row summary { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; cursor:pointer; }
+.snapshot-history-row summary span { color:var(--text-muted); font-size:11px; }
+.snapshot-history-row pre { margin:0; padding:12px; border-top:1px solid var(--border); white-space:pre-wrap; font:11px/1.45 ui-monospace,Consolas,monospace; }
+.snapshot-history-row .muted { padding:0 12px 12px; overflow-wrap:anywhere; }
+.show-all-jobs{display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:11px;white-space:nowrap;cursor:pointer}
+.snapshot-toggle{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid var(--border);border-radius:999px;background:var(--surface-2);color:var(--text-muted);font-size:11px;font-weight:650;cursor:pointer;user-select:none}
+.snapshot-toggle input{appearance:none;width:24px;height:14px;margin:0;border-radius:999px;background:#555;position:relative;cursor:pointer}
+.snapshot-toggle input::after{content:"";position:absolute;width:10px;height:10px;left:2px;top:2px;border-radius:50%;background:#ddd;transition:transform 120ms ease}
+.snapshot-toggle input:checked{background:var(--green)}.snapshot-toggle input:checked::after{transform:translateX(10px);background:#fff}.snapshot-toggle.on{border-color:var(--green);color:#a9dfbb;background:#243a2c}.snapshot-toggle:focus-within{outline:2px solid var(--link);outline-offset:2px}

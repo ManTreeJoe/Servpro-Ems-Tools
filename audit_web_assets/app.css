@@ -95,7 +95,7 @@ body { display: flex; flex-direction: column; }
   border: 1px solid var(--border);
   padding: 6px 14px; border-radius: 6px;
   cursor: pointer; font: inherit; font-weight: 600; font-size: 12px;
-  transition: all 100ms ease;
+  transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
 }
 .mode-btn:hover { background: var(--surface-2); color: var(--text); }
 .mode-btn.active {
@@ -112,11 +112,76 @@ body { display: flex; flex-direction: column; }
 }
 .audit-toolbar .spacer { flex: 1; }
 .audit-date-label {
+  display: inline-flex; align-items: center; gap: 8px;
   font-size: 12px; color: var(--text);
   padding: 4px 12px;
   background: var(--surface-2);
+  border: 1px solid transparent;
   border-radius: 6px;
   font-variant-numeric: tabular-nums;
+  cursor: pointer; font-family: inherit;
+}
+.audit-date-label:hover { border-color: var(--border); background: var(--surface-3); }
+.audit-date-label:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.date-caret { color: var(--text-muted); font-size: 9px; }
+.run-calendar-anchor { position: relative; }
+.run-calendar {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 180;
+  width: 322px; padding: 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: #252525;
+  box-shadow: 0 16px 42px rgba(0,0,0,.58);
+}
+.run-calendar-head {
+  display: grid; grid-template-columns: 34px 1fr 34px; align-items: center;
+  margin-bottom: 10px;
+}
+.run-calendar-head strong {
+  text-align: center; font-family: "Bahnschrift SemiCondensed", "Arial Narrow", sans-serif;
+  font-size: 16px; font-weight: 650; letter-spacing: .01em;
+}
+.calendar-nav {
+  width: 30px; height: 30px; border: 0; border-radius: 50%;
+  background: transparent; color: var(--text); cursor: pointer; font-size: 22px;
+}
+.calendar-nav:hover { background: var(--surface-3); }
+.calendar-nav:focus-visible, .calendar-day:focus-visible {
+  outline: 2px solid var(--link); outline-offset: 1px;
+}
+.calendar-weekdays, .calendar-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+}
+.calendar-weekdays { margin-bottom: 4px; }
+.calendar-weekdays span {
+  color: var(--text-dim); text-align: center; font-size: 9px;
+  font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+}
+.calendar-day, .calendar-blank {
+  position: relative; width: 38px; height: 38px; border-radius: 50%;
+}
+.calendar-day {
+  border: 1px solid transparent; background: transparent; color: var(--text);
+  cursor: pointer; font: 500 12px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+.calendar-day:hover { background: var(--surface-3); }
+.calendar-day.today { border-color: var(--link); color: #a8ceff; font-weight: 700; }
+.calendar-day.selected { background: var(--link); color: #fff; font-weight: 700; }
+.calendar-day.has-run::after {
+  content: ""; position: absolute; width: 5px; height: 5px;
+  left: 50%; bottom: 4px; transform: translateX(-50%);
+  border-radius: 50%; background: #52c77d;
+}
+.calendar-day.selected.has-run::after { background: #dfffea; }
+.calendar-day.no-run { color: var(--text-muted); }
+.calendar-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border);
+  color: var(--text-muted); font-size: 10px;
+}
+.calendar-foot span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.run-dot { width: 6px; height: 6px; border-radius: 50%; background: #52c77d; }
+.calendar-loading {
+  grid-column: 1 / -1; padding: 60px 0; text-align: center;
+  color: var(--text-muted); font-size: 11px;
 }
 .sec-toggle {
   display: flex; align-items: center; gap: 6px;
@@ -633,7 +698,7 @@ body { display: flex; flex-direction: column; }
   color: var(--text-muted);
   border: 1px dashed var(--border);
   cursor: pointer;
-  transition: all 100ms ease;
+  transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
 }
 .detail-chip.commercial-chip:hover {
   border-color: #B86FCB;
@@ -654,7 +719,7 @@ body { display: flex; flex-direction: column; }
   color: var(--text-muted);
   border: 1px dashed var(--border);
   cursor: pointer;
-  transition: all 100ms ease;
+  transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
 }
 .detail-chip.selfpay-chip:hover {
   border-color: #2E9E7B;
@@ -761,36 +826,84 @@ body { display: flex; flex-direction: column; }
 }
 
 .detail-actions {
-  display: flex; flex-wrap: wrap; gap: 8px;
+  display: flex; flex-direction: column; gap: 7px;
   margin-top: 22px;
-  padding-top: 18px;
+  padding: 14px;
   border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  border-radius: 10px;
 }
-/* Each row = one section (Links / Import / Tools). `flex-basis:100%`
-   forces each section onto its own line; buttons wrap WITHIN the row.
-   Buttons sit at content width (NOT stretched full-width) — so even if
-   an older render drops bare buttons here they flow horizontally rather
-   than stacking vertically. */
-.action-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex-basis: 100%; }
-.action-row + .action-row { padding-top: 6px; border-top: 1px dashed var(--border); }
+/* Each action family reads as a small workbench instead of another loose
+   row of equally weighted buttons. All existing actions remain visible. */
+.action-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+.action-row + .action-row { border-top-color: transparent; }
+.action-row:hover { background: rgba(255,255,255,.018); border-color: var(--border); }
+.action-group-label {
+  width: 72px;
+  flex: 0 0 72px;
+  padding-top: 7px;
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.action-buttons {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
 .detail-actions > .action-btn { align-self: flex-start; }
 .action-btn {
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--border);
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 13px;
-  font: inherit; font-weight: 600;
+  padding: 7px 11px;
+  border-radius: 7px;
+  font: inherit; font-size: 12px; font-weight: 600;
   cursor: pointer;
-  transition: background 100ms ease;
+  transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
 }
-.action-btn:hover { background: var(--border); }
+.action-btn:hover { background: var(--border); border-color: #55585d; }
+.action-btn:focus-visible { outline: 2px solid #79b48d; outline-offset: 2px; }
 .action-btn.primary {
   background: var(--green); border-color: var(--green); color: #FFFFFF;
 }
 .action-btn.primary:hover { background: var(--green-hover); }
 .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.action-hint { color: var(--text-muted); font-size: 11px; }
+.closeout-row {
+  margin-top: 2px;
+  background: linear-gradient(90deg, rgba(46,139,87,.13), rgba(46,139,87,.025));
+  border-color: rgba(92, 158, 112, .32);
+}
+.closeout-row:hover { border-color: rgba(111, 184, 133, .55); }
+.closeout-row .action-group-label { color: #8fc8a3; }
+.closeout-btn {
+  background: #d7eadc;
+  border-color: #d7eadc;
+  color: #17301f;
+  font-weight: 800;
+}
+.closeout-btn:hover { background: #eef7f0; border-color: #eef7f0; }
+
+@media (max-width: 760px) {
+  .detail-actions { padding: 10px; }
+  .action-row { display: block; padding: 8px; }
+  .action-group-label { display: block; width: auto; padding: 0 0 7px; }
+}
 
 /* ── Loading + status ──────────────────────────────────────────── */
 .loading-state {
@@ -887,6 +1000,39 @@ body { display: flex; flex-direction: column; }
 .empty-inline { padding: 18px; text-align: center; color: var(--text-muted); }
 .source-links { margin-top: 14px; display: flex; gap: 8px;
   justify-content: center; flex-wrap: wrap; }
+.import-hub-section { margin-bottom: 18px; }
+.import-hub-title {
+  margin-bottom: 8px; color: var(--text-muted); font-size: 10px;
+  font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+}
+.import-source-grid {
+  display: grid; grid-template-columns: repeat(5, minmax(105px, 1fr)); gap: 7px;
+}
+.import-source {
+  min-width: 0; padding: 10px 8px; border: 1px solid var(--border);
+  border-radius: 7px; background: var(--surface-2); color: var(--text);
+  cursor: pointer; text-align: left;
+}
+.import-source:hover { border-color: var(--green); background: var(--surface-3); }
+.import-source:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.import-source:disabled { opacity: .42; cursor: not-allowed; }
+.import-source > span { display: block; margin-bottom: 5px; font-size: 17px; }
+.import-source b { display: block; font-size: 12px; }
+.import-source small { display: block; margin-top: 2px; color: var(--text-dim); font-size: 9px; }
+.import-source.active { border-color: var(--green); box-shadow: inset 0 -2px var(--green); }
+.import-results { padding: 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2); }
+.import-result { display: grid; grid-template-columns: 20px 1fr; gap: 7px; align-items: start; padding: 7px 0; border-top: 1px solid var(--border); }
+.import-result:first-child { border-top: 0; }
+.import-result > span { color: var(--green); font-weight: 800; }
+.import-result.failed > span { color: var(--red); }
+.import-result b,.import-result small { display: block; }
+.import-result small { margin-top: 2px; color: var(--text-muted); }
+.summary-options { display:flex; flex-wrap:wrap; gap:7px 14px; margin-bottom:12px; }
+.summary-options label { font-size:11px; color:var(--text-muted); cursor:pointer; }
+.summary-options input { vertical-align:middle; }
+@media (max-width: 760px) {
+  .import-source-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 /* ── Phase 2: per-item resolved checkboxes ─────────────────────── */
 .issue-list li { position: relative; }
@@ -894,7 +1040,7 @@ body { display: flex; flex-direction: column; }
   display: inline-block; width: 16px; height: 16px;
   border: 2px solid var(--text-dim); border-radius: 3px;
   margin-right: 8px; cursor: pointer; flex-shrink: 0;
-  background: transparent; transition: all 100ms ease;
+  background: transparent; transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
 }
 .resolved-box:hover { border-color: var(--green); }
 .resolved-box.checked {

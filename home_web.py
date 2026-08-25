@@ -37,6 +37,56 @@ INDEX_HTML = os.path.join(ASSETS_DIR, "index.html")
 # resolve cleanly under http://127.0.0.1:port/.
 ROOT_INDEX_HTML = os.path.join(_HERE, "_ems_root_index.html")
 
+# Keep the Windows mutex handle alive for the lifetime of the process.
+_INSTANCE_MUTEX = None
+
+
+def _claim_single_instance():
+    """Return False when another Linguar Hub process already owns the data.
+
+    state.json is shared by the source and installed builds. A named mutex
+    prevents those two processes from racing their atomic replacements.
+    Fail open if Windows cannot create the mutex so an OS API failure never
+    turns into an unexplained launch failure.
+    """
+    global _INSTANCE_MUTEX
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        create_mutex = kernel32.CreateMutexW
+        create_mutex.argtypes = (wintypes.LPVOID, wintypes.BOOL,
+                                 wintypes.LPCWSTR)
+        create_mutex.restype = wintypes.HANDLE
+        handle = create_mutex(None, False, "Local\\LinguarHub.SingleInstance")
+        if not handle:
+            return True
+        if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+            kernel32.CloseHandle(handle)
+            return False
+        _INSTANCE_MUTEX = handle
+        return True
+    except Exception:
+        return True
+
+
+def _show_already_running():
+    """Explain a blocked second launch without requiring pywebview startup."""
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(
+            0,
+            "Linguar Hub is already running. Close the open window before "
+            "starting another copy.",
+            "Linguar Hub",
+            0x30,
+        )
+    except Exception:
+        pass
+
 
 def _ensure_root_index():
     """Write the root-level redirect once at startup. Idempotent."""
@@ -57,19 +107,18 @@ def _ensure_root_index():
 # `key` to module name so the iframe-shim can derive the namespace
 # from the tool's asset folder name automatically.
 NAV_GROUPS = [
-    ("Daily routine", [
-        ("audit",       "🔎", "Audit"),
-        ("apa",         "📊", "APA Monitor"),
+    ("Work", [
+        ("audit",       "🔎", "Jobs"),
+        ("snapshot",    "📸", "Snapshot"),
+        ("run_doc_editor", "📋", "Run Doc Editor"),
         ("photo_folders","📷", "Photo Folders"),
     ]),
-    ("Lifecycle", [
-        ("snapshot",    "📸", "Snapshot"),
+    ("Reports", [
+        ("apa",         "📊", "APA"),
         ("pipeline",    "🛤", "Pipeline"),
-    ]),
-    ("Monitoring", [
+        ("exceptions",  "⚠", "Exceptions"),
         ("notifications", "🔔", "Notifications"),
         ("hygiene",     "⚠", "Hygiene"),
-        ("kpi",         "📈", "KPI"),
         ("disputes",    "⚖", "Disputes"),
         ("wc_audit",    "🗂", "WC Audit"),
     ]),
@@ -81,6 +130,7 @@ NAV_GROUPS = [
         ("resources",   "📚", "Resources"),
     ]),
     ("System", [
+        ("health",      "●", "Data & Sync Health"),
         ("settings",    "⚙", "Settings"),
     ]),
 ]
@@ -112,6 +162,9 @@ def _asset_folder_for(key: str) -> str:
 # Sub-Api class names per tool key — used so HomeApi can instantiate
 # them and auto-bind their methods with a tool-name prefix.
 SUB_MODULES = {
+    "health":      "health_web",
+    "exceptions":  "exceptions_web",
+    "run_doc_editor": "run_doc_editor_web",
     "audit":       "audit_web",
     "disputes":    "disputes_web",
     "job_notes":   "job_notes_web",
@@ -217,6 +270,18 @@ class HomeApi:
             return web_health.log_js_error(source, message, detail)
         except Exception:
             return {"ok": False}
+
+    def track_events(self, events: list) -> dict:
+        """Shared privacy-safe usage sink for the shell and every panel.
+
+        The iframe bridge falls back to unprefixed HomeApi methods, so panels
+        do not each need their own copy of this plumbing.
+        """
+        try:
+            import usage_tracker as _ut
+            return _ut.record(events or [])
+        except Exception as ex:
+            return {"ok": False, "written": 0, "error": str(ex)}
 
     # ── First-run welcome ────────────────────────────────────────────
     def first_run(self):
@@ -359,6 +424,9 @@ class HomeApi:
         if not key:
             return ""
         if key in getattr(self, "_failed_subs", {}):
+            return ""
+        known = {k for _group, items in NAV_GROUPS for k, _icon, _name in items}
+        if key not in known:
             return ""
         try:
             if not self._is_panel_visible(key):
@@ -863,6 +931,9 @@ def main(argv=None):
     # dedicated launcher and never see the full suite.
     import sys as _sys
     _argv = argv if argv is not None else _sys.argv[1:]
+    if not _claim_single_instance():
+        _show_already_running()
+        return
     if "--quickimport" in _argv:
         import quickimport_web
         quickimport_web.main()

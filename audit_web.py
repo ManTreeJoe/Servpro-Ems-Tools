@@ -46,7 +46,7 @@ import persistence
 from state_hub import hub as _state_hub
 from run_doc import (
     _find_run_doc_for_date, _extract_date_from_folder_name,
-    _activity_labels_from_run_doc, audit_jobs,
+    _activity_labels_from_run_doc, run_doc_dates_for_month, audit_jobs,
 )
 from sp_enrich import enrich_with_sharepoint, _append_sp_manifest_originals
 import wc_zip_import as _wcz
@@ -791,6 +791,7 @@ def _group_audit_candidates(raw):
 
 from companycam_web_api import CompanyCamApi
 from job_settings_api import JobSettingsApi
+from job_admin_api import JobAdminApi
 
 
 def _looks_like_claim_or_address(text):
@@ -818,7 +819,7 @@ def _folder_of_job(job):
     return ""
 
 
-class Api(JobSettingsApi, CompanyCamApi):
+class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
     """Methods exposed to JS via `pywebview.api`."""
 
     def __init__(self):
@@ -1086,6 +1087,8 @@ class Api(JobSettingsApi, CompanyCamApi):
                                            display_map=_display_map,
                                            carrier_map=_carrier_map_b))
                 self._last_rows = rows
+                _cached_count = sum(1 for r in (results or [])
+                                    if (r or {}).get("from_cache") is True)
                 self._last_meta = {
                     "date_iso":   d.strftime("%Y-%m-%d"),
                     "ran_at":     _dt.datetime.now().strftime("%H:%M"),
@@ -1093,6 +1096,10 @@ class Api(JobSettingsApi, CompanyCamApi):
                     "flagged":    sum(1 for r in rows if r["flagged"]),
                     "ok":         sum(1 for r in rows if not r["flagged"]),
                     "use_cache":  use_cache,
+                    "cached":     _cached_count,
+                    "rechecked":  max(0, len(results or []) - _cached_count),
+                    "ran_at_iso": _dt.datetime.now().astimezone().isoformat(
+                        timespec="seconds"),
                 }
                 self._persist_cache_to_disk()
                 # Prime persistence with every freshly-resolved folder
@@ -1627,6 +1634,71 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception:
             return False
 
+    def open_workcenter(self) -> dict:
+        """Open the configured WorkCenter home/search page.
+
+        One source of truth matters here: the old import-empty-state button
+        hard-coded a different host than Settings/workcenter_client, so the
+        two WorkCenter buttons could land in different products.
+        """
+        try:
+            import workcenter_client as _wc
+            url = _wc._config_url()
+            dept_browser.open_url(url)
+            return {"ok": True, "url": url}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def get_job_email(self, client: str, card_id: str = "") -> dict:
+        """Pull the best customer/adjuster email and say where it came from.
+
+        The detail button used to depend entirely on the optional background
+        enrichment call.  If Trello was slow, that button stayed disabled and
+        could not retry.  This dedicated action tries Trello, then the local
+        job record, and is safe to call directly from the button.
+        """
+        import re as _re
+
+        def _email(value):
+            match = _re.search(
+                r"[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+                r"[A-Z0-9.-]+\.[A-Z]{2,}", str(value or ""), _re.IGNORECASE)
+            return match.group(0) if match else ""
+
+        # Trello is the office-facing source of truth and understands every
+        # card-desc layout via trello_enrichment/docusign_requests.
+        try:
+            tr = self.trello_enrichment(client, card_id)
+            if tr and tr.get("ok"):
+                customer = _email(tr.get("customer_email"))
+                adjuster = _email(tr.get("adjuster_email"))
+                if customer:
+                    return {"ok": True, "email": customer,
+                            "kind": "Customer", "source": "Trello"}
+                if adjuster:
+                    return {"ok": True, "email": adjuster,
+                            "kind": "Adjuster", "source": "Trello"}
+        except Exception:
+            pass
+
+        # Offline/slow Trello fallback: the CRM mirror carries the same two
+        # fields when a prior sync or Job info edit has saved them.
+        try:
+            import ems_db as _db
+            job = _db.find_job_by_name(client) or {}
+            customer = _email(job.get("email"))
+            adjuster = _email(job.get("adjuster_email"))
+            if customer:
+                return {"ok": True, "email": customer,
+                        "kind": "Customer", "source": "saved job"}
+            if adjuster:
+                return {"ok": True, "email": adjuster,
+                        "kind": "Adjuster", "source": "saved job"}
+        except Exception:
+            pass
+        return {"ok": False, "email": "",
+                "error": "No customer or adjuster email was found on the Trello card or saved job."}
+
     def copy_to_clipboard(self, text: str) -> bool:
         if not text:
             return False
@@ -1634,6 +1706,39 @@ class Api(JobSettingsApi, CompanyCamApi):
         # clipboard left a dead owner that froze the next paste everywhere.
         from web_helpers import set_clipboard_text
         return set_clipboard_text(text)
+
+    def job_summary_data(self, client: str, card_id: str = "") -> dict:
+        """Saved facts for the Copy Job Summary preview.
+
+        Local-only by design: opening a copy dialog must not pause on a
+        network call. The visible audit row supplies current stage/issues;
+        this supplies durable CRM facts and saved links.
+        """
+        try:
+            import ems_db
+            job = ems_db.find_job_by_name(client) or {}
+            links = ems_db.get_links(job.get("canon_key") or "") if job else []
+            by_type = {}
+            for link in links or []:
+                kind = str(link.get("link_type") or "").strip().lower()
+                value = str(link.get("link_value") or "").strip()
+                if kind and value and kind not in by_type:
+                    by_type[kind] = value
+            cid = (card_id or "").strip()
+            return {"ok": True,
+                    "job": job.get("display_name") or client,
+                    "carrier": job.get("carrier") or "",
+                    "claim_number": job.get("claim_number") or "",
+                    "address": job.get("address") or "",
+                    "customer_email": job.get("email") or "",
+                    "adjuster_name": job.get("adjuster_name") or "",
+                    "adjuster_email": job.get("adjuster_email") or "",
+                    "trello": f"https://trello.com/c/{cid}" if cid else "",
+                    "companycam": by_type.get("companycam", ""),
+                    "xactanalysis": (by_type.get("xactanalysis", "")
+                                      or by_type.get("xa", ""))}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     # ── P0: section toggle + day walker + single-job audit ──────────
     def run_audit_filtered(self, include_work: bool = True,
@@ -1724,6 +1829,8 @@ class Api(JobSettingsApi, CompanyCamApi):
                                            display_map=_display_map,
                                            carrier_map=_carrier_map_b))
                 self._last_rows = rows
+                _cached_count = sum(1 for r in (results or [])
+                                    if (r or {}).get("from_cache") is True)
                 self._last_meta = {
                     "date_iso":      d.strftime("%Y-%m-%d"),
                     "date_label":    d.strftime("%A, %B %d, %Y"),
@@ -1732,6 +1839,10 @@ class Api(JobSettingsApi, CompanyCamApi):
                     "flagged":       sum(1 for r in rows if r["flagged"]),
                     "ok":            sum(1 for r in rows if not r["flagged"]),
                     "use_cache":     use_cache,
+                    "cached":        _cached_count,
+                    "rechecked":     max(0, len(results or []) - _cached_count),
+                    "ran_at_iso":    _dt.datetime.now().astimezone().isoformat(
+                        timespec="seconds"),
                     "include_work":  include_work,
                     "include_monitor": include_monitor,
                     "doc_path":      doc_path,
@@ -2271,7 +2382,18 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception:
             p = None
         return {"path": p or "", "exists": bool(p and os.path.isfile(p)),
+                "date_iso": d.isoformat(),
                 "date_label": d.strftime("%A %m/%d/%y")}
+
+    def run_doc_calendar(self, year: int, month: int) -> dict:
+        """Dates with run documents for the Audit month picker."""
+        try:
+            dates = run_doc_dates_for_month(int(year), int(month))
+            return {"ok": True, "year": int(year), "month": int(month),
+                    "dates": dates, "count": len(dates)}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}",
+                    "dates": []}
 
     def open_run_doc(self, date_offset_days: int = 0) -> bool:
         d = _dt.date.today() + _dt.timedelta(days=date_offset_days)
@@ -4086,6 +4208,7 @@ class Api(JobSettingsApi, CompanyCamApi):
             import trello_client as tc
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+
         cid = (card_id or "").strip() or (
             persistence.get_trello_card_id(client) or "")
         if not cid:
@@ -4155,6 +4278,67 @@ class Api(JobSettingsApi, CompanyCamApi):
             # nothing at all.
             "docusketch_url": sketch_url,
         }
+
+    @staticmethod
+    def long_form_contract_comment_text(total, deductible="1000") -> dict:
+        """Build the standard long-form contract payment comment."""
+        from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
+        def _cents(value):
+            raw = str(value or "").strip().replace("$", "").replace(",", "")
+            if not raw:
+                raise ValueError("Enter the contract total")
+            try:
+                amount = Decimal(raw)
+            except InvalidOperation as ex:
+                raise ValueError("Enter a valid dollar amount") from ex
+            if amount < 0:
+                raise ValueError("Amounts cannot be negative")
+            return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+        try:
+            total_cents = _cents(total)
+            deposit_cents = _cents(deductible)
+        except ValueError as ex:
+            return {"ok": False, "error": str(ex)}
+        if total_cents <= 0:
+            return {"ok": False, "error": "Contract total must be greater than zero"}
+        if deposit_cents > total_cents:
+            return {"ok": False, "error": "Deductible/deposit cannot exceed the contract total"}
+        remaining = total_cents - deposit_cents
+        first, final = remaining // 2, remaining - (remaining // 2)
+        money = lambda cents: f"{cents / 100:,.2f}"
+        text = "\n".join((
+            f"Long Form contract total - {money(total_cents)}",
+            f"Deposit - {money(deposit_cents)}",
+            f"1st day of job - {money(first)}",
+            f"Final day / eq pulled - {money(final)}",
+            "@nathan_bupte",
+        ))
+        return {"ok": True, "text": text, "total": money(total_cents),
+                "deposit": money(deposit_cents), "first": money(first),
+                "final": money(final)}
+
+    def post_long_form_contract_comment(self, card_id: str, total,
+                                        deductible="1000") -> dict:
+        built = self.long_form_contract_comment_text(total, deductible)
+        if not built.get("ok"):
+            return built
+        if not card_id:
+            return {"ok": False, "error": "no Trello card pinned"}
+        try:
+            import trello_client as tc
+            action = tc.post_comment(card_id, built["text"]) or {}
+            card = tc.get_card_lite(card_id) or {}
+            xa_url = tc.card_xa_link(card) if hasattr(tc, "card_xa_link") else ""
+            xa_opened = False
+            if xa_url:
+                dept_browser.open_url(xa_url)
+                xa_opened = True
+            return {**built, "action_id": str(action.get("id") or ""),
+                    "xa_url": xa_url, "xa_opened": xa_opened}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def _supervisor_for(self, client: str, fields: dict) -> str:
         """Who ran the inspection.
@@ -5051,6 +5235,16 @@ class Api(JobSettingsApi, CompanyCamApi):
             names += list((persistence.get_tech_emails() or {}).keys())
         except Exception:
             pass
+        # A fresh profile has not copied the built-in roster into the
+        # editable store yet. The picker must still work on first launch;
+        # only a deliberately seeded-and-emptied roster means "show none".
+        if not names:
+            try:
+                if not persistence.user_techs_seeded():
+                    import audit_logic
+                    names += audit_logic.builtin_seed_names()
+            except Exception:
+                pass
         seen, out = set(), []
         for n in names:
             n = (n or "").strip()
@@ -8277,14 +8471,23 @@ class Api(JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"post failed: {ex}"}
         xa_url = ""
+        xa_opened = False
         try:
             import trello_client as tc
-            card = tc.get_card(cid) or {}
+            card = tc.get_card_lite(cid) or {}
             if hasattr(tc, "card_xa_link"):
                 xa_url = tc.card_xa_link(card) or ""
+            if xa_url:
+                dept_browser.open_url(xa_url)
+                xa_opened = True
         except Exception:
             xa_url = ""
-        return {"ok": True, "card_id": cid, "note": note, "xa_url": xa_url}
+            xa_opened = False
+        return {"ok": True, "card_id": cid, "note": note,
+                # `comment` is exactly what Trello received.  The UI copies
+                # this complete dated/tagged text for pasting into XA.
+                "comment": comment, "xa_url": xa_url,
+                "xa_opened": xa_opened}
 
     # ── Phase 2: Flag missing dialog ─────────────────────────────────
     def flag_missing(self, client: str, item_text: str,

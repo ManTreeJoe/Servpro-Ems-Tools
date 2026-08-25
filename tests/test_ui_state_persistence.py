@@ -57,8 +57,8 @@ def test_last_panel_round_trips(api):
 def test_last_panel_rides_in_on_header(api):
     """It must ship inside header(), not as its own call — a second round
     trip is the window where a late restore steals the user's click."""
-    api.set_last_panel("snapshot")
-    assert api.header()["last_panel"] == "snapshot"
+    api.set_last_panel("audit")
+    assert api.header()["last_panel"] == "audit"
 
 
 def test_hidden_panel_is_not_restored(api, monkeypatch):

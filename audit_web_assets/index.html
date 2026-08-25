@@ -9,7 +9,7 @@
 <script src="../web_shared/modal.js?v=20260812a"></script>
 <link rel="stylesheet" href="../web_shared/modal.css?v=20260813a" />
 <script src="../web_shared/umbrella_group.js?v=20260731j"></script>
-<script src="../web_shared/usage_track.js?v=20260731j"></script>
+<script src="../web_shared/usage_track.js?v=20260825a"></script>
 <script src="../web_shared/hygiene_board.js?v=20260731j"></script>
 <script src="../web_shared/request_items.js?v=20260731j"></script>
 <script src="../web_shared/xactimate_prep.js?v=20260731j"></script>
@@ -30,15 +30,15 @@
 <link rel="stylesheet" href="../web_shared/xactimate_prep.css?v=20260723a" />
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Audit — Linguar Hub</title>
-<link rel="stylesheet" href="app.css" />
+<title>Jobs — Linguar Hub</title>
+<link rel="stylesheet" href="app.css?v=20260824e" />
 </head>
 <body>
 <header class="topbar">
   <div class="brand">
     <span class="brand-mark"></span>
-    <span class="brand-name">SERVPRO · Daily Audit</span>
-    <span class="brand-tag">web spike · two-pane</span>
+    <span class="brand-name">SERVPRO · Jobs</span>
+    <span class="brand-tag">daily workbench</span>
   </div>
   <div class="topbar-actions">
     <!-- Positioned wrapper so the type-ahead list can anchor under the
@@ -108,7 +108,29 @@
   <button class="btn" id="day-prev">⏮</button>
   <button class="btn" id="day-today">📅 Today</button>
   <button class="btn" id="day-next">⏭</button>
-  <span class="audit-date-label" id="audit-date-label">—</span>
+  <div class="run-calendar-anchor" id="run-calendar-anchor">
+    <button class="audit-date-label" id="audit-date-label"
+            aria-haspopup="dialog" aria-expanded="false"
+            title="Choose a run date">
+      <span id="audit-date-text">—</span><span class="date-caret">▾</span>
+    </button>
+    <section class="run-calendar hidden" id="run-calendar"
+             role="dialog" aria-label="Choose a run date">
+      <header class="run-calendar-head">
+        <button class="calendar-nav" id="calendar-prev" aria-label="Previous month">‹</button>
+        <strong id="calendar-title">—</strong>
+        <button class="calendar-nav" id="calendar-next" aria-label="Next month">›</button>
+      </header>
+      <div class="calendar-weekdays" aria-hidden="true">
+        <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+      </div>
+      <div class="calendar-grid" id="calendar-grid"></div>
+      <footer class="calendar-foot">
+        <span><i class="run-dot"></i> Run document</span>
+        <span id="calendar-count">—</span>
+      </footer>
+    </section>
+  </div>
   <button class="btn" id="open-doc-btn">📄 Open run-doc</button>
   <span class="spacer"></span>
   <label class="sec-toggle">
@@ -167,7 +189,7 @@
   <span id="status-msg" class="status-msg"></span>
 </footer>
 
-<script src="../web_shared/audit_detail.js?v=20260821a"></script>
-<script src="app.js?v=20260818a"></script>
+<script src="../web_shared/audit_detail.js?v=20260825h"></script>
+<script src="app.js?v=20260824e"></script>
 </body>
 </html>

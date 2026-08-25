@@ -8,11 +8,19 @@
  * append_overflow_pages) but no Tk involvement.
  */
 "use strict";
-const state = { view: "list", current: null, importBtn: null };
+const state = {
+  view: "list",
+  current: null,
+  importBtn: null,
+  candidates: [],
+  queue: { search: "", board: "all", lane: "all", showAll: false, focusedFromJobs: false },
+};
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 const pad2 = (n) => String(n).padStart(2, "0");
+let _queueSyncBusy = false;
+let _queueSyncTimer = null;
 
 // Live HEIC→JPEG conversion progress from the backend (do_import emits
 // `import:progress` per file). Updates the running import button so a
@@ -37,6 +45,23 @@ window.addEventListener("pywebviewready", async () => {
   $("#view-list-btn").addEventListener("click", () => switchTo("list"));
   $("#view-gen-btn").addEventListener("click", () => startNew());
   $("#refresh-btn").addEventListener("click", loadList);
+  $("#queue-search").addEventListener("input", (e) => {
+    state.queue.search = e.target.value;
+    state.queue.focusedFromJobs = false;
+    renderCandidateQueue();
+  });
+  $("#queue-board").addEventListener("change", (e) => {
+    state.queue.board = e.target.value;
+    renderCandidateQueue();
+  });
+  $("#queue-lane").addEventListener("change", (e) => {
+    state.queue.lane = e.target.value;
+    renderCandidateQueue();
+  });
+  $("#queue-show-all").addEventListener("change", (e) => {
+    state.queue.showAll = e.target.checked;
+    renderCandidateQueue();
+  });
   attachTopbarTrelloSearch();
   $("#gen-cancel").addEventListener("click", () => switchTo("list"));
   $("#gen-go").addEventListener("click", generate);
@@ -46,9 +71,10 @@ window.addEventListener("pywebviewready", async () => {
   $("#audit-run-btn").addEventListener("click", runSnapshotAudit);
   $("#gen-scope").addEventListener("click", openScopeModal);
   $("#gen-docusign-email").addEventListener("click", copyDocusignEmail);
+  $("#snapshot-comments-btn").addEventListener("click", toggleSnapshotComments);
   // After-generate buttons (post-actions panel)
   $("#post-trello-btn").addEventListener("click", postToTrello);
-  $("#mark-drafted-btn").addEventListener("click", markDrafted);
+  $("#snapshot-history-btn").addEventListener("click", openSnapshotHistory);
   $("#open-pdf-btn").addEventListener("click",
     () => state.lastPdfPath && pywebview.api.open_pdf(state.lastPdfPath));
   document.querySelectorAll(".add-row-btn[data-tbl]").forEach((b) =>
@@ -106,17 +132,27 @@ window.addEventListener("pywebviewready", async () => {
     if (cb) cb.checked = !!auto;
   } catch { /* optional */ }
   await loadList();
-  // Deep-link from another tool's "Open in → Snapshot": open the
-  // Tracked tab filtered to that client.
+  // Trello is the queue's source of truth. Coworkers can move cards into the
+  // Snapshot lane at any time, so keep this screen current without requiring
+  // a manual refresh. Also refresh immediately when the app regains focus.
+  _queueSyncTimer = setInterval(() => syncSnapshotQueue(), 60_000);
+  window.addEventListener("focus", () => syncSnapshotQueue());
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) syncSnapshotQueue();
+  });
+  // Deep-link from Jobs: keep the user in the Trello-controlled close-out
+  // queue and filter it to that job. The old behavior opened Tracked
+  // history, which said nothing about whether the card was eligible for
+  // a final close-out audit right now.
   const _focus = window.emsDeepLinkFocus ? window.emsDeepLinkFocus() : "";
   if (_focus) {
-    state._trackedLoaded = true;       // suppress snapshotShowTab's own load
-    snapshotShowTab("tracked");
-    await loadTrackedSnapshots();
-    const tb = $("#tracked-search");
+    snapshotShowTab("today");
+    state.queue.search = _focus;
+    state.queue.focusedFromJobs = true;
+    const tb = $("#queue-search");
     if (tb) tb.value = _focus;
-    trackedState.search = _focus;
-    renderTracked();
+    renderCandidateQueue();
+    tb?.focus();
   } else {
     // No deep-link — if there's an unsaved snapshot draft from before a
     // panel switch / reload, restore it into the form so nothing is lost.
@@ -198,29 +234,121 @@ function switchTo(view) {
   if (tabs) tabs.style.display = (view === "list") ? "" : "none";
 }
 
+function refreshSnapshotCommentsButton() {
+  const button = $("#snapshot-comments-btn");
+  if (!button) return;
+  button.disabled = !state.cardId;
+  button.title = state.cardId
+    ? "Show this Trello thread beside the snapshot"
+    : "Pick or find the Trello card first";
+}
+
+function toggleSnapshotComments() {
+  const client = $("#f-insured")?.value.trim() || state.lastClient || "Job";
+  if (!state.cardId) { setStatus("Pick or find the Trello card first", "warn"); return; }
+  const row = { client, display_name: client, trello_card_id: state.cardId };
+  const ctx = snapshotAuditCtx();
+  window.AuditDetail.syncCommentsDrawer(row, ctx);
+  window.AuditDetail.toggleCommentsDrawer(row, ctx);
+}
+
 async function loadList() {
-  const cands = await pywebview.api.candidate_jobs() || [];
+  await syncSnapshotQueue(true);
+
+  const data = await pywebview.api.recent_snapshots(50);
+  $("#open-folder-btn").onclick = () => pywebview.api.open_folder(data.dir);
+  $("#pdfs").innerHTML = data.rows.length
+    ? data.rows.map((p) => `
+        <div class="pdf-row" data-path="${esc(p.path)}">
+          <div class="pdf-name">${esc(p.name)}</div>
+          <div class="pdf-meta">${esc(p.mtime)}</div>
+          <div class="pdf-meta">${p.size_kb} KB</div>
+        </div>`).join("")
+    : `<div class="empty-inline">No PDFs in <code>${esc(data.dir || "(unset)")}</code></div>`;
+  document.querySelectorAll(".pdf-row").forEach((row) =>
+    row.addEventListener("click", () => pywebview.api.open_pdf(row.dataset.path)));
+  const queued = state.candidates.filter((r) => r.snapshot).length;
+  $("#status-counts").textContent = `${queued} in Snapshot · ${data.rows.length} recent PDFs`;
+  refreshTrackedCountBadge();
+}
+
+async function syncSnapshotQueue(force = false) {
+  if (_queueSyncBusy) return;
+  if (!force && (document.hidden || state.view !== "list" || $("#tab-today")?.classList.contains("hidden"))) return;
+  _queueSyncBusy = true;
+  const synced = $("#queue-synced");
+  if (synced) synced.textContent = "Checking Trello…";
+  try {
+    state.candidates = await pywebview.api.candidate_jobs() || [];
+    refreshQueueFilterOptions();
+    renderCandidateQueue();
+    const queued = state.candidates.filter((r) => r.snapshot).length;
+    if (synced) synced.textContent = `Trello live · ${new Date().toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}`;
+    const recent = $("#status-counts")?.textContent.match(/·\s*(\d+) recent PDFs/);
+    if (recent) $("#status-counts").textContent = `${queued} in Snapshot · ${recent[1]} recent PDFs`;
+  } catch (ex) {
+    if (synced) synced.textContent = "Trello check failed · press ↻";
+    if (force) setStatus(`Could not load Snapshot lane: ${ex}`, "error");
+  } finally {
+    _queueSyncBusy = false;
+  }
+}
+
+function refreshQueueFilterOptions() {
+  const unique = (key) => [...new Set(state.candidates.map((r) => r[key]).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+  const fill = (el, values, allLabel, current) => {
+    el.innerHTML = `<option value="all">${allLabel}</option>`
+      + values.map((value) => `<option value="${esc(value)}">${esc(value)}</option>`).join("");
+    el.value = values.includes(current) ? current : "all";
+  };
+  fill($("#queue-board"), unique("board"), "All boards", state.queue.board);
+  fill($("#queue-lane"), unique("lane"), "All lanes", state.queue.lane);
+  state.queue.board = $("#queue-board").value;
+  state.queue.lane = $("#queue-lane").value;
+}
+
+function renderCandidateQueue() {
   const candsEl = $("#candidates");
+  if (!candsEl) return;
+  const q = state.queue.search.trim().toLowerCase();
+  const filtered = state.candidates.filter((r) => {
+    if (!state.queue.showAll && !r.snapshot && !q) return false;
+    if (state.queue.board !== "all" && r.board !== state.queue.board) return false;
+    if (state.queue.lane !== "all" && r.lane !== state.queue.lane) return false;
+    if (!q) return true;
+    return [r.client, r.board, r.lane].join(" ").toLowerCase().includes(q);
+  });
+  const queued = state.candidates.filter(r => r.snapshot).length;
+  $("#queue-count").textContent = `${queued} Snapshot · ${filtered.length} shown`;
   // One-click flow: clicking ANYWHERE on the row opens the form with
   // the Trello card already parsed in (carrier/claim/DOL/cause/
   // first-visit/subs/logs/scope). User was complaining about having
   // to click 3 different buttons — Snapshot, then Find Trello, then
   // a result — to get the form filled. Now the row click does it all.
-  candsEl.innerHTML = cands.length
-    ? cands.map((r) => `
+  candsEl.innerHTML = filtered.length
+    ? filtered.map((r) => `
         <div class="closeout-row snap-cand" data-client="${esc(r.client)}" data-card="${esc(r.card_id || "")}" style="cursor:pointer;">
           <div>
             <div class="name">${esc(titleCase(r.client))}</div>
             <div class="sub">
-              <span class="candidate-pill ${r.source === "estimating" ? "rundoc" : (r.source === "run-doc" ? "rundoc" : "closeout")}">${esc(r.lane || r.source)}</span>
+              <span class="candidate-pill ${r.snapshot ? "closeout" : "rundoc"}">${esc(r.lane || r.source)}</span>
               ${r.board ? `<span class="muted" style="font-size:10px;">${esc(r.board)}</span>` : ""}
               ${r.card_id ? "· Pinned" : ""}
             </div>
           </div>
+          <label class="snapshot-toggle ${r.snapshot ? "on" : ""}" title="Move this Trello card ${r.snapshot ? "out of" : "into"} the Snapshot lane">
+            <input type="checkbox" data-snapshot-toggle data-card="${esc(r.card_id)}" data-list="${esc(r.snapshot_list_id)}" ${r.snapshot ? "checked" : ""}>
+            <span>Snapshot</span>
+          </label>
           ${r.card_id ? `<button class="btn snap-trello-btn" data-url="https://trello.com/c/${esc(r.card_id)}" style="font-size:11px;">🔗</button>` : "<span></span>"}
-          <button class="btn btn-primary" data-new="${esc(r.client)}" data-card="${esc(r.card_id || "")}">📸 Snapshot</button>
+          <button class="btn btn-primary" data-new="${esc(r.client)}" data-card="${esc(r.card_id || "")}" ${r.snapshot ? "" : "disabled"}>Open</button>
         </div>`).join("")
-    : `<div class="empty-inline">No cards in the Estimating board's SNAPSHOT lane. Click ＋ New snapshot in the top bar to type a name manually, or search Trello via the search box above.</div>`;
+    : state.queue.focusedFromJobs && q
+      ? `<div class="empty-inline"><strong>${esc(state.queue.search)}</strong> is not currently in a SNAPSHOT lane on an Estimating board. Move its Trello card into that lane when it is ready for the final close-out audit.</div>`
+      : state.candidates.length
+      ? `<div class="empty-inline">No eligible close-out cards match these filters.</div>`
+      : `<div class="empty-inline">No open cards were found on an Estimating board with a Snapshot lane.</div>`;
   // Whole-row click → open form with Trello prefill (when card_id present)
   candsEl.querySelectorAll(".snap-cand").forEach((row) => {
     row.addEventListener("click", (e) => {
@@ -235,22 +363,24 @@ async function loadList() {
     }));
   candsEl.querySelectorAll("[data-url]").forEach((b) =>
     b.addEventListener("click", (e) => { e.stopPropagation(); pywebview.api.open_url(b.dataset.url); }));
+  candsEl.querySelectorAll("[data-snapshot-toggle]").forEach((toggle) =>
+    toggle.addEventListener("change", async (e) => {
+      e.stopPropagation();
+      const wanted = toggle.checked;
+      toggle.disabled = true;
+      setStatus(`${wanted ? "Adding to" : "Removing from"} Snapshot…`);
+      const res = await pywebview.api.set_snapshot(
+        toggle.dataset.card, wanted, toggle.dataset.list || "");
+      if (!res?.ok) {
+        toggle.checked = !wanted;
+        toggle.disabled = false;
+        setStatus(`Snapshot toggle failed: ${res?.error || "?"}`, "error");
+        return;
+      }
+      setStatus(wanted ? "Added to Snapshot" : `Removed from Snapshot · ${res.lane}`, "ok");
+      await loadList();
+    }));
 
-  const data = await pywebview.api.recent_snapshots(50);
-  $("#open-folder-btn").onclick = () => pywebview.api.open_folder(data.dir);
-  $("#pdfs").innerHTML = data.rows.length
-    ? data.rows.map((p) => `
-        <div class="pdf-row" data-path="${esc(p.path)}">
-          <div class="pdf-name">${esc(p.name)}</div>
-          <div class="pdf-meta">${esc(p.mtime)}</div>
-          <div class="pdf-meta">${p.size_kb} KB</div>
-        </div>`).join("")
-    : `<div class="empty-inline">No PDFs in <code>${esc(data.dir || "(unset)")}</code></div>`;
-  document.querySelectorAll(".pdf-row").forEach((row) =>
-    row.addEventListener("click", () => pywebview.api.open_pdf(row.dataset.path)));
-  $("#status-counts").textContent = `${cands.length} queued · ${data.rows.length} recent PDFs`;
-  // Refresh the tracked-tab badge in parallel (cheap)
-  refreshTrackedCountBadge();
 }
 
 // ── Tab switching ───────────────────────────────────────────────
@@ -629,6 +759,7 @@ function restoreSnapshotDraft(d) {
   if (!$("#subs-body").children.length) addRow("subs", {});
   if (!$("#logs-body").children.length) addRow("logs", {});
   state.cardId = d.cardId || "";
+  refreshSnapshotCommentsButton();
   showDraftBanner();
 }
 
@@ -671,6 +802,7 @@ async function startNew(client = "", cardId = "") {
   state.lastPdfPath = null;
   state.lastClient = null;
   state.cardId = cardId || "";   // for the DocuSign-email city lookup
+  refreshSnapshotCommentsButton();
 
   if (client) {
     // When we have a card_id (search result picked) use the full
@@ -991,6 +1123,7 @@ async function generate() {
     dol:         $("#f-dol").value,
     first_visit: $("#f-first").value,
     cause:       $("#f-cause").value,
+    comments:    $("#f-comments")?.value || "",
     subs: collectRows("subs"),
     logs: collectRows("logs"),
   };
@@ -1005,9 +1138,12 @@ async function generate() {
       $("#gen-status").className = "error";
       return;
     }
+    const revisionNote = res.revision_saved
+      ? ` · revision ${res.revision} saved`
+      : ` · PDF saved, but revision history failed: ${esc(res.revision_error || "unknown error")}`;
     $("#gen-status").innerHTML =
-      `✓ Saved to <code>${esc(res.path)}</code> · ${res.rows_logs} log rows, ${res.rows_subs} subs`;
-    $("#gen-status").className = "ok";
+      `✓ Saved to <code>${esc(res.path)}</code> · ${res.rows_logs} log rows, ${res.rows_subs} subs${revisionNote}`;
+    $("#gen-status").className = res.revision_saved ? "ok" : "warn";
     state.lastPdfPath = res.path;
     state.lastClient = insured;
     // Snapshot generated — the draft is no longer "unsaved work".
@@ -1038,7 +1174,10 @@ async function postToTrello() {
     state.lastClient, state.lastPdfPath, []);
   btn.disabled = false;
   if (!res?.ok) {
-    setStatus(`Post failed: ${res?.error || "?"}`, "error");
+    const completed = [res?.attached && "PDF attached", res?.posted && "comment posted"]
+      .filter(Boolean).join("; ");
+    const detail = res?.error || "Trello did not confirm the upload";
+    setStatus(`Trello post incomplete: ${detail}${completed ? ` (${completed})` : ""}`, "error");
     btn.textContent = "Attach PDF + post comment to Trello";
     return;
   }
@@ -1049,19 +1188,30 @@ async function postToTrello() {
   setStatus("✓ Posted to Trello", "ok");
 }
 
-async function markDrafted() {
-  if (!state.lastClient) return;
-  const btn = $("#mark-drafted-btn");
-  btn.disabled = true; btn.textContent = "Marking…";
-  const res = await pywebview.api.mark_closeout_drafted(state.lastClient);
-  btn.disabled = false;
+async function openSnapshotHistory() {
+  const client = state.lastClient || $("#f-insured")?.value.trim();
+  if (!client) { setStatus("Choose a job first", "warn"); return; }
+  const wrap = mkSnapModal({
+    title: "Snapshot history — " + client,
+    body: '<div id="snapshot-history-body" class="muted">Loading revisions…</div>',
+  });
+  const body = wrap.querySelector("#snapshot-history-body");
+  let res;
+  try { res = await pywebview.api.snapshot_history(client, 100); }
+  catch (ex) { res = { ok: false, error: String(ex) }; }
   if (!res?.ok) {
-    setStatus(`Mark drafted failed: ${res?.error || "?"}`, "error");
-    btn.textContent = "🏁 Mark drafted (clear from closeout queue)";
-    return;
+    body.textContent = "History unavailable: " + (res?.error || "?"); return;
   }
-  btn.textContent = "✓ Marked drafted";
-  setStatus("🏁 Marked as drafted — cleared from closeout queue", "ok");
+  if (!(res.revisions || []).length) {
+    body.textContent = "No saved revisions for this job yet."; return;
+  }
+  body.className = "snapshot-history-list";
+  body.innerHTML = res.revisions.map(r => `
+    <details class="snapshot-history-row">
+      <summary><b>Revision ${Number(r.revision || 0)}</b><span>${esc(r.created_at || "")}</span></summary>
+      <pre>${esc(r.rendered_text || "No rendered summary")}</pre>
+      ${r.pdf_path ? `<div class="muted">PDF: ${esc(r.pdf_path)}</div>` : ""}
+    </details>`).join("");
 }
 
 // ── Inline audit subview (P0) ──────────────────────────────────

@@ -1,12 +1,26 @@
 """Make the scripts/ folder importable from tests/."""
 import os
+import shutil
 import sys
+import tempfile
 
 import pytest
 
 _SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
+
+# Set this before pytest imports any test module. Many tests import app
+# modules during collection, and importing paths/ems_db_sqlite initializes
+# the database immediately. The old session fixture redirected DB_PATH only
+# afterward, which meant every test run still opened the real user database
+# once before isolation began.
+# Keep scratch state outside OneDrive. Creating it under the repository made
+# OneDrive's sync filter briefly hold test directories open, which can turn a
+# clean Windows rename test into a spurious Access Denied failure.
+_TEST_APPDATA = tempfile.mkdtemp(prefix="linguar-appdata-")
+os.environ["APPDATA"] = _TEST_APPDATA
+os.environ["LOCALAPPDATA"] = _TEST_APPDATA
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -33,6 +47,7 @@ def _isolate_job_db(tmp_path_factory):
         yield _db.DB_PATH
     finally:
         _db.reset_db_path(live)
+        shutil.rmtree(_TEST_APPDATA, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

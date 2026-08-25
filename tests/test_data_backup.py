@@ -136,6 +136,20 @@ def test_list_backups_on_a_fresh_install_is_empty(tmp_path, monkeypatch):
     assert db.list_backups() == []
 
 
+def test_backup_health_reports_recent_local_copies(data):
+    db.run_once(force=True)
+    status = db.health()
+    assert status["ok"] is True
+    assert {c["name"] for c in status["checks"]} == set(db.FILES)
+    assert all(c["last_success"] for c in status["checks"])
+
+
+def test_backup_health_reports_missing_rotation(data):
+    status = db.health()
+    assert status["ok"] is False
+    assert all(c["state"] == "missing" for c in status["checks"])
+
+
 def test_launch_wires_the_backup_in():
     """It has to run without anyone remembering to."""
     import inspect

@@ -652,6 +652,19 @@ def test_snapshot_can_reach_the_member_list():
     assert hasattr(snapshot_web.Api, "xa_note_members")
 
 
+def test_snapshot_comments_are_docked_beside_the_form():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    shared = open(os.path.join(root, "web_shared", "audit_detail.js"),
+                  encoding="utf-8").read()
+    snapshot = open(os.path.join(root, "snapshot_web_assets", "index.html"),
+                    encoding="utf-8").read()
+    assert 'class="snapshot-panel"' in snapshot
+    assert "body.snapshot-panel.cmt-docked" in shared
+    assert 'padding-right:var(--cmt-dock-width,380px)' in shared
+    assert 'padding-bottom:min(46vh,420px)' in shared
+    assert "_syncCommentsDock(el)" in shared
+
+
 def test_the_module_actually_loads():
     """`node --check` only proves it PARSES. This evaluates it against a
     stub DOM, which is what caught "ReferenceError: _wireMentions is not

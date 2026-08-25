@@ -158,8 +158,17 @@ def test_log_event_persists():
         rows = c.execute(
             "SELECT * FROM job_events WHERE canon_key=?",
             ("doe, john",)).fetchall()
-    assert len(rows) == 1
-    assert rows[0]["event_type"] == "on_run_doc"
+    assert [r["event_type"] for r in rows] == ["job_created", "on_run_doc"]
+
+
+def test_job_created_event_is_written_once_on_first_upsert():
+    ems_db.upsert_job(display_name="Doe, John", status="new_loss")
+    ems_db.upsert_job(display_name="Doe, John", status="active")
+    with ems_db._connect() as c:
+        rows = c.execute(
+            "SELECT event_type FROM job_events WHERE canon_key=? "
+            "ORDER BY id", ("doe, john",)).fetchall()
+    assert [r["event_type"] for r in rows] == ["job_created"]
 
 
 # ── status queries ───────────────────────────────────────────────────────

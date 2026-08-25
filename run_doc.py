@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import calendar as _calendar
 from datetime import datetime
 
 import config
@@ -39,6 +40,73 @@ def __getattr__(name):
 # (month, day, year) -> compiled filename-date regex, so the pattern
 # compiles once per date and is reused on every audit re-render.
 _RUN_DOC_DATE_RE_CACHE = {}
+
+
+def _run_doc_date_pattern(d):
+    """Compiled filename matcher shared by one-day and month lookups."""
+    cache_key = (d.month, d.day, d.year)
+    pattern = _RUN_DOC_DATE_RE_CACHE.get(cache_key)
+    if pattern is None:
+        sep = r"[.\-_/]"
+        yy_short = d.year % 100
+        # IE uses separated dates; OC also has concatenated .msg names.
+        pattern = re.compile(
+            rf"(?<!\d)0?{d.month}{sep}0?{d.day}{sep}"
+            rf"(?:{yy_short:02d}|{d.year})(?!\d)"
+            rf"|(?<!\d)0?{d.month}{d.day:02d}{d.year}(?!\d)")
+        _RUN_DOC_DATE_RE_CACHE[cache_key] = pattern
+    return pattern
+
+
+def _month_search_dirs(runs_dir, year, month):
+    """Existing folders that may hold one month's run documents."""
+    probe = datetime(year, month, 1)
+    found = []
+    for root in (runs_dir, os.path.join(runs_dir, str(year))):
+        for month_name in (probe.strftime("%B"), probe.strftime("%b")):
+            candidate = os.path.join(root, month_name)
+            if os.path.isdir(candidate):
+                found.append(candidate)
+        if os.path.isdir(root):
+            found.append(root)
+    # Full/abbreviated month names can resolve to the same folder on a
+    # case-insensitive share. Keep one directory scan per actual path.
+    out, seen = [], set()
+    for path in found:
+        key = os.path.normcase(os.path.abspath(path))
+        if key not in seen:
+            seen.add(key)
+            out.append(path)
+    return out
+
+
+def run_doc_dates_for_month(year, month):
+    """ISO dates in a month that have a .docx or .msg run document.
+
+    The calendar asks for an entire month at once. Scan each candidate
+    directory once instead of calling the one-day finder 28–31 times over a
+    network/OneDrive folder.
+    """
+    year, month = int(year), int(month)
+    if year < 2000 or year > 2100 or month < 1 or month > 12:
+        raise ValueError("invalid calendar month")
+    runs_dir = _runs_dir()
+    if not runs_dir or not os.path.isdir(runs_dir):
+        return []
+    names = []
+    for folder in _month_search_dirs(runs_dir, year, month):
+        try:
+            names.extend(name for name in os.listdir(folder)
+                         if name.lower().endswith((".docx", ".msg"))
+                         and not name.startswith("~$"))
+        except OSError:
+            continue
+    days = []
+    for day in range(1, _calendar.monthrange(year, month)[1] + 1):
+        d = datetime(year, month, day).date()
+        if any(_run_doc_date_pattern(d).search(name) for name in names):
+            days.append(d.isoformat())
+    return days
 
 
 def _extract_date_from_folder_name(name):
@@ -100,19 +168,7 @@ def _find_run_doc_for_date(d):
         return None
     month_full = d.strftime("%B")
     month_abbr = d.strftime("%b")
-    yy_short = d.year % 100
-    cache_key = (d.month, d.day, d.year)
-    pattern = _RUN_DOC_DATE_RE_CACHE.get(cache_key)
-    if pattern is None:
-        sep = r"[.\-_/]"
-        # Two filename date forms:
-        #  • IE .docx — separated: "7.20.26" / "7-20-2026" / "7/20/26"
-        #  • OC .msg  — concatenated: "7202026" (M + DD + YYYY, no seps)
-        pattern = re.compile(
-            rf"(?<!\d)0?{d.month}{sep}0?{d.day}{sep}"
-            rf"(?:{yy_short:02d}|{d.year})(?!\d)"
-            rf"|(?<!\d)0?{d.month}{d.day:02d}{d.year}(?!\d)")
-        _RUN_DOC_DATE_RE_CACHE[cache_key] = pattern
+    pattern = _run_doc_date_pattern(d)
 
     # Search both the run root and a `<root>\<year>` level — IE stores
     # docs as <root>\<Month>\..., but OC nests by year first

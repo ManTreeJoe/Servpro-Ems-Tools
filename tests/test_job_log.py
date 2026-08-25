@@ -86,6 +86,14 @@ def test_activity_is_required():
     assert jl.comment_text(["  "], ["Vince"])["ok"] is False
 
 
+def test_custom_activity_and_technician_are_accepted():
+    got = jl.comment_text(["Set containment"], ["Jordan"],
+                          "2026-08-24")
+    assert got["ok"]
+    assert got["text"] == ("Monday 8/24/26\n\n"
+                           "Set containment - Jordan")
+
+
 # ── the lead-also-monitored line ───────────────────────────────────────
 def test_lead_monitored_on_a_non_monitor_day_adds_a_line():
     got = jl.comment_text(["Demo"], ["Wendy", "Vince"], "2026-05-04",
@@ -170,3 +178,16 @@ def test_snapshot_proxies_the_job_log_api():
     for name in ("job_log_options", "job_log_comment_text",
                  "post_job_log_comment", "set_clipboard"):
         assert hasattr(snapshot_web.Api, name), f"snapshot_web missing {name}"
+
+
+def test_shared_job_log_dialog_offers_custom_what_and_who_fields():
+    import pathlib
+
+    js = (pathlib.Path(__file__).parents[1] / "web_shared" /
+          "audit_detail.js").read_text(encoding="utf-8")
+    for control_id in ("jl-act-custom-toggle", "jl-act-custom",
+                       "jl-tech-custom-toggle", "jl-tech-custom"):
+        assert f'id="{control_id}"' in js
+    assert 'customValue("#jl-act-custom")' in js
+    assert 'customValue("#jl-tech-custom")' in js
+    assert "picked.concat([custom])" in js

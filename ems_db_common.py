@@ -153,6 +153,8 @@ def canon_key(name: str) -> str:
 # Both backends record the change as a `renamed` event and keep the old
 # spelling as an alias, so the old name still resolves to the job.
 
+EVENT_CREATED = "job_created"
+EVENT_SNAPSHOT_REVISION = "snapshot_revision"
 EVENT_RENAMED = "renamed"
 
 

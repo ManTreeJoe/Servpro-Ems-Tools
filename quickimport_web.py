@@ -46,6 +46,14 @@ class Api:
     def attach(self, w):
         self._window = w
 
+    def track_events(self, events):
+        """Privacy-safe usage sink for the standalone Quick Import window."""
+        try:
+            import usage_tracker as _ut
+            return _ut.record(events or [])
+        except Exception as ex:
+            return {"ok": False, "written": 0, "error": str(ex)}
+
     # ── Delegate to the full audit backend for all shared actions ────
     def _aw(self):
         import audit_web as _aw_mod
@@ -250,6 +258,8 @@ class Api:
         return self._aw().open_xa_link(client, card_id)
     def open_companycam_link(self, client):
         return self._aw().open_companycam_link(client)
+    def open_workcenter(self):
+        return self._aw().open_workcenter()
     def get_claim_number(self, client):
         return self._aw().get_claim_number(client)
     def get_address(self, client):
@@ -375,22 +385,23 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
-    def get_job_email(self, client) -> dict:
-        """Customer (or adjuster) email from the job's Trello card, or ''."""
-        try:
-            import persistence
-            import trello_client as tc
-            cid = persistence.get_trello_card_id(client) or ""
-            if not cid:
-                return {"ok": True, "email": ""}
-            card = tc.get_card_lite(cid) or {}      # desc-only reader
-            fields = tc.parse_card_desc(card.get("desc")) or {}
-            cust = fields.get("CUSTOMER INFORMATION", {}) or {}
-            ins = fields.get("INSURANCE INFORMATION", {}) or {}
-            email = (cust.get("EMAIL") or ins.get("ADJUSTER EMAIL") or "").strip()
-            return {"ok": True, "email": email}
-        except Exception as ex:
-            return {"ok": False, "error": str(ex)}
+    def get_job_email(self, client, card_id="") -> dict:
+        return self._aw().get_job_email(client, card_id)
+
+    def job_admin_suggest(self, *a, **k):
+        return self._aw().job_admin_suggest(*a, **k)
+
+    def job_delete_preview(self, *a, **k):
+        return self._aw().job_delete_preview(*a, **k)
+
+    def job_delete_apply(self, *a, **k):
+        return self._aw().job_delete_apply(*a, **k)
+
+    def job_merge_preview(self, *a, **k):
+        return self._aw().job_merge_preview(*a, **k)
+
+    def job_merge_apply(self, *a, **k):
+        return self._aw().job_merge_apply(*a, **k)
 
 
 def main(argv=None):

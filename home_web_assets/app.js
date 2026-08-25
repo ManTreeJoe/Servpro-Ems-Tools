@@ -67,8 +67,7 @@ async function loadShell() {
 
 function restoreLastPanel() {
   if (state.userNavigated) return;          // you clicked first — you win
-  const key = state.header?.last_panel;
-  if (!key) return;                          // first run, or nothing saved
+  const key = state.header?.last_panel || "audit";
   const item = findItem(key);
   if (!item) return;                         // panel hidden or gone
   navigate(key, item.src, "", true);
@@ -137,8 +136,53 @@ window.addEventListener("message", async (ev) => {
     // name) so it filters/selects the job on load.
     const item = findItem(d.key);
     if (item) navigate(d.key, item.src, d.focus || "");
+  } else if (d.type === "ems-open-tool-modal" && d.key === "snapshot") {
+    openSnapshotModal(d.focus || "");
   }
 });
+
+// Snapshot is a job-ending task, not a separate place people need to
+// navigate to. Open it as a focused workspace above Jobs and return the
+// user to the exact job when it closes.
+function openSnapshotModal(focus) {
+  closeSnapshotModal();
+  const returnFocus = document.activeElement;
+  const wrap = document.createElement("div");
+  wrap.id = "snapshot-workspace";
+  wrap.className = "tool-workspace";
+  wrap.setAttribute("role", "dialog");
+  wrap.setAttribute("aria-modal", "true");
+  wrap.setAttribute("aria-labelledby", "snapshot-workspace-title");
+  const url = "../snapshot_web_assets/index.html"
+    + (focus ? "?focus=" + encodeURIComponent(focus) : "");
+  wrap.innerHTML = `
+    <header class="tool-workspace-head">
+      <div>
+        <div class="tool-workspace-kicker">Close out</div>
+        <div class="tool-workspace-title" id="snapshot-workspace-title">${esc(focus || "Job")}</div>
+      </div>
+      <button class="tool-workspace-close" type="button" aria-label="Close job close-out">✕</button>
+    </header>
+    <iframe class="tool-workspace-frame" title="Close out job" src="${esc(url)}"></iframe>`;
+  wrap._returnFocus = returnFocus;
+  document.body.appendChild(wrap);
+  wrap.querySelector(".tool-workspace-close").addEventListener("click", closeSnapshotModal);
+  document.addEventListener("keydown", onSnapshotModalKey);
+  setTimeout(() => wrap.querySelector(".tool-workspace-close")?.focus(), 0);
+}
+
+function onSnapshotModalKey(e) {
+  if (e.key === "Escape") closeSnapshotModal();
+}
+
+function closeSnapshotModal() {
+  const wrap = document.getElementById("snapshot-workspace");
+  if (!wrap) return;
+  document.removeEventListener("keydown", onSnapshotModalKey);
+  const returnFocus = wrap._returnFocus;
+  wrap.remove();
+  try { returnFocus?.focus?.(); } catch (_) { /* ignore */ }
+}
 
 function updateClock() {
   // Re-fetch header time from Python (handles tz transitions etc.)

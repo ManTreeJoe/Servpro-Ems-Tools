@@ -56,6 +56,15 @@ def test_the_list_persists_when_it_changes(js):
     assert "saveRecents()" in cleared, "clearing must persist too"
 
 
+def test_reopening_an_existing_recent_promotes_and_saves_it(js):
+    """Looking up an older Recent makes it the newest Recent."""
+    body = _fn(js, "touchRecentRow")
+    assert "splice(ix, 1)" in body
+    assert "unshift(hit)" in body
+    assert "saveRecents()" in body
+    assert "touchRecentRow(state.selected_client" in js
+
+
 # ── coming back ──────────────────────────────────────────────────────
 def test_restore_marks_rows_as_not_yet_checked(js):
     body = _fn(js, "restoreRecents")

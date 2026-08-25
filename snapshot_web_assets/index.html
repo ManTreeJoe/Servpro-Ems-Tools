@@ -9,7 +9,7 @@
 <script src="../web_shared/modal.js?v=20260812a"></script>
 <link rel="stylesheet" href="../web_shared/modal.css?v=20260813a" />
 <script src="../web_shared/umbrella_group.js?v=20260731j"></script>
-<script src="../web_shared/usage_track.js?v=20260731j"></script>
+<script src="../web_shared/usage_track.js?v=20260825a"></script>
 <script src="../web_shared/request_items.js?v=20260731j"></script>
 <script src="../web_shared/xactimate_prep.js?v=20260731j"></script>
 <link rel="stylesheet" href="../web_shared/xactimate_prep.css?v=20260723a" />
@@ -21,7 +21,7 @@
 <script src="../web_shared/keyboard.js?v=20260812a"></script>
 <script src="../web_shared/toast_log.js?v=20260731j"></script>
 <meta charset="UTF-8" />
-<title>Snapshot — Linguar Hub</title>
+<title>Close-out Snapshot — Linguar Hub</title>
 <link rel="stylesheet" href="../web_shared/umbrella_group.css?v=20260722a" />
 <link rel="stylesheet" href="theme.css" />
 <style>
@@ -112,7 +112,7 @@
   .pdf-meta { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
   .closeout-row {
-    display: grid; grid-template-columns: 1fr auto auto; gap: 8px;
+    display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px;
     padding: 8px 12px; border-bottom: 1px solid var(--border);
     align-items: center;
   }
@@ -172,7 +172,7 @@
   .detail-chip.commercial-chip {
     background: transparent; color: var(--text-muted);
     border: 1px dashed var(--border); cursor: pointer;
-    transition: all 100ms ease;
+    transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
   }
   .detail-chip.commercial-chip:hover { border-color: #B86FCB; color: #B86FCB; }
   .detail-chip.commercial-chip.on {
@@ -231,31 +231,37 @@
 
   /* Action buttons (matches Audit panel exactly) */
   .detail-actions {
-    display: flex; flex-wrap: wrap; gap: 8px;
-    margin-top: 22px; padding-top: 18px;
+    display: flex; flex-direction: column; gap: 7px;
+    margin-top: 22px; padding: 14px;
     border-top: 1px solid var(--border);
+    background: var(--surface); border-radius: 10px;
   }
-  /* Each row = one section; flex-basis:100% puts each on its own line,
-     buttons wrap within. Bare buttons (older render) flow horizontally,
-     never stack vertically. */
-  .action-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex-basis: 100%; }
-  .action-row + .action-row { padding-top: 6px; border-top: 1px dashed var(--border); }
+  .action-row { display:flex; gap:12px; align-items:flex-start; width:100%; padding:8px 10px; border:1px solid transparent; border-radius:8px; }
+  .action-row:hover { background:rgba(255,255,255,.018); border-color:var(--border); }
+  .action-group-label { width:72px; flex:0 0 72px; padding-top:7px; color:var(--text-dim); font-size:9px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+  .action-buttons { min-width:0; flex:1; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
   .detail-actions > .action-btn { align-self: flex-start; }
   .action-btn {
     background: var(--surface); color: var(--text);
     border: 1px solid var(--border);
-    padding: 8px 16px; border-radius: 6px;
-    font: inherit; font-size: 13px; font-weight: 600;
-    cursor: pointer; transition: background 100ms ease;
+    padding: 7px 11px; border-radius: 7px;
+    font: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background-color 100ms ease, border-color 100ms ease;
     display: inline-flex; align-items: center; gap: 5px;
   }
   .action-btn:hover { background: var(--border); }
+  .action-btn:focus-visible { outline:2px solid #79b48d; outline-offset:2px; }
   .action-btn.primary {
     background: var(--green); border-color: var(--green); color: #FFFFFF;
   }
   .action-btn.primary:hover { background: var(--green-hover, #258A4F); }
   .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .action-btn img { width: 13px; height: 13px; vertical-align: middle; }
+  @media (max-width:760px) {
+    .detail-actions { padding:10px; }
+    .action-row { display:block; padding:8px; }
+    .action-group-label { display:block; width:auto; padding:0 0 7px; }
+  }
 
   /* Right-click context menu (parity with audit) */
   .ctx-menu {
@@ -283,14 +289,36 @@
   }
   .candidate-pill.closeout { background: var(--amber); color: #FFFFFF; }
   .candidate-pill.rundoc { background: var(--act-monitor); color: #FFFFFF; }
+  .queue-gate {
+    display:flex; align-items:center; gap:12px; margin-bottom:12px;
+    padding:11px 14px; border:1px solid rgba(82,159,105,.4);
+    border-left:4px solid var(--green); border-radius:8px;
+    background:rgba(46,139,87,.08);
+  }
+  .queue-gate-mark { font-size:20px; }
+  .queue-gate-title { font-size:12px; font-weight:700; color:var(--text); }
+  .queue-gate-sub { margin-top:2px; font-size:10px; color:var(--text-muted); }
+  .queue-filters {
+    display:grid; grid-template-columns:minmax(180px,1fr) 170px 170px auto auto;
+    gap:8px; align-items:end; margin-bottom:12px; padding:10px 12px;
+    border:1px solid var(--border); border-radius:8px; background:var(--surface);
+  }
+  .queue-filter { display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .queue-filter label { color:var(--text-muted); font-size:9px; font-weight:750; letter-spacing:.07em; text-transform:uppercase; }
+  .queue-filter .search { width:100%; }
+  #queue-count { align-self:center; white-space:nowrap; font-size:11px; color:var(--text-muted); }
+  @media (max-width:900px) {
+    .queue-filters { grid-template-columns:1fr 1fr; }
+    .queue-filter:first-child { grid-column:1 / -1; }
+  }
 </style>
 </head>
-<body>
+<body class="snapshot-panel">
 <header class="topbar">
   <div class="brand">
     <span class="brand-mark"></span>
-    <span class="brand-name">SERVPRO · Snapshot</span>
-    <span class="brand-tag">web</span>
+    <span class="brand-name">SERVPRO · Close-out Snapshot</span>
+    <span class="brand-tag">final audit</span>
   </div>
   <div class="topbar-actions">
     <div id="trello-search-wrap" style="position:relative;">
@@ -304,8 +332,8 @@
                   border-radius:6px;max-height:380px;overflow-y:auto;
                   z-index:60;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4);"></div>
     </div>
-    <button id="view-list-btn" class="btn">📄 Recent</button>
-    <button id="view-gen-btn" class="btn btn-primary">＋ New snapshot</button>
+    <button id="view-list-btn" class="btn">📸 Queue</button>
+    <button id="view-gen-btn" class="btn">＋ Manual snapshot</button>
     <button id="refresh-btn" class="btn">↻</button>
     <button id="open-folder-btn" class="btn">📁 Folder</button>
   </div>
@@ -317,7 +345,7 @@
 <nav class="tabs" id="snap-tabs" style="display:flex;gap:4px;padding:0 18px 0;border-bottom:1px solid var(--border);background:var(--surface);">
   <button class="tab-btn active" data-tab="today"
           style="background:transparent;color:var(--text);border:0;border-bottom:2px solid transparent;padding:10px 16px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;">
-    📸 Today
+    📸 Close-out queue
   </button>
   <button class="tab-btn" data-tab="tracked"
           style="background:transparent;color:var(--text);border:0;border-bottom:2px solid transparent;padding:10px 16px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;">
@@ -329,11 +357,31 @@
   <!-- Today tab — Estimating SNAPSHOT lane + recent PDFs -->
   <div id="tab-today">
     <section class="col">
-      <h2>📸 Snapshots queued (Estimating board)
-        <span class="muted" style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;">
-          — click a row to open the form with Trello data already filled
-        </span>
-      </h2>
+      <h2>📸 Final close-out audits</h2>
+      <div class="queue-gate">
+        <span class="queue-gate-mark">◆</span>
+        <div>
+          <div class="queue-gate-title">Live Trello Snapshot lane</div>
+          <div class="queue-gate-sub">Anyone can move a card into Snapshot in Trello. It will appear here automatically so you can open it and complete the close-out. Use the Snapshot toggle if you need to move it yourself.</div>
+        </div>
+      </div>
+      <div class="queue-filters">
+        <div class="queue-filter">
+          <label for="queue-search">Find job</label>
+          <input id="queue-search" class="search" type="search" autocomplete="off" placeholder="Filter by job name…" />
+        </div>
+        <div class="queue-filter">
+          <label for="queue-board">Estimating board</label>
+          <select id="queue-board" class="search"><option value="all">All boards</option></select>
+        </div>
+        <div class="queue-filter">
+          <label for="queue-lane">Snapshot lane</label>
+          <select id="queue-lane" class="search"><option value="all">All lanes</option></select>
+        </div>
+        <label class="show-all-jobs"><input type="checkbox" id="queue-show-all"> Show all Estimating jobs</label>
+        <span id="queue-count">—</span>
+        <span id="queue-synced" class="muted" style="font-size:10px;">Checking Trello…</span>
+      </div>
       <div id="candidates"></div>
     </section>
     <section class="col">
@@ -410,12 +458,18 @@
   .sheet-pill.Needs-Attention { background: var(--red); color: #FFF; }
   .cell-done { color: var(--green); font-weight: 700; }
   .cell-x    { color: var(--text-muted); }
+  .snapshot-form-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px; }
+  .snapshot-form-heading h2 { margin:0; }
+  @media (max-width:620px) { .snapshot-form-heading { align-items:flex-start;flex-direction:column; } }
 </style>
 
 <!-- GENERATE VIEW -->
 <main id="view-gen" class="wrap hidden">
   <section class="col">
-    <h2>＋ New snapshot</h2>
+    <div class="snapshot-form-heading">
+      <h2>＋ New snapshot</h2>
+      <button class="btn" id="snapshot-comments-btn" disabled title="Read and post comments on this job's Trello card">💬 Trello comments</button>
+    </div>
     <div class="form-row">
       <label>Insured / job name *</label>
       <input id="f-insured" type="text" autocomplete="off" placeholder="Smith, John — Mercury" />
@@ -501,9 +555,7 @@
                style="width:14px;height:14px;vertical-align:middle;margin-right:6px;" />
           Attach PDF + post comment to Trello
         </button>
-        <button class="btn" id="mark-drafted-btn">
-          🏁 Mark drafted (clear from closeout queue)
-        </button>
+        <button class="btn" id="snapshot-history-btn">🕘 Revision history</button>
         <button class="btn" id="open-pdf-btn">
           📄 Open PDF again
         </button>
@@ -541,7 +593,7 @@
   <span id="status-msg" class="status-msg"></span>
 </footer>
 
-<script src="../web_shared/audit_detail.js?v=20260821a"></script>
-<script src="app.js?v=20260710a"></script>
+<script src="../web_shared/audit_detail.js?v=20260825h"></script>
+<script src="app.js?v=20260824f"></script>
 </body>
 </html>

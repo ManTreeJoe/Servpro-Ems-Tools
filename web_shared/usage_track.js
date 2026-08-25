@@ -2,7 +2,7 @@
  *
  * Drop-in: add <script src="../web_shared/usage_track.js"> to any panel
  * and it auto-records a 'view' on load plus a 'click' for every button
- * pressed (by its label/id — NOT job data). Events batch in memory and
+ * pressed (by a stable id/action — NEVER visible text or job data). Events batch in memory and
  * flush to pywebview.api.track_events([...]) periodically + on hide, so
  * one delegated listener covers the whole panel with no per-button work.
  *
@@ -59,16 +59,20 @@
     }
   }
 
-  // A readable label for a clicked control: explicit data-track wins, then
-  // id, then trimmed text, then title. Emoji/whitespace collapsed.
+  // Stable control identity only. Visible text/title/aria-label may contain
+  // a client, claim, address, search term, path, or user-entered note, so
+  // they are deliberately forbidden as analytics labels.
   function labelFor(el) {
     const raw = el.getAttribute("data-track")
       || el.id
-      || (el.textContent || "").trim()
-      || el.getAttribute("title")
-      || el.getAttribute("aria-label")
+      || el.getAttribute("data-action")
+      || el.getAttribute("data-tab")
+      || el.getAttribute("data-filter")
       || "";
-    return raw.replace(/\s+/g, " ").trim().slice(0, 80);
+    // Keep the event vocabulary machine-like. Explicit data-track values
+    // may use dots for workflow names; DOM ids/actions commonly use dashes.
+    const stable = raw.trim().toLowerCase().replace(/[^a-z0-9_.:-]+/g, "-");
+    return stable.replace(/^-+|-+$/g, "").slice(0, 80);
   }
 
   document.addEventListener("click", (ev) => {
