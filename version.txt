@@ -1,6 +1,6 @@
 {
-  "version": "1.4.0",
+  "version": "1.4.1",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.4.0/Linguar-Hub-Setup-1.4.0.exe",
-  "notes": "Jobs can now be tracked from intake through closeout with a Trello-style horizontal board and an adjustable Snapshot queue. Run docs have a compact editor with drag-and-drop, CompanyCam scope images can be filed into DOCS, contract comments remain editable, and a global shortcut can bring the app forward. Property-management templates and contacts are now saved in the shared database and editable from Settings."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.4.1/Linguar-Hub-Setup-1.4.1.exe",
+  "notes": "Email selection now keeps customer, property manager/POC, tenant, additional-contact, and adjuster addresses separate. The app no longer silently substitutes an adjuster when the customer email is missing; it shows a clear contact picker and missing-customer warning instead."
 }
