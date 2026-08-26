@@ -505,6 +505,11 @@ async function loadBrowsers() {
 }
 
 window.addEventListener("pywebviewready", async () => {
+  // Authentication must remain usable even when an unrelated Settings
+  // section fails to load. Previously these handlers were attached only
+  // after the property-manager and franchise requests completed, leaving
+  // visible sign-in buttons inert whenever either request threw.
+  bindSupabaseControls();
   try { SETTINGS_ACCESS = await pywebview.api.settings_access() || SETTINGS_ACCESS; } catch (_) {}
   const adminTab = document.querySelector('[data-scope-tab="admin"]');
   if (adminTab) adminTab.style.display = SETTINGS_ACCESS.is_admin ? "" : "none";
@@ -622,41 +627,6 @@ async function showOriginHelp(origin) {
   await refreshSupabase();
   await renderPropertyManagers();
   document.getElementById("pm-add").addEventListener("click", () => openPropertyManager({active:true}));
-  document.getElementById("sb-send-code").addEventListener("click", sbSendCode);
-  document.getElementById("sb-password-signin").addEventListener("click", sbPasswordSignIn);
-  document.getElementById("sb-password").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") sbPasswordSignIn();
-  });
-  document.getElementById("sb-code-toggle").addEventListener("click", () => {
-    const tools = document.getElementById("sb-code-tools");
-    const opening = tools.style.display === "none";
-    tools.style.display = opening ? "block" : "none";
-    document.getElementById("sb-code-toggle").textContent = opening
-      ? "Hide emailed-code sign-in" : "Use an emailed code instead";
-  });
-  document.getElementById("sb-email").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); sbSendCode(); }
-  });
-  document.getElementById("sb-verify").addEventListener("click", sbVerify);
-  document.getElementById("sb-code").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); sbVerify(); }
-  });
-  document.getElementById("sb-use-cloud").addEventListener("click",
-    () => sbSetBackend("supabase"));
-  document.getElementById("sb-use-local").addEventListener("click",
-    () => sbSetBackend("sqlite"));
-  document.getElementById("sb-sync").addEventListener("click", async () => {
-    sbMsg("Syncing…");
-    const r = await pywebview.api.supabase_flush_queue();
-    sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
-    await refreshSupabase();
-  });
-  document.getElementById("sb-sign-out").addEventListener("click", async () => {
-    sbMsg("Signing out…");
-    const r = await pywebview.api.supabase_sign_out();
-    sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
-    await refreshSupabase();
-  });
 
   // Sidebar visibility grid — one checkbox per panel.
   await renderPanelVisibility();
@@ -819,6 +789,46 @@ function sbMsg(text, isError) {
   el.style.color = isError ? "var(--red)" : "";
 }
 
+function bindSupabaseControls() {
+  document.getElementById("sb-send-code")?.addEventListener("click", sbSendCode);
+  document.getElementById("sb-password-signin")?.addEventListener("click", sbPasswordSignIn);
+  document.getElementById("sb-password")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); sbPasswordSignIn(); }
+  });
+  document.getElementById("sb-code-toggle")?.addEventListener("click", () => {
+    const tools = document.getElementById("sb-code-tools");
+    const opening = tools.style.display === "none";
+    tools.style.display = opening ? "block" : "none";
+    document.getElementById("sb-code-toggle").textContent = opening
+      ? "Hide emailed-code sign-in" : "Use an emailed code instead";
+  });
+  document.getElementById("sb-email")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); sbPasswordSignIn(); }
+  });
+  document.getElementById("sb-verify")?.addEventListener("click", sbVerify);
+  document.getElementById("sb-code")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); sbVerify(); }
+  });
+  document.getElementById("sb-use-cloud")?.addEventListener("click", () => sbSetBackend("supabase"));
+  document.getElementById("sb-use-local")?.addEventListener("click", () => sbSetBackend("sqlite"));
+  document.getElementById("sb-sync")?.addEventListener("click", async () => {
+    sbMsg("Syncing…");
+    try {
+      const r = await pywebview.api.supabase_flush_queue();
+      sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
+      await refreshSupabase();
+    } catch (e) { sbMsg(`Sync failed: ${e}`, true); }
+  });
+  document.getElementById("sb-sign-out")?.addEventListener("click", async () => {
+    sbMsg("Signing out…");
+    try {
+      const r = await pywebview.api.supabase_sign_out();
+      sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
+      await refreshSupabase();
+    } catch (e) { sbMsg(`Sign out failed: ${e}`, true); }
+  });
+}
+
 async function refreshSupabase() {
   const box = document.getElementById("sb-status");
   const signin = document.getElementById("sb-signin");
@@ -907,7 +917,9 @@ async function runPreflight() {
 async function sbSendCode() {
   const email = document.getElementById("sb-email").value;
   sbMsg("Sending…");
-  const r = await pywebview.api.supabase_send_code(email);
+  let r;
+  try { r = await pywebview.api.supabase_send_code(email); }
+  catch (e) { r = {ok:false, error:`Code request could not start: ${e}`}; }
   sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
   if (r?.ok) {
     const row = document.getElementById("sb-code-row");
@@ -924,7 +936,9 @@ async function sbPasswordSignIn() {
   button.disabled = true;
   button.textContent = "Signing in…";
   sbMsg("Checking your account…");
-  const r = await pywebview.api.supabase_sign_in_password(email, password);
+  let r;
+  try { r = await pywebview.api.supabase_sign_in_password(email, password); }
+  catch (e) { r = {ok:false, error:`Sign-in could not start: ${e}`}; }
   button.disabled = false;
   button.textContent = "Sign in";
   sbMsg(r?.ok ? r.message : (r?.error || "Sign-in failed"), !r?.ok);
@@ -939,7 +953,9 @@ async function sbVerify() {
   const email = document.getElementById("sb-email").value;
   const code = document.getElementById("sb-code").value;
   sbMsg("Checking…");
-  const r = await pywebview.api.supabase_verify_code(email, code);
+  let r;
+  try { r = await pywebview.api.supabase_verify_code(email, code); }
+  catch (e) { r = {ok:false, error:`Verification could not start: ${e}`}; }
   sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
   if (r?.ok) {
     document.getElementById("sb-code").value = "";

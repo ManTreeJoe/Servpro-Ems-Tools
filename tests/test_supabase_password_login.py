@@ -34,6 +34,15 @@ def test_settings_screen_makes_password_primary_and_code_optional():
     assert "supabase_sign_in_password" in html
 
 
+def test_sign_in_controls_bind_before_unrelated_settings_loads():
+    """A failed franchise/property request must not leave visible auth inert."""
+    html = (ROOT / "settings_web_assets" / "index.html").read_text(encoding="utf-8")
+    start = html.index('window.addEventListener("pywebviewready"')
+    first_await = html.index("await ", start)
+    assert html.index("bindSupabaseControls();", start) < first_await
+    assert 'getElementById("sb-password-signin")?.addEventListener' in html
+
+
 def test_missing_password_has_plain_error():
     assert settings_web.Api().supabase_sign_in_password("person@example.com", "") == {
         "ok": False, "error": "Enter your email and password."}
