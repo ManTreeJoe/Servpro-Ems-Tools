@@ -352,7 +352,27 @@ class HomeApi:
             import ctypes
             from ctypes import wintypes
             u = ctypes.windll.user32
-            hwnd = u.FindWindowW(None, "Linguar Hub")
+            # Resolve this process's own visible top-level window. Looking up
+            # the caption "Linguar Hub" can focus the wrong copy when a live
+            # and test build are open together, and misses TRIAL/test titles.
+            hwnd_box = []
+            this_pid = os.getpid()
+            enum_proc_t = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND,
+                                             wintypes.LPARAM)
+
+            @enum_proc_t
+            def _find_ours(candidate, _lparam):
+                pid = wintypes.DWORD()
+                u.GetWindowThreadProcessId(candidate, ctypes.byref(pid))
+                if pid.value == this_pid and u.IsWindowVisible(candidate):
+                    length = u.GetWindowTextLengthW(candidate)
+                    if length:
+                        hwnd_box.append(candidate)
+                        return False
+                return True
+
+            u.EnumWindows(_find_ours, 0)
+            hwnd = hwnd_box[0] if hwnd_box else 0
             if not hwnd:
                 return {"ok": False, "error": "window not found"}
             fg = u.GetForegroundWindow()
@@ -415,7 +435,49 @@ class HomeApi:
             # a window where the user has already clicked something and the
             # late reply yanks them somewhere else.
             "last_panel": self.get_last_panel(),
+            "work_environment": self.active_work_environment(),
         }
+
+    def active_work_environment(self) -> str:
+        """Return the user's active job division, separate from franchise."""
+        try:
+            from ems_db_common import normalize_division
+            return normalize_division(
+                persistence.get("home_work_environment", "EMS"))
+        except Exception:
+            return "EMS"
+
+    def work_environment_state(self):
+        """State for the EMS / Contents / Recon shell switcher."""
+        try:
+            from ems_db_common import DIVISIONS
+            labels = {"EMS": "EMS", "CONTENTS": "Contents", "RECON": "Recon"}
+            return {
+                "ok": True,
+                "active": self.active_work_environment(),
+                "environments": [
+                    {"key": key, "label": labels.get(key, key.title())}
+                    for key in DIVISIONS
+                ],
+            }
+        except Exception as ex:
+            return {"ok": False, "active": "EMS", "error": str(ex)}
+
+    def switch_work_environment(self, value: str):
+        """Persist the active division without changing folders or franchise."""
+        try:
+            from ems_db_common import DIVISIONS, normalize_division
+            requested = str(value or "").strip().upper()
+            if requested not in DIVISIONS:
+                return {"ok": False,
+                        "error": f"unknown work environment '{value}'"}
+            active = normalize_division(requested)
+            if active == self.active_work_environment():
+                return {"ok": True, "unchanged": True, "active": active}
+            persistence.set_value("home_work_environment", active)
+            return {"ok": True, "active": active, "reload": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def get_last_panel(self) -> str:
         """Key of the panel that was open when the app last closed, or ""
@@ -884,11 +946,23 @@ class HomeApi:
             import config
             if not config.is_multi_dept():
                 return {"ok": True, "enabled": False}
+            departments = config.list_departments()
+            try:
+                import supabase_client
+                if supabase_client.is_configured() and supabase_client.is_signed_in():
+                    access = supabase_client.rpc("my_app_access") or {}
+                    if not access.get("is_admin"):
+                        allowed = {str(v).upper() for v in
+                                   (access.get("departments") or [])}
+                        departments = [d for d in departments
+                                       if str(d.get("key") or "").upper() in allowed]
+            except Exception:
+                pass
             return {
                 "ok": True,
-                "enabled": True,
+                "enabled": bool(departments),
                 "active": config.active_department(),
-                "departments": config.list_departments(),
+                "departments": departments,
             }
         except Exception as ex:
             return {"ok": False, "enabled": False, "error": str(ex)}
@@ -906,6 +980,12 @@ class HomeApi:
             cur = config.active_department()
             if not key or key == cur:
                 return {"ok": True, "unchanged": True}
+            state = self.department_state()
+            allowed = {str(d.get("key") or "") for d in
+                       (state.get("departments") or [])}
+            if key not in allowed:
+                return {"ok": False,
+                        "error": "That franchise is not assigned to your account."}
             if not config.set_active_department(key):
                 return {"ok": False, "error": f"unknown department '{key}'"}
             _invalidate_scoped_caches()

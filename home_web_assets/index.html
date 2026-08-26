@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Linguar Hub</title>
 <link rel="stylesheet" href="theme.css" />
-<link rel="stylesheet" href="app.css?v=20260824e" />
+<link rel="stylesheet" href="app.css?v=20260826a" />
 </head>
 <body>
 <div class="shell">
@@ -21,6 +21,7 @@
         </div>
       </div>
       <div class="dept-switch" id="dept-switch" style="display:none;"></div>
+      <div class="work-env-switch" id="work-env-switch" aria-label="Work environment"></div>
     </header>
     <nav class="sb-nav" id="sb-nav"></nav>
     <footer class="sb-foot">
@@ -96,6 +97,19 @@
   .dept-seg:hover { color: var(--text, #e8e8ea); }
   .dept-seg.active { background: var(--green, #2f9e69); color: #fff; }
   .dept-seg:disabled { cursor: default; }
+  .work-env-switch { display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 3px; margin-top: 8px; padding: 3px;
+    background: #171817; border: 1px solid var(--border, #34353b);
+    border-radius: 8px; }
+  .work-env-seg { min-width: 0; border: 0; border-radius: 6px;
+    padding: 6px 3px; cursor: pointer; background: transparent;
+    color: var(--text-muted, #9aa5ae); font: inherit; font-size: 10px;
+    font-weight: 750; letter-spacing: .035em; text-transform: uppercase; }
+  .work-env-seg:hover { color: var(--text, #e8e8ea); background: rgba(255,255,255,.04); }
+  .work-env-seg.active { color: #111713; background: #8fd1a8;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); }
+  .work-env-seg:focus-visible { outline: 2px solid #8fd1a8; outline-offset: 1px; }
+  .work-env-seg:disabled { cursor: default; opacity: .72; }
   .dept-splash {
     position: fixed; inset: 0; z-index: 2000;
     background: var(--bg, #17181c);
@@ -148,7 +162,7 @@
   .fr-secondary:hover { background: rgba(255,255,255,.06); }
 </style>
 
-<script src="../web_shared/health_banner.js?v=20260820a"></script>
+<script src="../web_shared/health_banner.js?v=20260826a"></script>
 <script src="../web_shared/toast_log.js?v=20260731j"></script>
 <script src="app.js?v=20260824e"></script>
 </body>

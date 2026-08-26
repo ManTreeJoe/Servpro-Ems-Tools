@@ -986,8 +986,8 @@ async function openBulkPasteModal() {
     <div class="apa-popover">
       <header class="apa-pop-head">
         <div>
-          <div class="apa-pop-title">📋 Bulk paste items</div>
-          <div class="apa-pop-sub">Paste one item per line — each line becomes its own APA row</div>
+          <div class="apa-pop-title">📋 Check pasted names</div>
+          <div class="apa-pop-sub">See what is already on today's APA and add only unknown names</div>
         </div>
         <button class="apa-pop-close" id="bp-close">✕</button>
       </header>
@@ -1000,29 +1000,60 @@ async function openBulkPasteModal() {
         <label class="apa-pop-lbl" style="margin-top:10px;">Lines (one item per line)</label>
         <textarea id="bp-text" rows="10"
           placeholder="Smith, John - AAA-pending&#10;Doe, Jane - Mercury-uploading&#10;Brown, Bob - Farmers"></textarea>
-        <div class="apa-pop-hint">Existing duplicates are auto-skipped.</div>
+        <div class="apa-pop-hint">Names are checked across every section. Carrier and status differences are ignored.</div>
+        <div id="bp-results" style="margin-top:10px;"></div>
       </div>
       <footer class="apa-pop-foot">
         <div class="apa-pop-spacer"></div>
         <button class="apa-pop-btn" id="bp-cancel">Cancel</button>
-        <button class="apa-pop-btn apa-pop-save" id="bp-add">📋 Add to section</button>
+        <button class="apa-pop-btn apa-pop-save" id="bp-add">Check names</button>
       </footer>
     </div>`;
   document.body.appendChild(w);
   w.addEventListener("click", (e) => { if (e.target === w) w.remove(); });
   document.getElementById("bp-close").addEventListener("click", () => w.remove());
   document.getElementById("bp-cancel").addEventListener("click", () => w.remove());
-  document.getElementById("bp-add").addEventListener("click", async () => {
+  const addButton = document.getElementById("bp-add");
+  const textBox = document.getElementById("bp-text");
+  let checkedUnknown = null;
+  textBox.addEventListener("input", () => {
+    checkedUnknown = null;
+    addButton.disabled = false;
+    addButton.textContent = "Check names";
+    document.getElementById("bp-results").innerHTML = "";
+  });
+  addButton.addEventListener("click", async () => {
     const section = document.getElementById("bp-section").value;
-    const lines = document.getElementById("bp-text").value.split("\n");
-    const res = await pywebview.api.bulk_add_items(section, lines);
+    const lines = textBox.value.split("\n");
+    if (checkedUnknown === null) {
+      const check = await pywebview.api.check_bulk_items(lines);
+      if (!check?.ok) {
+        setStatus(`Name check failed: ${check?.error || "?"}`, "error");
+        return;
+      }
+      checkedUnknown = check.unknown || [];
+      const existing = check.existing || [];
+      const repeated = check.repeated || [];
+      document.getElementById("bp-results").innerHTML = `
+        <div style="padding:9px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);font-size:12px;line-height:1.5;">
+          <div style="color:var(--green);font-weight:700;">${checkedUnknown.length} unknown — ready to add</div>
+          <div style="color:var(--text-muted);">${existing.length} already on today's APA${repeated.length ? ` · ${repeated.length} repeated in paste` : ""}</div>
+          ${checkedUnknown.length ? `<div style="margin-top:6px;color:var(--text);">${checkedUnknown.map(escapeHtml).join("<br>")}</div>` : ""}
+        </div>`;
+      addButton.textContent = checkedUnknown.length
+        ? `Add ${checkedUnknown.length} unknown`
+        : "Nothing to add";
+      addButton.disabled = !checkedUnknown.length;
+      return;
+    }
+    const res = await pywebview.api.bulk_add_items(section, checkedUnknown);
     if (!res?.ok) {
       setStatus(`Bulk add failed: ${res?.error || "?"}`, "error");
       return;
     }
     w.remove();
     setStatus(
-      `📋 Added ${res.added.length} items`
+      `📋 Added ${res.added.length} unknown name${res.added.length === 1 ? "" : "s"}`
       + (res.skipped_dupes ? ` · skipped ${res.skipped_dupes} dupes` : ""),
       "ok");
     await loadDate(state.active_date);

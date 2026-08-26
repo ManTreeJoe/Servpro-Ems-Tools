@@ -5919,6 +5919,39 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": str(ex)}
         return {"ok": True}
 
+    def update_card_comment(self, client: str, action_id: str,
+                            text: str) -> dict:
+        """Edit one existing comment on the client's pinned Trello card."""
+        clean = (text or "").strip()
+        if not client or not action_id:
+            return {"ok": False, "error": "comment not identified"}
+        if not clean:
+            return {"ok": False,
+                    "error": "a comment cannot be empty; use Delete instead"}
+        try:
+            import trello_client as tc
+            if not tc.update_comment(action_id, clean):
+                return {"ok": False, "error":
+                        "Trello did not allow that edit. You can normally edit only comments posted by your Trello account."}
+            self.invalidate_comments_cache(client)
+            return {"ok": True, "text": clean}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def delete_card_comment(self, client: str, action_id: str) -> dict:
+        """Permanently remove one comment from the pinned Trello card."""
+        if not client or not action_id:
+            return {"ok": False, "error": "comment not identified"}
+        try:
+            import trello_client as tc
+            if not tc.delete_comment(action_id):
+                return {"ok": False, "error":
+                        "Trello did not allow that deletion. You can normally delete only comments posted by your Trello account."}
+            self.invalidate_comments_cache(client)
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     # ── Search aliases (mirrors Tk job_widgets context menu) ────────
     def get_search_aliases(self, client: str) -> list:
         """Return the per-client search aliases. Used by audit / SP
@@ -8058,6 +8091,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             import trello_client as tc
             remote = tc.find_cards_by_name(query, max_results=60,
                                            with_lists=False) or []
+            # A few operational boards are shared from a different Trello
+            # workspace. Add only strong title matches from those boards;
+            # the broad configured-workspace search remains the default.
+            anywhere = tc.find_accessible_cards_by_name(query,
+                                                        max_results=12) or []
+            known = {r.get("card_id") for r in remote}
+            remote.extend(r for r in anywhere
+                          if r.get("card_id") not in known)
         except Exception:
             remote = []          # offline / rate-limited — local still works
 

@@ -21,12 +21,26 @@ FIELDS = [
     ("snapshot_template",   "Snapshot fillable PDF",      "file"),
     ("snapshot_output",     "Snapshot PDF output folder", "dir"),
     ("apa_monitor_root",    "APA Monitor docs folder",    "dir"),
+    ("snapshots_root",      "Snapshot tracking workbook", "file"),
+    ("dispute_tracker_path", "Dispute tracking workbook", "file"),
+    ("wc_audit_dir",        "WorkCenter audit folder",    "dir"),
+    ("photos_extra_roots",  "Additional photo roots",     "list"),
     ("workcenter_url",      "Workcenter URL",             "url"),
+    ("enable_workcenter_alpha", "Enable WorkCenter tools", "bool"),
+    ("snapshot_auto_reconcile", "Auto-reconcile snapshot tracking", "bool"),
     ("show_sort_files",     "Show Sort Files in toolbar", "bool"),
     ("show_new_job",        "Show New EMS Job in toolbar","bool"),
     ("trello_api_key",      "Trello API key",             "secret"),
     ("trello_token",        "Trello token (per-user)",    "secret"),
+    ("trello_workspace_id", "Trello workspace ID",        "text"),
+    ("trello_snapshot_list_id", "Trello Snapshot list ID", "text"),
+    ("disputes_board_short_link", "Disputes board short link", "text"),
+    ("trello_boards_exclude", "Trello boards to exclude", "list"),
     ("companycam_api_token", "CompanyCam access token",   "secret"),
+    ("graph_client_id",      "Microsoft Graph client ID", "text"),
+    ("graph_tenant_id",      "Microsoft Graph tenant ID", "text"),
+    ("franchise_name",      "Franchise display name",     "text"),
+    ("office_phone",        "Office phone",               "tel"),
     # Shared job-index backend. ONE project serves both departments —
     # Row-Level Security keyed on jobs.department is what separates IE
     # from OC, so these stay global rather than per-department.
@@ -41,7 +55,34 @@ FIELDS = [
     ("global_hotkey",       "Show-app shortcut",           "choice",
                             ["ctrl+alt+space", "ctrl+shift+space",
                              "alt+shift+space", "ctrl+alt+h"]),
+    ("preferred_browser",   "Default browser command",    "text"),
 ]
+
+_PERSONAL_FIELDS = {
+    "appearance", "ui_scale", "global_hotkey_enabled", "global_hotkey",
+    "preferred_browser", "show_sort_files", "show_new_job",
+}
+
+_FIELD_GROUPS = {
+    "appearance": "Appearance & shortcuts", "ui_scale": "Appearance & shortcuts",
+    "global_hotkey_enabled": "Appearance & shortcuts", "global_hotkey": "Appearance & shortcuts",
+    "preferred_browser": "Appearance & shortcuts", "show_sort_files": "Appearance & shortcuts",
+    "show_new_job": "Appearance & shortcuts",
+    "audit_base": "Folders & documents", "runs_dir": "Folders & documents",
+    "photos_root": "Folders & documents", "photos_extra_roots": "Folders & documents",
+    "snapshot_template": "Folders & documents", "snapshot_output": "Folders & documents",
+    "snapshots_root": "Folders & documents", "apa_monitor_root": "Folders & documents",
+    "dispute_tracker_path": "Folders & documents", "wc_audit_dir": "Folders & documents",
+    "trello_api_key": "Connections", "trello_token": "Connections",
+    "trello_workspace_id": "Connections", "trello_snapshot_list_id": "Connections",
+    "disputes_board_short_link": "Connections",
+    "trello_boards_exclude": "Connections", "companycam_api_token": "Connections",
+    "graph_client_id": "Connections", "graph_tenant_id": "Connections",
+    "supabase_url": "Connections", "supabase_anon_key": "Connections",
+    "workcenter_url": "Connections", "enable_workcenter_alpha": "Connections",
+    "franchise_name": "Office identity", "office_phone": "Office identity",
+    "snapshot_auto_reconcile": "Automation",
+}
 
 
 # Fields a department profile can override (multi-department mode). Grouped
@@ -84,6 +125,36 @@ DEPT_FIELDS = [
 # the config, which is how IE ended up searching OC's Trello workspace.
 # The selector is scoped now; this makes the same mistake unwritable.
 _ALLOWED_SAVE_KEYS = frozenset(f[0] for f in FIELDS)
+_INITIAL_ADMIN_EMAIL = "nathan@servpro10100.com"
+
+
+def _signed_in_email():
+    try:
+        import supabase_client
+        return ((supabase_client.current_user() or {}).get("email") or "").strip().lower()
+    except Exception:
+        return ""
+
+
+def _is_admin():
+    """Server decision when available; exact bootstrap email for migration setup."""
+    try:
+        import supabase_client
+        result = supabase_client.rpc("my_app_access")
+        if isinstance(result, dict):
+            return bool(result.get("is_admin"))
+    except Exception:
+        pass
+    return _signed_in_email() == _INITIAL_ADMIN_EMAIL
+
+
+def _admin_enforcement_active():
+    """Account roles apply once the shared Supabase service is configured."""
+    try:
+        import supabase_client
+        return supabase_client.is_configured()
+    except Exception:
+        return False
 
 
 def _invalidate(reason):
@@ -102,8 +173,53 @@ class Api:
 
     def schema(self):
         return [{"key": f[0], "label": f[1], "kind": f[2],
-                  "choices": (f[3] if len(f) > 3 else [])}
+                  "choices": (f[3] if len(f) > 3 else []),
+                  "scope": ("personal" if f[0] in _PERSONAL_FIELDS else "admin"),
+                  "group": _FIELD_GROUPS.get(f[0], "Other")}
                 for f in FIELDS]
+
+    def settings_access(self):
+        email = _signed_in_email()
+        is_admin = _is_admin()
+        departments = []
+        try:
+            import supabase_client
+            access = supabase_client.rpc("my_app_access") or {}
+            if isinstance(access, dict):
+                departments = access.get("departments") or []
+                is_admin = bool(access.get("is_admin"))
+        except Exception:
+            pass
+        return {"ok": True, "email": email, "is_admin": is_admin,
+                "departments": departments}
+
+    def admin_users(self):
+        if _admin_enforcement_active() and not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
+        try:
+            import supabase_client
+            rows = supabase_client.rpc("admin_list_user_access") or []
+            return {"ok": True, "users": rows,
+                    "franchises": [d.get("key") for d in config.list_departments()]}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def admin_set_user_franchises(self, user_id, departments):
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
+        if not user_id or not isinstance(departments, list):
+            return {"ok": False, "error": "User and franchises are required."}
+        allowed = {str(d.get("key") or "").upper()
+                   for d in config.list_departments()}
+        selected = sorted({str(d or "").strip().upper() for d in departments
+                           if str(d or "").strip().upper() in allowed})
+        try:
+            import supabase_client
+            saved = supabase_client.rpc("admin_set_user_departments", {
+                "p_user_id": user_id, "p_departments": selected}) or []
+            return {"ok": True, "departments": saved}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def load(self):
         # Show what is actually IN EFFECT for the active department, so the
@@ -154,6 +270,11 @@ class Api:
     def save(self, values):
         if not isinstance(values, dict):
             return {"ok": False, "error": "values must be a dict"}
+        if not _is_admin():
+            attempted = set(values) - _PERSONAL_FIELDS
+            if attempted:
+                return {"ok": False,
+                        "error": "Administrator access is required to change shared setup."}
         try:
             # Write to the BASE config (never the department-overlaid view),
             # so saving the global fields can't accidentally bake the active
@@ -175,6 +296,12 @@ class Api:
                               if k not in _ALLOWED_SAVE_KEYS)
             values = {k: v for k, v in incoming.items()
                       if k in _ALLOWED_SAVE_KEYS}
+            kinds = {f[0]: f[2] for f in FIELDS}
+            for key in list(values):
+                if kinds.get(key) == "list" and isinstance(values[key], str):
+                    values[key] = [part.strip() for part in
+                                   values[key].replace(";", "\n").splitlines()
+                                   if part.strip()]
             if rejected:
                 try:
                     import ems_log
@@ -262,7 +389,7 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
-    # ── Multiple-department (OC / IE) config ─────────────────────────
+    # ── Multiple-franchise config ────────────────────────────────────
     def dept_config(self):
         """State for the Departments settings section: whether it's on,
         the field schema, each department's overrides, and the base values
@@ -302,8 +429,7 @@ class Api:
             return {"ok": False, "error": str(ex)}
 
     def set_multi_dept(self, enabled: bool):
-        """Toggle multiple-department mode. Enabling scaffolds the IE + OC
-        profiles (IE inherits the current settings; OC starts blank)."""
+        """Toggle multiple-franchise mode without inventing offices."""
         try:
             if enabled:
                 config.ensure_departments_scaffold()
@@ -615,6 +741,29 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def supabase_sign_in_password(self, email, password) -> dict:
+        """Basic email/password sign-in. The password is never persisted."""
+        email = (email or "").strip()
+        if not email or not password:
+            return {"ok": False, "error": "Enter your email and password."}
+        try:
+            import supabase_client
+            supabase_client.sign_in_with_password(email, password)
+            _invalidate("supabase password sign-in")
+            try:
+                import web_health
+                web_health.invalidate_grant_cache()
+            except Exception:
+                pass
+            user = supabase_client.current_user() or {}
+            return {"ok": True,
+                    "message": f"Signed in as {user.get('email') or email}"}
+        except Exception as ex:
+            status = getattr(ex, "status", 0)
+            if status in (400, 401):
+                return {"ok": False, "error": "Email or password is incorrect."}
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def supabase_verify_code(self, email, code) -> dict:
         """Exchange the emailed code for a session.
 
@@ -626,13 +775,19 @@ class Api:
         email = (email or "").strip()
         code = (code or "").strip()
         if not code:
-            return {"ok": False, "error": "Enter the code from the email."}
+            return {"ok": False, "error": "Enter the code, paste the email link, or paste the final browser address."}
         try:
             import supabase_client
             if "://" in code or "token" in code.lower():
                 supabase_client.verify_magic_link(code, email=email)
             else:
                 supabase_client.verify_login_code(email, code)
+            _invalidate("supabase sign-in")
+            try:
+                import web_health
+                web_health.invalidate_grant_cache()
+            except Exception:
+                pass
             u = supabase_client.current_user() or {}
             return {"ok": True,
                     "message": f"Signed in as {u.get('email') or email}"}
@@ -649,6 +804,11 @@ class Api:
             import supabase_client
             import ems_db
             supabase_client.sign_out()
+            try:
+                import web_health
+                web_health.invalidate_grant_cache()
+            except Exception:
+                pass
             if ems_db.backend_name() == "supabase":
                 self.set_db_backend("sqlite")
             return {"ok": True, "message": "Signed out — using the local "
@@ -759,6 +919,75 @@ class Api:
             "total":  len(steps),
             "all_done": done_count == len(steps),
         }
+
+    def employee_setup_status(self) -> dict:
+        """Plain-language first-day checklist for a regular employee."""
+        cfg = config.load() or {}
+        try:
+            import supabase_client as sb
+            user = sb.current_user() or {}
+            signed_in = bool(user.get("id"))
+            access = sb.rpc("my_app_access") if signed_in else {}
+        except Exception:
+            user, signed_in, access = {}, False, {}
+        departments = list((access or {}).get("departments") or [])
+        active = (config.active_department() or "").strip()
+        trello_set = bool((cfg.get("trello_api_key") or "").strip()
+                          and (cfg.get("trello_token") or "").strip())
+        audit_base = (cfg.get("audit_base") or "").strip()
+        runs_dir = (cfg.get("runs_dir") or "").strip()
+        folders_ok = bool(audit_base and os.path.isdir(audit_base)
+                          and runs_dir and os.path.isdir(runs_dir))
+        steps = [
+            {"key": "signin", "title": "Sign in",
+             "help": "Use your SERVPRO work email and the password Nathan gave you.",
+             "done": signed_in,
+             "detail": user.get("email") or "Not signed in"},
+            {"key": "franchise", "title": "Get your franchise",
+             "help": "Nathan assigns this. You do not need to enter a code.",
+             "done": bool(departments),
+             "detail": (", ".join(departments) if departments
+                        else "Ask Nathan to assign your franchise")},
+            {"key": "trello", "title": "Connect Trello",
+             "help": "Open Trello, click Allow, then come back here.",
+             "done": trello_set,
+             "detail": "Connected" if trello_set else "Not connected"},
+            {"key": "folders", "title": "Check the job folders",
+             "help": "Your computer must be able to open the shared job and run-doc folders.",
+             "done": folders_ok,
+             "detail": (f"{active or 'Assigned franchise'} folders are available"
+                        if folders_ok else "Shared folders are not available on this PC")},
+        ]
+        return {"ok": True, "steps": steps,
+                "done": sum(1 for step in steps if step["done"]),
+                "total": len(steps),
+                "all_done": all(step["done"] for step in steps),
+                "active_franchise": active,
+                "is_admin": bool((access or {}).get("is_admin"))}
+
+    def my_trello_token_page(self) -> dict:
+        """The current Trello authorization URL using Linguar's API key."""
+        try:
+            import trello_auth
+            result = trello_auth.manual_url()
+            if not result.get("ok"):
+                return result
+            return {"ok": True, "url": result["url"]}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def save_my_trello_token(self, token: str) -> dict:
+        """Save only this PC/user's token; never expose shared admin setup."""
+        try:
+            import trello_auth
+            result = trello_auth.save_token(token)
+            if not result.get("ok"):
+                return result
+            import trello_client
+            me = trello_client._call("/members/me") or {}
+            return {"ok": True, "name": me.get("fullName") or me.get("username") or "Trello user"}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def trello_auth_status(self):
         """Quick connection check — does the saved token actually

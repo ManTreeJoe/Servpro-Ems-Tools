@@ -511,6 +511,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().open_workcenter()
     def get_job_email(self, client, card_id=""):
         return self._aw().get_job_email(client, card_id)
+    def get_job_contacts(self, client, card_id=""):
+        return self._aw().get_job_contacts(client, card_id)
     def job_summary_data(self, client, card_id=""):
         return self._aw().job_summary_data(client, card_id)
     def companycam_probe(self, client, card_id=""):
@@ -640,6 +642,10 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().get_all_checklists(client)
     def get_card_comments(self, client, limit=200):
         return self._aw().get_card_comments(client, limit)
+    def update_card_comment(self, client, action_id, text):
+        return self._aw().update_card_comment(client, action_id, text)
+    def delete_card_comment(self, client, action_id):
+        return self._aw().delete_card_comment(client, action_id)
     def comment_image(self, client, attachment_id, big=False):
         return self._aw().comment_image(client, attachment_id, big)
     def invalidate_comments_cache(self, client=""):

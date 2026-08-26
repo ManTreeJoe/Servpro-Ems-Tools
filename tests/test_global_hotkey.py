@@ -30,6 +30,14 @@ def test_home_starts_and_stops_hotkey_service():
     assert "api._hotkey.stop()" in source
 
 
+def test_focus_targets_this_process_not_a_shared_window_title():
+    source = Path(__file__).resolve().parents[1].joinpath("home_web.py").read_text(encoding="utf-8")
+    body = source[source.index("    def focus_window(self):"):source.index("    def hotkey_status(self):")]
+    assert "os.getpid()" in body
+    assert "EnumWindows" in body
+    assert 'FindWindowW(None, "Linguar Hub")' not in body
+
+
 def test_settings_explains_and_labels_the_shortcut():
     html = Path(__file__).resolve().parents[1].joinpath(
         "settings_web_assets", "index.html").read_text(encoding="utf-8")

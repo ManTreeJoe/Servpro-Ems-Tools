@@ -24,7 +24,7 @@ import sys
 import glob
 import shutil
 
-VERSION = "1.4.1"
+VERSION = "1.5.0"
 
 
 def _detect_channel():

@@ -112,9 +112,9 @@ insert into meta (key, value) values ('schema_version', '3')
 
 -- ── Who may see which franchise ────────────────────────────────────────
 --
--- Membership, NOT a single column on the user: IE staff currently run recon
--- for BOTH franchises, so one person legitimately needs access to OC jobs
--- while belonging to IE. One row per (user, department) they may see.
+-- Membership, NOT a single column on the user: one person may legitimately
+-- need access to several franchises. Codes are data configured by the app;
+-- the database does not reserve or assume any particular franchise names.
 
 create table if not exists app_user_departments (
     user_id    uuid not null references auth.users (id) on delete cascade,
@@ -134,7 +134,7 @@ $$;
 
 -- ── Row-Level Security ─────────────────────────────────────────────────
 --
--- THIS is what separates IE from OC — not application code. The guards in
+-- THIS is what separates franchises — not application code. The guards in
 -- ems_db.py stay as a backstop, but from here the database refuses.
 --
 -- NULL department stays permissive, matching the SQLite rule: a job with no
@@ -200,5 +200,5 @@ create policy own_departments on app_user_departments
 --
 -- After creating each user in Authentication → Users, grant access with:
 --     insert into app_user_departments (user_id, department)
---     values ('<uuid>', 'IE');
--- Add a second row for anyone who also works the other franchise.
+--     values ('<uuid>', '<FRANCHISE_CODE>');
+-- Add one row for every configured franchise that person may use.

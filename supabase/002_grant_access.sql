@@ -14,14 +14,13 @@ order by created_at;
 
 
 -- ── 2. Grant access ────────────────────────────────────────────────────
--- No editing needed: this gives EVERY existing user both franchises,
--- which is correct while you're the only account. IE staff run OC's
--- recon, so a person legitimately holds both rows.
+-- Replace both placeholders. Franchise codes come from Linguar Hub
+-- Settings and are not fixed by this database.
 
 insert into app_user_departments (user_id, department)
-select u.id, d.dept
-from auth.users u
-cross join (values ('IE'), ('OC')) as d (dept)
+select id, '<FRANCHISE_CODE>'
+from auth.users
+where lower(email) = lower('<EMPLOYEE_EMAIL>')
 on conflict do nothing;
 
 
@@ -33,16 +32,17 @@ join auth.users u on u.id = a.user_id
 order by u.email, a.department;
 
 
--- ── Later: one franchise only ──────────────────────────────────────────
--- When you add office staff who should see just one side, use the
--- email-scoped form instead of the blanket grant above:
+-- ── Later: add or remove any configured franchise ─────────────────────
+-- Run the grant above again with another configured franchise code.
 --
 --   insert into app_user_departments (user_id, department)
---   select id, 'OC' from auth.users where email = 'person@company.com'
+--   select id, '<FRANCHISE_CODE>' from auth.users
+--   where email = '<EMPLOYEE_EMAIL>'
 --   on conflict do nothing;
 --
 -- To revoke:
 --
 --   delete from app_user_departments
---   where department = 'OC'
---     and user_id = (select id from auth.users where email = 'person@company.com');
+--   where department = '<FRANCHISE_CODE>'
+--     and user_id = (select id from auth.users
+--                    where email = '<EMPLOYEE_EMAIL>');

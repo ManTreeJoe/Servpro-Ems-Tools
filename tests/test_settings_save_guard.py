@@ -34,6 +34,12 @@ _IE_WS = "6000dbdc5bc7840c91334167"
 _OC_WS = "67b3aa86edf2c0f18da56a8f"
 
 
+@pytest.fixture(autouse=True)
+def administrator(monkeypatch):
+    """These save-path tests exercise an authorized administrator."""
+    monkeypatch.setattr(settings_web, "_is_admin", lambda: True)
+
+
 @pytest.fixture
 def cfg(tmp_path, monkeypatch):
     """A realistic two-department config with IE active."""
@@ -66,18 +72,19 @@ def _reload():
 # ── the guard ───────────────────────────────────────────────────────────
 
 def test_the_exact_bug_cannot_recur(cfg):
-    """Save the main form while the Departments editor happens to be
-    showing OC — the payload carries OC's workspace id. It must not land
-    anywhere."""
+    """A legitimate main-form workspace edit routes only to the active
+    franchise; the DOM selector prevents the separate franchise editor from
+    being swept into this payload."""
+    new_ie_workspace = "new-ie-workspace"
     res = settings_web.Api().save({
         "workcenter_url": "https://new",       # a real main-form field
-        "trello_workspace_id": _OC_WS,         # swept from the dept editor
+        "trello_workspace_id": new_ie_workspace,
     })
     assert res["ok"]
-    assert "trello_workspace_id" in res["ignored_keys"]
     base = _reload()
     assert base["trello_workspace_id"] == _IE_WS
-    assert base["departments"]["IE"]["trello_workspace_id"] == _IE_WS
+    assert base["departments"]["IE"]["trello_workspace_id"] == new_ie_workspace
+    assert base["departments"]["OC"]["trello_workspace_id"] == _OC_WS
     assert base["workcenter_url"] == "https://new", "the real field saved"
 
 
@@ -89,14 +96,12 @@ def test_panel_visibility_checkboxes_are_ignored(cfg):
     assert "panel_hidden_kpi" not in _reload()
 
 
-def test_dept_only_keys_are_all_blocked(cfg):
-    """Every DEPT_FIELDS key that is NOT also a main-form field must be
-    unwritable here."""
+def test_franchise_fields_are_available_to_single_franchise_admins(cfg):
+    """Single-franchise installs have no franchise editor, so every required
+    franchise value must also be reachable from Admin setup."""
     main = {f[0] for f in settings_web.FIELDS}
     dept_only = [f[0] for f in settings_web.DEPT_FIELDS if f[0] not in main]
-    assert dept_only, "expected some department-only fields"
-    res = settings_web.Api().save({k: "x" for k in dept_only})
-    assert sorted(res["ignored_keys"]) == sorted(dept_only)
+    assert dept_only == []
 
 
 def test_unknown_keys_never_reach_the_config(cfg):

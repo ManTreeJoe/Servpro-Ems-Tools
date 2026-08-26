@@ -14,10 +14,9 @@ decided by RLS on `jobs.department` plus the `app_user_departments`
 membership table. So the key that ships is worthless on its own, and the
 key that matters never leaves the Supabase dashboard.
 
-Auth is email OTP (a 6-digit code), not a password and not OAuth. Both of
-those redirect through a browser, which in a pywebview desktop app means
-standing up a localhost callback listener. A code the user types needs no
-redirect handling at all.
+Auth supports ordinary email/password sign-in plus email OTP as a fallback.
+Passwords are sent directly to Supabase Auth over HTTPS and are never stored;
+only the returned short-lived session and refresh token live on this machine.
 
 Session tokens live in DATA_DIR, not config.json — they're per-machine and
 short-lived, and mixing them into the config the user hand-edits invites
@@ -206,6 +205,21 @@ def _raw(method, path, *, params=None, body=None, token=None,
 
 # ── Auth (email OTP) ────────────────────────────────────────────────────
 
+def sign_in_with_password(email: str, password: str) -> dict:
+    """Sign in with an existing Supabase email/password account."""
+    email = (email or "").strip()
+    if not email:
+        raise ValueError("email required")
+    if not password:
+        raise ValueError("password required")
+    payload = _raw("POST", "/auth/v1/token",
+                   params={"grant_type": "password"},
+                   body={"email": email, "password": password})
+    if not (payload or {}).get("access_token"):
+        raise SupabaseError(401, "no access_token in password response")
+    _store_session(payload)
+    return current_user() or {}
+
 def send_login_code(email: str) -> dict:
     """Email a 6-digit sign-in code.
 
@@ -250,9 +264,27 @@ def verify_magic_link(url_or_token: str, email: str = "") -> dict:
     raw = (url_or_token or "").strip()
     if not raw:
         raise ValueError("paste the link or token from the email")
+    # After a successful browser verification Supabase commonly redirects to
+    # localhost with the session in the URL fragment:
+    #   http://localhost:3000/#access_token=...&refresh_token=...
+    # A desktop app has no page listening there, but the address bar still
+    # contains a perfectly valid session. Accept that final URL directly.
+    parsed = urllib.parse.urlparse(raw)
+    fragment = urllib.parse.parse_qs(parsed.fragment)
+    access = (fragment.get("access_token") or [""])[0].strip()
+    refresh = (fragment.get("refresh_token") or [""])[0].strip()
+    if access and refresh:
+        payload = {
+            "access_token": access,
+            "refresh_token": refresh,
+            "token_type": (fragment.get("token_type") or ["bearer"])[0],
+            "expires_in": int((fragment.get("expires_in") or [3600])[0]),
+        }
+        _store_session(payload)
+        return current_user() or {}
     token = raw
     if "://" in raw or raw.startswith("?") or "token" in raw:
-        qs = urllib.parse.parse_qs(urllib.parse.urlparse(raw).query)
+        qs = urllib.parse.parse_qs(parsed.query)
         token = (qs.get("token_hash") or qs.get("token") or [""])[0].strip()
     if not token:
         raise ValueError("no token found in that link")

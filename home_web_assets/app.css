@@ -242,3 +242,81 @@ body { background: var(--bg); }
 @media (max-width: 720px) {
   .tool-workspace { inset: 0; border-radius: 0; border: 0; }
 }
+
+/* Compact navigation rail. Keep every tool reachable when the window is
+   narrow without letting navigation consume the working area. */
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 64px minmax(0, 1fr); }
+
+  .sb-head { padding: 12px 8px 10px; }
+  .brand-row { justify-content: center; }
+  .brand-row > div { display: none; }
+  .brand-mark { width: 30px; height: 30px; }
+
+  .dept-switch {
+    flex-direction: column;
+    margin-top: 9px !important;
+    padding: 2px !important;
+  }
+  .dept-seg { padding: 4px 2px !important; font-size: 10px !important; }
+  .work-env-switch {
+    display: flex !important;
+    flex-direction: column;
+    margin-top: 7px !important;
+    padding: 2px !important;
+  }
+  .work-env-seg {
+    width: 42px;
+    height: 25px;
+    padding: 0 2px !important;
+    font-size: 8px !important;
+    letter-spacing: 0;
+  }
+
+  .sb-nav { padding: 8px 7px; overflow-x: hidden; }
+  .sb-group {
+    height: 1px;
+    margin: 10px 8px 7px;
+    padding: 0;
+    overflow: hidden;
+    background: var(--border);
+    color: transparent;
+  }
+  .sb-group:first-child { margin-top: 3px; }
+  .sb-item {
+    position: relative;
+    display: flex;
+    width: 48px;
+    min-height: 42px;
+    margin: 2px 0;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+  .sb-item.active {
+    padding-left: 0;
+    border-radius: 8px;
+    box-shadow: inset 3px 0 0 var(--green);
+  }
+  .sb-icon { font-size: 19px; }
+  .sb-name { display: none; }
+  .sb-badge {
+    position: absolute;
+    top: 2px;
+    right: 1px;
+    min-width: 15px;
+    max-width: 27px;
+    padding: 1px 3px;
+    overflow: hidden;
+    font-size: 8px;
+    line-height: 12px;
+  }
+  .sb-badge.loading { display: none; }
+
+  .sb-foot {
+    padding: 8px 14px;
+    flex-direction: column;
+    align-items: center;
+  }
+  .sb-foot-btn { width: 34px; height: 32px; }
+}

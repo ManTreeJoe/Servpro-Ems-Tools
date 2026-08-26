@@ -527,7 +527,7 @@ def test_the_enrichment_call_survived_the_section(detail_js):
     body = detail_js[detail_js.index("async function loadTrelloInfo"):]
     body = body[:body.index("\n  }")]
     assert "trello_enrichment" in body
-    assert "copy-email-btn" in body
+    assert "dataset.email" in body
     assert "if (bodyEl) bodyEl.innerHTML" in body, "must tolerate no body"
 
 

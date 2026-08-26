@@ -288,6 +288,70 @@ def find_cards_by_name(query, *, max_results=20, with_lists=True):
     return out
 
 
+def find_accessible_cards_by_name(query, *, max_results=20):
+    """Find strong name matches on any Trello board the user can access.
+
+    The normal search is intentionally scoped to the configured workspace.
+    Some active operational cards live on shared boards in another Trello
+    workspace (for example AR BOARD 1234), so the card picker needs a narrow
+    escape hatch. This searches globally but keeps only card-title matches;
+    comments and descriptions cannot make an unrelated card appear.
+    """
+    import difflib as _difflib
+    words = [w for w in _re.findall(r"[a-z0-9]+", (query or "").lower())
+             if len(w) > 1]
+    if not words:
+        return []
+
+    def title_match(name):
+        title_words = _re.findall(r"[a-z0-9]+", (name or "").lower())
+        if not title_words:
+            return False
+        return all(any(w == t or _difflib.SequenceMatcher(None, w, t).ratio() >= .84
+                       for t in title_words) for w in words)
+
+    # Trello returns no result for some one-letter misspellings. Searching
+    # the least ambiguous individual name token gives us candidates that
+    # are then held to the strict title-only filter above.
+    queries = [(query or "").strip()]
+    queries.extend(sorted((w for w in words if len(w) >= 4),
+                          key=len, reverse=True)[:2])
+    seen, candidates = set(), []
+    for q in queries:
+        try:
+            raw = _call("/search", params={
+                "query": q, "modelTypes": "cards",
+                "card_fields": "id,name,shortUrl,idBoard,idList,closed",
+                "cards_limit": str(max(20, int(max_results or 20))),
+            })
+        except Exception:
+            continue
+        cards = (raw or {}).get("cards", []) if isinstance(raw, dict) else []
+        for card in cards:
+            cid = card.get("id") or ""
+            if not cid or cid in seen or card.get("closed") or not title_match(card.get("name")):
+                continue
+            seen.add(cid)
+            candidates.append(card)
+
+    board_names = {}
+    out = []
+    for card in candidates[:max(1, int(max_results or 20))]:
+        bid = card.get("idBoard") or ""
+        if bid not in board_names:
+            try:
+                board = _call(f"/boards/{bid}", params={"fields": "name"}) or {}
+                board_names[bid] = board.get("name") or "(other Trello board)"
+            except Exception:
+                board_names[bid] = "(other Trello board)"
+        out.append({
+            "board": board_names[bid], "card_id": card.get("id") or "",
+            "name": card.get("name") or "", "url": card.get("shortUrl") or "",
+            "list_id": card.get("idList") or "", "list_name": "",
+        })
+    return out
+
+
 def card_url_for_client(client):
     """Convenience helper: look up a card by client name, return the
     shortUrl of the best match, or None when nothing matches.
@@ -649,6 +713,30 @@ def delete_comment(action_id):
         _call(f"/actions/{action_id}", method="DELETE")
         return True
     except Exception:
+        return False
+
+
+def update_comment(action_id, text):
+    """Replace an existing Trello comment in place.
+
+    Trello stores comments as actions, so editing is
+    PUT /actions/{id}/comments. The API only permits the authenticated
+    member to edit comments they are allowed to change; callers receive
+    False for permission, network, and missing-action failures.
+    """
+    if not action_id or not (text or "").strip():
+        return False
+    try:
+        _call(f"/actions/{action_id}/comments", method="PUT",
+              data={"text": str(text).strip()})
+        return True
+    except Exception as ex:
+        try:
+            import ems_log
+            ems_log.warn("trello_client",
+                         f"update_comment failed action={action_id}: {ex}")
+        except Exception:
+            pass
         return False
 
 

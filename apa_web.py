@@ -1283,10 +1283,55 @@ class Api:
             return 0
 
     # ── P1: Bulk paste — multiple items at once ─────────────────────
+    @staticmethod
+    def _bulk_name_key(text):
+        """Job identity used by Bulk Paste.
+
+        Ignore carrier/status tails so ``Smith, John - AAA - pending`` and
+        ``Smith, John - uploaded`` are recognized as the same job.
+        """
+        return apa._franchise_key(apa.strip_status_from_text(text or ""))
+
+    def check_bulk_items(self, lines):
+        """Classify pasted names without changing today's APA document."""
+        cleaned = [l.strip() for l in (lines or []) if l and l.strip()]
+        if not cleaned:
+            return {"ok": False, "error": "no names to check"}
+        try:
+            d = _dt.date.today()
+            path = apa.doc_path_for_today(d)
+            sections = apa.parse_existing_doc(path) if os.path.isfile(path) else {}
+            known = {}
+            for section, items in sections.items():
+                for item in items:
+                    if isinstance(item, tuple): text = item[0]
+                    elif isinstance(item, dict): text = item.get("text", "")
+                    else: text = str(item)
+                    key = self._bulk_name_key(text)
+                    if key:
+                        known.setdefault(key, {"line": text, "section": section})
+
+            existing, unknown, repeated = [], [], []
+            seen = set()
+            for line in cleaned:
+                key = self._bulk_name_key(line)
+                if not key or key in seen:
+                    repeated.append(line)
+                elif key in known:
+                    existing.append({"line": line,
+                                     "existing_line": known[key]["line"],
+                                     "section": known[key]["section"]})
+                    seen.add(key)
+                else:
+                    unknown.append(line)
+                    seen.add(key)
+            return {"ok": True, "existing": existing, "unknown": unknown,
+                    "repeated": repeated, "total": len(cleaned)}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def bulk_add_items(self, section, lines):
-        """Add multiple items to a section in one shot. `lines` is a
-        list of strings — each becomes a separate row. Empty lines
-        skipped. Handles deduplication against existing items."""
+        """Add only names not already present anywhere in today's APA."""
         if not section:
             return {"ok": False, "error": "section required"}
         cleaned = [l.strip() for l in (lines or []) if l and l.strip()]
@@ -1296,18 +1341,23 @@ class Api:
             d = _dt.date.today()
             path = apa.doc_path_for_today(d)
             sections = apa.parse_existing_doc(path) if os.path.isfile(path) else {}
-            # Existing keys for dedupe
+            # Existing job identities across every section. A name already in
+            # Initial Uploads must not be re-added to Final Uploads merely
+            # because its carrier/status suffix changed.
             existing = set()
-            for it in sections.get(section, []):
-                if isinstance(it, tuple): t = it[0]
-                elif isinstance(it, dict): t = it.get("text", "")
-                else: t = str(it)
-                existing.add(t.strip().lower())
+            for items in sections.values():
+                for it in items:
+                    if isinstance(it, tuple): t = it[0]
+                    elif isinstance(it, dict): t = it.get("text", "")
+                    else: t = str(it)
+                    key = self._bulk_name_key(t)
+                    if key: existing.add(key)
             added = []
             for line in cleaned:
-                if line.lower() in existing: continue
+                key = self._bulk_name_key(line)
+                if not key or key in existing: continue
                 sections.setdefault(section, []).append((line, False))
-                existing.add(line.lower())
+                existing.add(key)
                 added.append(line)
             for s in apa.SECTION_ORDER:
                 sections.setdefault(s, [])

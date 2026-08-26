@@ -1,6 +1,6 @@
 {
-  "version": "1.4.1",
+  "version": "1.5.0",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.4.1/Linguar-Hub-Setup-1.4.1.exe",
-  "notes": "Email selection now keeps customer, property manager/POC, tenant, additional-contact, and adjuster addresses separate. The app no longer silently substitutes an adjuster when the customer email is missing; it shows a clear contact picker and missing-customer warning instead."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.0/Linguar-Hub-Setup-1.5.0.exe",
+  "notes": "Adds guided employee setup, admin-only franchise assignments, EMS/Contents/Recon work environments, editable Trello comments, improved cross-workspace card search, responsive navigation, Supabase sign-in fixes, and safer contact selection."
 }

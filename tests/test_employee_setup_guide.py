@@ -1,0 +1,53 @@
+from unittest.mock import patch
+
+import home_web
+import settings_web
+
+
+def test_employee_setup_has_four_plain_ordered_steps():
+    api = settings_web.Api.__new__(settings_web.Api)
+    with patch.object(settings_web.config, "load", return_value={}), \
+         patch.object(settings_web.config, "active_department", return_value="IE"), \
+         patch("supabase_client.current_user", return_value=None):
+        result = api.employee_setup_status()
+    assert [step["key"] for step in result["steps"]] == [
+        "signin", "franchise", "trello", "folders"
+    ]
+    assert result["all_done"] is False
+
+
+def test_regular_user_sees_only_assigned_franchises():
+    api = home_web.HomeApi.__new__(home_web.HomeApi)
+    departments = [{"key": "IE", "label": "IE"},
+                   {"key": "OC", "label": "OC"}]
+    with patch("config.is_multi_dept", return_value=True), \
+         patch("config.list_departments", return_value=departments), \
+         patch("config.active_department", return_value="IE"), \
+         patch("supabase_client.is_configured", return_value=True), \
+         patch("supabase_client.is_signed_in", return_value=True), \
+         patch("supabase_client.rpc", return_value={
+             "is_admin": False, "departments": ["OC"]}):
+        result = api.department_state()
+    assert [d["key"] for d in result["departments"]] == ["OC"]
+
+
+def test_admin_keeps_every_configured_franchise():
+    api = home_web.HomeApi.__new__(home_web.HomeApi)
+    departments = [{"key": "IE"}, {"key": "OC"}]
+    with patch("config.is_multi_dept", return_value=True), \
+         patch("config.list_departments", return_value=departments), \
+         patch("config.active_department", return_value="IE"), \
+         patch("supabase_client.is_configured", return_value=True), \
+         patch("supabase_client.is_signed_in", return_value=True), \
+         patch("supabase_client.rpc", return_value={"is_admin": True}):
+        result = api.department_state()
+    assert result["departments"] == departments
+
+
+def test_token_page_uses_the_configured_app_authorization_url():
+    api = settings_web.Api.__new__(settings_web.Api)
+    with patch("trello_auth.manual_url", return_value={
+        "ok": True, "url": "https://trello.com/1/authorize?key=public"}):
+        result = api.my_trello_token_page()
+    assert result["ok"] is True
+    assert result["url"].startswith("https://trello.com/1/authorize?")

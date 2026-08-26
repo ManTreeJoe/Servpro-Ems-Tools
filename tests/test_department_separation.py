@@ -26,6 +26,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
 
+@pytest.fixture(autouse=True)
+def administrator(monkeypatch):
+    """Department configuration changes are administrator operations."""
+    import settings_web
+    monkeypatch.setattr(settings_web, "_is_admin", lambda: True)
+
+
 def _write(tmp_path, monkeypatch, cfg):
     """Point config at a throwaway config.json and clear its mtime cache."""
     path = tmp_path / "config.json"
@@ -145,8 +152,8 @@ def test_load_for_resolves_a_non_active_department(tmp_path, monkeypatch):
     assert config.active_department() == "IE"
 
 
-def test_scaffold_pins_ie_identity_explicitly(tmp_path, monkeypatch):
-    """A fresh multi-dept install must not leave IE inheriting."""
+def test_scaffold_does_not_invent_a_franchise(tmp_path, monkeypatch):
+    """Franchise records are user data, not product defaults."""
     cfg = {
         "multi_department_enabled": True,
         "trello_workspace_id": "ie-workspace",
@@ -156,12 +163,8 @@ def test_scaffold_pins_ie_identity_explicitly(tmp_path, monkeypatch):
     }
     _write(tmp_path, monkeypatch, cfg)
     base = config.ensure_departments_scaffold()
-    ie = base["departments"]["IE"]
-    # Only keys the base actually HAS can be pinned; an install with no
-    # CompanyCam token yet simply has nothing to copy down.
-    for k in config.DEPT_IDENTITY_KEYS:
-        if k in cfg:
-            assert ie.get(k) == cfg[k], f"{k} not pinned onto IE"
+    assert base["departments"] == {}
+    assert base.get("active_department", "") == ""
 
 
 class _StubSettings:

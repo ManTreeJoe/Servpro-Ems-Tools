@@ -63,6 +63,7 @@ async function loadShell() {
   renderWelcome();
   updateClock();
   renderDeptSwitch();
+  renderWorkEnvironmentSwitch();
 }
 
 function restoreLastPanel() {
@@ -119,6 +120,43 @@ async function switchDept(key, active) {
   }
 }
 
+// EMS / Contents / Recon is the part of a job being worked, not a franchise.
+async function renderWorkEnvironmentSwitch() {
+  const host = document.getElementById("work-env-switch");
+  if (!host) return;
+  let st;
+  try { st = await pywebview.api.work_environment_state(); } catch (_) { st = null; }
+  if (!st?.ok || !(st.environments || []).length) {
+    host.style.display = "none";
+    return;
+  }
+  host.style.display = "grid";
+  host.innerHTML = st.environments.map((item) =>
+    `<button class="work-env-seg ${item.key === st.active ? "active" : ""}"
+      data-key="${esc(item.key)}" title="Work in ${esc(item.label)}">${esc(item.label)}</button>`
+  ).join("");
+  host.querySelectorAll(".work-env-seg").forEach((button) =>
+    button.addEventListener("click", () => switchWorkEnvironment(button.dataset.key, st.active)));
+}
+
+async function switchWorkEnvironment(key, active) {
+  if (!key || key === active) return;
+  const buttons = document.querySelectorAll(".work-env-seg");
+  buttons.forEach((button) => (button.disabled = true));
+  try {
+    const result = await pywebview.api.switch_work_environment(key);
+    if (!result?.ok) {
+      buttons.forEach((button) => (button.disabled = false));
+      window.toastLog?.(`Could not switch work environment: ${result?.error || "unknown error"}`);
+      return;
+    }
+    if (result.reload) { location.reload(); return; }
+    await renderWorkEnvironmentSwitch();
+  } catch (_) {
+    buttons.forEach((button) => (button.disabled = false));
+  }
+}
+
 // Cross-frame message bus — settings panel posts
 // {type:"sidebar-reload"} when a panel-visibility toggle changes,
 // so the launcher re-renders the sidebar without a full launcher
@@ -130,6 +168,7 @@ window.addEventListener("message", async (ev) => {
     renderSidebar();
     refreshCounts();
     renderDeptSwitch();
+    renderWorkEnvironmentSwitch();
   } else if (d.type === "ems-navigate" && d.key) {
     // Cross-tool jump from a panel's "Open in…" right-click. Switch the
     // content frame to the target tool, handing it `focus` (a client
@@ -200,6 +239,12 @@ function renderSidebar() {
   `).join("");
   $$(".sb-item").forEach((el) =>
     el.addEventListener("click", () => navigate(el.dataset.key, el.dataset.src)));
+  $$(".sb-item").forEach((el) =>
+    el.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      navigate(el.dataset.key, el.dataset.src);
+    }));
 }
 
 // Update banner — polls the repo's version.txt; shows a bar when newer.
@@ -248,7 +293,9 @@ function renderNavItem(it) {
     : `<span class="sb-badge loading" id="badge-${esc(it.key)}">…</span>`;
   return `<div class="sb-item ${isActive ? "active" : ""}${it.error ? " errored" : ""}"
               data-key="${esc(it.key)}" data-src="${esc(it.src)}"
-              data-icon="${esc(it.icon)}" data-name="${esc(it.name)}">
+              data-icon="${esc(it.icon)}" data-name="${esc(it.name)}"
+              title="${esc(it.name)}" role="button" tabindex="0"
+              aria-label="Open ${esc(it.name)}">
     <span class="sb-icon">${esc(it.icon)}</span>
     <span class="sb-name">${esc(it.name)}</span>
     ${badge}
@@ -274,9 +321,12 @@ function navigate(key, src, focus, isRestore) {
   // Deep-link focus (from a cross-tool "Open in…") rides along as a
   // ?focus= query the target panel reads on boot via emsDeepLinkFocus().
   let url = src || item.src;
-  if (focus) {
-    url += (url.indexOf("?") >= 0 ? "&" : "?") + "focus=" + encodeURIComponent(focus);
+  const params = new URLSearchParams();
+  if (focus) params.set("focus", focus);
+  if (state.header?.work_environment) {
+    params.set("work_environment", state.header.work_environment);
   }
+  if (params.size) url += (url.indexOf("?") >= 0 ? "&" : "?") + params.toString();
   $("#content-frame").src = url;
   // Remember where we are for next launch. Fire-and-forget: a failure here
   // costs a restore, never the navigation the user just asked for. The

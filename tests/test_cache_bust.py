@@ -104,6 +104,7 @@ def test_settings_save_invalidates(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "_USER_CFG", str(p))
     monkeypatch.setattr(config, "_CACHE", None)
     monkeypatch.setattr(config, "_CACHE_MTIME", None)
+    monkeypatch.setattr(settings_web, "_is_admin", lambda: True)
 
     calls = []
     monkeypatch.setattr(cache_bust, "invalidate_all",

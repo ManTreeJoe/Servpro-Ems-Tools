@@ -4199,6 +4199,14 @@
       // colour and the weight; the time steps back out of the way.
       ".cmt-name{font-size:12px;font-weight:700;color:var(--text,#eee);}" +
       ".cmt-when{font-size:10.5px;color:var(--text-dim,#888);}" +
+      ".cmt-manage{margin-left:auto;display:flex;gap:3px;}" +
+      ".cmt-manage button{border:0;background:transparent;color:var(--text-dim,#888);" +
+      "cursor:pointer;border-radius:4px;padding:2px 5px;font:inherit;font-size:10px;}" +
+      ".cmt-manage button:hover{background:var(--surface-2,#333);color:var(--text,#eee);}" +
+      ".cmt-editbox{width:100%;box-sizing:border-box;min-height:76px;resize:vertical;" +
+      "font:inherit;font-size:12px;line-height:1.5;padding:7px 8px;border-radius:6px;" +
+      "border:1px solid var(--accent,#4aa3ff);background:var(--bg,#151515);color:var(--text,#eee);}" +
+      ".cmt-edit-actions{display:flex;gap:6px;margin-top:6px;}" +
       ".cmt-bubble{background:var(--surface,#262626);border:1px solid var(--border,#333);" +
       "border-radius:8px;padding:8px 10px;}" +
       ".cmt-txt{font-size:12px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;" +
@@ -4723,7 +4731,11 @@
         <div class="cmt-who">
           <span class="cmt-name">${esc(ctx, c.author || "Someone")}</span>
           <span class="cmt-when">${esc(ctx, _relTime(c.when))}${
-            c.date ? ` · ${esc(ctx, c.date)}` : ""}</span>
+            c.date ? ` · ${esc(ctx, c.date)}` : ""}</span>${
+            c.kind !== "attachment" ? `<span class="cmt-manage">
+              <button type="button" data-cmt-edit="${escA(ctx, c.id || "")}" title="Edit this Trello comment">Edit</button>
+              <button type="button" data-cmt-delete="${escA(ctx, c.id || "")}" title="Delete this Trello comment">Delete</button>
+            </span>` : ""}
         </div>`;
       if (c.kind === "attachment") {
         const size = c.bytes ? ` · ${Math.round(c.bytes / 1024)} KB` : "";
@@ -4761,7 +4773,74 @@
           </div>
         </div>`;
     }).join("");
+    _wireCommentManagement(el);
     _wireThumbs(el);
+  }
+
+  function _commentEntry(el, id) {
+    return (el._entries || []).find((entry) =>
+      entry.kind !== "attachment" && String(entry.id || "") === String(id || ""));
+  }
+
+  function _wireCommentManagement(el) {
+    const ctx = el._ctx || {};
+    el.querySelectorAll("[data-cmt-edit]").forEach((button) =>
+      button.addEventListener("click", () => {
+        const entry = _commentEntry(el, button.dataset.cmtEdit);
+        const bubble = button.closest(".cmt-main")?.querySelector(".cmt-bubble");
+        if (!entry || !bubble) return;
+        bubble.innerHTML = `<textarea class="cmt-editbox">${esc(ctx, entry.text || "")}</textarea>
+          <div class="cmt-edit-actions">
+            <button class="action-btn" type="button" data-save>Save to Trello</button>
+            <button class="action-btn" type="button" data-cancel>Cancel</button>
+          </div>`;
+        const box = bubble.querySelector("textarea");
+        box.focus();
+        box.setSelectionRange(box.value.length, box.value.length);
+        bubble.querySelector("[data-cancel]").addEventListener("click", () => renderEntries(el));
+        bubble.querySelector("[data-save]").addEventListener("click", async (event) => {
+          const text = box.value.trim();
+          if (!text) { setStatus(ctx, "Use Delete to remove an empty comment", "warn"); return; }
+          const save = event.currentTarget;
+          save.disabled = true;
+          save.textContent = "Saving…";
+          try {
+            const result = await pywebview.api.update_card_comment(
+              el._row.client, entry.id, text);
+            if (!result?.ok) {
+              setStatus(ctx, result?.error || "Comment edit failed", "error");
+              save.disabled = false;
+              save.textContent = "Save to Trello";
+              return;
+            }
+            setStatus(ctx, "Comment updated on Trello", "ok");
+            await loadCommentsInto(el._row, ctx, false);
+          } catch (ex) {
+            setStatus(ctx, `Comment edit failed: ${ex}`, "error");
+            save.disabled = false;
+            save.textContent = "Save to Trello";
+          }
+        });
+      }));
+    el.querySelectorAll("[data-cmt-delete]").forEach((button) =>
+      button.addEventListener("click", async () => {
+        const entry = _commentEntry(el, button.dataset.cmtDelete);
+        if (!entry || !confirm("Delete this comment from Trello? This cannot be undone.")) return;
+        button.disabled = true;
+        try {
+          const result = await pywebview.api.delete_card_comment(el._row.client, entry.id);
+          if (!result?.ok) {
+            setStatus(ctx, result?.error || "Comment deletion failed", "error");
+            button.disabled = false;
+            return;
+          }
+          setStatus(ctx, "Comment deleted from Trello", "ok");
+          await loadCommentsInto(el._row, ctx, false);
+        } catch (ex) {
+          setStatus(ctx, `Comment deletion failed: ${ex}`, "error");
+          button.disabled = false;
+        }
+      }));
   }
 
   // Escape, then linkify, then mark the search term — in that order, so

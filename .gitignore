@@ -59,6 +59,9 @@ dist_next/
 build_next/
 dist_release/
 build_release/
+/dist_[0-9]*/
+/build_[0-9]*/
+/work/
 
 # Inno Setup compiler output — installers are release artifacts, not source
 Output/

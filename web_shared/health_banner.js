@@ -173,9 +173,9 @@
     box.onclick = function () { expanded = !expanded; render(st); };
   }
 
-  function poll() {
+  function poll(force) {
     if (!api || !api.health_state) return;
-    Promise.resolve(api.health_state()).then(render).catch(function () {
+    Promise.resolve(api.health_state(force === true)).then(render).catch(function () {
       // A health check that cannot run says nothing rather than crying
       // wolf — "cannot ask" is not "broken".
     });
@@ -189,6 +189,9 @@
     // Coming back to the window is exactly when a stale banner is most
     // misleading, in both directions.
     window.addEventListener("focus", poll);
+    window.addEventListener("message", function (ev) {
+      if (ev && ev.data && ev.data.type === "health-refresh") poll(true);
+    });
   });
 
   window.HealthBanner = { refresh: poll };

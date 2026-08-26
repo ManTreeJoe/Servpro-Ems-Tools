@@ -32,6 +32,14 @@ _grant_at = 0.0
 _lock = threading.Lock()
 
 
+def invalidate_grant_cache() -> None:
+    """Forget the last auth/grant result after sign-in or sign-out."""
+    global _grant_cache, _grant_at
+    with _lock:
+        _grant_cache = {}
+        _grant_at = 0.0
+
+
 def _backend_name() -> str:
     try:
         return (config.load().get("ems_db_backend") or "sqlite").strip()

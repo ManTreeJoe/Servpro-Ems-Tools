@@ -271,8 +271,7 @@ def active_department():
 
 def list_departments():
     """Ordered list of {key, label} for every configured department.
-    Empty when none are set up. Insertion order (IE before OC) is
-    preserved from the JSON."""
+    Empty when none are set up. Insertion order is preserved from JSON."""
     try:
         depts = load_base().get("departments") or {}
     except Exception:
@@ -439,35 +438,21 @@ def remove_department(key):
 
 
 def ensure_departments_scaffold():
-    """Create the default IE + OC department profiles the first time
-    multi-dept is turned on. IE inherits the current base values (empty
-    overrides), OC is blank for the user to fill in Settings. Idempotent —
-    never clobbers existing profiles. Returns the (possibly updated) base
-    config dict, already saved if it changed."""
+    """Normalize the franchise collection without inventing franchises.
+
+    Older builds created IE whenever multi-franchise mode was enabled. New
+    installs start empty and add their real franchise codes in Settings.
+    Existing configured franchises are preserved.
+    """
     base = load_base()
     depts = base.get("departments")
     changed = False
     if not isinstance(depts, dict):
         depts = {}
         changed = True
-    if "IE" not in depts:
-        # IE = the current single-department setup. Copy the base identity
-        # values in EXPLICITLY rather than leaving the profile empty to
-        # inherit them: the base is writable from the global Settings form,
-        # so an inherited identity can be redirected to the other franchise
-        # by an unrelated save (which is exactly how IE once ended up
-        # searching OC's Trello workspace).
-        prof = {"label": "Inland Empire"}
-        for k in DEPT_IDENTITY_KEYS:
-            if not _is_blank(base.get(k)):
-                prof[k] = base[k]
-        depts["IE"] = prof
-        changed = True
-    # Deliberately NOT seeding a second office. An install that is only
-    # IE — or only OC, or only LA — was given two profiles and no way to
-    # add a different one. Offices are added in Settings now.
-    if not (base.get("active_department") or "").strip():
-        base["active_department"] = "IE"
+    active = (base.get("active_department") or "").strip()
+    if active and active not in depts:
+        base["active_department"] = next(iter(depts), "")
         changed = True
     if changed:
         base["departments"] = depts
