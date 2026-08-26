@@ -83,6 +83,9 @@ CRM_LIFECYCLE_STAGES = (
 CRM_WORK_ENVIRONMENTS = ("EMS", "Contents", "Recon")
 CRM_JOB_TYPES = ("insurance", "self_pay", "commercial", "management")
 CRM_PRIORITIES = ("low", "normal", "high", "urgent")
+CRM_RELATIONSHIP_TYPES = (
+    "parent_child", "related_claim", "same_property", "duplicate_candidate",
+)
 
 # ── v6: the job record people actually ask questions about ──────────────
 #
@@ -1377,7 +1380,62 @@ def get_master_job(canon_key_value: str) -> dict | None:
     if not job:
         return None
     job["work_environments"] = get_work_environment_states(canon_key_value)
+    job["relationships"] = get_job_relationships(canon_key_value)
     return job
+
+
+def relate_jobs(canon_key_value: str, related_canon_key: str,
+                relationship_type: str, *, created_by: str = "") -> bool:
+    """Link two master jobs without merging their records or history."""
+    relation = (relationship_type or "").strip().lower()
+    if relation not in CRM_RELATIONSHIP_TYPES:
+        raise ValueError(f"unknown relationship type: {relationship_type}")
+    left, right = get_job(canon_key_value), get_job(related_canon_key)
+    if not left or not right:
+        raise KeyError(canon_key_value if not left else related_canon_key)
+    if left["job_id"] == right["job_id"]:
+        raise ValueError("a job cannot be related to itself")
+    with _LOCK, _connect() as c:
+        c.execute("""
+            INSERT OR IGNORE INTO crm_job_relationships
+                (job_id, related_job_id, relationship_type, created_at, created_by)
+            VALUES (?, ?, ?, ?, ?)
+        """, (left["job_id"], right["job_id"], relation, _now_iso(),
+              (created_by or "").strip() or None))
+        changed = bool(c.execute("SELECT changes()").fetchone()[0])
+        c.commit()
+    return changed
+
+
+def remove_job_relationship(canon_key_value: str, related_canon_key: str,
+                            relationship_type: str) -> bool:
+    left, right = get_job(canon_key_value), get_job(related_canon_key)
+    if not left or not right:
+        return False
+    with _LOCK, _connect() as c:
+        cur = c.execute("""
+            DELETE FROM crm_job_relationships
+            WHERE job_id=? AND related_job_id=? AND relationship_type=?
+        """, (left["job_id"], right["job_id"],
+              (relationship_type or "").strip().lower()))
+        c.commit()
+    return bool(cur.rowcount)
+
+
+def get_job_relationships(canon_key_value: str) -> list:
+    job = get_job(canon_key_value)
+    if not job:
+        return []
+    with _LOCK, _connect() as c:
+        rows = c.execute("""
+            SELECT r.*, j.canon_key AS related_canon_key,
+                   j.display_name AS related_display_name
+            FROM crm_job_relationships r
+            JOIN jobs j ON j.job_id = r.related_job_id
+            WHERE r.job_id=?
+            ORDER BY r.relationship_type, j.display_name
+        """, (job["job_id"],)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def _is_primary_job_key(key: str) -> bool:

@@ -306,7 +306,70 @@ def get_master_job(canon_key_value: str):
     if not job:
         return None
     job["work_environments"] = get_work_environment_states(canon_key_value)
+    job["relationships"] = get_job_relationships(canon_key_value)
     return job
+
+
+def relate_jobs(canon_key_value: str, related_canon_key: str,
+                relationship_type: str, *, created_by: str = "") -> bool:
+    from ems_db_sqlite import CRM_RELATIONSHIP_TYPES
+    relation = (relationship_type or "").strip().lower()
+    if relation not in CRM_RELATIONSHIP_TYPES:
+        raise ValueError(f"unknown relationship type: {relationship_type}")
+    left, right = get_job(canon_key_value), get_job(related_canon_key)
+    if not left or not right:
+        raise KeyError(canon_key_value if not left else related_canon_key)
+    if left["job_id"] == right["job_id"]:
+        raise ValueError("a job cannot be related to itself")
+    existing = _one(
+        "crm_job_relationships", job_id=f"eq.{left['job_id']}",
+        related_job_id=f"eq.{right['job_id']}",
+        relationship_type=f"eq.{relation}", select="job_id")
+    if existing:
+        return False
+    _sb.rest("POST", "crm_job_relationships", body={
+        "job_id": left["job_id"], "related_job_id": right["job_id"],
+        "relationship_type": relation, "created_at": _now_iso(),
+        "created_by": (created_by or "").strip() or None,
+    })
+    return True
+
+
+def remove_job_relationship(canon_key_value: str, related_canon_key: str,
+                            relationship_type: str) -> bool:
+    left, right = get_job(canon_key_value), get_job(related_canon_key)
+    if not left or not right:
+        return False
+    relation = (relationship_type or "").strip().lower()
+    existing = _one(
+        "crm_job_relationships", job_id=f"eq.{left['job_id']}",
+        related_job_id=f"eq.{right['job_id']}",
+        relationship_type=f"eq.{relation}", select="job_id")
+    if not existing:
+        return False
+    _sb.rest("DELETE", "crm_job_relationships", params={
+        "job_id": f"eq.{left['job_id']}",
+        "related_job_id": f"eq.{right['job_id']}",
+        "relationship_type": f"eq.{relation}",
+    })
+    return True
+
+
+def get_job_relationships(canon_key_value: str) -> list:
+    job = get_job(canon_key_value)
+    if not job:
+        return []
+    rows = _rows("crm_job_relationships", job_id=f"eq.{job['job_id']}",
+                 select="*")
+    out = []
+    for row in rows:
+        related = get_job_by_id(row.get("related_job_id")) or {}
+        item = dict(row)
+        item["related_canon_key"] = related.get("canon_key") or ""
+        item["related_display_name"] = related.get("display_name") or ""
+        out.append(item)
+    return sorted(out, key=lambda r: (
+        r.get("relationship_type") or "", r.get("related_display_name") or ""))
 
 
 def iter_jobs() -> list:

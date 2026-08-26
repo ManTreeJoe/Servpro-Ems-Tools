@@ -73,3 +73,28 @@ def test_existing_database_is_preserved_and_marked_legacy(tmp_path, monkeypatch)
     assert job["status"] == "In Progress"
     assert job["job_id"]
     assert job["lifecycle_stage"] == "legacy_unclassified"
+
+
+def test_jobs_can_be_related_without_being_merged(fresh):
+    parent = fresh.upsert_job(display_name="Avana Springs Management")
+    child = fresh.upsert_job(display_name="River Claim")
+    parent_id = fresh.get_job(parent)["job_id"]
+    child_id = fresh.get_job(child)["job_id"]
+    assert fresh.relate_jobs(parent, child, "parent_child", created_by="Nathan")
+    assert not fresh.relate_jobs(parent, child, "parent_child")
+    relationships = fresh.get_master_job(parent)["relationships"]
+    assert relationships[0]["related_canon_key"] == child
+    assert relationships[0]["related_display_name"] == "River Claim"
+    assert fresh.get_job(parent)["job_id"] == parent_id
+    assert fresh.get_job(child)["job_id"] == child_id
+    assert fresh.remove_job_relationship(parent, child, "parent_child")
+    assert fresh.get_job_relationships(parent) == []
+
+
+def test_relationships_reject_self_links_and_unknown_types(fresh):
+    key = fresh.upsert_job(display_name="One Job")
+    other = fresh.upsert_job(display_name="Other Job")
+    with pytest.raises(ValueError):
+        fresh.relate_jobs(key, key, "related_claim")
+    with pytest.raises(ValueError):
+        fresh.relate_jobs(key, other, "made_up")
