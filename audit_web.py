@@ -1650,7 +1650,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": str(ex)}
 
     def get_job_email(self, client: str, card_id: str = "") -> dict:
-        """Pull the best customer/adjuster email and say where it came from.
+        """Compatibility helper: return a customer-side email only.
 
         The detail button used to depend entirely on the optional background
         enrichment call.  If Trello was slow, that button stayed disabled and
@@ -1671,13 +1671,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             tr = self.trello_enrichment(client, card_id)
             if tr and tr.get("ok"):
                 customer = _email(tr.get("customer_email"))
-                adjuster = _email(tr.get("adjuster_email"))
                 if customer:
                     return {"ok": True, "email": customer,
                             "kind": "Customer", "source": "Trello"}
-                if adjuster:
-                    return {"ok": True, "email": adjuster,
-                            "kind": "Adjuster", "source": "Trello"}
+                for contact in tr.get("contacts") or []:
+                    if contact.get("kind") != "Adjuster" and _email(contact.get("email")):
+                        return {"ok": True, "email": _email(contact["email"]),
+                                "kind": contact.get("kind") or "Contact",
+                                "source": "Trello"}
         except Exception:
             pass
 
@@ -1687,17 +1688,51 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             import ems_db as _db
             job = _db.find_job_by_name(client) or {}
             customer = _email(job.get("email"))
-            adjuster = _email(job.get("adjuster_email"))
             if customer:
                 return {"ok": True, "email": customer,
                         "kind": "Customer", "source": "saved job"}
-            if adjuster:
-                return {"ok": True, "email": adjuster,
-                        "kind": "Adjuster", "source": "saved job"}
         except Exception:
             pass
         return {"ok": False, "email": "",
-                "error": "No customer or adjuster email was found on the Trello card or saved job."}
+                "error": "Customer email missing. The adjuster was not substituted."}
+
+    def get_job_contacts(self, client: str, card_id: str = "") -> dict:
+        """All selectable contacts, with adjusters kept visibly separate."""
+        contacts, seen = [], set()
+
+        def add(kind, email, source, field=""):
+            import re
+            match = re.search(r"[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+                              r"[A-Z0-9.-]+\.[A-Z]{2,}",
+                              str(email or ""), re.I)
+            if not match or match.group(0).lower() in seen:
+                return
+            seen.add(match.group(0).lower())
+            contacts.append({"kind": kind, "email": match.group(0),
+                             "source": source, "field": field})
+        try:
+            tr = self.trello_enrichment(client, card_id)
+            if tr and tr.get("ok"):
+                for c in tr.get("contacts") or []:
+                    add(c.get("kind") or "Contact", c.get("email"),
+                        "Trello", c.get("field") or "")
+                add("Customer", tr.get("customer_email"), "Trello")
+                add("Adjuster", tr.get("adjuster_email"), "Trello")
+        except Exception:
+            pass
+        try:
+            import ems_db as _db
+            job = _db.find_job_by_name(client) or {}
+            add("Customer", job.get("email"), "saved job")
+            add("Adjuster", job.get("adjuster_email"), "saved job")
+        except Exception:
+            pass
+        order = {"Customer": 0, "Property manager / POC": 1,
+                 "Tenant": 2, "Additional contact": 3, "Adjuster": 9}
+        contacts.sort(key=lambda c: (order.get(c["kind"], 5), c["email"]))
+        return {"ok": True, "contacts": contacts,
+                "customer_missing": not any(c["kind"] != "Adjuster"
+                                            for c in contacts)}
 
     def copy_to_clipboard(self, text: str) -> bool:
         if not text:
@@ -3433,6 +3468,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                                       or "").strip()
                 except Exception:
                     pass
+            try:
+                import docusign_requests as _ds
+                contacts = _ds.extract_contact_emails(card)
+            except Exception:
+                contacts = []
             # These template fields sometimes hold a website/URL, not an
             # address — only keep a real-looking email so "Copy email"
             # never hands back "https://…".
@@ -3470,6 +3510,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "members": members,
                 "adjuster_email": adjuster_email,
                 "customer_email": customer_email,
+                "contacts": contacts,
                 "comments": comments,
                 "url": card.get("shortUrl")
                 or (f"https://trello.com/c/{card_id}" if card_id else ""),

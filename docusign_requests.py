@@ -169,6 +169,55 @@ def extract_insured_email(card):
     return ""
 
 
+def extract_contact_emails(card):
+    """Return labelled, deduplicated contacts from a Trello description.
+
+    These labels deliberately keep the adjuster separate. A caller may show
+    an adjuster as a choice, but must not silently substitute that address for
+    the insured, tenant, or property contact.
+    """
+    if not card:
+        return []
+    try:
+        fields = tc.parse_card_desc(card.get("desc")) or {}
+    except Exception:
+        return []
+    import re
+    email_re = re.compile(
+        r"[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
+    contacts, seen = [], set()
+
+    def add(kind, value, field):
+        for match in email_re.findall(str(value or "")):
+            key = match.lower()
+            if key in seen or key.endswith("@servpro10100.com"):
+                continue
+            seen.add(key)
+            contacts.append({"kind": kind, "email": match,
+                             "field": field})
+
+    customer_keys = set(_EMAIL_DESC_KEYS)
+    for section, values in fields.items():
+        for key, value in (values or {}).items():
+            field = f"{section} / {key}"
+            words = f"{section} {key}".upper()
+            if (section, key) in customer_keys or (
+                    section == "CUSTOMER INFORMATION" and
+                    key == "EMAIL ADDRESS"):
+                add("Customer", value, field)
+            elif "TENANT" in words:
+                add("Tenant", value, field)
+            elif any(term in words for term in (
+                    "POINT OF CONTACT", " POC", "PROPERTY MANAGER",
+                    "PROPERTY MANAGEMENT", "ACCOUNT INFO", "HOA")):
+                add("Property manager / POC", value, field)
+            elif "ADJUSTER" in words:
+                add("Adjuster", value, field)
+            elif key == "ADDITIONAL CONTACTS":
+                add("Additional contact", value, field)
+    return contacts
+
+
 def request(card_id, *, client_name="", post_comment=True):
     """Record a pending Docusign request for a Trello card.
 

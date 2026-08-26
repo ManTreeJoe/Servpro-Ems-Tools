@@ -24,7 +24,7 @@ def test_email_pull_prefers_customer_from_trello(monkeypatch):
     }
 
 
-def test_email_pull_falls_back_to_saved_job(monkeypatch):
+def test_email_pull_does_not_substitute_saved_adjuster(monkeypatch):
     api = audit_web.Api()
     monkeypatch.setattr(api, "trello_enrichment",
                         lambda *_a, **_k: {"ok": False, "error": "offline"})
@@ -33,9 +33,9 @@ def test_email_pull_falls_back_to_saved_job(monkeypatch):
     })
     monkeypatch.setitem(sys.modules, "ems_db", fake_db)
     result = api.get_job_email("Customer", "card1")
-    assert result["ok"] is True
-    assert result["email"] == "claims@carrier.test"
-    assert result["source"] == "saved job"
+    assert result["ok"] is False
+    assert result["email"] == ""
+    assert "not substituted" in result["error"]
 
 
 def test_email_button_is_clickable_and_can_retry_itself():
@@ -43,9 +43,29 @@ def test_email_button_is_clickable_and_can_retry_itself():
     button = shared[shared.index('data-action="copy-email"'):]
     button = button[:button.index("</button>")]
     assert "disabled" not in button
-    assert "📧 Copy email" in button
-    assert "get_job_email(" in shared
-    assert 'btn.textContent = "Getting email…"' in shared
+    assert "📧 Choose email" in button
+    assert "get_job_contacts(" in shared
+    assert 'btn.textContent = "Getting contacts…"' in shared
+
+
+def test_contact_picker_keeps_adjuster_separate(monkeypatch):
+    api = audit_web.Api()
+    monkeypatch.setattr(api, "trello_enrichment", lambda *_a, **_k: {
+        "ok": True,
+        "contacts": [
+            {"kind": "Property manager / POC", "email": "pm@example.com",
+             "field": "ACCOUNT INFO / POINT OF CONTACT EMAIL"},
+            {"kind": "Adjuster", "email": "adj@carrier.com",
+             "field": "INSURANCE INFORMATION / ADJUSTER EMAIL"},
+        ],
+        "customer_email": "", "adjuster_email": "adj@carrier.com",
+    })
+    fake_db = types.SimpleNamespace(find_job_by_name=lambda _name: {})
+    monkeypatch.setitem(sys.modules, "ems_db", fake_db)
+    result = api.get_job_contacts("Customer", "card1")
+    assert [c["kind"] for c in result["contacts"]] == [
+        "Property manager / POC", "Adjuster"]
+    assert result["customer_missing"] is False
 
 
 def test_workcenter_uses_configured_url(monkeypatch):
@@ -76,4 +96,4 @@ def test_every_shared_card_loader_has_the_new_version():
         marker = "audit_detail.js?v="
         if marker in text:
             versions.add(text.split(marker, 1)[1].split('"', 1)[0])
-    assert versions == {"20260825i"}
+    assert versions == {"20260826a"}

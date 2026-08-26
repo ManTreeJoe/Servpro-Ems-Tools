@@ -53,3 +53,28 @@ def test_no_email_returns_empty_not_a_url():
 def test_missing_desc_is_not_an_error():
     assert ds.extract_insured_email(_card("")) == ""
     assert ds.extract_insured_email(None) == ""
+
+
+def test_contact_email_roles_remain_separate():
+    card = _card("""**CUSTOMER INFORMATION**
+EMAIL: insured@example.com
+**ACCOUNT INFO**
+POINT OF CONTACT EMAIL: manager@example.com
+**TENANT INFORMATION**
+EMAIL: tenant@example.com
+**INSURANCE INFORMATION**
+ADJUSTER EMAIL: adjuster@carrier.com
+""")
+    contacts = ds.extract_contact_emails(card)
+    assert [(c["kind"], c["email"]) for c in contacts] == [
+        ("Customer", "insured@example.com"),
+        ("Property manager / POC", "manager@example.com"),
+        ("Tenant", "tenant@example.com"),
+        ("Adjuster", "adjuster@carrier.com"),
+    ]
+
+
+def test_internal_servpro_email_is_not_offered_as_job_contact():
+    contacts = ds.extract_contact_emails(_card(
+        "**ACCOUNT INFO**\nPOINT OF CONTACT EMAIL: ems@servpro10100.com"))
+    assert contacts == []

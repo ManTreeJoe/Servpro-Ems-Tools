@@ -277,7 +277,7 @@
                   title="Copy the claim number from this job's Trello card"
                   ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
           <button class="action-btn" data-action="copy-email" id="copy-email-btn"
-                  title="Copy the customer or adjuster email saved on Trello or the job">📧 Copy email</button>
+                  title="Choose a customer, property contact, tenant, or adjuster email">📧 Choose email</button>
           <button class="action-btn" data-action="copy-address"
                   title="Copy the loss address from this Trello card"
                   ${hasPin ? "" : "disabled"}>📋 Copy address</button>
@@ -1069,6 +1069,60 @@
     });
   }
 
+  async function openContactPicker(row, ctx) {
+    const btn = document.getElementById("copy-email-btn");
+    const old = btn?.textContent || "📧 Choose email";
+    if (btn) { btn.disabled = true; btn.textContent = "Getting contacts…"; }
+    let res;
+    try {
+      res = await pywebview.api.get_job_contacts(
+        row.client, row.trello_card_id || "");
+    } catch (ex) { res = {ok:false, error:String(ex)}; }
+    if (btn) { btn.disabled = false; btn.textContent = old; }
+    if (!res?.ok) {
+      setStatus(ctx, res?.error || "Contacts could not be loaded", "warn"); return;
+    }
+    const contacts = res.contacts || [];
+    const customerSide = contacts.filter(c => c.kind !== "Adjuster");
+    const adjusters = contacts.filter(c => c.kind === "Adjuster");
+    const contactRows = (items, adjuster=false) => items.map(c => `
+      <button class="btn email-choice" data-email="${escA(ctx,c.email)}"
+              data-kind="${escA(ctx,c.kind)}"
+              style="display:flex;width:100%;align-items:center;text-align:left;gap:10px;
+                     padding:9px 10px;margin-top:6px;${adjuster ? "border-color:color-mix(in srgb,var(--amber,#b7791f) 50%,var(--border));" : ""}">
+        <span style="min-width:128px;font-size:11px;font-weight:700;">${esc(ctx,c.kind)}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${esc(ctx,c.email)}</span>
+        <span class="muted" style="font-size:10px;">Copy</span>
+      </button>`).join("");
+    const wrap = mkModal({
+      title: "📧 Choose an email",
+      sub: _firstLast(row.display_name || tc(ctx,row.client)),
+      width: 590,
+      body: `
+        ${customerSide.length ? contactRows(customerSide) : `
+          <div style="padding:10px 12px;border-left:3px solid var(--amber,#b7791f);
+                      background:var(--surface-2);font-size:12px;">
+            <b>Customer email missing.</b><br>
+            Add the customer, property manager/POC, or tenant email in Job info or Trello.
+          </div>`}
+        ${adjusters.length ? `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);">
+          <div style="font-size:10.5px;font-weight:750;text-transform:uppercase;
+                      letter-spacing:.05em;color:var(--amber,#b7791f);">
+            Adjuster - choose only when the email is meant for them
+          </div>${contactRows(adjusters,true)}</div>` : ""}
+        ${!contacts.length ? `<div class="muted" style="font-size:12px;margin-top:10px;">No email addresses are saved for this job.</div>` : ""}
+        <div class="modal-footer"><button class="btn modal-close">Cancel</button></div>`,
+    });
+    wrap.querySelectorAll(".email-choice").forEach(choice =>
+      choice.addEventListener("click", async () => {
+        const ok = await copyText(ctx, choice.dataset.email);
+        if (ok) wrap.remove();
+        setStatus(ctx, ok
+          ? `📧 Copied ${choice.dataset.kind.toLowerCase()} email: ${choice.dataset.email}`
+          : "Couldn't copy", ok ? "ok" : "warn");
+      }));
+  }
+
   async function detailAction(action, row, ctx) {
     const M = (ctx && ctx.modals) || {};
     if (action === "cc-menu") {
@@ -1298,39 +1352,7 @@
         setStatus(ctx, (res && res.error) || "No address found", "warn");
       }
     } else if (action === "copy-email") {
-      const btn = document.getElementById("copy-email-btn");
-      if (!btn) return;
-      let email = btn.dataset.email || "";
-      let kind = btn.dataset.emailKind || "Email";
-      let source = btn.dataset.emailSource || "Trello";
-      if (!email) {
-        const old = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = "Getting email…";
-        let res;
-        try {
-          res = await pywebview.api.get_job_email(
-            row.client, row.trello_card_id || "");
-        } catch (ex) {
-          res = { ok: false, error: String(ex) };
-        } finally {
-          btn.disabled = false;
-          btn.textContent = old;
-        }
-        if (!res?.ok || !res.email) {
-          setStatus(ctx, res?.error || "No customer or adjuster email was found", "warn");
-          return;
-        }
-        email = res.email;
-        kind = res.kind || kind;
-        source = res.source || source;
-        btn.dataset.email = email;
-        btn.dataset.emailKind = kind;
-        btn.dataset.emailSource = source;
-      }
-      const ok = await copyText(ctx, email);
-      setStatus(ctx, ok ? `📧 Copied ${kind.toLowerCase()} email: ${email} · ${source}` : "Couldn't copy",
-                ok ? "ok" : "warn");
+      await openContactPicker(row, ctx);
     } else if (action === "copy-job-summary") {
       await openCopyJobSummaryModal(row, ctx);
     } else if (action === "grab-cat-class") {
@@ -1482,9 +1504,9 @@
       chips.push(chip(`☑ ${r.checklist_done}/${r.checklist_total} (${pct}%)`, pct === 100 ? "rgba(63,185,80,.18)" : "var(--surface-2)"));
     }
     let html = chips.length ? `<div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">${chips.join("")}</div>` : "";
-    const emails = [];
-    if (r.customer_email) emails.push(["Customer", r.customer_email]);
-    if (r.adjuster_email) emails.push(["Adjuster", r.adjuster_email]);
+    const emails = (r.contacts || []).map(c => [c.kind, c.email]);
+    if (!emails.length && r.customer_email) emails.push(["Customer", r.customer_email]);
+    if (!emails.length && r.adjuster_email) emails.push(["Adjuster", r.adjuster_email]);
     if (emails.length) {
       html += `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${emails.map(([k, v]) => `${k}: <a href="#" class="tr-email" data-email="${escA(ctx, v)}" style="color:var(--text);">${esc(ctx, v)}</a>`).join(" &nbsp;·&nbsp; ")}</div>`;
     }
@@ -1503,15 +1525,6 @@
     }
     if (!html) html = '<div class="muted" style="font-size:11px;">Card pinned, but no extra info filled in yet.</div>';
     if (bodyEl) bodyEl.innerHTML = html;
-    // Email now lives on the footer's 📧 Copy email button (next to the
-    // other copy buttons). Enable it + stash the address once known.
-    const email = r.customer_email || r.adjuster_email || "";
-    const emailBtn = document.getElementById("copy-email-btn");
-    if (emailBtn && email) {
-      emailBtn.dataset.email = email;
-      emailBtn.dataset.emailKind = r.customer_email ? "Customer" : "Adjuster";
-      emailBtn.dataset.emailSource = "Trello";
-    }
     (bodyEl ? [...bodyEl.querySelectorAll(".tr-email")] : []).forEach((a) =>
       a.addEventListener("click", async (e) => {
         e.preventDefault();
