@@ -5,8 +5,12 @@ hundreds of rows at once, and the per-row form of this cost ~600 round
 trips — invisible on local SQLite, ruinous on a hosted one.
 """
 import pytest
+from pathlib import Path
 
 import ems_db_sqlite as sq
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -93,3 +97,10 @@ def test_duplicate_names_in_the_request_all_get_answered(db):
     _job(db, "Smith, John", "AAA")
     got = db.carriers_for(["Smith, John", "Smith, John"])
     assert got == {"Smith, John": "AAA"}
+
+
+def test_audit_job_row_renders_the_carrier_tag():
+    js = (ROOT / "audit_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert "const carrierChip = carrierChipHtml(r.carrier);" in js
+    assert "if (carrierChip) subChips.push(carrierChip);" in js
+    assert "window.AuditDetail.carrierChip(carrier, \"mini-chip\")" in js

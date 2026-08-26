@@ -2374,6 +2374,14 @@ function campusShortName(r) {
   return name;
 }
 
+// Use the same carrier renderer as the detail card. The row receives the
+// carrier from the batched job-index lookup, while AuditDetail owns the
+// shared naming and colour rules.
+function carrierChipHtml(carrier) {
+  return (window.AuditDetail && window.AuditDetail.carrierChip)
+    ? window.AuditDetail.carrierChip(carrier, "mini-chip") : "";
+}
+
 function renderListRow(r, opts = {}) {
   const role = opts.role;          // "parent" | "child" | undefined
   const group = opts.group || null;
@@ -2417,10 +2425,10 @@ function renderListRow(r, opts = {}) {
     subChips.push('<span class="mini-chip pending" title="From your last '
       + 'session — re-checking now">⏳ not checked yet</span>');
   }
-  // No carrier chip on the LIST row. It still shows on the detail card,
-  // where you're looking at one job — on the list it competed with the
-  // chips that say something is wrong (aging, not-found, missing), and
-  // who is paying isn't what you scan the list for.
+  // Show who is paying directly on the job row. Unknown carriers stay blank;
+  // a known carrier is job identity and should not require opening Job Info.
+  const carrierChip = carrierChipHtml(r.carrier);
+  if (carrierChip) subChips.push(carrierChip);
   if (r.aging_days >= 3) {
     const hot = r.aging_days >= 7 ? "hot" : "";
     subChips.push(`<span class="mini-chip aging ${hot}">⏰${r.aging_days}d</span>`);
