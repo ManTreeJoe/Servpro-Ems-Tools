@@ -973,8 +973,32 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             pass
         return out
 
+    def snapshot_return_destinations(self, card_id: str) -> dict:
+        """Estimating/Service Call lanes available when closeout is done."""
+        card_id = (card_id or "").strip()
+        if not card_id:
+            return {"ok": False, "error": "No Trello card selected"}
+        try:
+            import trello_client as tc
+            card = tc.get_card_lite(card_id, fields="id,idBoard,idList") or {}
+            board_id = card.get("idBoard") or ""
+            if not board_id:
+                return {"ok": False, "error": "Could not read the card's board"}
+            lists = tc._call(f"/boards/{board_id}/lists", params={
+                "fields": "id,name", "filter": "open"}) or []
+            destinations = []
+            for lane in lists:
+                name = (lane.get("name") or "").strip()
+                upper = name.upper()
+                if "ESTIMAT" in upper or "SERVICE CALL" in upper:
+                    destinations.append({"id": lane.get("id") or "", "name": name})
+            return {"ok": True, "destinations": [d for d in destinations if d["id"]]}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def set_snapshot(self, card_id: str, enabled: bool,
-                     snapshot_list_id: str = "") -> dict:
+                     snapshot_list_id: str = "",
+                     return_list_id: str = "") -> dict:
         """Toggle a card into/out of its Estimating Snapshot lane."""
         card_id = (card_id or "").strip()
         target_id = (snapshot_list_id or "").strip()
@@ -1004,7 +1028,9 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                         "lane": target.get("name") or "Snapshot"}
 
             previous = persistence.get("snapshot_previous_lanes") or {}
-            return_id = previous.get(card_id) or ""
+            # The closeout UI supplies the user's explicit destination.
+            # Keep the historical previous-lane fallback for older callers.
+            return_id = (return_list_id or "").strip() or previous.get(card_id) or ""
             if not return_id:
                 actions = tc._call(f"/cards/{card_id}/actions", params={
                     "filter": "updateCard:idList", "limit": "50"}) or []
@@ -1018,6 +1044,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             if (not return_id or return_lane.get("idBoard") != card.get("idBoard")):
                 return {"ok": False,
                         "error": "Trello has no previous lane to return this card to"}
+            if return_list_id:
+                lane_name = (return_lane.get("name") or "").upper()
+                if "ESTIMAT" not in lane_name and "SERVICE CALL" not in lane_name:
+                    return {"ok": False,
+                            "error": "Choose an Estimating or Service Call lane"}
             if not tc.move_card(card_id, return_id):
                 return {"ok": False, "error": "Trello did not move the card"}
             previous.pop(card_id, None)

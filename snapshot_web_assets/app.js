@@ -352,7 +352,8 @@ function renderCandidateQueue() {
   // Whole-row click → open form with Trello prefill (when card_id present)
   candsEl.querySelectorAll(".snap-cand").forEach((row) => {
     row.addEventListener("click", (e) => {
-      if (e.target.closest("[data-url]") || e.target.closest("[data-new]")) return;
+      if (e.target.closest("[data-url]") || e.target.closest("[data-new]")
+          || e.target.closest(".snapshot-toggle")) return;
       startNew(row.dataset.client, row.dataset.card || "");
     });
   });
@@ -367,10 +368,27 @@ function renderCandidateQueue() {
     toggle.addEventListener("change", async (e) => {
       e.stopPropagation();
       const wanted = toggle.checked;
+      let returnListId = "";
+      if (!wanted) {
+        setStatus("Loading close-out destinations…");
+        const choices = await pywebview.api.snapshot_return_destinations(toggle.dataset.card);
+        if (!choices?.ok) {
+          toggle.checked = true;
+          setStatus(`Could not load destinations: ${choices?.error || "?"}`, "error");
+          return;
+        }
+        const picked = await pickSnapshotDestination(choices.destinations || []);
+        if (!picked) {
+          toggle.checked = true;
+          setStatus("Card stayed in Snapshot");
+          return;
+        }
+        returnListId = picked;
+      }
       toggle.disabled = true;
       setStatus(`${wanted ? "Adding to" : "Removing from"} Snapshot…`);
       const res = await pywebview.api.set_snapshot(
-        toggle.dataset.card, wanted, toggle.dataset.list || "");
+        toggle.dataset.card, wanted, toggle.dataset.list || "", returnListId);
       if (!res?.ok) {
         toggle.checked = !wanted;
         toggle.disabled = false;
@@ -381,6 +399,40 @@ function renderCandidateQueue() {
       await loadList();
     }));
 
+}
+
+function pickSnapshotDestination(destinations) {
+  return new Promise((resolve) => {
+    let finished = false;
+    const done = (value) => {
+      if (finished) return;
+      finished = true;
+      resolve(value || "");
+    };
+    const body = destinations.length
+      ? `<p class="muted" style="margin:0;">The close-out is finished. Where should this Trello card go next?</p>
+         <div style="display:grid;gap:8px;">
+           ${destinations.map((lane) => `<button class="btn snapshot-destination" type="button"
+             data-list="${escapeAttr(lane.id)}" style="text-align:left;padding:11px 14px;">${escapeHtml(lane.name)}</button>`).join("")}
+         </div>
+         <div style="text-align:right;"><button class="btn modal-close" type="button">Cancel</button></div>`
+      : `<p>No Estimating or Service Call lanes were found on this board.</p>
+         <div style="text-align:right;"><button class="btn modal-close" type="button">Keep in Snapshot</button></div>`;
+    const modal = openModal({
+      id: "snapshot-destination-modal",
+      title: "Send card after close-out",
+      sub: "Choose the next Trello lane",
+      body,
+      width: 500,
+      onClose: () => done("")
+    });
+    modal.querySelectorAll(".snapshot-destination").forEach((button) =>
+      button.addEventListener("click", () => {
+        const value = button.dataset.list || "";
+        done(value);
+        closeModal("snapshot-destination-modal");
+      }));
+  });
 }
 
 // ── Tab switching ───────────────────────────────────────────────
