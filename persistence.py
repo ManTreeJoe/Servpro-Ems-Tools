@@ -1686,7 +1686,12 @@ def get_folder_path(client):
     fp = _load().get("folder_paths", {})
     for key in _pin_lookup_keys(client):
         if key in fp:
-            return fp[key]
+            value = fp[key]
+            try:
+                from ems_db_common import resolve_portable_folder_path
+                return resolve_portable_folder_path(value) or None
+            except Exception:
+                return value
     return None
 
 
@@ -1699,7 +1704,11 @@ def set_folder_path(client, path):
     state = _load()
     paths = state.setdefault("folder_paths", {})
     if path:
-        paths[key] = path
+        try:
+            from ems_db_common import portable_folder_path
+            paths[key] = portable_folder_path(path)
+        except Exception:
+            paths[key] = path
     else:
         paths.pop(key, None)
     _save(state)

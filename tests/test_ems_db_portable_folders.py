@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config
 import ems_db
+import ems_db_common as common
 
 IE_ROOT = r"X:\IE_Public"
 OC_ROOT_A = r"C:\Users\alice\Servpro12342\Servpro-OC - OC-Onedrive"
@@ -63,9 +64,27 @@ def test_split_and_rebase_round_trip():
     p = os.path.join(OC_ROOT_A, "2026 OC Jobs", "Garvin Ruth")
     dept, rel = ems_db.split_department_path(p)
     assert dept == "OC"
-    assert rel == os.path.normcase(os.path.join("2026 OC Jobs", "Garvin Ruth"))
+    assert rel == os.path.join("2026 OC Jobs", "Garvin Ruth")
     assert os.path.normcase(ems_db.rebase_department_path(dept, rel)) == \
         os.path.normcase(p)
+
+
+def test_everyday_folder_value_rebases_between_windows_users(tmp_path,
+                                                              monkeypatch):
+    alice = os.path.join(OC_ROOT_A, "2026 OC Jobs", "Garvin Ruth")
+    stored = common.portable_folder_path(alice)
+    assert stored.startswith("linguar-folder://OC/")
+    assert "alice" not in stored.lower()
+
+    _configure(tmp_path, monkeypatch, OC_ROOT_B)
+    bob = common.resolve_portable_folder_path(stored)
+    assert os.path.normcase(bob) == os.path.normcase(os.path.join(
+        OC_ROOT_B, "2026 OC Jobs", "Garvin Ruth"))
+
+
+def test_legacy_absolute_folder_is_still_readable():
+    old = os.path.join(OC_ROOT_A, "2026 OC Jobs", "Legacy")
+    assert common.resolve_portable_folder_path(old) == old
 
 
 def test_split_returns_none_outside_every_root():

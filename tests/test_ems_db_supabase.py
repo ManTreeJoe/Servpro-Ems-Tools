@@ -229,6 +229,28 @@ def test_trello_link_never_stamps_a_department(fake, monkeypatch):
     assert not [c for c in fake.calls if c[0] == "PATCH" and c[1] == "jobs"]
 
 
+def test_shared_folder_migration_previews_then_converts(fake, monkeypatch):
+    old = r"C:\Users\Nathan\OneDrive\Jobs\2026\Smith"
+    portable = "linguar-folder://IE/2026/Smith"
+    fake.tables = {"job_links": [{
+        "canon_key": "smith", "link_type": sup.LINK_FOLDER,
+        "link_value": old, "added_at": "2026-01-01", "added_by": "Nathan",
+        "metadata_json": None,
+    }]}
+    monkeypatch.setattr(sup, "portable_folder_path",
+                        lambda value: portable if value == old else value)
+    preview = sup.migrate_folder_links_portable(apply=False)
+    assert preview["convertible"] == 1
+    assert preview["converted"] == 0
+    assert not [c for c in fake.calls if c[0] in ("POST", "DELETE")]
+
+    result = sup.migrate_folder_links_portable(apply=True)
+    assert result["converted"] == 1
+    writes = [c for c in fake.calls if c[0] in ("POST", "DELETE")]
+    assert [c[0] for c in writes] == ["POST", "DELETE"]
+    assert writes[0][3]["link_value"] == portable
+
+
 def test_delete_job_removes_children_then_the_job(fake):
     fake.tables = {
         "jobs": [{"canon_key": "wrong job", "display_name": "Wrong Job"}],

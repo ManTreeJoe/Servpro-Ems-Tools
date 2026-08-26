@@ -61,6 +61,15 @@ FIELDS = [
 _PERSONAL_FIELDS = {
     "appearance", "ui_scale", "global_hotkey_enabled", "global_hotkey",
     "preferred_browser", "show_sort_files", "show_new_job",
+    # These are LOCAL Windows paths. The shared folder is the same, but
+    # C:\Users\Nathan\... and C:\Users\Laura\... are not. Regular users
+    # must be able to select where their own OneDrive/SharePoint client
+    # synced each library without gaining control of franchise settings.
+    "audit_base", "runs_dir", "photos_root", "photos_extra_roots",
+    "snapshot_template", "snapshot_output", "apa_monitor_root",
+    "snapshots_root", "dispute_tracker_path", "wc_audit_dir",
+    # Trello grants one token per person; the API key/workspace remain admin.
+    "trello_token",
 }
 
 _FIELD_GROUPS = {
@@ -975,6 +984,17 @@ class Api:
             return {"ok": True, "url": result["url"]}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+
+    def portable_folder_migration(self, apply=False):
+        """Admin-only preview/apply for old Nathan-specific cloud paths."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access is required."}
+        try:
+            import ems_db_supabase
+            return ems_db_supabase.migrate_folder_links_portable(
+                apply=bool(apply))
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def save_my_trello_token(self, token: str) -> dict:
         """Save only this PC/user's token; never expose shared admin setup."""

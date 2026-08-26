@@ -226,6 +226,10 @@
              style="flex:1 1 220px; min-width:180px;" />
       <button class="btn" id="ji-lookup">🔎 Look up</button>
       <button class="btn" id="ji-backfill" title="Seed the graph from existing folder + Trello pins">🌱 Backfill from pins</button>
+      <button class="btn" id="folder-path-preview"
+              title="Find shared folder links that contain one employee's Windows username">🧭 Check shared paths</button>
+      <button class="btn" id="folder-path-apply" style="display:none;"
+              title="Replace the previewed absolute links with franchise + relative path">✓ Make paths portable</button>
     </div>
     <div id="ji-result" style="margin-top:12px;"></div>
   </section>
@@ -505,6 +509,8 @@ async function showOriginHelp(origin) {
     if (e.key === "Enter") { e.preventDefault(); lookupJobIdentity(); }
   });
   document.getElementById("ji-backfill").addEventListener("click", backfillJobGraph);
+  document.getElementById("folder-path-preview").addEventListener("click", () => portableFolderMigration(false));
+  document.getElementById("folder-path-apply").addEventListener("click", () => portableFolderMigration(true));
   document.getElementById("check-trello").addEventListener("click", async () => {
     const el = document.getElementById("trello-status");
     el.textContent = "Checking…"; el.style.color = "";
@@ -1293,6 +1299,9 @@ async function backfillJobGraph() {
 
 async function save() {
   const out = {};
+  const writable = new Set((SCHEMA || [])
+    .filter((field) => SETTINGS_ACCESS.is_admin || field.scope === "personal")
+    .map((field) => field.key));
   // SCOPED to the main form. A global [data-key] sweep also picked up the
   // Departments editor (which defaults to showing OC) and the panel-
   // visibility checkboxes — so clicking 💾 Save copied whichever department
@@ -1301,6 +1310,9 @@ async function save() {
   // searching OC's boards and matching nothing.
   document.querySelectorAll("#form-fields [data-key]").forEach((el) => {
     const k = el.dataset.key;
+    // Hidden admin fields are still in the DOM. Regular employees save only
+    // their own machine paths/preferences, never the invisible shared setup.
+    if (!writable.has(k)) return;
     if (el.type === "checkbox") out[k] = el.checked;
     else out[k] = el.value;
   });
@@ -1326,6 +1338,23 @@ async function save() {
       else if (h && h.error) setStatus(`Saved, but shortcut is unavailable: ${h.error}`, "error");
     }, 1800);
   }
+}
+
+async function portableFolderMigration(apply) {
+  const preview = document.getElementById("folder-path-preview");
+  const applyBtn = document.getElementById("folder-path-apply");
+  if (apply && !confirm("Convert the previewed shared folder links?\n\nThe job folders are not moved. Only their saved addresses become portable.")) return;
+  preview.disabled = true; applyBtn.disabled = true;
+  setStatus(apply ? "Making shared paths portable…" : "Checking shared folder paths…", "");
+  let res;
+  try { res = await pywebview.api.portable_folder_migration(!!apply); }
+  catch (ex) { res = { ok:false, error:String(ex) }; }
+  preview.disabled = false; applyBtn.disabled = false;
+  if (!res?.ok) { setStatus(`Shared-path check failed: ${res?.error || "?"}`, "error"); return; }
+  applyBtn.style.display = (!apply && res.convertible > 0) ? "" : "none";
+  const done = apply ? `Converted ${res.converted}` : `${res.convertible} ready to convert`;
+  setStatus(`🧭 ${done} · ${res.already_portable} already portable · ${res.unresolved} need a local root`,
+            res.unresolved ? "" : "ok");
 }
 let st = null;
 function setStatus(m, k="") {

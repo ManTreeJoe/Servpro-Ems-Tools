@@ -10,6 +10,7 @@ Anything that touches storage belongs in a backend, not here.
 """
 import os
 import re
+import urllib.parse
 
 from persistence import _canon_pin_key as _canon_pin_key_persistence
 
@@ -297,7 +298,18 @@ def split_department_path(path: str) -> tuple[str | None, str | None]:
         if norm == root:
             return (key, "")
         if norm.startswith(root + os.sep):
-            return (key, norm[len(root) + 1:])
+            # Match case-insensitively, but preserve the folder's real casing
+            # in the portable relative value and in the path returned later.
+            # Returning the normcase slice made every pin lowercase on Windows.
+            try:
+                import config
+                configured = os.path.normpath(
+                    (config.load_for(key).get("audit_base") or "").strip())
+                if configured:
+                    return (key, os.path.relpath(os.path.normpath(p), configured))
+            except Exception:
+                pass
+            return (key, os.path.normpath(p)[len(root) + 1:])
     return (None, None)
 
 
@@ -311,8 +323,66 @@ def rebase_department_path(department: str, relative: str) -> str | None:
     for key, root in _department_roots():
         if key == dept:
             rel = (relative or "").strip()
-            return os.path.normpath(os.path.join(root, rel)) if rel else root
+            # `_department_roots` stores normcase values for comparisons.
+            # Re-read the configured root so the user sees their actual drive
+            # and folder casing rather than a lowercased Windows path.
+            configured = root
+            try:
+                import config
+                configured = ((config.load_for(key).get("audit_base") or "")
+                              .strip() or root)
+            except Exception:
+                pass
+            return (os.path.normpath(os.path.join(configured, rel))
+                    if rel else os.path.normpath(configured))
     return None
+
+
+_PORTABLE_FOLDER_PREFIX = "linguar-folder://"
+
+
+def portable_folder_path(path: str) -> str:
+    """Machine-independent storage value for a configured job folder.
+
+    Example: Nathan and Laura can have different OneDrive profile roots but
+    both store `linguar-folder://IE/2026%20Jobs/Smith%2C%20Jane`.
+    Unconfigured/external paths remain unchanged for backward compatibility.
+    """
+    raw = (path or "").strip()
+    if not raw or raw.lower().startswith(_PORTABLE_FOLDER_PREFIX):
+        return raw
+    department, relative = split_department_path(raw)
+    if not department or relative is None:
+        return raw
+    rel = str(relative).replace("\\", "/")
+    return (_PORTABLE_FOLDER_PREFIX + urllib.parse.quote(department, safe="")
+            + "/" + urllib.parse.quote(rel, safe="/"))
+
+
+def resolve_portable_folder_path(value: str) -> str:
+    """Turn a stored portable folder value into this employee's local path."""
+    raw = (value or "").strip()
+    if not raw.lower().startswith(_PORTABLE_FOLDER_PREFIX):
+        return raw
+    tail = raw[len(_PORTABLE_FOLDER_PREFIX):]
+    department, sep, relative = tail.partition("/")
+    if not department:
+        return ""
+    department = urllib.parse.unquote(department)
+    relative = urllib.parse.unquote(relative if sep else "")
+    return rebase_department_path(department, relative) or ""
+
+
+def folder_storage_candidates(path: str) -> list[str]:
+    """Portable and legacy forms to try when matching/removing a folder."""
+    raw = (path or "").strip()
+    if not raw:
+        return []
+    portable = portable_folder_path(raw)
+    out = [portable]
+    if raw != portable:
+        out.append(os.path.normcase(os.path.normpath(raw)))
+    return list(dict.fromkeys(out))
 
 
 CHILD_CLAIM = "claim"

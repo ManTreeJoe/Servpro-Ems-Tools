@@ -36,6 +36,8 @@ from ems_db_common import (            # noqa: F401 — re-exported as API
     is_strong_link,
     _norm_link, invalidate_department_cache, department_for_path,
     split_department_path, rebase_department_path,
+    portable_folder_path, resolve_portable_folder_path,
+    folder_storage_candidates,
     CHILD_CLAIM, CHILD_UNIT, CHILD_SUBJOB, classify_child, _now_iso,
     EVENT_CREATED, EVENT_RENAMED, EVENT_SNAPSHOT_REVISION, is_material_rename,
     alias_probe_token, truncation_alias_is_ambiguous, dedupe_child_name,
@@ -340,7 +342,10 @@ def all_aliases() -> list:
 
 def set_link(canon_key_value: str, link_type: str, link_value: str, *,
              metadata: dict | None = None, added_by: str = "") -> None:
-    if is_strong_link(link_type):
+    original_folder = link_value if link_type == LINK_FOLDER else ""
+    if link_type == LINK_FOLDER:
+        link_value = portable_folder_path(link_value)
+    elif is_strong_link(link_type):
         link_value = _norm_link(link_type, link_value)
     if not (canon_key_value and link_type and link_value):
         return
@@ -353,7 +358,7 @@ def set_link(canon_key_value: str, link_type: str, link_value: str, *,
     # A folder pin is what says which franchise owns the job — same rule as
     # the SQLite backend. Fills a NULL only; never reassigns an owner.
     if link_type == LINK_FOLDER:
-        dept = department_for_path(link_value)
+        dept = department_for_path(original_folder)
         if dept:
             _sb.rest("PATCH", "jobs",
                      params={"canon_key": f"eq.{canon_key_value}",
@@ -367,7 +372,8 @@ def get_link(canon_key_value: str, link_type: str):
     r = _one("job_links", canon_key=f"eq.{canon_key_value}",
              link_type=f"eq.{link_type}", select="link_value",
              order="added_at.asc")
-    return r["link_value"] if r else None
+    value = r["link_value"] if r else None
+    return resolve_portable_folder_path(value) if link_type == LINK_FOLDER else value
 
 
 def get_links(canon_key_value: str, link_type: str = "") -> list:
@@ -377,7 +383,16 @@ def get_links(canon_key_value: str, link_type: str = "") -> list:
          "order": "added_at.asc"}
     if link_type:
         p["link_type"] = f"eq.{link_type}"
-    return _rows("job_links", **p)
+    rows = _rows("job_links", **p)
+    out = []
+    for row in rows:
+        item = dict(row)
+        if item.get("link_type") == LINK_FOLDER:
+            item["portable_value"] = item.get("link_value") or ""
+            item["link_value"] = resolve_portable_folder_path(
+                item.get("link_value") or "")
+        out.append(item)
+    return out
 
 
 def remove_link(canon_key_value: str, link_type: str,
@@ -385,20 +400,70 @@ def remove_link(canon_key_value: str, link_type: str,
     if not (canon_key_value and link_type):
         return
     p = {"canon_key": f"eq.{canon_key_value}", "link_type": f"eq.{link_type}"}
-    if link_value:
-        # Normalized on the way in by set_link — must match here or the
-        # delete silently removes nothing.
-        p["link_value"] = f"eq.{_norm_link(link_type, link_value)}"
-    _sb.rest("DELETE", "job_links", params=p)
+    if not link_value:
+        _sb.rest("DELETE", "job_links", params=p)
+        return
+    candidates = (folder_storage_candidates(link_value)
+                  if link_type == LINK_FOLDER
+                  else [_norm_link(link_type, link_value)])
+    for candidate in candidates:
+        _sb.rest("DELETE", "job_links", params={**p,
+                 "link_value": f"eq.{candidate}"})
 
 
 def find_job_by_link(link_type: str, link_value: str):
-    nv = _norm_link(link_type, link_value)
-    if not (link_type and nv):
+    candidates = (folder_storage_candidates(link_value)
+                  if link_type == LINK_FOLDER
+                  else [_norm_link(link_type, link_value)])
+    if not (link_type and candidates):
         return None
-    l = _one("job_links", link_type=f"eq.{link_type}", link_value=f"eq.{nv}",
-             select="canon_key", order="added_at.asc")
-    return get_job(l["canon_key"]) if l else None
+    for candidate in candidates:
+        l = _one("job_links", link_type=f"eq.{link_type}",
+                 link_value=f"eq.{candidate}", select="canon_key",
+                 order="added_at.asc")
+        if l:
+            return get_job(l["canon_key"])
+    return None
+
+
+def migrate_folder_links_portable(*, apply: bool = False) -> dict:
+    """Preview/convert legacy absolute shared folder links.
+
+    Run on a machine whose franchise roots are configured correctly (the
+    original owner's machine is ideal). Rows outside those roots are reported
+    unresolved and never changed. Conversion inserts the portable value first,
+    then removes the old absolute value, so an interruption cannot lose a pin.
+    """
+    rows = _rows("job_links", link_type=f"eq.{LINK_FOLDER}", select="*")
+    convertible, already, unresolved, converted = [], [], [], 0
+    for row in rows:
+        old = (row.get("link_value") or "").strip()
+        new = portable_folder_path(old)
+        item = {"canon_key": row.get("canon_key") or "",
+                "old": old, "new": new}
+        if old.lower().startswith("linguar-folder://"):
+            already.append(item)
+            continue
+        if not new or new == old:
+            unresolved.append(item)
+            continue
+        convertible.append(item)
+        if not apply:
+            continue
+        body = dict(row)
+        body["link_value"] = new
+        _sb.rest("POST", "job_links", body=body,
+                 prefer="resolution=merge-duplicates")
+        _sb.rest("DELETE", "job_links", params={
+            "canon_key": f"eq.{row.get('canon_key')}",
+            "link_type": f"eq.{LINK_FOLDER}",
+            "link_value": f"eq.{old}",
+        })
+        converted += 1
+    return {"ok": True, "apply": bool(apply), "total": len(rows),
+            "convertible": len(convertible), "already_portable": len(already),
+            "unresolved": len(unresolved), "converted": converted,
+            "preview": convertible[:20], "unresolved_rows": unresolved[:20]}
 
 
 # ── identity resolution ─────────────────────────────────────────────────
