@@ -1,6 +1,6 @@
 {
-  "version": "1.5.0",
+  "version": "1.5.1",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.0/Linguar-Hub-Setup-1.5.0.exe",
-  "notes": "Adds guided employee setup, admin-only franchise assignments, EMS/Contents/Recon work environments, editable Trello comments, improved cross-workspace card search, responsive navigation, Supabase sign-in fixes, and safer contact selection."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.1/Linguar-Hub-Setup-1.5.1.exe",
+  "notes": "Fixes shared OneDrive and SharePoint job folder links across Windows user profiles. Each employee can configure their own local folder root while shared jobs store franchise-relative paths. Also fixes the Trello connection setup link so one-click sign-in can be configured from Trello's current Apps admin page."
 }

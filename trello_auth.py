@@ -231,7 +231,7 @@ def authorize(*, timeout=_TIMEOUT_S, open_browser=True) -> dict:
                         "Trello didn't come back. If the page said "
                         "\"Invalid return_url\", add "
                         f"http://localhost:{port} to your API key's "
-                        "Allowed Origins at trello.com/power-ups/admin — "
+                        "Allowed Origins at trello.com/apps/admin — "
                         "or use the manual token flow instead.")}
         token = srv.token
     finally:

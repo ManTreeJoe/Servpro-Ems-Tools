@@ -676,7 +676,7 @@ class Api:
         try:
             import trello_auth
             return {"ok": True, "origin": trello_auth.allowed_origin(),
-                    "admin_url": "https://trello.com/power-ups/admin"}
+                    "admin_url": "https://trello.com/apps/admin"}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 

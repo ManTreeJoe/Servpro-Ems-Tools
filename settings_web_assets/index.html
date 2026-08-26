@@ -494,13 +494,13 @@ async function showOriginHelp(origin) {
     + `<code style="display:inline-block;margin:6px 0;padding:3px 8px;`
     + `background:var(--surface);border:1px solid var(--border);border-radius:4px;">`
     + `${esc(o)}</code><br>`
-    + `at <a href="#" id="open-trello-admin">trello.com/power-ups/admin</a> → `
+    + `at <a href="#" id="open-trello-admin">trello.com/apps/admin</a> → `
     + `your Power-Up → <b>API key</b> → <b>Allowed origins</b>.<br>`
     + `<span class="muted">Or skip it entirely and use `
     + `<b>🔑 Manual token…</b>, which needs no origin.</span>`;
   document.getElementById("open-trello-admin")?.addEventListener("click", (e) => {
     e.preventDefault();
-    pywebview.api.open_url?.("https://trello.com/power-ups/admin");
+    pywebview.api.open_url?.("https://trello.com/apps/admin");
   });
 }
   // Job identity lookup + backfill
