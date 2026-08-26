@@ -18,11 +18,21 @@ def test_only_exact_initial_admin_email_gets_bootstrap_access():
         assert settings_web._is_admin() is False
 
 
-def test_server_admin_decision_overrides_email_bootstrap():
+def test_bootstrap_owner_remains_admin_when_seed_row_is_missing():
     with patch("supabase_client.rpc", return_value={"is_admin": False}), \
          patch("supabase_client.current_user", return_value={
              "email": "nathan@servpro10100.com"}):
-        assert settings_web._is_admin() is False
+        assert settings_web._is_admin() is True
+
+
+def test_settings_access_does_not_overwrite_bootstrap_owner():
+    with patch("supabase_client.rpc", return_value={"is_admin": False,
+                                                     "departments": ["IE"]}), \
+         patch("supabase_client.current_user", return_value={
+             "email": "nathan@servpro10100.com"}):
+        result = _api().settings_access()
+    assert result["is_admin"] is True
+    assert result["departments"] == ["IE"]
 
 
 def test_regular_user_cannot_write_admin_settings():

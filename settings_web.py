@@ -61,10 +61,10 @@ FIELDS = [
 _PERSONAL_FIELDS = {
     "appearance", "ui_scale", "global_hotkey_enabled", "global_hotkey",
     "preferred_browser", "show_sort_files", "show_new_job",
-    # These are LOCAL Windows paths. The shared folder is the same, but
-    # C:\Users\Nathan\... and C:\Users\Laura\... are not. Regular users
-    # must be able to select where their own OneDrive/SharePoint client
-    # synced each library without gaining control of franchise settings.
+    # These are paths as THIS Windows machine reaches the shared storage.
+    # That may be a mapped drive, a UNC server share, or a locally synced
+    # OneDrive/SharePoint library. Regular users must be able to select
+    # their machine's roots without gaining control of franchise settings.
     "audit_base", "runs_dir", "photos_root", "photos_extra_roots",
     "snapshot_template", "snapshot_output", "apa_monitor_root",
     "snapshots_root", "dispute_tracker_path", "wc_audit_dir",
@@ -147,6 +147,12 @@ def _signed_in_email():
 
 def _is_admin():
     """Server decision when available; exact bootstrap email for migration setup."""
+    # The owner is the bootstrap administrator even before (or if) the
+    # app_admins seed row exists. Previously an RPC response of
+    # {is_admin:false} returned early and hid Admin setup from the one
+    # account that needed it to finish configuration.
+    if _signed_in_email() == _INITIAL_ADMIN_EMAIL:
+        return True
     try:
         import supabase_client
         result = supabase_client.rpc("my_app_access")
@@ -196,7 +202,7 @@ class Api:
             access = supabase_client.rpc("my_app_access") or {}
             if isinstance(access, dict):
                 departments = access.get("departments") or []
-                is_admin = bool(access.get("is_admin"))
+                is_admin = is_admin or bool(access.get("is_admin"))
         except Exception:
             pass
         return {"ok": True, "email": email, "is_admin": is_admin,

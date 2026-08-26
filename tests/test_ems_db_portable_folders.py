@@ -69,6 +69,16 @@ def test_split_and_rebase_round_trip():
         os.path.normcase(p)
 
 
+def test_unc_server_root_round_trip(tmp_path, monkeypatch):
+    server_root = r"\\fileserver\SERVPRO Jobs"
+    _configure(tmp_path, monkeypatch, server_root)
+    path = os.path.join(server_root, "2026", "Smith, Jane")
+    stored = common.portable_folder_path(path)
+    assert stored == "linguar-folder://OC/2026/Smith%2C%20Jane"
+    assert os.path.normcase(common.resolve_portable_folder_path(stored)) == \
+        os.path.normcase(path)
+
+
 def test_everyday_folder_value_rebases_between_windows_users(tmp_path,
                                                               monkeypatch):
     alice = os.path.join(OC_ROOT_A, "2026 OC Jobs", "Garvin Ruth")

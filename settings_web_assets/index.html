@@ -212,9 +212,12 @@
                   background: var(--surface); border: 1px solid var(--border);
                   border-radius: 8px;">
     <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">
-      🔗 Job identity
+      📁 Shared folder roots &amp; job identity
     </div>
     <div class="muted" style="font-size: 11px; margin-bottom: 12px;">
+      Shared roots can be a mapped drive (X:), a server path
+      (\\server\share), or a OneDrive/SharePoint sync folder. Portable
+      links keep only the franchise and path below its configured root.
       Look up what's tied to a job — its canonical name, the alternate
       spellings that resolve to it, and its folder / Trello / CompanyCam
       links. Auto-linking learns these as you pin folders and cards.
@@ -227,7 +230,7 @@
       <button class="btn" id="ji-lookup">🔎 Look up</button>
       <button class="btn" id="ji-backfill" title="Seed the graph from existing folder + Trello pins">🌱 Backfill from pins</button>
       <button class="btn" id="folder-path-preview"
-              title="Find shared folder links that contain one employee's Windows username">🧭 Check shared paths</button>
+              title="Check saved job folders against each franchise's configured shared root">🧭 Check shared folder links</button>
       <button class="btn" id="folder-path-apply" style="display:none;"
               title="Replace the previewed absolute links with franchise + relative path">✓ Make paths portable</button>
     </div>

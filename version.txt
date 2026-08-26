@@ -1,6 +1,6 @@
 {
-  "version": "1.5.1",
+  "version": "1.5.2",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.1/Linguar-Hub-Setup-1.5.1.exe",
-  "notes": "Fixes shared OneDrive and SharePoint job folder links across Windows user profiles. Each employee can configure their own local folder root while shared jobs store franchise-relative paths. Also fixes the Trello connection setup link so one-click sign-in can be configured from Trello's current Apps admin page."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.2/Linguar-Hub-Setup-1.5.2.exe",
+  "notes": "Restores the Admin setup tab for the owner so shared-folder migration controls are visible. Shared folder roots now clearly support mapped drives, UNC server shares, and OneDrive or SharePoint sync folders."
 }
