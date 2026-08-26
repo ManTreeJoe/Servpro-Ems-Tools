@@ -45,6 +45,7 @@ import os
 import re
 import sqlite3
 import threading
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Iterable
@@ -73,7 +74,15 @@ from persistence import _canon_pin_key as _canon_pin_key_persistence
 # place when they need to back the suite up or migrate machines.
 DB_PATH = _paths.data("ems_jobs.db")
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 9
+
+CRM_LIFECYCLE_STAGES = (
+    "intake", "contacted", "scheduled", "active", "monitoring",
+    "ready_for_billing", "closeout", "closed", "legacy_unclassified",
+)
+CRM_WORK_ENVIRONMENTS = ("EMS", "Contents", "Recon")
+CRM_JOB_TYPES = ("insurance", "self_pay", "commercial", "management")
+CRM_PRIORITIES = ("low", "normal", "high", "urgent")
 
 # ── v6: the job record people actually ask questions about ──────────────
 #
@@ -295,6 +304,7 @@ def _init_schema():
                 ON job_stage_transitions(card_id);
             CREATE INDEX IF NOT EXISTS idx_transitions_from
                 ON job_stage_transitions(from_stage);
+
         """)
         # Idempotent column adds — for upgrade-from-v1 installs the
         # CREATE TABLE IF NOT EXISTS above was a no-op, so any new
@@ -333,6 +343,12 @@ def _init_schema():
             "ALTER TABLE job_children ADD COLUMN property TEXT",
             "ALTER TABLE job_children ADD COLUMN unit TEXT",
             "ALTER TABLE job_children ADD COLUMN claim_date TEXT",
+            "ALTER TABLE jobs ADD COLUMN job_id TEXT",
+            "ALTER TABLE jobs ADD COLUMN lifecycle_stage TEXT",
+            "ALTER TABLE jobs ADD COLUMN stage_entered_at TEXT",
+            "ALTER TABLE jobs ADD COLUMN job_type TEXT",
+            "ALTER TABLE jobs ADD COLUMN priority TEXT",
+            "ALTER TABLE jobs ADD COLUMN closed_at TEXT",
         ) + tuple(
             # v6: promote the queryable job facts out of metadata_json.
             f"ALTER TABLE jobs ADD COLUMN {col} TEXT"
@@ -343,6 +359,60 @@ def _init_schema():
             except sqlite3.OperationalError as ex:
                 if "duplicate column" not in str(ex).lower():
                     raise
+        # The unique parent key must exist before touching jobs if a prior
+        # interrupted upgrade already created the v9 child tables.
+        c.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_job_id ON jobs(job_id)")
+        # Existing records predate lifecycle tracking. Do not pretend they
+        # entered Intake today; keep them explicitly unclassified until a
+        # human or Trello reconciliation assigns an honest stage.
+        for row in c.execute(
+                "SELECT canon_key FROM jobs WHERE job_id IS NULL OR job_id=''"
+        ).fetchall():
+            c.execute("UPDATE jobs SET job_id=? WHERE canon_key=?",
+                      (str(uuid.uuid4()), row["canon_key"]))
+        c.execute("""
+            UPDATE jobs SET lifecycle_stage='legacy_unclassified'
+            WHERE lifecycle_stage IS NULL OR TRIM(lifecycle_stage)=''
+        """)
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_lifecycle_stage "
+            "ON jobs(lifecycle_stage)")
+        # Create the v9 child tables only after old databases have received
+        # job_id plus its unique index. SQLite validates the referenced key
+        # during UPDATE, so creating these first makes an upgrade fail with
+        # "foreign key mismatch" before the backfill can run.
+        c.executescript("""
+            CREATE TABLE IF NOT EXISTS crm_job_departments (
+                job_id              TEXT NOT NULL,
+                work_environment    TEXT NOT NULL,
+                stage               TEXT,
+                status              TEXT,
+                owner               TEXT,
+                stage_entered_at    TEXT,
+                started_at          TEXT,
+                completed_at        TEXT,
+                updated_at          TEXT NOT NULL,
+                PRIMARY KEY (job_id, work_environment),
+                FOREIGN KEY (job_id) REFERENCES jobs(job_id)
+                    ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_crm_departments_stage
+                ON crm_job_departments(work_environment, stage);
+            CREATE TABLE IF NOT EXISTS crm_job_relationships (
+                job_id              TEXT NOT NULL,
+                related_job_id      TEXT NOT NULL,
+                relationship_type   TEXT NOT NULL,
+                created_at          TEXT NOT NULL,
+                created_by          TEXT,
+                PRIMARY KEY (job_id, related_job_id, relationship_type),
+                FOREIGN KEY (job_id) REFERENCES jobs(job_id)
+                    ON DELETE CASCADE,
+                FOREIGN KEY (related_job_id) REFERENCES jobs(job_id)
+                    ON DELETE CASCADE,
+                CHECK (job_id <> related_job_id)
+            );
+        """)
         c.execute(
             "CREATE INDEX IF NOT EXISTS idx_jobs_parent ON jobs(parent_canon)")
         c.execute(
@@ -508,10 +578,13 @@ def upsert_job(*, display_name: str,
             "SELECT * FROM jobs WHERE canon_key = ?", (key,)).fetchone()
         if existing is None:
             created = True
-            cols = ["canon_key", "display_name", "year", "first_seen_at",
+            cols = ["canon_key", "display_name", "job_id",
+                    "lifecycle_stage", "stage_entered_at",
+                    "year", "first_seen_at",
                     "last_seen_at", "metadata_json", "parent_canon",
                     "unit_number", "department"] + list(_TEXT_COLUMNS)
-            vals = [key, display_name, year, now, now, md_json,
+            vals = [key, display_name, str(uuid.uuid4()), "intake", now,
+                    year, now, now, md_json,
                     parent_canon_value, unit_num,
                     (department or "").strip() or None]
             vals += [supplied.get(col) or "" for col in _TEXT_COLUMNS]
@@ -1180,6 +1253,121 @@ def get_job(canon_key_value: str) -> dict | None:
         row = c.execute(
             "SELECT * FROM jobs WHERE canon_key=?", (canon_key_value,)).fetchone()
     return _row_to_dict(row)
+
+
+def get_job_by_id(job_id: str) -> dict | None:
+    """Fetch the permanent master record, independent of its current name."""
+    if not job_id:
+        return None
+    with _LOCK, _connect() as c:
+        row = c.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+    return _row_to_dict(row)
+
+
+def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
+                         job_type: str = "", priority: str = "") -> dict:
+    """Update the small set of fields that controls the overall CRM job.
+
+    This is separate from Trello's `status`: Trello may have many board/list
+    names, while lifecycle_stage is the stable cross-department workflow.
+    """
+    lifecycle_stage = (lifecycle_stage or "").strip().lower()
+    job_type = (job_type or "").strip().lower()
+    priority = (priority or "").strip().lower()
+    if lifecycle_stage and lifecycle_stage not in CRM_LIFECYCLE_STAGES:
+        raise ValueError(f"unknown lifecycle stage: {lifecycle_stage}")
+    if job_type and job_type not in CRM_JOB_TYPES:
+        raise ValueError(f"unknown job type: {job_type}")
+    if priority and priority not in CRM_PRIORITIES:
+        raise ValueError(f"unknown priority: {priority}")
+    now = _now_iso()
+    with _LOCK, _connect() as c:
+        row = c.execute("SELECT * FROM jobs WHERE canon_key=?",
+                        (canon_key_value,)).fetchone()
+        if row is None:
+            raise KeyError(canon_key_value)
+        updates, values = [], []
+        if lifecycle_stage and lifecycle_stage != _row_get(row, "lifecycle_stage"):
+            updates += ["lifecycle_stage=?", "stage_entered_at=?", "closed_at=?"]
+            values += [lifecycle_stage, now,
+                       now if lifecycle_stage == "closed" else None]
+        if job_type:
+            updates.append("job_type=?")
+            values.append(job_type)
+        if priority:
+            updates.append("priority=?")
+            values.append(priority)
+        if updates:
+            c.execute("UPDATE jobs SET " + ", ".join(updates)
+                      + " WHERE canon_key=?", values + [canon_key_value])
+            c.commit()
+    return get_master_job(canon_key_value)
+
+
+def set_work_environment_state(canon_key_value: str, work_environment: str,
+                               *, stage: str = "", status: str = "",
+                               owner: str = "") -> dict:
+    """Create/update one EMS, Contents or Recon state under a master job."""
+    env = (work_environment or "").strip()
+    env = next((v for v in CRM_WORK_ENVIRONMENTS
+                if v.lower() == env.lower()), "")
+    if not env:
+        raise ValueError(f"unknown work environment: {work_environment}")
+    job = get_job(canon_key_value)
+    if not job:
+        raise KeyError(canon_key_value)
+    now = _now_iso()
+    with _LOCK, _connect() as c:
+        old = c.execute("""
+            SELECT * FROM crm_job_departments
+            WHERE job_id=? AND work_environment=?
+        """, (job["job_id"], env)).fetchone()
+        entered = (_row_get(old, "stage_entered_at") if old else "")
+        if not old or (stage and stage != _row_get(old, "stage")):
+            entered = now
+        c.execute("""
+            INSERT INTO crm_job_departments
+                (job_id, work_environment, stage, status, owner,
+                 stage_entered_at, started_at, completed_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(job_id, work_environment) DO UPDATE SET
+                stage=COALESCE(NULLIF(excluded.stage,''), stage),
+                status=COALESCE(NULLIF(excluded.status,''), status),
+                owner=COALESCE(NULLIF(excluded.owner,''), owner),
+                stage_entered_at=excluded.stage_entered_at,
+                updated_at=excluded.updated_at
+        """, (job["job_id"], env, stage, status, owner, entered,
+              now if not old else _row_get(old, "started_at"),
+              now if (stage or "").lower() == "closed" else
+              (_row_get(old, "completed_at") if old else None), now))
+        c.commit()
+        row = c.execute("""
+            SELECT * FROM crm_job_departments
+            WHERE job_id=? AND work_environment=?
+        """, (job["job_id"], env)).fetchone()
+    return dict(row)
+
+
+def get_work_environment_states(canon_key_value: str) -> list:
+    job = get_job(canon_key_value)
+    if not job:
+        return []
+    with _LOCK, _connect() as c:
+        rows = c.execute("""
+            SELECT * FROM crm_job_departments WHERE job_id=?
+            ORDER BY CASE work_environment
+                WHEN 'EMS' THEN 1 WHEN 'Contents' THEN 2 WHEN 'Recon' THEN 3
+                ELSE 4 END
+        """, (job["job_id"],)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_master_job(canon_key_value: str) -> dict | None:
+    job = get_job(canon_key_value)
+    if not job:
+        return None
+    job["work_environments"] = get_work_environment_states(canon_key_value)
+    return job
 
 
 def _is_primary_job_key(key: str) -> bool:

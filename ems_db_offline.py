@@ -64,7 +64,7 @@ _WRITES = frozenset({
     "delete_job", "lifecycle_upsert", "log_event", "merge_jobs", "prune_dead_folder_links",
     "remove_child", "remove_link", "reset_db_path", "resolve_and_link",
     "set_child", "set_department", "set_link", "sync_from_trello",
-    "upsert_job",
+    "set_master_job_state", "set_work_environment_state", "upsert_job",
 })
 
 _READS = frozenset({
@@ -75,7 +75,8 @@ _READS = frozenset({
     "find_child_by_folder", "find_dead_folder_links",
     "find_department_conflicts", "find_job_by_link", "find_job_by_name",
     "find_jobs_by_status", "find_property_of", "find_units_of",
-    "get_aliases", "get_job", "get_link", "get_links", "group_by_property",
+    "get_aliases", "get_job", "get_job_by_id", "get_link", "get_links",
+    "get_master_job", "get_work_environment_states", "group_by_property",
     "iter_jobs", "job_identity", "lifecycle_counts_by_stage",
     "lifecycle_get", "lifecycle_list", "lifecycle_needs_action_enrichment",
     "list_events", "list_transitions", "name_history",

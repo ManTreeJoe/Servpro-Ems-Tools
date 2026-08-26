@@ -66,15 +66,15 @@ def test_unknown_keyword_raises_rather_than_vanishing(fresh):
     assert "adjustor_name" in str(ex.value)
 
 
-def test_schema_version_is_6(fresh):
-    """A fresh file must STAMP v6 — the migration runner and the Supabase
+def test_schema_version_is_9(fresh):
+    """A fresh file must STAMP v9 — the migration runner and the Supabase
     side both branch on this."""
     import sqlite3
-    assert db.SCHEMA_VERSION == 6
+    assert db.SCHEMA_VERSION == 9
     c = sqlite3.connect(fresh.DB_PATH)
     got = c.execute("SELECT value FROM meta WHERE key='schema_version'"
                     ).fetchone()
-    assert got and int(got[0]) == 6
+    assert got and int(got[0]) == 9
 
 
 def test_columns_are_added_to_a_pre_v6_database(tmp_path, monkeypatch):

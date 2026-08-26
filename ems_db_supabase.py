@@ -43,7 +43,7 @@ from ems_db_common import (            # noqa: F401 — re-exported as API
     alias_probe_token, truncation_alias_is_ambiguous, dedupe_child_name,
 )
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 9
 
 
 class DepartmentConflict(Exception):
@@ -75,6 +75,8 @@ _ORDER_BY = {
     "job_stage_transitions": "id",
     "meta":                  "key",
     "app_user_departments":  "user_id,department",
+    "crm_job_departments":   "job_id,work_environment",
+    "crm_job_relationships": "job_id,related_job_id,relationship_type",
 }
 
 
@@ -213,6 +215,93 @@ def get_job(canon_key_value: str):
     if not canon_key_value:
         return None
     return _job(_one("jobs", canon_key=f"eq.{canon_key_value}", select="*"))
+
+
+def get_job_by_id(job_id: str):
+    if not job_id:
+        return None
+    return _job(_one("jobs", job_id=f"eq.{job_id}", select="*"))
+
+
+def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
+                         job_type: str = "", priority: str = "") -> dict:
+    from ems_db_sqlite import (CRM_JOB_TYPES, CRM_LIFECYCLE_STAGES,
+                               CRM_PRIORITIES)
+    lifecycle_stage = (lifecycle_stage or "").strip().lower()
+    job_type = (job_type or "").strip().lower()
+    priority = (priority or "").strip().lower()
+    if lifecycle_stage and lifecycle_stage not in CRM_LIFECYCLE_STAGES:
+        raise ValueError(f"unknown lifecycle stage: {lifecycle_stage}")
+    if job_type and job_type not in CRM_JOB_TYPES:
+        raise ValueError(f"unknown job type: {job_type}")
+    if priority and priority not in CRM_PRIORITIES:
+        raise ValueError(f"unknown priority: {priority}")
+    current = get_job(canon_key_value)
+    if not current:
+        raise KeyError(canon_key_value)
+    patch = {}
+    if lifecycle_stage and lifecycle_stage != current.get("lifecycle_stage"):
+        now = _now_iso()
+        patch.update(lifecycle_stage=lifecycle_stage, stage_entered_at=now,
+                     closed_at=(now if lifecycle_stage == "closed" else None))
+    if job_type:
+        patch["job_type"] = job_type
+    if priority:
+        patch["priority"] = priority
+    if patch:
+        _sb.rest("PATCH", "jobs",
+                 params={"canon_key": f"eq.{canon_key_value}"}, body=patch)
+    return get_master_job(canon_key_value)
+
+
+def set_work_environment_state(canon_key_value: str, work_environment: str,
+                               *, stage: str = "", status: str = "",
+                               owner: str = "") -> dict:
+    from ems_db_sqlite import CRM_WORK_ENVIRONMENTS
+    env = (work_environment or "").strip()
+    env = next((v for v in CRM_WORK_ENVIRONMENTS
+                if v.lower() == env.lower()), "")
+    if not env:
+        raise ValueError(f"unknown work environment: {work_environment}")
+    job = get_job(canon_key_value)
+    if not job:
+        raise KeyError(canon_key_value)
+    old = _one("crm_job_departments", job_id=f"eq.{job['job_id']}",
+               work_environment=f"eq.{env}", select="*")
+    now = _now_iso()
+    changed_stage = not old or (stage and stage != old.get("stage"))
+    body = {
+        "job_id": job["job_id"], "work_environment": env,
+        "stage": stage or (old or {}).get("stage"),
+        "status": status or (old or {}).get("status"),
+        "owner": owner or (old or {}).get("owner"),
+        "stage_entered_at": now if changed_stage else (old or {}).get("stage_entered_at"),
+        "started_at": (old or {}).get("started_at") or now,
+        "completed_at": (now if (stage or "").lower() == "closed"
+                         else (old or {}).get("completed_at")),
+        "updated_at": now,
+    }
+    rows = _sb.rest("POST", "crm_job_departments", body=body,
+                    prefer="resolution=merge-duplicates,return=representation")
+    return (rows or [body])[0]
+
+
+def get_work_environment_states(canon_key_value: str) -> list:
+    job = get_job(canon_key_value)
+    if not job:
+        return []
+    rows = _rows("crm_job_departments", job_id=f"eq.{job['job_id']}",
+                 select="*")
+    rank = {"EMS": 1, "Contents": 2, "Recon": 3}
+    return sorted(rows, key=lambda r: rank.get(r.get("work_environment"), 4))
+
+
+def get_master_job(canon_key_value: str):
+    job = get_job(canon_key_value)
+    if not job:
+        return None
+    job["work_environments"] = get_work_environment_states(canon_key_value)
+    return job
 
 
 def iter_jobs() -> list:
