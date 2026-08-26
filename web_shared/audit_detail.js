@@ -222,6 +222,9 @@
         ${techs ? `<div class="detail-techs">${esc(ctx, techs)}</div>` : ""}
       </header>
       <div class="detail-chip-row">${chips.join(" ")}</div>
+      <section class="detail-section crm-workspace" id="crm-workspace">
+        <div class="crm-workspace-loading muted">Loading job workspace…</div>
+      </section>
       ${formsSection}
       ${photosSection}
       ${reqSection}
@@ -360,6 +363,76 @@
   // The whole point is not having to open Explorer to find out whether
   // the photos are actually there. Two levels, counts only; clicking a
   // group opens the browser at that folder.
+  async function loadCrmWorkspace(container, r, ctx) {
+    const box = container.querySelector("#crm-workspace");
+    if (!box) return;
+    let data;
+    try { data = await pywebview.api.crm_job_workspace(r.client); }
+    catch (ex) { data = { ok: false, error: String(ex) }; }
+    if (!data || !data.ok) {
+      box.innerHTML = `<div class="muted">CRM workspace unavailable — ${esc(ctx,
+        (data && data.error) || "job not indexed")}</div>`;
+      return;
+    }
+    const stages = [
+      ["intake", "Intake"], ["contacted", "Contacted"],
+      ["scheduled", "Scheduled"], ["active", "Active"],
+      ["monitoring", "Monitoring"],
+      ["ready_for_billing", "Ready for billing"],
+      ["closeout", "Closeout"], ["closed", "Closed"],
+      ["legacy_unclassified", "Needs classification"],
+    ];
+    const types = [["", "Not set"], ["insurance", "Insurance"],
+      ["self_pay", "Self-pay"], ["commercial", "Commercial"],
+      ["management", "Property management"]];
+    const priorities = [["low", "Low"], ["normal", "Normal"],
+      ["high", "High"], ["urgent", "Urgent"]];
+    const options = (items, current) => items.map(([value, label]) =>
+      `<option value="${escA(ctx, value)}" ${value === current ? "selected" : ""}>${esc(ctx, label)}</option>`).join("");
+    const envs = ["EMS", "Contents", "Recon"];
+    const byEnv = Object.fromEntries((data.work_environments || []).map(
+      (x) => [x.work_environment, x]));
+    const envCards = envs.map((name) => {
+      const state = byEnv[name] || {};
+      return `<div class="crm-env ${state.stage ? "has-stage" : ""}">
+        <strong>${esc(ctx, name)}</strong>
+        <span>${esc(ctx, state.stage || "Not started")}</span>
+        ${state.owner ? `<small>${esc(ctx, state.owner)}</small>` : ""}
+      </div>`;
+    }).join("");
+    const relationCount = (data.relationships || []).length;
+    box.innerHTML = `
+      <div class="crm-workspace-head">
+        <div><h3>Job Workspace</h3><span class="muted">Tracked from intake through closeout</span></div>
+        <span class="crm-source" title="Last lifecycle source">${esc(ctx,
+          data.lifecycle_source === "manual" ? "Manual" : "Synced")}</span>
+      </div>
+      <div class="crm-controls">
+        <label>Lifecycle<select data-crm-field="lifecycle_stage">${options(stages, data.lifecycle_stage)}</select></label>
+        <label>Job type<select data-crm-field="job_type">${options(types, data.job_type)}</select></label>
+        <label>Priority<select data-crm-field="priority">${options(priorities, data.priority)}</select></label>
+      </div>
+      <div class="crm-env-row">${envCards}</div>
+      ${relationCount ? `<div class="muted crm-relations">${relationCount} related job${relationCount === 1 ? "" : "s"}</div>` : ""}`;
+    box.querySelectorAll("[data-crm-field]").forEach((select) => {
+      select.addEventListener("change", async () => {
+        select.disabled = true;
+        const field = select.dataset.crmField;
+        let result;
+        try { result = await pywebview.api.save_crm_job_workspace(
+          r.client, { [field]: select.value }); }
+        catch (ex) { result = { ok: false, error: String(ex) }; }
+        select.disabled = false;
+        if (!result || !result.ok) {
+          setStatus(ctx, `Job update failed: ${(result && result.error) || "unknown"}`, "error");
+          return;
+        }
+        setStatus(ctx, "Job workspace updated", "ok");
+        loadCrmWorkspace(container, r, ctx);
+      });
+    });
+  }
+
   async function loadOdSummary(container, r, ctx) {
     const box = container.querySelector("#od-summary");
     if (!box) return;
@@ -420,6 +493,7 @@
   }
 
   function wireDetail(container, r, ctx) {
+    loadCrmWorkspace(container, r, ctx);
     // What is in the folder, without opening the folder. Loaded per
     // SELECTED job, never per row: it costs ~700ms on the share, which
     // is fine once and unaffordable times fifty.
@@ -477,7 +551,21 @@
         ".detail-head.shrunk{padding-top:4px;padding-bottom:4px;border-bottom-color:var(--border);}" +
         ".detail-head .detail-name{transition:font-size .12s ease;}" +
         ".detail-head.shrunk .detail-name{font-size:15px;}" +
-        ".detail-head.shrunk .detail-techs{display:none;}";
+        ".detail-head.shrunk .detail-techs{display:none;}" +
+        ".crm-workspace{padding:12px;border:1px solid var(--border);border-radius:10px;" +
+        "background:var(--surface,#222);margin:8px 0 12px;}" +
+        ".crm-workspace-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;}" +
+        ".crm-workspace-head h3{margin:0 0 2px;font-size:14px;}" +
+        ".crm-source{font-size:10px;padding:3px 7px;border-radius:10px;background:var(--surface-2);color:var(--text-muted);}" +
+        ".crm-controls{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px;}" +
+        ".crm-controls label{font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;}" +
+        ".crm-controls select{display:block;width:100%;margin-top:4px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px;}" +
+        ".crm-env-row{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:9px;}" +
+        ".crm-env{padding:7px 9px;border:1px solid var(--border);border-radius:7px;display:flex;flex-direction:column;gap:2px;}" +
+        ".crm-env strong{font-size:11px}.crm-env span{font-size:12px;color:var(--text-muted)}" +
+        ".crm-env.has-stage{border-color:rgba(74,158,255,.55);background:rgba(74,158,255,.08)}" +
+        ".crm-env small{font-size:10px;color:var(--text-muted)}.crm-relations{margin-top:7px;font-size:11px;}" +
+        "@media(max-width:700px){.crm-controls,.crm-env-row{grid-template-columns:1fr}.crm-workspace{padding:9px}}";
       document.head.appendChild(st);
     }
     // ⋯ More — reveal the less-used row of actions.

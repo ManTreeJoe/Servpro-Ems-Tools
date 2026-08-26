@@ -1734,6 +1734,51 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "customer_missing": not any(c["kind"] != "Adjuster"
                                             for c in contacts)}
 
+    def crm_job_workspace(self, client: str) -> dict:
+        """Master CRM summary for the selected Jobs/Snapshot detail card."""
+        try:
+            import ems_db
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "missing": True,
+                        "error": "job is not in the shared index yet"}
+            master = ems_db.get_master_job(job.get("canon_key") or "") or job
+            return {
+                "ok": True,
+                "job_id": master.get("job_id") or "",
+                "canon_key": master.get("canon_key") or "",
+                "lifecycle_stage": master.get("lifecycle_stage") or
+                                   "legacy_unclassified",
+                "lifecycle_source": master.get("lifecycle_source") or "",
+                "stage_entered_at": master.get("stage_entered_at") or "",
+                "job_type": master.get("job_type") or "",
+                "priority": master.get("priority") or "normal",
+                "work_environments": master.get("work_environments") or [],
+                "relationships": master.get("relationships") or [],
+            }
+        except Exception as ex:
+            return {"ok": False, "migration_required": True,
+                    "error": f"CRM setup is not ready: {ex}"}
+
+    def save_crm_job_workspace(self, client: str, patch: dict) -> dict:
+        """Edit overall CRM controls; a human save always wins over sync."""
+        if not isinstance(patch, dict):
+            return {"ok": False, "error": "invalid job update"}
+        try:
+            import ems_db
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
+            master = ems_db.set_master_job_state(
+                job["canon_key"],
+                lifecycle_stage=patch.get("lifecycle_stage") or "",
+                job_type=patch.get("job_type") or "",
+                priority=patch.get("priority") or "",
+                source="manual")
+            return {"ok": True, "job": master}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def copy_to_clipboard(self, text: str) -> bool:
         if not text:
             return False

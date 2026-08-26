@@ -513,6 +513,10 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().get_job_email(client, card_id)
     def get_job_contacts(self, client, card_id=""):
         return self._aw().get_job_contacts(client, card_id)
+    def crm_job_workspace(self, client):
+        return self._aw().crm_job_workspace(client)
+    def save_crm_job_workspace(self, client, patch):
+        return self._aw().save_crm_job_workspace(client, patch)
     def job_summary_data(self, client, card_id=""):
         return self._aw().job_summary_data(client, card_id)
     def companycam_probe(self, client, card_id=""):
