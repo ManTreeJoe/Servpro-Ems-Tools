@@ -49,6 +49,109 @@ STAGE_LABELS = {
     "paid":        "Paid",
 }
 
+# Trello's detailed operational lanes project into a deliberately smaller
+# master-job lifecycle. The original stage remains on job_lifecycle and on
+# the EMS/Contents/Recon state; this mapping is only the cross-team summary.
+CRM_STAGE_MAP = {
+    "new": "intake",
+    "initial": "contacted",
+    "mitigation": "active",
+    "closeout": "closeout",
+    "estimating": "ready_for_billing",
+    "submitted": "ready_for_billing",
+    "approved": "ready_for_billing",
+    "ar": "ready_for_billing",
+    "paid": "closed",
+}
+
+
+def work_environment_for_board(board_name):
+    """Which operational track owns a Trello card."""
+    low = (board_name or "").lower()
+    if "content" in low:
+        return "Contents"
+    if "recon" in low or "estimat" in low:
+        return "Recon"
+    return "EMS"
+
+
+def crm_stage_for_pipeline(stage):
+    return CRM_STAGE_MAP.get((stage or "").strip().lower(), "")
+
+
+def reconcile_crm_lifecycle(rows=None):
+    """Project Trello lifecycle rows onto the new master-job CRM safely.
+
+    Department state always refreshes when a row resolves to a known job.
+    Overall lifecycle updates only when every visible department agrees, and
+    never overwrites a human-selected (`manual`) stage. Conflicting cards are
+    returned as ambiguous for the future review queue instead of guessed.
+    """
+    if rows is None:
+        rows = ems_db.lifecycle_list(paid_window_days=None)
+    grouped, unknown = {}, []
+    for row in rows or []:
+        name = (row.get("client_display") or "").strip()
+        if not name:
+            continue
+        try:
+            job = ems_db.find_job_by_name(name)
+        except Exception:
+            job = None
+        if not job:
+            unknown.append({"card_id": row.get("card_id") or "", "name": name})
+            continue
+        key = job.get("canon_key") or ""
+        env = work_environment_for_board(row.get("board_name") or "")
+        grouped.setdefault(key, {}).setdefault(env, []).append(row)
+
+    updated_departments = updated_jobs = manual_preserved = 0
+    ambiguous = []
+    for key, environments in grouped.items():
+        mapped = []
+        for env, candidates in environments.items():
+            # A job can have old duplicate cards. The newest activity is the
+            # current operational signal; retain the rest in job_lifecycle.
+            row = max(candidates, key=lambda r: (
+                r.get("last_activity_at") or "", r.get("updated_at") or ""))
+            stage = (row.get("current_stage") or "").strip().lower()
+            try:
+                ems_db.set_work_environment_state(
+                    key, env, stage=stage, owner=row.get("owner") or "")
+                updated_departments += 1
+            except Exception:
+                continue
+            master_stage = crm_stage_for_pipeline(stage)
+            if master_stage:
+                mapped.append(master_stage)
+
+        try:
+            job = ems_db.get_job(key) or {}
+        except Exception:
+            job = {}
+        if (job.get("lifecycle_source") or "").lower() == "manual":
+            manual_preserved += 1
+            continue
+        distinct = sorted(set(mapped))
+        if len(distinct) != 1:
+            if distinct:
+                ambiguous.append({"canon_key": key, "stages": distinct})
+            continue
+        try:
+            ems_db.set_master_job_state(
+                key, lifecycle_stage=distinct[0], source="trello")
+            updated_jobs += 1
+        except Exception:
+            continue
+    return {
+        "jobs": len(grouped),
+        "department_states": updated_departments,
+        "master_stages": updated_jobs,
+        "manual_preserved": manual_preserved,
+        "ambiguous": ambiguous,
+        "unknown": unknown,
+    }
+
 # Per-stage stall thresholds (business days). Surfaced in Hygiene
 # Phase 2; KPI panel uses them to color-code rows + medians.
 # `get_thresholds()` merges user overrides from persistence on top of
@@ -315,6 +418,7 @@ def sync_workspace(*, include_quality_boards=True, progress_cb=None):
     n_boards = len(boards)
     cards_total = 0
     stages_seen: dict[str, int] = {}
+    synced_rows = []
 
     for bi, b in enumerate(boards, 1):
         if progress_cb is not None:
@@ -359,7 +463,7 @@ def sync_workspace(*, include_quality_boards=True, progress_cb=None):
                 owner = (lst.get("name", "")
                           if stage == "estimating" else "")
                 created_at = _card_created_iso(c.get("id", ""))
-                ems_db.lifecycle_upsert({
+                lifecycle_row = {
                     "card_id":          c["id"],
                     "client_canon":     _canon_name(name),
                     "client_display":   name,
@@ -372,9 +476,18 @@ def sync_workspace(*, include_quality_boards=True, progress_cb=None):
                     "last_activity_at": c.get("dateLastActivity") or "",
                     "card_url":         c.get("shortUrl", ""),
                     "owner":            owner,
-                })
+                }
+                ems_db.lifecycle_upsert(lifecycle_row)
+                synced_rows.append(lifecycle_row)
                 cards_total += 1
                 stages_seen[stage] = stages_seen.get(stage, 0) + 1
+    # Best-effort CRM projection. Pipeline sync remains useful on an older
+    # database during a staggered rollout, so schema/API mismatch cannot make
+    # the Trello scan itself fail.
+    try:
+        reconcile_crm_lifecycle(synced_rows)
+    except Exception:
+        pass
     return {
         "boards": n_boards,
         "cards":  cards_total,

@@ -349,6 +349,7 @@ def _init_schema():
             "ALTER TABLE jobs ADD COLUMN job_type TEXT",
             "ALTER TABLE jobs ADD COLUMN priority TEXT",
             "ALTER TABLE jobs ADD COLUMN closed_at TEXT",
+            "ALTER TABLE jobs ADD COLUMN lifecycle_source TEXT",
         ) + tuple(
             # v6: promote the queryable job facts out of metadata_json.
             f"ALTER TABLE jobs ADD COLUMN {col} TEXT"
@@ -374,6 +375,10 @@ def _init_schema():
         c.execute("""
             UPDATE jobs SET lifecycle_stage='legacy_unclassified'
             WHERE lifecycle_stage IS NULL OR TRIM(lifecycle_stage)=''
+        """)
+        c.execute("""
+            UPDATE jobs SET lifecycle_source='migration'
+            WHERE lifecycle_source IS NULL OR TRIM(lifecycle_source)=''
         """)
         c.execute(
             "CREATE INDEX IF NOT EXISTS idx_jobs_lifecycle_stage "
@@ -579,11 +584,11 @@ def upsert_job(*, display_name: str,
         if existing is None:
             created = True
             cols = ["canon_key", "display_name", "job_id",
-                    "lifecycle_stage", "stage_entered_at",
+                    "lifecycle_stage", "stage_entered_at", "lifecycle_source",
                     "year", "first_seen_at",
                     "last_seen_at", "metadata_json", "parent_canon",
                     "unit_number", "department"] + list(_TEXT_COLUMNS)
-            vals = [key, display_name, str(uuid.uuid4()), "intake", now,
+            vals = [key, display_name, str(uuid.uuid4()), "intake", now, "system",
                     year, now, now, md_json,
                     parent_canon_value, unit_num,
                     (department or "").strip() or None]
@@ -1265,7 +1270,8 @@ def get_job_by_id(job_id: str) -> dict | None:
 
 
 def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
-                         job_type: str = "", priority: str = "") -> dict:
+                         job_type: str = "", priority: str = "",
+                         source: str = "manual") -> dict:
     """Update the small set of fields that controls the overall CRM job.
 
     This is separate from Trello's `status`: Trello may have many board/list
@@ -1274,12 +1280,15 @@ def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
     lifecycle_stage = (lifecycle_stage or "").strip().lower()
     job_type = (job_type or "").strip().lower()
     priority = (priority or "").strip().lower()
+    source = (source or "manual").strip().lower()
     if lifecycle_stage and lifecycle_stage not in CRM_LIFECYCLE_STAGES:
         raise ValueError(f"unknown lifecycle stage: {lifecycle_stage}")
     if job_type and job_type not in CRM_JOB_TYPES:
         raise ValueError(f"unknown job type: {job_type}")
     if priority and priority not in CRM_PRIORITIES:
         raise ValueError(f"unknown priority: {priority}")
+    if source not in ("manual", "trello", "migration", "system"):
+        raise ValueError(f"unknown lifecycle source: {source}")
     now = _now_iso()
     with _LOCK, _connect() as c:
         row = c.execute("SELECT * FROM jobs WHERE canon_key=?",
@@ -1288,9 +1297,10 @@ def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
             raise KeyError(canon_key_value)
         updates, values = [], []
         if lifecycle_stage and lifecycle_stage != _row_get(row, "lifecycle_stage"):
-            updates += ["lifecycle_stage=?", "stage_entered_at=?", "closed_at=?"]
+            updates += ["lifecycle_stage=?", "stage_entered_at=?", "closed_at=?",
+                        "lifecycle_source=?"]
             values += [lifecycle_stage, now,
-                       now if lifecycle_stage == "closed" else None]
+                       now if lifecycle_stage == "closed" else None, source]
         if job_type:
             updates.append("job_type=?")
             values.append(job_type)

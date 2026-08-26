@@ -22,13 +22,18 @@ alter table jobs add column if not exists stage_entered_at text;
 alter table jobs add column if not exists job_type text;
 alter table jobs add column if not exists priority text default 'normal';
 alter table jobs add column if not exists closed_at text;
+alter table jobs add column if not exists lifecycle_source text;
 
 update jobs
 set lifecycle_stage = 'legacy_unclassified'
 where lifecycle_stage is null or btrim(lifecycle_stage) = '';
+update jobs
+set lifecycle_source = 'migration'
+where lifecycle_source is null or btrim(lifecycle_source) = '';
 
 alter table jobs alter column lifecycle_stage set default 'intake';
 alter table jobs alter column lifecycle_stage set not null;
+alter table jobs alter column lifecycle_source set default 'system';
 
 alter table jobs drop constraint if exists jobs_lifecycle_stage_check;
 alter table jobs add constraint jobs_lifecycle_stage_check check (

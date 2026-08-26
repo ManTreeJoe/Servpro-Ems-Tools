@@ -224,18 +224,22 @@ def get_job_by_id(job_id: str):
 
 
 def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
-                         job_type: str = "", priority: str = "") -> dict:
+                         job_type: str = "", priority: str = "",
+                         source: str = "manual") -> dict:
     from ems_db_sqlite import (CRM_JOB_TYPES, CRM_LIFECYCLE_STAGES,
                                CRM_PRIORITIES)
     lifecycle_stage = (lifecycle_stage or "").strip().lower()
     job_type = (job_type or "").strip().lower()
     priority = (priority or "").strip().lower()
+    source = (source or "manual").strip().lower()
     if lifecycle_stage and lifecycle_stage not in CRM_LIFECYCLE_STAGES:
         raise ValueError(f"unknown lifecycle stage: {lifecycle_stage}")
     if job_type and job_type not in CRM_JOB_TYPES:
         raise ValueError(f"unknown job type: {job_type}")
     if priority and priority not in CRM_PRIORITIES:
         raise ValueError(f"unknown priority: {priority}")
+    if source not in ("manual", "trello", "migration", "system"):
+        raise ValueError(f"unknown lifecycle source: {source}")
     current = get_job(canon_key_value)
     if not current:
         raise KeyError(canon_key_value)
@@ -243,7 +247,8 @@ def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
     if lifecycle_stage and lifecycle_stage != current.get("lifecycle_stage"):
         now = _now_iso()
         patch.update(lifecycle_stage=lifecycle_stage, stage_entered_at=now,
-                     closed_at=(now if lifecycle_stage == "closed" else None))
+                     closed_at=(now if lifecycle_stage == "closed" else None),
+                     lifecycle_source=source)
     if job_type:
         patch["job_type"] = job_type
     if priority:
