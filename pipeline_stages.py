@@ -89,15 +89,42 @@ def reconcile_crm_lifecycle(rows=None):
     """
     if rows is None:
         rows = ems_db.lifecycle_list(paid_window_days=None)
+    # Resolve the whole Trello projection against the job index in two bulk
+    # reads. On Supabase, calling find_job_by_name for 3,000 lifecycle rows
+    # means thousands of HTTP requests and makes reconciliation unusable.
+    # Direct job keys win; ambiguous aliases are deliberately ignored.
+    direct, aliases, alias_conflicts = {}, {}, set()
+    try:
+        for job in ems_db.iter_jobs() or []:
+            key = job.get("canon_key") or ""
+            if key:
+                direct[key] = job
+        for row in ems_db.all_aliases() or []:
+            probe = ems_db.canon_key(row.get("alias") or "")
+            key = row.get("canon_key") or ""
+            if not probe or key not in direct:
+                continue
+            if probe in aliases and aliases[probe].get("canon_key") != key:
+                alias_conflicts.add(probe)
+            else:
+                aliases[probe] = direct[key]
+    except Exception:
+        direct, aliases, alias_conflicts = {}, {}, set()
+
     grouped, unknown = {}, []
     for row in rows or []:
         name = (row.get("client_display") or "").strip()
         if not name:
             continue
-        try:
-            job = ems_db.find_job_by_name(name)
-        except Exception:
-            job = None
+        probe = ems_db.canon_key(name)
+        job = direct.get(probe)
+        if not job and probe not in alias_conflicts:
+            job = aliases.get(probe)
+        if not job and not direct:
+            try:
+                job = ems_db.find_job_by_name(name)
+            except Exception:
+                job = None
         if not job:
             unknown.append({"card_id": row.get("card_id") or "", "name": name})
             continue

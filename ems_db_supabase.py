@@ -10,13 +10,12 @@ the signed-in user so Row-Level Security applies. There is no database
 password anywhere — the publishable key identifies the project and grants
 nothing on its own.
 
-What is NOT implemented here
-----------------------------
-`sync_from_trello`, `export_db`, `import_db` and the `lifecycle_*` family
-stay SQLite-side. They are bulk/maintenance operations over the local
-cache, not part of the job graph the app reads on every render, and doing
-them over REST would mean thousands of round trips. They raise a clear
-error rather than silently doing half the work.
+Shared lifecycle support
+------------------------
+The `lifecycle_*` functions use the shared Postgres tables so Trello stages
+and transition history remain consistent across trial computers. Full
+database export/import remains a local SQLite maintenance operation and
+raises a clear error on this backend.
 
 Round-trip discipline
 ---------------------
@@ -28,6 +27,7 @@ per request and design accordingly.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import supabase_client as _sb
 from ems_db_common import (            # noqa: F401 — re-exported as API
@@ -1449,11 +1449,182 @@ def sync_from_trello(*, exclude_quality: bool = True,
     return out
 
 
+def _lifecycle_iso(value):
+    try:
+        return datetime.fromisoformat(str(value).split("+")[0].rstrip("Z"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _utc_now_naive():
+    """Current UTC time in the naive format used by existing lifecycle rows."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def lifecycle_upsert(entry):
+    """Shared equivalent of SQLite's transition-aware card upsert."""
+    card_id = (entry or {}).get("card_id")
+    if not card_id:
+        return None
+    prior = _one("job_lifecycle", card_id=f"eq.{card_id}", select="*")
+    now = _now_iso()
+    new_stage = entry.get("current_stage") or ""
+    transition = None
+    if prior:
+        old_stage = prior.get("current_stage") or ""
+        changed = bool(new_stage and new_stage != old_stage)
+        entered = now if changed else (prior.get("stage_entered_at") or now)
+        billed = prior.get("billed_at") or (now if new_stage == "ar" else None)
+        paid = prior.get("paid_at") or (now if new_stage == "paid" else None)
+        if changed and old_stage:
+            old_dt = _lifecycle_iso(prior.get("stage_entered_at"))
+            days = max(0, (_utc_now_naive() - old_dt).days) if old_dt else 0
+            transition = {
+                "card_id": card_id,
+                "client_canon": entry.get("client_canon") or "",
+                "from_stage": old_stage, "to_stage": new_stage,
+                "transitioned_at": now, "days_in_from_stage": days,
+            }
+    else:
+        entered = now
+        last_dt = _lifecycle_iso(entry.get("last_activity_at"))
+        if last_dt and last_dt < _utc_now_naive():
+            entered = last_dt.replace(microsecond=0).isoformat()
+        billed = now if new_stage == "ar" else None
+        paid = now if new_stage == "paid" else None
+    body = {
+        "card_id": card_id,
+        "client_canon": entry.get("client_canon") or "",
+        "client_display": entry.get("client_display") or "",
+        "board_id": entry.get("board_id") or "",
+        "board_name": entry.get("board_name") or "",
+        "list_id": entry.get("list_id") or "",
+        "list_name": entry.get("list_name") or "",
+        "current_stage": new_stage, "stage_entered_at": entered,
+        "created_at": ((prior or {}).get("created_at") or
+                       entry.get("created_at")),
+        "last_activity_at": entry.get("last_activity_at"),
+        "billed_at": billed, "paid_at": paid,
+        "card_url": entry.get("card_url") or "",
+        "owner": entry.get("owner") or "", "updated_at": now,
+        "actions_synced_at": (None if transition else
+                              (prior or {}).get("actions_synced_at")),
+    }
+    rows = _sb.rest("POST", "job_lifecycle", body=body,
+                    prefer="resolution=merge-duplicates,return=representation")
+    if transition:
+        _sb.rest("POST", "job_stage_transitions", body=transition,
+                 prefer="return=minimal")
+    return (rows or [body])[0]
+
+
+def lifecycle_delete(card_id):
+    if not card_id:
+        return None
+    _sb.rest("DELETE", "job_stage_transitions",
+             params={"card_id": f"eq.{card_id}"})
+    _sb.rest("DELETE", "job_lifecycle", params={"card_id": f"eq.{card_id}"})
+    return True
+
+
+def lifecycle_purge_where(predicate) -> int:
+    rows = _rows("job_lifecycle",
+                 select="card_id,client_display,board_name,list_name")
+    ids = [row.get("card_id") for row in rows if predicate(dict(row))]
+    for card_id in ids:
+        lifecycle_delete(card_id)
+    return len(ids)
+
+
+def lifecycle_needs_action_enrichment(*, limit=None):
+    rows = _rows("job_lifecycle",
+                 select="card_id,list_id,stage_entered_at,current_stage,actions_synced_at")
+    rows = [row for row in rows if not row.get("actions_synced_at")]
+    rows.sort(key=lambda row: row.get("stage_entered_at") or "")
+    return rows[:int(limit)] if limit else rows
+
+
+def lifecycle_set_stage_entered(card_id, *, stage_entered_at,
+                                 mark_actions_synced=True):
+    if not card_id or not stage_entered_at:
+        return None
+    body = {"stage_entered_at": stage_entered_at}
+    if mark_actions_synced:
+        body["actions_synced_at"] = _now_iso()
+    _sb.rest("PATCH", "job_lifecycle",
+             params={"card_id": f"eq.{card_id}"}, body=body,
+             prefer="return=minimal")
+    return True
+
+
+def lifecycle_mark_actions_synced(card_id):
+    if not card_id:
+        return None
+    _sb.rest("PATCH", "job_lifecycle",
+             params={"card_id": f"eq.{card_id}"},
+             body={"actions_synced_at": _now_iso()},
+             prefer="return=minimal")
+    return True
+
+
+def backfill_stage_entered_dates() -> int:
+    rows = _rows("job_lifecycle",
+                 select="card_id,stage_entered_at,last_activity_at")
+    changed = 0
+    for row in rows:
+        entered = _lifecycle_iso(row.get("stage_entered_at"))
+        activity = _lifecycle_iso(row.get("last_activity_at"))
+        if entered and activity and activity < entered:
+            lifecycle_set_stage_entered(
+                row.get("card_id"), stage_entered_at=row["last_activity_at"],
+                mark_actions_synced=False)
+            changed += 1
+    return changed
+
+
+def list_transitions(*, since_iso=None, from_stage=None, card_id=None,
+                     limit=None, order="DESC"):
+    params = {"select": "*", "order":
+              "transitioned_at.asc" if str(order).upper() == "ASC"
+              else "transitioned_at.desc"}
+    if since_iso:
+        params["transitioned_at"] = f"gte.{since_iso}"
+    if from_stage:
+        params["from_stage"] = f"eq.{from_stage}"
+    if card_id:
+        params["card_id"] = f"eq.{card_id}"
+    if limit:
+        params["limit"] = str(int(limit))
+    return _rows("job_stage_transitions", **params)
+
+
+def lifecycle_list(paid_window_days=30):
+    rows = _rows("job_lifecycle", select="*")
+    if paid_window_days is not None:
+        cutoff = _utc_now_naive() - timedelta(days=paid_window_days)
+        rows = [row for row in rows
+                if row.get("current_stage") != "paid"
+                or not row.get("paid_at")
+                or ((_lifecycle_iso(row.get("paid_at")) or datetime.min) >= cutoff)]
+    return sorted(rows, key=lambda row: row.get("stage_entered_at") or "")
+
+
+def lifecycle_get(card_id):
+    if not card_id:
+        return None
+    return _one("job_lifecycle", card_id=f"eq.{card_id}", select="*")
+
+
+def lifecycle_counts_by_stage(paid_window_days=30):
+    counts = {}
+    for row in lifecycle_list(paid_window_days=paid_window_days):
+        stage = row.get("current_stage") or ""
+        counts[stage] = counts.get(stage, 0) + 1
+    return counts
+
+
 def __getattr__(name):
-    """lifecycle_* (the Pipeline panel) stays on the local index — it is a
-    projection of Trello that would cost thousands of round trips here."""
-    if name.startswith("lifecycle_") or name in (
-            "backfill_stage_entered_dates", "list_transitions"):
+    if name in ("export_db", "import_db"):
         def _stub(*a, **k):
             _unsupported(name)
         return _stub

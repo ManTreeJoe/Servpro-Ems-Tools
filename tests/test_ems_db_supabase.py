@@ -52,8 +52,7 @@ def test_bulk_operations_fail_loudly_rather_than_half_working():
     # It was unsupported because the per-card form was thousands of
     # round trips, which left the shared index unable to learn
     # anything from Trello after the cutover.
-    for name in ("export_db", "import_db",
-                 "backfill_departments", "lifecycle_list"):
+    for name in ("export_db", "import_db", "backfill_departments"):
         with pytest.raises(NotImplementedError) as ex:
             getattr(sup, name)()
         assert "sqlite" in str(ex.value).lower()
@@ -156,6 +155,51 @@ def test_existing_supabase_job_does_not_repeat_created_event(fake):
     sup.upsert_job(display_name="Smith, Robert", status="active")
     assert not [c for c in fake.calls
                 if c[0] == "POST" and c[1] == "job_events"]
+
+
+def test_shared_lifecycle_upsert_writes_pipeline_row(fake):
+    fake.tables = {"job_lifecycle": []}
+    result = sup.lifecycle_upsert({
+        "card_id": "card-1", "client_canon": "smith",
+        "client_display": "Smith", "board_id": "b1",
+        "board_name": "EMS", "list_id": "l1", "list_name": "WIP",
+        "current_stage": "mitigation", "last_activity_at": "2026-08-01T12:00:00Z",
+        "card_url": "https://trello.com/c/card-1", "owner": "Sam",
+    })
+    posts = [call for call in fake.calls if call[0] == "POST"]
+    assert [call[1] for call in posts] == ["job_lifecycle"]
+    assert posts[0][3]["current_stage"] == "mitigation"
+    assert result["card_id"] == "card-1"
+
+
+def test_shared_lifecycle_stage_change_records_transition(fake):
+    fake.tables = {"job_lifecycle": [{
+        "card_id": "card-1", "current_stage": "initial",
+        "stage_entered_at": "2026-08-01T12:00:00",
+        "created_at": "2026-07-01T12:00:00", "billed_at": None,
+        "paid_at": None, "actions_synced_at": "old",
+    }]}
+    sup.lifecycle_upsert({
+        "card_id": "card-1", "client_canon": "smith",
+        "client_display": "Smith", "current_stage": "mitigation",
+    })
+    posts = [call for call in fake.calls if call[0] == "POST"]
+    assert [call[1] for call in posts] == [
+        "job_lifecycle", "job_stage_transitions"]
+    assert posts[0][3]["actions_synced_at"] is None
+    assert posts[1][3]["from_stage"] == "initial"
+    assert posts[1][3]["to_stage"] == "mitigation"
+
+
+def test_shared_lifecycle_list_and_counts(fake):
+    fake.tables = {"job_lifecycle": [
+        {"card_id": "1", "current_stage": "mitigation",
+         "stage_entered_at": "2026-08-01"},
+        {"card_id": "2", "current_stage": "closeout",
+         "stage_entered_at": "2026-08-02"},
+    ]}
+    assert [row["card_id"] for row in sup.lifecycle_list()] == ["1", "2"]
+    assert sup.lifecycle_counts_by_stage() == {"mitigation": 1, "closeout": 1}
 
 
 def test_find_job_by_name_falls_back_to_alias(fake):
