@@ -180,6 +180,27 @@ def main(argv=None):
               "editor BEFORE using the shared backend — job saves will "
               "fail on every missing column until you do.")
 
+    # ── 4c. Master-job CRM foundation is installed ───────────────────
+    # Phase 2 needs the permanent job_id, overall lifecycle, three work
+    # environments, and explicit job relationships from migration 009.
+    # Checking the two child tables also catches a partially run migration.
+    try:
+        master_columns = (
+            "job_id,lifecycle_stage,stage_entered_at,job_type,priority,"
+            "closed_at,lifecycle_source")
+        sb.rest("GET", "jobs", params={"select": master_columns, "limit": "1"})
+        sb.rest("GET", "crm_job_departments",
+                params={"select": "job_id,work_environment", "limit": "1"})
+        sb.rest("GET", "crm_job_relationships",
+                params={"select": "job_id,related_job_id", "limit": "1"})
+        check("Shared DB schema (v9 CRM)", OK,
+              "master jobs and work environments ready")
+    except Exception as ex:
+        check("Shared DB schema (v9 CRM)", FAIL,
+              str(ex).strip()[:70],
+              "Run supabase/009_crm_foundation.sql in the Supabase SQL "
+              "editor before enabling the Phase 2 Job Workspace trial.")
+
     # ── 5. Backend switch ─────────────────────────────────────────────
     backend = (cfg.get("ems_db_backend") or "sqlite").strip().lower()
     if backend == "supabase":

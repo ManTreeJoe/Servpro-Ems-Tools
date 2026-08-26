@@ -50,6 +50,13 @@ and never overwrites a value someone corrected by hand.
    400 on the first missing column. `trial_preflight.py` blocks on this,
    so you'll see it before it bites. Then push the backfilled values up
    with `python migrate_to_supabase.py`.
+5. ⚠ **SQL editor → run `supabase/009_crm_foundation.sql` before enabling
+   the Phase 2 Job Workspace trial.** This adds permanent job IDs, the
+   start-to-close lifecycle, separate EMS/Contents/Recon states, and job
+   relationships. The migration is idempotent and marks existing jobs as
+   `legacy_unclassified` instead of pretending they entered Intake today.
+   `trial_preflight.py` now checks both v6 and v9 and will report exactly
+   which migration is missing.
 
 ## On each PC
 
@@ -62,6 +69,9 @@ and never overwrites a value someone corrected by hand.
 3. **Settings → ☁ Shared job database →** send code, enter the 6-digit
    code, then **Use shared**. (Or `python trial_preflight.py --cloud`.)
 4. Re-run `trial_preflight.py`. You want `READY`.
+5. Open one known job and confirm the **Job Workspace** shows Lifecycle,
+   Job type, Priority, and separate EMS / Contents / Recon cards. Change
+   Priority on PC A, then reopen the same job on PC B and confirm it changed.
 
 ## Verify the two PCs really are joined
 
