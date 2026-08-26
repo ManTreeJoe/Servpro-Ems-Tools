@@ -208,6 +208,79 @@ class Api:
         return {"ok": True, "email": email, "is_admin": is_admin,
                 "departments": departments}
 
+    def _my_folder_departments(self):
+        """Franchises whose machine-local roots this user may configure."""
+        base = config.load_base() or {}
+        configured = list((base.get("departments") or {}).keys())
+        if _is_admin():
+            return configured
+        assigned = []
+        try:
+            import supabase_client
+            access = supabase_client.rpc("my_app_access") or {}
+            if isinstance(access, dict):
+                assigned = list(access.get("departments") or [])
+        except Exception:
+            pass
+        allowed = [key for key in configured if key in assigned]
+        active = (base.get("active_department") or "").strip()
+        if not allowed and active in configured:
+            allowed = [active]
+        return allowed
+
+    def my_franchise_folders(self):
+        """Per-PC job and run-doc roots for the user's franchises."""
+        try:
+            base = config.load_base() or {}
+            profiles = base.get("departments") or {}
+            rows = []
+            for key in self._my_folder_departments():
+                profile = profiles.get(key) if isinstance(profiles.get(key), dict) else {}
+                job_root = str(profile.get("audit_base") or "").strip()
+                runs_dir = str(profile.get("runs_dir") or "").strip()
+                rows.append({
+                    "key": key,
+                    "label": profile.get("label") or key,
+                    "active": key == (base.get("active_department") or "").strip(),
+                    "job_root": job_root,
+                    "runs_dir": runs_dir,
+                    "job_connected": bool(job_root and os.path.isdir(job_root)),
+                    "runs_connected": bool(runs_dir and os.path.isdir(runs_dir)),
+                })
+            return {"ok": True, "departments": rows}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def save_my_franchise_folders(self, key: str, job_root: str, runs_dir: str):
+        """Save only machine-local roots for one assigned franchise."""
+        key = (key or "").strip()
+        if key not in self._my_folder_departments():
+            return {"ok": False, "error": "That franchise is not assigned to you."}
+        job_root = os.path.normpath((job_root or "").strip())
+        runs_dir = os.path.normpath((runs_dir or "").strip())
+        missing = []
+        if not job_root or not os.path.isdir(job_root):
+            missing.append("job folders root")
+        if not runs_dir or not os.path.isdir(runs_dir):
+            missing.append("daily run docs folder")
+        if missing:
+            return {"ok": False,
+                    "error": "Windows cannot open the " + " and ".join(missing) + "."}
+        try:
+            base = config.load_base() or {}
+            profiles = dict(base.get("departments") or {})
+            profile = dict(profiles.get(key) or {})
+            profile["audit_base"] = job_root
+            profile["runs_dir"] = runs_dir
+            profiles[key] = profile
+            base["departments"] = profiles
+            config.save(base)
+            _invalidate("per-franchise local folder save")
+            return {"ok": True, "key": key,
+                    "message": f"{key} folders connected on this PC."}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     def admin_users(self):
         if _admin_enforcement_active() and not _is_admin():
             return {"ok": False, "error": "Administrator access required."}

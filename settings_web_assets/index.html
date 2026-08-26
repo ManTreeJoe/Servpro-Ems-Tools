@@ -262,6 +262,21 @@
     <div id="user-access-body" class="muted" style="font-size:12px;">Loading people…</div>
   </section>
 
+  <section data-settings-scope="personal" style="margin-bottom:22px;padding:16px 18px;
+                  background:var(--surface);border:1px solid var(--border);
+                  border-radius:8px;">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:5px;">
+      <div style="font-size:18px;">📁</div>
+      <div style="font-size:13px;font-weight:700;">My franchise folders</div>
+    </div>
+    <div class="muted" style="font-size:11px;line-height:1.5;margin-bottom:13px;">
+      Tell Linguar where this computer reaches each franchise. Choose a mapped
+      drive, server share, or synced OneDrive/SharePoint folder. This does not
+      change anyone else's computer.
+    </div>
+    <div id="my-franchise-folders"><span class="muted">Loading folders…</span></div>
+  </section>
+
   <section data-settings-scope="personal" style="margin-bottom: 22px; padding: 14px 18px;
                   background: var(--surface); border: 1px solid var(--border);
                   border-radius: 8px;">
@@ -375,6 +390,82 @@ document.querySelectorAll("[data-scope-tab]").forEach((button) =>
   button.addEventListener("click", () => showSettingsScope(button.dataset.scopeTab)));
 showSettingsScope("personal");
 
+function myFolderField(key, label, value, connected) {
+  return `<div class="my-folder-field" style="margin-top:8px;">
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:5px;font-size:10px;
+                  font-weight:700;text-transform:uppercase;letter-spacing:.04em;">
+      ${esc(label)}
+      <span style="color:${connected ? "var(--green)" : "var(--red)"};font-weight:600;text-transform:none;letter-spacing:0;">
+        ${connected ? "✓ opens" : "not available"}</span>
+    </label>
+    <div style="display:flex;gap:7px;">
+      <input data-folder="${key}" type="text" value="${esc(value || "")}" placeholder="Choose a folder on this PC…"
+             style="flex:1;min-width:0;" />
+      <button type="button" class="btn my-folder-browse" aria-label="Browse for ${esc(label)}">📁 Browse</button>
+    </div>
+  </div>`;
+}
+
+async function renderMyFranchiseFolders() {
+  const host = document.getElementById("my-franchise-folders");
+  if (!host) return;
+  let result;
+  try { result = await pywebview.api.my_franchise_folders(); }
+  catch (error) { result = {ok:false, error:String(error)}; }
+  if (!result?.ok) {
+    host.innerHTML = `<span style="color:var(--red);">${esc(result?.error || "Folder setup unavailable")}</span>`;
+    return;
+  }
+  const rows = result.departments || [];
+  if (!rows.length) {
+    host.innerHTML = `<span class="muted">No franchise is assigned to your account yet.</span>`;
+    return;
+  }
+  host.innerHTML = rows.map((row) => {
+    const ready = row.job_connected && row.runs_connected;
+    return `<div class="my-folder-card" data-franchise="${esc(row.key)}"
+        style="border:1px solid ${ready ? "var(--green)" : "var(--border)"};border-radius:8px;
+               padding:12px;margin-top:9px;background:var(--surface-2);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <b style="font-size:13px;">${esc(row.label)} <span class="muted">(${esc(row.key)})</span></b>
+        ${row.active ? '<span class="chip">Active</span>' : ''}
+        <span class="folder-state" style="margin-left:auto;font-size:11px;color:${ready ? "var(--green)" : "var(--amber)"};">
+          ${ready ? "● Connected" : "● Needs setup"}</span>
+      </div>
+      ${myFolderField("job-root", "Job folders root", row.job_root, row.job_connected)}
+      ${myFolderField("runs-dir", "Daily run docs folder", row.runs_dir, row.runs_connected)}
+      <div style="display:flex;align-items:center;gap:9px;margin-top:10px;">
+        <button type="button" class="btn btn-primary my-folders-save">Save ${esc(row.key)} folders</button>
+        <span class="my-folders-status muted" style="font-size:11px;"></span>
+      </div>
+    </div>`;
+  }).join("");
+
+  host.querySelectorAll(".my-folder-browse").forEach((button) => button.addEventListener("click", async () => {
+    const input = button.closest(".my-folder-field")?.querySelector("input");
+    const picked = await pywebview.api.pick_dir(input?.value || "");
+    if (picked?.ok && picked.path && input) input.value = picked.path;
+  }));
+  host.querySelectorAll(".my-folders-save").forEach((button) => button.addEventListener("click", async () => {
+    const card = button.closest(".my-folder-card");
+    const status = card.querySelector(".my-folders-status");
+    button.disabled = true; status.textContent = "Checking folders…";
+    const saved = await pywebview.api.save_my_franchise_folders(
+      card.dataset.franchise,
+      card.querySelector('[data-folder="job-root"]').value,
+      card.querySelector('[data-folder="runs-dir"]').value);
+    button.disabled = false;
+    if (!saved?.ok) {
+      status.textContent = saved?.error || "Could not save folders";
+      status.style.color = "var(--red)";
+      return;
+    }
+    setStatus(saved.message || "Folders connected", "ok");
+    await renderMyFranchiseFolders();
+    await renderFirstRunWizard();
+  }));
+}
+
 async function loadBrowsers() {
   const body = document.getElementById("browsers-body");
   if (!body) return;
@@ -422,6 +513,7 @@ window.addEventListener("pywebviewready", async () => {
   VALUES = await pywebview.api.load() || {};
   render();
   await renderFirstRunWizard();
+  await renderMyFranchiseFolders();
   await loadBrowsers();
   if (SETTINGS_ACCESS.is_admin) await loadUserAccess();
   document.getElementById("pf-run").addEventListener("click", runPreflight);

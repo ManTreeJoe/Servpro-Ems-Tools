@@ -1,6 +1,6 @@
 {
-  "version": "1.5.2",
+  "version": "1.5.3",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.2/Linguar-Hub-Setup-1.5.2.exe",
-  "notes": "Restores the Admin setup tab for the owner so shared-folder migration controls are visible. Shared folder roots now clearly support mapped drives, UNC server shares, and OneDrive or SharePoint sync folders."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.3/Linguar-Hub-Setup-1.5.3.exe",
+  "notes": "Adds a My franchise folders setup panel for regular users. Employees can configure separate IE and OC job and run-doc locations on their own computer using mapped drives, server shares, or OneDrive and SharePoint folders."
 }
