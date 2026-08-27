@@ -1078,7 +1078,10 @@ def main(argv=None):
     # sibling. Same-origin everywhere → iframe shim's
     # window.parent.pywebview access works.
     try:
-        webview.start(debug=False, http_server=True)
+        taskbar_icon = _paths.resource(
+            "linguar_hub_trial.ico" if getattr(_paths, "IS_TRIAL", False)
+            else "linguar_hub.ico")
+        webview.start(debug=False, http_server=True, icon=taskbar_icon)
     finally:
         if api._hotkey:
             api._hotkey.stop()

@@ -54,6 +54,11 @@ datas.append((os.path.join(base, 'web_shared'), 'web_shared'))
 # rewrites the shim at startup).
 datas.append((os.path.join(pkg, 'config.json'),          '.'))
 datas.append((os.path.join(pkg, '_ems_root_index.html'), '.'))
+# Bundle the running-window icon and release manifest. The EXE resource icon
+# alone does not set pywebview's taskbar icon, and the manifest supplies the
+# exact installed version used by update_check.
+datas.append((os.path.join(base, ICON_FILE), '.'))
+datas.append((os.path.join(base, 'version.txt'), '.'))
 
 # Static read-only resources used by various panels.
 for f in ('wrench.ico', 'trello.png', 'EMS_Admin_Cheat_Sheet.md',
