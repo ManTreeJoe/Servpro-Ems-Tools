@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.13",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.13",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.13/Linguar-Hub-Trial-Setup-1.6.0-trial.13.exe",
-  "notes": "Refreshes the Windows taskbar identity so the running Main and Trial windows use the embedded Linguar Hub icons instead of Windows' cached legacy green wrench. Includes the editable ongoing Job Log from trial.12."
+  "version": "1.6.0-trial.14",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.14",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.14/Linguar-Hub-Trial-Setup-1.6.0-trial.14.exe",
+  "notes": "Adds per-job EMS, Contents, and Recon controls; simplifies job actions; automatically pins one clear Trello match and flags conflicts; and makes copy actions use saved Job Info first."
 }
