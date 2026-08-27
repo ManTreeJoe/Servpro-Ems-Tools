@@ -962,6 +962,34 @@ def _initials(name):
     return (parts[0][0] + parts[-1][0]).upper()
 
 
+# Office coordinators often post the detailed field report on a technician's
+# behalf. Their comments are valuable evidence, but the author is not the tech
+# who performed the work and must not appear in Snapshot's technician column.
+_NON_TECH_COMMENT_AUTHORS = {"laura", "victoria", "sam", "samantha"}
+
+
+def _event_techs(comment, fresh_text):
+    """Technician initials for an event without confusing poster with worker.
+
+    Prefer technicians explicitly named in the comment body (for example,
+    "performed by Supervisor Fernando Baca"). If none are named, use the
+    Trello author only when that author is not known office staff.
+    """
+    found = []
+    for match in audit_logic.TECH_PATTERN.finditer(fresh_text or ""):
+        initials = audit_logic.initials_for_name(match.group(0)) or _initials(
+            match.group(0))
+        if initials and initials not in found:
+            found.append(initials)
+    if found:
+        return ", ".join(found)
+    author = ((comment.get("memberCreator") or {}).get("fullName") or "").strip()
+    first = (author.split() or [""])[0].lower()
+    if first in _NON_TECH_COMMENT_AUTHORS:
+        return ""
+    return _initials(author)
+
+
 def _comment_dt(c):
     """Parse a get_all_comments action's ISO `date` to a naive datetime."""
     s = (c.get("date") or "")[:19]
@@ -1021,7 +1049,7 @@ def extract_job_log(comments):
         fresh = _fresh_text(c)
         if not fresh:
             continue
-        who = _initials((c.get("memberCreator") or {}).get("fullName"))
+        who = _event_techs(c, fresh)
         date_str = f"{dt.month}/{dt.day}/{str(dt.year)[2:]}"
         weekday = get_weekday(date_str)
         is_proposal = bool(_PROPOSAL_RE.search(fresh))

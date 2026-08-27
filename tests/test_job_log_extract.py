@@ -108,6 +108,24 @@ def test_completed_and_future_events_in_same_comment_stay_separate():
     assert "Monitor" not in acts
 
 
+def test_office_posters_keep_event_but_are_not_listed_as_techs():
+    for office_name in ("Laura Barajas", "Victoria Robledo",
+                        "Samantha Gurganious", "Sam Coordinator"):
+        rows = sg.extract_job_log([_c(
+            "2026-08-20T18:00:00.000Z", office_name,
+            "Demo completed today.")])
+        assert rows[0]["activity"] == "Demo"
+        assert rows[0]["who"] == ""
+
+
+def test_office_report_uses_technician_named_in_comment_body():
+    rows = sg.extract_job_log([_c(
+        "2026-08-20T18:00:00.000Z", "Laura Barajas",
+        "Initial Inspection performed by Supervisor Fernando Baca.")])
+    assert rows[0]["activity"] == "Initial Inspection"
+    assert rows[0]["who"] == "FB"
+
+
 def test_job_log_sorted_oldest_first():
     log = sg.extract_job_log(COMMENTS)
     dates = [r["date"] for r in log]
