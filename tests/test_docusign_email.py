@@ -41,3 +41,19 @@ def test_email_text_blank_city_drops_clause():
     # No dangling "in " — the clause is omitted cleanly.
     assert "at your property, we will need" in txt
     assert " in " not in txt.split("we will need")[0]
+
+
+def test_request_prefers_customer_email_from_job_information(monkeypatch):
+    saved = {}
+    monkeypatch.setattr(dsr.tc, "get_card", lambda *_a, **_k: {
+        "name": "Test Job", "desc": "ADJUSTER EMAIL: adjuster@example.com",
+        "idBoard": "b", "idList": "l", "shortUrl": "https://trello.test/c/1",
+    })
+    monkeypatch.setattr(dsr.tc, "get_lane_name", lambda *_a: "Active")
+    monkeypatch.setattr(dsr.tc, "post_comment", lambda *_a: True)
+    monkeypatch.setattr(dsr, "_load", lambda: saved)
+    monkeypatch.setattr(dsr, "_save", lambda value: saved.update(value))
+    entry = dsr.request("card-1", client_name="Test Job",
+                        email_override="customer@example.com")
+    assert entry["email"] == "customer@example.com"
+    assert entry["state"] == "pending_signature"

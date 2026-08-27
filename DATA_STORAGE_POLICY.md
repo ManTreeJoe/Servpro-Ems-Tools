@@ -15,8 +15,10 @@ Linguar Hub databases are text-first indexes, not file stores.
 - Base64 or other text encodings of those files.
 - Full downloaded responses when a small shaped record is enough.
 
-Files remain in the job folder, CompanyCam, or the system that owns them. The
-database stores only enough text to find, identify, search, and track the file.
+Signed forms and other official job documents remain in the OD job folder on
+the shared X: server. CompanyCam may hold a convenience copy, but it is not the
+document system of record. The database stores only enough text to find,
+identify, search, and track the file.
 
 ## Structured text
 

@@ -218,7 +218,8 @@ def extract_contact_emails(card):
     return contacts
 
 
-def request(card_id, *, client_name="", post_comment=True):
+def request(card_id, *, client_name="", post_comment=True,
+            email_override=""):
     """Record a pending Docusign request for a Trello card.
 
     Workflow split by what the card carries:
@@ -237,7 +238,10 @@ def request(card_id, *, client_name="", post_comment=True):
     if not card:
         return None
 
-    email = extract_insured_email(card)
+    # Job Information is the CRM source of truth. Callers that already
+    # loaded it may provide the customer email so an older Trello card
+    # cannot substitute a missing/adjuster address.
+    email = (email_override or "").strip() or extract_insured_email(card)
     if email:
         state = "pending_signature"
         note = DEFAULT_SENT_NOTE.format(email=email)

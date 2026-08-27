@@ -422,10 +422,89 @@ class Api:
                                  "at": activity.get("happened_at") or "",
                                  "source": activity.get("source") or "linguar"})
         comments.sort(key=lambda c: c.get("at") or "", reverse=True)
+        documents = self._document_signature_workspace(
+            client, cid, summary.get("path") or "")
         return {"ok": True, "client": client, "card_id": cid,
                 "audit": summary, "crm": crm, "info_sections": info_sections,
                 "checklists": checklists, "comments": comments,
-                "attachments": attachments, "members": members}
+                "attachments": attachments, "members": members,
+                "documents": documents}
+
+    def _document_signature_workspace(self, client: str, card_id: str,
+                                      job_path: str) -> dict:
+        """Text-only view of signature state and files already on disk."""
+        pending = None
+        try:
+            import docusign_requests as dsr
+            for entry in dsr.pending_requests():
+                if ((card_id and entry.get("card_id") == card_id) or
+                        str(entry.get("client") or "").casefold() ==
+                        str(client or "").casefold()):
+                    pending = entry
+                    break
+        except Exception:
+            pass
+        files = []
+        root = os.path.abspath(job_path) if job_path else ""
+        if root and os.path.isdir(root):
+            for dirname, _dirs, names in os.walk(root):
+                if "docs" not in dirname.casefold() and "paperwork" not in dirname.casefold():
+                    continue
+                for name in names:
+                    if not name.casefold().endswith((".pdf", ".doc", ".docx")):
+                        continue
+                    full = os.path.join(dirname, name)
+                    try:
+                        modified = _dt.datetime.fromtimestamp(
+                            os.path.getmtime(full)).isoformat(timespec="seconds")
+                    except OSError:
+                        modified = ""
+                    low = (dirname + " " + name).casefold()
+                    files.append({"name": name, "path": full,
+                                  "modified_at": modified,
+                                  "signed": ("signed" in low or
+                                             "final paperwork" in low)})
+                    if len(files) >= 100:
+                        break
+                if len(files) >= 100:
+                    break
+        files.sort(key=lambda item: item.get("modified_at") or "", reverse=True)
+        return {"provider": "DocuSign", "connected": False,
+                "connection_note": "Direct DocuSign connection is not configured yet",
+                "request": pending or {}, "files": files[:20],
+                "storage": "Official signed file stays in the X: OD job folder; only status and path are indexed"}
+
+    def mark_docusign_sent(self, client: str, card_id: str = "",
+                           customer_email: str = "") -> dict:
+        """Record a manually-sent envelope using Job Information email."""
+        try:
+            import docusign_requests as dsr
+            cid = (card_id or "").strip()
+            if not cid:
+                return {"ok": False, "error": "This job needs a linked Trello card for the current tracker"}
+            entry = dsr.request(cid, client_name=client,
+                                email_override=customer_email)
+            if not entry:
+                return {"ok": False, "error": "Could not record the DocuSign request"}
+            return {"ok": True, "entry": entry}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def open_docusign(self) -> bool:
+        return self.open_url("https://app.docusign.com/")
+
+    def open_job_folder(self, client: str, path: str = "") -> dict:
+        return self._audit_api().open_od_for_client(client, path)
+
+    def open_document(self, path: str) -> dict:
+        path = os.path.abspath(path or "")
+        if not path or not os.path.isfile(path):
+            return {"ok": False, "error": "document is no longer in that folder"}
+        try:
+            os.startfile(path)
+            return {"ok": True}
+        except OSError as ex:
+            return {"ok": False, "error": str(ex)}
 
     def set_job_check_item(self, card_id: str, item_id: str,
                            complete: bool) -> dict:

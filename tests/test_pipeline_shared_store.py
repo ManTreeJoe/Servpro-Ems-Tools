@@ -74,6 +74,25 @@ def test_manual_refresh_reimports_trello(monkeypatch):
     assert mirrored == [live]
 
 
+def test_document_workspace_indexes_x_folder_files_without_file_contents(tmp_path, monkeypatch):
+    docs = tmp_path / "EMS" / "DOCS" / "FINAL PAPERWORK"
+    docs.mkdir(parents=True)
+    signed = docs / "Certificate of Satisfaction Signed.pdf"
+    signed.write_bytes(b"not stored in db")
+    monkeypatch.setattr("docusign_requests.pending_requests", lambda: [{
+        "card_id": "card-1", "client": "Test Client",
+        "state": "pending_signature", "email": "customer@example.com",
+        "days_pending": 2,
+    }])
+    result = pipeline_web.Api()._document_signature_workspace(
+        "Test Client", "card-1", str(tmp_path))
+    assert result["request"]["state"] == "pending_signature"
+    assert result["files"][0]["name"] == signed.name
+    assert result["files"][0]["signed"] is True
+    assert "not stored in db" not in str(result)
+    assert "X:" in result["storage"]
+
+
 def test_schema_puts_client_above_claim_job_and_pipeline_card():
     sql = (Path(__file__).parents[1] / "supabase" / "011_pipeline_owned.sql").read_text(
         encoding="utf-8").lower()
@@ -99,5 +118,13 @@ def test_pipeline_card_is_the_full_job_workspace():
     for marker in ("data-add-job-log", "data-edit-job-log", "data-delete-job-log",
                    "save_job_log_update", "delete_job_log_update"):
         assert marker in js
+    for marker in ("Documents &amp; signatures", "data-open-docusign",
+                   "data-mark-docusign-sent", "data-open-docs-folder",
+                   "data-document-path"):
+        assert marker in js
+    for marker in ("_document_signature_workspace", "mark_docusign_sent",
+                   "open_document"):
+        assert marker in py
+    assert 'class="aud-section compact-section"' in js
     assert ".job-card-layout" in css
     assert ".job-card-activity" in css

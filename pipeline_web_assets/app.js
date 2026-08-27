@@ -446,6 +446,14 @@ function openAuditModal(data, trelloUrl = "") {
       ${entry.equipment ? `<small>Equipment / readings: ${escapeHtml(entry.equipment)}</small>` : ""}</div>
       <div class="job-log-actions"><button class="text-btn" data-edit-job-log="${escapeAttr(entry.entry_id || "")}">Edit</button>
       <button class="text-btn danger" data-delete-job-log="${escapeAttr(entry.entry_id || "")}">Delete</button></div></article>`).join("") || `<div class="aud-empty">No Job Log updates yet.</div>`;
+  const docs = data.documents || {};
+  const dsRequest = docs.request || {};
+  const documentRows = (docs.files || []).map((file) => `<button class="signature-file" data-document-path="${escapeAttr(file.path || "")}">
+    <span class="signature-file-mark">${file.signed ? "✓" : "□"}</span><span><strong>${escapeHtml(file.name || "Document")}</strong>
+    <small>${file.signed ? "Signed/final paperwork" : "Job document"}${file.modified_at ? " · " + escapeHtml(formatCommentDate(file.modified_at)) : ""}</small></span></button>`).join("") || `<div class="aud-empty">No PDFs or Word documents found in this job’s DOCS folders.</div>`;
+  const signatureState = dsRequest.state === "pending_signature" ? "Signature pending"
+    : dsRequest.state === "pending_email" ? "Needs customer email"
+    : (docs.files || []).some((file) => file.signed) ? "Signed file received" : "Not sent";
   const attachments = (data.attachments || []).map((a) =>
     `<button class="attachment-row" data-attachment-url="${escapeAttr(a.url || "")}">📎 ${escapeHtml(a.name || "Attachment")}</button>`).join("") || `<div class="aud-empty">No attachments.</div>`;
   const comments = (data.comments || []).map(renderJobComment).join("") || `<div class="aud-empty activity-empty">No comments yet. Start the job conversation below.</div>`;
@@ -458,11 +466,17 @@ function openAuditModal(data, trelloUrl = "") {
       ${workTypes ? `<section class="aud-section"><h3>Work types</h3><div class="work-types">${workTypes}</div></section>` : ""}
       <section class="aud-section"><h3>Checklists</h3>${trelloLists}</section>
       ${facts || `<section class="aud-section"><h3>Job information</h3><div class="aud-empty">No saved job information yet.</div></section>`}
+      <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
+        <div class="signature-flow"><span class="${dsRequest.requested ? "done" : "active"}">1 Prepare</span><i></i><span class="${dsRequest.requested ? "active" : ""}">2 Send</span><i></i><span class="${(docs.files || []).some((file) => file.signed) ? "done" : ""}">3 Signed copy</span></div>
+        ${dsRequest.email ? `<div class="signature-recipient">Sent to <strong>${escapeHtml(dsRequest.email)}</strong> · ${Number(dsRequest.days_pending || 0)} day(s) pending</div>` : ""}
+        ${!docs.connected ? `<div class="signature-connection"><span><strong>Direct DocuSign connection is next</strong><small>For now, open DocuSign and mark the request sent after the envelope is actually sent.</small></span></div>` : ""}
+        <div class="signature-actions"><button class="btn btn-primary" data-open-docusign>Open DocuSign ↗</button><button class="btn" data-mark-docusign-sent ${dsRequest.state ? "disabled" : ""}>Mark envelope sent</button><button class="btn" data-open-docs-folder ${res.path ? "" : "disabled"}>Open job folder</button></div>
+        <div class="signature-files">${documentRows}</div></section>
       <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
         <button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div>
         <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div></section>
-      <section class="aud-section"><h3>Run activity</h3>${activity}</section>
-      <section class="aud-section"><h3>Attachments</h3>${attachments}</section>
+      <details class="aud-section compact-section"><summary>Run activity <span>${(res.activity || []).length}</span></summary>${activity}</details>
+      <details class="aud-section compact-section"><summary>Other attachments <span>${(data.attachments || []).length}</span></summary>${attachments}</details>
     </div>
     <aside class="job-card-activity"><div class="activity-head"><h3>Comments and activity</h3>
       <span>${(data.comments || []).length}</span></div>
@@ -521,6 +535,19 @@ function openAuditModal(data, trelloUrl = "") {
       setStatus(`Checklist update failed: ${result?.error || "Trello unavailable"}`, "error");
     }
   }));
+  w.querySelector("[data-open-docusign]")?.addEventListener("click", () => pywebview.api.open_docusign());
+  w.querySelector("[data-open-docs-folder]")?.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || ""));
+  w.querySelectorAll("[data-document-path]").forEach((button) => button.addEventListener("click", () => {
+    pywebview.api.open_document(button.dataset.documentPath || "");
+  }));
+  w.querySelector("[data-mark-docusign-sent]")?.addEventListener("click", async (event) => {
+    if (!window.confirm("Only mark this sent after the DocuSign envelope was actually sent. Continue?")) return;
+    const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
+    const result = await pywebview.api.mark_docusign_sent(
+      data.client || "", data.card_id || "", copyField("email") || "");
+    if (!result?.ok) { button.disabled = false; button.textContent = "Mark envelope sent"; setStatus(result?.error || "Could not track DocuSign request", "error"); return; }
+    close(); await onAuditCard(data.client || res.client || "", data.card_id || ""); setStatus("DocuSign request marked sent", "ok");
+  });
   const openJobLogEditor = (entry = {}) => {
     const host = w.querySelector("[data-job-log-editor]");
     const today = new Date().toISOString().slice(0, 10);
