@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.3",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.3",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.3/Linguar-Hub-Trial-Setup-1.6.0-trial.3.exe",
-  "notes": "CRM trial: shared start-to-finish job workspace with EMS, Contents, and Recon stages. Repairs sign-in controls, restores carrier tags on job rows, and asks for an Estimating or Service Call lane when a card leaves Snapshot after closeout."
+  "version": "1.6.0-trial.4",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.4",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.4/Linguar-Hub-Trial-Setup-1.6.0-trial.4.exe",
+  "notes": "Adds the restoration-cycle Windows icon and a compact icon beside Linguar Hub that follows the EMS, Contents, and Recon switch. The Windows icon remains the complete three-department mark."
 }
