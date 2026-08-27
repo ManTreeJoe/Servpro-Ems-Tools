@@ -26,6 +26,18 @@ def test_workspace_loads_master_and_three_department_states(workspace):
     assert result["work_environments"][0]["work_environment"] == "EMS"
 
 
+def test_workspace_auto_registers_an_audited_job_missing_from_index(workspace):
+    db, api = workspace
+    result = api.crm_job_workspace("Legacy Customer", {
+        "path": "", "trello_card_id": "card-legacy",
+        "form_issues": [], "photo_issues": [], "requirements": [],
+    })
+    assert result["ok"]
+    job = db.find_job_by_name("Legacy Customer")
+    assert job is not None
+    assert db.get_link(job["canon_key"], "trello_card") == "card-legacy"
+
+
 def test_workspace_edit_is_marked_manual(workspace):
     db, api = workspace
     key = db.upsert_job(display_name="Avery Morgan")

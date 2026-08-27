@@ -1743,8 +1743,37 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             import ems_db
             job = ems_db.find_job_by_name(client)
             if not job:
-                return {"ok": False, "missing": True,
-                        "error": "job is not in the shared index yet"}
+                # A real audit/Trello/folder row may predate the shared job
+                # index.  Opening its workspace is a safe point to register
+                # it; forcing an admin to run a separate backfill made the
+                # CRM card unusable for exactly the older jobs it should track.
+                state = audit_state if isinstance(audit_state, dict) else {}
+                folder_path = str(state.get("path") or "").strip()
+                trello_card = str(state.get("trello_card_id") or "").strip()
+                try:
+                    job = ems_db.resolve_and_link(
+                        client, folder_path=folder_path,
+                        trello_card=trello_card, create=True,
+                        source="crm_workspace", display_name=client)
+                except Exception:
+                    # Some older rows have no absolute path.  Preserve the
+                    # active franchise on the new master row, then attach any
+                    # strong identifier that was available.
+                    import config
+                    key = ems_db.upsert_job(
+                        display_name=client,
+                        department=(config.active_department() or ""),
+                        metadata={"created_from": "crm_workspace"})
+                    if folder_path:
+                        ems_db.set_link(key, "folder_path", folder_path,
+                                        added_by="crm_workspace")
+                    if trello_card:
+                        ems_db.set_link(key, "trello_card", trello_card,
+                                        added_by="crm_workspace")
+                    job = ems_db.get_job(key)
+                if not job:
+                    return {"ok": False, "missing": True,
+                            "error": "job could not be added to the shared index"}
             master = ems_db.get_master_job(job.get("canon_key") or "") or job
             log_entries, log_error = [], ""
             try:
