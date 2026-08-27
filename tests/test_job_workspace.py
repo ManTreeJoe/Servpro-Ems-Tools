@@ -64,6 +64,43 @@ def test_work_type_can_be_marked_not_part_of_job(workspace):
     assert loaded["work_environments"][0]["stage"] == "not_applicable"
 
 
+def test_one_clear_trello_match_is_pinned_automatically(workspace, monkeypatch):
+    _db, api = workspace
+    monkeypatch.setattr("audit_web.persistence.get_trello_card_ids", lambda _n: [])
+    monkeypatch.setattr(api, "search_trello", lambda _n: [{
+        "card_id": "card-one", "name": "Stone, Riley", "board": "EMS",
+        "lane": "Work in progress", "tier": "active", "score": 1.1,
+    }])
+    pinned = []
+    monkeypatch.setattr(api, "pin_trello", lambda n, c: pinned.append((n, c)) or {"ok": True, "card_id": c})
+    result = api.reconcile_crm_trello_pin("Riley Stone")
+    assert result["state"] == "auto_pinned"
+    assert pinned == [("Riley Stone", "card-one")]
+
+
+def test_multiple_strong_trello_matches_are_a_conflict(workspace, monkeypatch):
+    _db, api = workspace
+    monkeypatch.setattr("audit_web.persistence.get_trello_card_ids", lambda _n: [])
+    monkeypatch.setattr(api, "search_trello", lambda _n: [
+        {"card_id": "a", "name": "Morgan Lee", "tier": "active", "score": 1.0},
+        {"card_id": "b", "name": "Lee, Morgan", "tier": "active", "score": 1.0},
+    ])
+    result = api.reconcile_crm_trello_pin("Morgan Lee")
+    assert result["state"] == "conflict"
+    assert result["reason"] == "multiple_matches"
+
+
+def test_disagreeing_saved_trello_pin_is_flagged(workspace, monkeypatch):
+    _db, api = workspace
+    monkeypatch.setattr("audit_web.persistence.get_trello_card_ids", lambda _n: ["old"])
+    monkeypatch.setattr(api, "search_trello", lambda _n: [
+        {"card_id": "new", "name": "Casey Morgan", "tier": "active", "score": 1.0},
+    ])
+    result = api.reconcile_crm_trello_pin("Casey Morgan")
+    assert result["state"] == "conflict"
+    assert result["reason"] == "saved_pin_disagrees"
+
+
 def test_workspace_is_part_of_shared_job_detail():
     root = Path(__file__).resolve().parents[1]
     js = (root / "web_shared" / "audit_detail.js").read_text(encoding="utf-8")
@@ -71,6 +108,8 @@ def test_workspace_is_part_of_shared_job_detail():
     assert "crm_job_workspace" in js
     assert "save_crm_job_workspace" in js
     assert "save_crm_work_environment" in js
+    assert "reconcile_crm_trello_pin" in js
+    assert "Trello card conflict" in js
     for work_type in ('["EMS", "💧"', '["Contents", "▣"', '["Recon", "🔨"'):
         assert work_type in js
     assert "@media(max-width:700px)" in js

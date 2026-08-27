@@ -1808,6 +1808,54 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def reconcile_crm_trello_pin(self, client: str) -> dict:
+        """Auto-pin one unambiguous card and report unsafe matches."""
+        name = (client or "").strip()
+        if not name:
+            return {"ok": False, "state": "error", "error": "job name required"}
+        try:
+            pins = [p for p in (persistence.get_trello_card_ids(name) or []) if p]
+        except Exception:
+            pins = []
+        pins = list(dict.fromkeys(pins))
+        try:
+            hits = self.search_trello(name) or []
+            strong = [h for h in hits if float(h.get("score") or 0) >= .92]
+            live = [h for h in strong if h.get("tier") != "archive"]
+            candidates = live or strong
+        except Exception as ex:
+            return {"ok": True, "state": "linked_unverified",
+                    "card_id": pins[0] if len(pins) == 1 else "",
+                    "error": str(ex), "candidates": []}
+        compact = [{"card_id": h.get("card_id") or "",
+                    "name": h.get("name") or "",
+                    "board": h.get("board") or "",
+                    "lane": h.get("lane") or ""} for h in candidates]
+        candidate_ids = {c["card_id"] for c in compact if c["card_id"]}
+        if len(pins) > 1:
+            return {"ok": True, "state": "conflict",
+                    "reason": "multiple_saved_pins", "pins": pins,
+                    "candidates": compact}
+        if pins:
+            if candidate_ids and pins[0] not in candidate_ids:
+                return {"ok": True, "state": "conflict",
+                        "reason": "saved_pin_disagrees", "card_id": pins[0],
+                        "candidates": compact}
+            return {"ok": True, "state": "linked", "card_id": pins[0],
+                    "candidates": compact}
+        if len(compact) == 1:
+            pinned = self.pin_trello(name, compact[0]["card_id"])
+            if not pinned.get("ok"):
+                return {"ok": False, "state": "error",
+                        "error": pinned.get("error") or "auto-pin failed"}
+            return {"ok": True, "state": "auto_pinned",
+                    "card_id": compact[0]["card_id"], "candidates": compact}
+        if len(compact) > 1:
+            return {"ok": True, "state": "conflict",
+                    "reason": "multiple_matches", "candidates": compact}
+        return {"ok": True, "state": "missing", "card_id": "",
+                "candidates": []}
+
     def save_crm_job_log(self, client: str, entry: dict) -> dict:
         """Create/edit an ongoing structured job-log entry."""
         try:
@@ -8317,6 +8365,12 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             persistence.set_trello_card_id(client, card_id)
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+        try:
+            import ems_db as _db
+            _db.resolve_and_link(client, trello_card=card_id, create=True,
+                                 display_name=client)
+        except Exception:
+            pass
         # Both lists, not just the daily run: a job pulled up through
         # Search lives in _oneoff_rows, so updating _last_rows alone left
         # the detail pane showing "no card" for the card just pinned.

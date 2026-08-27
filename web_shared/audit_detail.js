@@ -463,6 +463,7 @@
         <span class="crm-source" title="Last lifecycle source">${esc(ctx,
           data.lifecycle_source === "manual" ? "Manual" : "Synced")}</span>
       </div>
+      <div class="crm-trello-link" data-crm-trello><span class="muted">Checking pinned Trello card…</span></div>
       <div class="crm-controls">
         <label>Lifecycle<select data-crm-field="lifecycle_stage">${options(stages, data.lifecycle_stage)}</select></label>
         <label>Job type<select data-crm-field="job_type">${options(types, data.job_type)}</select></label>
@@ -478,6 +479,34 @@
         ${data.job_log_error ? `<div class="crm-log-warning">${esc(ctx, data.job_log_error)}</div>` : ""}
         <div class="crm-log-list">${logRows}</div>
       </div>`;
+
+    const trelloState = box.querySelector("[data-crm-trello]");
+    try {
+      const link = await pywebview.api.reconcile_crm_trello_pin(r.client);
+      const candidates = link?.candidates || [];
+      if (link?.card_id) r.trello_card_id = link.card_id;
+      if (link?.state === "auto_pinned") {
+        trelloState.className = "crm-trello-link linked";
+        trelloState.innerHTML = `<span>📌 Trello card found and pinned automatically</span>`;
+      } else if (link?.state === "linked") {
+        trelloState.className = "crm-trello-link linked";
+        trelloState.innerHTML = `<span>📌 Trello card linked</span>`;
+      } else if (link?.state === "conflict") {
+        const reason = link.reason === "saved_pin_disagrees"
+          ? "The saved card conflicts with the current Trello match."
+          : `Found ${Math.max(candidates.length, (link.pins || []).length)} possible cards.`;
+        trelloState.className = "crm-trello-link conflict";
+        trelloState.innerHTML = `<div><strong>⚠ Trello card conflict</strong><span>${esc(ctx, reason)} Choose the correct card before posting updates.</span></div><button class="action-btn" type="button" data-fix-trello>Review cards</button>`;
+      } else if (link?.state === "missing") {
+        trelloState.className = "crm-trello-link missing";
+        trelloState.innerHTML = `<span>○ No matching Trello card found</span><button class="action-btn" type="button" data-fix-trello>Find card</button>`;
+      } else {
+        trelloState.innerHTML = `<span class="muted">Trello pin could not be verified right now</span>`;
+      }
+      trelloState.querySelector("[data-fix-trello]")?.addEventListener("click", () => openPinModal(r, ctx));
+    } catch (_) {
+      trelloState.innerHTML = `<span class="muted">Trello pin could not be verified right now</span>`;
+    }
 
     const openLogEditor = (entry = {}) => {
       const editor = box.querySelector(".crm-log-editor");
@@ -697,6 +726,7 @@
         ".crm-log-editor{margin:8px 0;padding:10px;border:1px solid var(--accent);border-radius:9px;background:var(--surface-2)}.crm-log-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.crm-log-form label{display:flex;flex-direction:column;gap:4px;font-size:11px}.crm-log-form .wide,.crm-log-actions,.crm-log-history{grid-column:1/-1}.crm-log-form input,.crm-log-form select,.crm-log-form textarea{width:100%;box-sizing:border-box}.crm-log-actions{display:flex;gap:7px}.crm-log-history{font-size:11px}" +
         ".crm-log-warning{margin:7px 0;padding:7px;border-radius:7px;background:#5b430d;color:#ffe5a1;font-size:11px}" +
         ".crm-source{font-size:10px;padding:3px 7px;border-radius:10px;background:var(--surface-2);color:var(--text-muted);}" +
+        ".crm-trello-link{display:flex;align-items:center;justify-content:space-between;gap:9px;margin:0 0 10px;padding:8px 9px;border:1px solid var(--border);border-radius:8px;font-size:11px}.crm-trello-link.linked{border-color:#287a50;background:#153b29;color:#c7f4d8}.crm-trello-link.conflict{border-color:#b7791f;background:#4b350e;color:#ffe5a1}.crm-trello-link.conflict>div{display:flex;flex-direction:column;gap:2px}.crm-trello-link.missing{border-style:dashed}" +
         ".crm-controls{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px;}" +
         ".crm-controls label{font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;}" +
         ".crm-controls select{display:block;width:100%;margin-top:4px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px;}" +
