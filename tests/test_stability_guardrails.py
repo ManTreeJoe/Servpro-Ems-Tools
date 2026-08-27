@@ -22,7 +22,7 @@ def test_audit_search_normalizes_optional_lists():
 def test_audit_loader_uses_current_cache_key():
     html = (ROOT / "audit_web_assets" / "index.html").read_text(
         encoding="utf-8")
-    assert 'app.js?v=20260824e' in html
+    assert 'app.js?v=20260826a' in html
 
 
 def test_normal_backup_worker_schedules_the_next_check(monkeypatch):
@@ -53,6 +53,18 @@ def test_main_claims_instance_before_starting_either_shell():
     claim = src.index("_claim_single_instance()")
     assert claim < src.index('if "--quickimport"')
     assert claim < src.index("webview.create_window")
+
+
+def test_main_and_trial_use_separate_single_instance_locks(monkeypatch):
+    import paths
+
+    monkeypatch.setattr(paths, "IS_TRIAL", False)
+    assert home_web._instance_mutex_name() == (
+        "Local\\LinguarHub.Main.SingleInstance")
+
+    monkeypatch.setattr(paths, "IS_TRIAL", True)
+    assert home_web._instance_mutex_name() == (
+        "Local\\LinguarHub.Trial.SingleInstance")
 
 
 def test_state_replace_retries_a_brief_windows_lock(tmp_path, monkeypatch):

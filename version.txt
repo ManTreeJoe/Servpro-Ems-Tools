@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.6",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.6",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.6/Linguar-Hub-Trial-Setup-1.6.0-trial.6.exe",
-  "notes": "Adds grab-to-pan navigation to empty space on the horizontal APA board while preserving card drag-and-drop and normal controls. Includes the larger restoration Windows icon."
+  "version": "1.6.0-trial.7",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.7",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.7/Linguar-Hub-Trial-Setup-1.6.0-trial.7.exe",
+  "notes": "Lets Linguar Hub Main and Trial run side by side by giving each channel its own Windows single-instance lock. Also includes APA grab-to-pan and the larger restoration icon."
 }

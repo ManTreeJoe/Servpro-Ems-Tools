@@ -41,11 +41,25 @@ ROOT_INDEX_HTML = os.path.join(_HERE, "_ems_root_index.html")
 _INSTANCE_MUTEX = None
 
 
-def _claim_single_instance():
-    """Return False when another Linguar Hub process already owns the data.
+def _instance_mutex_name():
+    """Keep Main and Trial single-instance within their own channels.
 
-    state.json is shared by the source and installed builds. A named mutex
-    prevents those two processes from racing their atomic replacements.
+    Both channels intentionally share settings and job data, but they are
+    separate installed applications and must be able to run side by side.
+    """
+    try:
+        import paths as _paths
+        channel = "Trial" if getattr(_paths, "IS_TRIAL", False) else "Main"
+    except Exception:
+        channel = "Main"
+    return f"Local\\LinguarHub.{channel}.SingleInstance"
+
+
+def _claim_single_instance():
+    """Return False when another copy of this app channel is running.
+
+    Main and Trial use different mutex names so they can run side by side.
+    Source and installed builds in the same channel still share a mutex.
     Fail open if Windows cannot create the mutex so an OS API failure never
     turns into an unexplained launch failure.
     """
@@ -61,7 +75,7 @@ def _claim_single_instance():
         create_mutex.argtypes = (wintypes.LPVOID, wintypes.BOOL,
                                  wintypes.LPCWSTR)
         create_mutex.restype = wintypes.HANDLE
-        handle = create_mutex(None, False, "Local\\LinguarHub.SingleInstance")
+        handle = create_mutex(None, False, _instance_mutex_name())
         if not handle:
             return True
         if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
@@ -77,11 +91,17 @@ def _show_already_running():
     """Explain a blocked second launch without requiring pywebview startup."""
     try:
         import ctypes
+        try:
+            import paths as _paths
+            app_name = "Linguar Hub Trial" if getattr(
+                _paths, "IS_TRIAL", False) else "Linguar Hub"
+        except Exception:
+            app_name = "Linguar Hub"
         ctypes.windll.user32.MessageBoxW(
             0,
-            "Linguar Hub is already running. Close the open window before "
+            f"{app_name} is already running. Close the open window before "
             "starting another copy.",
-            "Linguar Hub",
+            app_name,
             0x30,
         )
     except Exception:
