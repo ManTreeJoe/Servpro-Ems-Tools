@@ -108,6 +108,8 @@
       <span id="fr-progress" class="chip"></span>
     </div>
     <div id="fr-steps"></div>
+    <div id="fr-action-status" class="muted" role="status"
+         style="display:none;margin-top:10px;padding:8px 10px;border-left:3px solid var(--border);background:var(--surface-2);border-radius:0 6px 6px 0;font-size:11.5px;"></div>
     <div id="fr-ready" style="display:none;margin-top:12px;padding:10px 12px;
          border-radius:7px;background:rgba(84,180,120,.13);border:1px solid var(--green);
          font-size:12px;font-weight:700;color:var(--green);">✓ You’re ready to use Linguar Hub.</div>
@@ -1322,22 +1324,40 @@ async function renderFirstRunWizard() {
 function wireSetupGuide() {
   const card = document.getElementById("first-run-card");
   if (!card) return;
+  const guideStatus = (message, kind = "") => {
+    const el = document.getElementById("fr-action-status");
+    if (!el) return;
+    el.style.display = "block";
+    el.style.borderLeftColor = kind === "error" ? "var(--red)" : kind === "ok" ? "var(--green)" : "var(--amber)";
+    el.textContent = message;
+  };
   card.querySelector('[data-setup="signin"]')?.addEventListener("click", () => {
+    showSettingsScope("personal");
     document.getElementById("sb-email")?.scrollIntoView({behavior:"smooth", block:"center"});
     setTimeout(() => document.getElementById("sb-email")?.focus(), 250);
+    guideStatus("Sign-in fields opened below. Enter your work email and password.");
   });
   card.querySelector('[data-scope-tab-jump="admin"]')?.addEventListener("click", () => {
     showSettingsScope("admin");
     document.getElementById("user-access-card")?.scrollIntoView({behavior:"smooth", block:"start"});
   });
   card.querySelectorAll('[data-setup="refresh"]').forEach((button) =>
-    button.addEventListener("click", renderFirstRunWizard));
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      const prior = button.textContent;
+      button.textContent = "Checking…";
+      await renderFirstRunWizard();
+      guideStatus("Rechecked. Any unfinished step still shows what needs attention.");
+      button.disabled = false;
+      button.textContent = prior;
+    }));
   card.querySelector('[data-setup="trello-auto"]')?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true; button.textContent = "Waiting for Trello…";
     const result = await pywebview.api.authorize_trello();
     button.disabled = false; button.textContent = "Connect Trello";
     setStatus(result?.ok ? "Trello connected ✓" : (result?.error || "Trello did not connect"), result?.ok ? "ok" : "error");
+    guideStatus(result?.ok ? "Trello connected." : (result?.error || "Trello did not connect."), result?.ok ? "ok" : "error");
     await renderFirstRunWizard();
   });
   card.querySelector('[data-setup="trello-page"]')?.addEventListener("click", async () => {
@@ -1346,11 +1366,13 @@ function wireSetupGuide() {
     await pywebview.api.open_url(result.url);
     const tokenBox = card.querySelector(".setup-token");
     if (tokenBox) tokenBox.style.display = "block";
+    guideStatus("Trello token page opened. Paste the token here when it appears.");
   });
   card.querySelector('[data-setup="trello-paste"]')?.addEventListener("click", () => {
     const box = card.querySelector(".setup-token");
     if (box) box.style.display = "block";
     card.querySelector(".setup-token-input")?.focus();
+    guideStatus("Paste the long Trello token, then choose Save token.");
   });
   card.querySelector('[data-setup="trello-save"]')?.addEventListener("click", async (event) => {
     const input = card.querySelector(".setup-token-input");

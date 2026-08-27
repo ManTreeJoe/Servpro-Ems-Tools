@@ -12,6 +12,7 @@ const state = {
   right_now:        {},
   cycle_time:       {},
   repeat_offenders: [],
+  job_performance:  {},
   last_refresh:     null,
 };
 
@@ -64,6 +65,7 @@ async function refresh(showSpinner) {
     state.right_now = data.right_now || {};
     state.cycle_time = data.cycle_time || {};
     state.repeat_offenders = data.repeat_offenders || [];
+    state.job_performance = data.job_performance || {};
     state.last_refresh = new Date();
     renderAll();
     setStatus(showSpinner ? "Refreshed" : "", "ok");
@@ -80,6 +82,7 @@ function renderAll() {
   renderWeekly();
   renderCycleTime();
   renderRepeatOffenders();
+  renderJobPerformance();
   $("#last-refresh").textContent = state.last_refresh
     ? `Refreshed ${fmtTime(state.last_refresh)}`
     : "—";
@@ -89,6 +92,28 @@ function renderAll() {
     renderAll._restored = true;
     try { PanelState.restoreScroll(document.scrollingElement); } catch (_) { /**/ }
   }
+}
+
+function renderJobPerformance() {
+  const p = state.job_performance || {};
+  const completed = Number(p.completed_this_month || 0);
+  const quota = Number(p.monthly_quota || 0);
+  $("#quota-summary").textContent = quota > 0
+    ? `${completed} of ${quota} jobs closed this month · ${p.quota_remaining || 0} remaining`
+    : `${completed} jobs closed this month · quota not set`;
+  const rail = $("#quota-rail");
+  rail.hidden = quota <= 0;
+  rail.querySelector("i").style.width = `${Math.min(100, Number(p.quota_percent || 0))}%`;
+  const bottlenecks = p.stage_bottlenecks || [];
+  $("#stage-bottlenecks").innerHTML = bottlenecks.length ? bottlenecks.slice(0, 6).map((row) => `
+    <div class="performance-row"><span>${escapeHtml(String(row.stage || "").replaceAll("_", " "))}</span>
+    <strong>${row.avg_days}d avg</strong><small>${row.exits} completed</small></div>`).join("")
+    : `<div class="empty-inline">Stage timing will appear after jobs move between stages.</div>`;
+  const stalled = p.stalled_jobs || [];
+  $("#stalled-jobs").innerHTML = stalled.length ? stalled.slice(0, 6).map((row) => `
+    <div class="performance-row stalled"><span>${escapeHtml(row.client || "?")}<small>${escapeHtml(String(row.stage || "").replaceAll("_", " "))}${row.owner ? ` · ${escapeHtml(row.owner)}` : ""}</small></span>
+    <strong>${row.days}d</strong></div>`).join("")
+    : `<div class="empty-inline">No jobs have been stalled for 3+ days.</div>`;
 }
 
 // ── Right now ────────────────────────────────────────────────────

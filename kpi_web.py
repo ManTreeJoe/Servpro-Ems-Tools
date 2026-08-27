@@ -91,6 +91,14 @@ class Api:
         except Exception:
             return []
 
+    def job_performance_stats(self) -> dict:
+        try:
+            return kpi_metrics.job_performance_stats()
+        except Exception:
+            return {"stage_bottlenecks": [], "stalled_jobs": [],
+                    "completed_this_month": 0, "monthly_quota": 0,
+                    "quota_remaining": 0, "quota_percent": None}
+
     def all_sections(self) -> dict:
         """One-shot bundle for the initial render — saves four
         bridge round-trips."""
@@ -99,6 +107,7 @@ class Api:
             "right_now": self.current_open_flags(),
             "cycle_time": self.cycle_time_stats(),
             "repeat_offenders": self.repeat_offenders(),
+            "job_performance": self.job_performance_stats(),
         }
 
     # ── Actions ──────────────────────────────────────────────────────

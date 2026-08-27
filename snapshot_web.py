@@ -513,10 +513,16 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().get_job_email(client, card_id)
     def get_job_contacts(self, client, card_id=""):
         return self._aw().get_job_contacts(client, card_id)
-    def crm_job_workspace(self, client):
-        return self._aw().crm_job_workspace(client)
+    def crm_job_workspace(self, *a, **k):
+        return self._aw().crm_job_workspace(*a, **k)
     def save_crm_job_workspace(self, client, patch):
         return self._aw().save_crm_job_workspace(client, patch)
+    def save_crm_work_environment(self, *a, **k):
+        return self._aw().save_crm_work_environment(*a, **k)
+    def reconcile_crm_trello_pin(self, *a, **k):
+        return self._aw().reconcile_crm_trello_pin(*a, **k)
+    def job_info_copy_data(self, *a, **k):
+        return self._aw().job_info_copy_data(*a, **k)
     def save_crm_job_log(self, client, entry):
         return self._aw().save_crm_job_log(client, entry)
     def crm_job_log_history(self, entry_id):

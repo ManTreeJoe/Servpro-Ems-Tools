@@ -41,6 +41,7 @@ FIELDS = [
     ("graph_tenant_id",      "Microsoft Graph tenant ID", "text"),
     ("franchise_name",      "Franchise display name",     "text"),
     ("office_phone",        "Office phone",               "tel"),
+    ("monthly_job_completion_quota", "Monthly completed-job quota", "text"),
     # Shared job-index backend. ONE project serves both departments —
     # Row-Level Security keyed on jobs.department is what separates IE
     # from OC, so these stay global rather than per-department.
@@ -90,6 +91,7 @@ _FIELD_GROUPS = {
     "supabase_url": "Connections", "supabase_anon_key": "Connections",
     "workcenter_url": "Connections", "enable_workcenter_alpha": "Connections",
     "franchise_name": "Office identity", "office_phone": "Office identity",
+    "monthly_job_completion_quota": "Reporting goals",
     "snapshot_auto_reconcile": "Automation",
 }
 

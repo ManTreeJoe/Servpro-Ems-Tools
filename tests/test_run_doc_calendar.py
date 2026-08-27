@@ -53,4 +53,4 @@ def test_audit_calendar_ui_has_run_dots_and_date_jump():
     assert 'class="run-dot"' in html and ".calendar-day.has-run::after" in css
     assert "run_doc_calendar" in js
     assert "selectCalendarDate" in js and "Date.UTC" in js
-    assert 'app.js?v=20260824e' in html
+    assert 'app.js?v=20260827b' in html

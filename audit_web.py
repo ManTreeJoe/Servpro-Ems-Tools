@@ -1737,7 +1737,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "customer_missing": not any(c["kind"] != "Adjuster"
                                             for c in contacts)}
 
-    def crm_job_workspace(self, client: str) -> dict:
+    def crm_job_workspace(self, client: str, audit_state: dict | None = None) -> dict:
         """Master CRM summary for the selected Jobs/Snapshot detail card."""
         try:
             import ems_db
@@ -1761,6 +1761,29 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                                   "sync after shared database setup finishes.")
             except Exception:
                 pass
+            from job_progress import evaluate as evaluate_job_progress
+            progress = evaluate_job_progress(master, audit_state, log_entries)
+            timeline = []
+            try:
+                timeline = ems_db.list_events(
+                    master.get("canon_key") or job.get("canon_key") or "")[:50]
+            except Exception:
+                pass
+            try:
+                import audit_export
+                for audit_event in audit_export.job_audit_history(client)[-30:]:
+                    issue_count = sum(len(audit_event.get(key) or []) for key in
+                                      ("form_issues", "photo_issues", "note_issues", "missing"))
+                    timeline.append({
+                        "event_type": "crm_audit_state",
+                        "event_at": audit_event.get("audited_at") or "",
+                        "payload_json": {"status": audit_event.get("status") or "",
+                                         "issue_count": issue_count},
+                    })
+                timeline.sort(key=lambda event: event.get("event_at") or "", reverse=True)
+                timeline = timeline[:50]
+            except Exception:
+                pass
             return {
                 "ok": True,
                 "job_id": master.get("job_id") or "",
@@ -1776,6 +1799,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "job_log": log_entries,
                 "job_log_error": log_error,
                 "job_log_notice": log_notice,
+                "progress": progress,
+                "timeline": timeline,
             }
         except Exception as ex:
             return {"ok": False, "migration_required": True,

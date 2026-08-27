@@ -16,6 +16,34 @@ _DEFAULT_CFG = _paths.resource("config.json")
 
 def _ensure_user_config():
     if _os.path.isfile(_USER_CFG):
+        # Upgrades keep the user's config, but safe shared connection values
+        # added by a newer release must still arrive.  Before this migration,
+        # an older Trial config stayed permanently blank and every setup
+        # button stopped at "fill in Supabase URL/key" even though the new
+        # installer contained both values.
+        try:
+            if not _os.path.isfile(_DEFAULT_CFG):
+                return
+            with open(_USER_CFG, encoding="utf-8") as f:
+                current = _json.load(f)
+            with open(_DEFAULT_CFG, encoding="utf-8") as f:
+                bundled = _json.load(f)
+            changed = False
+            for key in ("supabase_url", "supabase_anon_key", "trello_api_key"):
+                if _is_blank(current.get(key)) and not _is_blank(bundled.get(key)):
+                    current[key] = bundled[key]
+                    changed = True
+            if changed:
+                tmp = _USER_CFG + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    _json.dump(current, f, indent=2)
+                _os.replace(tmp, _USER_CFG)
+        except (OSError, _json.JSONDecodeError) as ex:
+            try:
+                import ems_log
+                ems_log.warn("config", f"shared defaults upgrade skipped: {ex}")
+            except Exception:
+                pass
         return
     cfg = {}
     if _os.path.isfile(_DEFAULT_CFG):

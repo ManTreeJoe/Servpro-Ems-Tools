@@ -247,7 +247,9 @@ def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
     if not current:
         raise KeyError(canon_key_value)
     patch = {}
+    stage_change = None
     if lifecycle_stage and lifecycle_stage != current.get("lifecycle_stage"):
+        stage_change = (current.get("lifecycle_stage") or "", lifecycle_stage)
         now = _now_iso()
         patch.update(lifecycle_stage=lifecycle_stage, stage_entered_at=now,
                      closed_at=(now if lifecycle_stage == "closed" else None),
@@ -259,6 +261,10 @@ def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
     if patch:
         _sb.rest("PATCH", "jobs",
                  params={"canon_key": f"eq.{canon_key_value}"}, body=patch)
+    if stage_change:
+        log_event(canon_key_value, "crm_stage_changed", payload={
+            "from_stage": stage_change[0], "to_stage": stage_change[1],
+            "source": source})
     return get_master_job(canon_key_value)
 
 
@@ -278,6 +284,7 @@ def set_work_environment_state(canon_key_value: str, work_environment: str,
                work_environment=f"eq.{env}", select="*")
     now = _now_iso()
     changed_stage = not old or (stage and stage != old.get("stage"))
+    previous_stage = (old or {}).get("stage") or ""
     body = {
         "job_id": job["job_id"], "work_environment": env,
         "stage": stage or (old or {}).get("stage"),
@@ -291,6 +298,10 @@ def set_work_environment_state(canon_key_value: str, work_environment: str,
     }
     rows = _sb.rest("POST", "crm_job_departments", body=body,
                     prefer="resolution=merge-duplicates,return=representation")
+    if changed_stage and stage:
+        log_event(canon_key_value, "crm_department_stage_changed", payload={
+            "work_environment": env, "from_stage": previous_stage,
+            "to_stage": stage, "owner": owner})
     return (rows or [body])[0]
 
 

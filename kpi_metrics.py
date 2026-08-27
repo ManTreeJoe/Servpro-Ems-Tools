@@ -381,6 +381,71 @@ def repeat_offenders(*, threshold: int = 5,
     return out[:limit]
 
 
+def job_performance_stats(*, days_back: int = 90) -> dict[str, Any]:
+    """Stage bottlenecks, current stalls, and monthly completion progress."""
+    out = {"stage_bottlenecks": [], "stalled_jobs": [],
+           "completed_this_month": 0, "monthly_quota": 0,
+           "quota_remaining": 0, "quota_percent": None}
+    try:
+        import ems_db
+        jobs = ems_db.iter_jobs()
+        since = (_dt.datetime.now() - _dt.timedelta(days=days_back)).isoformat()
+        transitions = ems_db.list_transitions(since_iso=since, limit=5000)
+        lifecycle = ems_db.lifecycle_list(paid_window_days=None)
+    except Exception:
+        return out
+
+    by_stage: dict[str, list[float]] = {}
+    for row in transitions:
+        stage = str(row.get("from_stage") or "").strip()
+        try:
+            days = float(row.get("days_in_from_stage"))
+        except (TypeError, ValueError):
+            continue
+        if stage and days >= 0:
+            by_stage.setdefault(stage, []).append(days)
+    for stage, values in by_stage.items():
+        values.sort()
+        n = len(values)
+        median = values[n // 2] if n % 2 else (values[n // 2 - 1] + values[n // 2]) / 2
+        out["stage_bottlenecks"].append({
+            "stage": stage, "exits": n,
+            "avg_days": round(sum(values) / n, 1),
+            "median_days": round(median, 1),
+            "p90_days": round(values[max(0, int(round(.9 * n)) - 1)], 1),
+        })
+    out["stage_bottlenecks"].sort(key=lambda x: (x["avg_days"], x["exits"]), reverse=True)
+
+    now = _dt.datetime.now()
+    for row in lifecycle:
+        entered = _parse_iso(row.get("stage_entered_at") or "")
+        if not entered or (row.get("current_stage") or "").lower() == "paid":
+            continue
+        days = max(0, (now - entered).total_seconds() / 86400)
+        if days >= 3:
+            out["stalled_jobs"].append({
+                "client": row.get("client_display") or row.get("client_canon") or "?",
+                "stage": row.get("current_stage") or "unknown",
+                "days": round(days, 1), "owner": row.get("owner") or "",
+            })
+    out["stalled_jobs"].sort(key=lambda x: x["days"], reverse=True)
+    out["stalled_jobs"] = out["stalled_jobs"][:10]
+
+    month_prefix = now.strftime("%Y-%m")
+    out["completed_this_month"] = sum(
+        1 for job in jobs if str(job.get("closed_at") or "").startswith(month_prefix))
+    try:
+        import config
+        quota = int((config.load() or {}).get("monthly_job_completion_quota") or 0)
+    except (TypeError, ValueError):
+        quota = 0
+    out["monthly_quota"] = max(0, quota)
+    if quota > 0:
+        out["quota_remaining"] = max(0, quota - out["completed_this_month"])
+        out["quota_percent"] = round(100 * out["completed_this_month"] / quota)
+    return out
+
+
 # ── CLI smoke test ─────────────────────────────────────────────────────────
 
 def _cli(argv):

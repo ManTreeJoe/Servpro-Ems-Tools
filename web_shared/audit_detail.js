@@ -216,6 +216,14 @@
         </div>
       </section>` : "";
 
+    const auditIssueCount = r.form_issues.length + r.photo_issues.length +
+      reqs.length + (MISFILED_ENABLED ? misItems.length : 0);
+    const auditDetails = auditIssueCount ? `
+      <details class="detail-audit-details">
+        <summary>File audit details <span>${auditIssueCount} item${auditIssueCount === 1 ? "" : "s"}</span></summary>
+        <div class="detail-audit-body">${formsSection}${photosSection}${reqSection}${misplacedSection}</div>
+      </details>` : cleanSection;
+
     // Job Details section removed in the 2026-07 streamline.
     const metaSection = "";
 
@@ -231,11 +239,7 @@
       <section class="detail-section crm-workspace" id="crm-workspace">
         <div class="crm-workspace-loading muted">Loading job workspace…</div>
       </section>
-      ${formsSection}
-      ${photosSection}
-      ${reqSection}
-      ${misplacedSection}
-      ${cleanSection}
+      ${auditDetails}
       ${metaSection}
       <div id="od-summary" class="od-summary" style="display:none;"></div>
       <footer class="detail-actions">
@@ -385,7 +389,12 @@
     } else {
       let pending = _crmWorkspaceLoads.get(cacheKey);
       if (!pending) {
-        pending = pywebview.api.crm_job_workspace(r.client);
+        pending = pywebview.api.crm_job_workspace(r.client, {
+          form_issues: r.form_issues || [], photo_issues: r.photo_issues || [],
+          note_issues: r.note_issues || [], requirements: r.requirements || [],
+          found: r.found, folder: r.folder || "", path: r.path || "",
+          trello_card_id: r.trello_card_id || "",
+        });
         _crmWorkspaceLoads.set(cacheKey, pending);
       }
       try { data = await pending; }
@@ -452,6 +461,29 @@
       return current !== "not_applicable" ? [name, icon] : null;
     }).filter(Boolean);
     const latestLog = logEntries.length ? logEntries[logEntries.length - 1] : null;
+    const progress = data.progress || { items: [], counts: {}, percent_complete: 0 };
+    const progressGroups = { overdue: [], required_now: [], completed: [] };
+    (progress.items || []).forEach((item) => (progressGroups[item.status] || progressGroups.required_now).push(item));
+    const requirementRows = (items, emptyText) => items.length ? items.map((item) =>
+      `<div class="crm-requirement crm-requirement-${escA(ctx, item.status)}">
+        <span class="crm-requirement-mark" aria-hidden="true">${item.status === "completed" ? "✓" : item.status === "overdue" ? "!" : "○"}</span>
+        <span><strong>${esc(ctx, item.label)}</strong><small>${esc(ctx, item.introduced_stage_label || "")} · ${esc(ctx, item.owner || "team")}${item.evidence ? ` · ${esc(ctx, item.evidence)}` : ""}</small></span>
+      </div>`).join("") : `<div class="muted crm-requirement-empty">${esc(ctx, emptyText)}</div>`;
+    const timelineRows = (data.timeline || []).filter((event) =>
+      ["crm_stage_changed", "crm_department_stage_changed", "crm_audit_state"].includes(event.event_type)).slice(0, 12).map((event) => {
+        let payload = event.payload_json || {};
+        if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch (_) { payload = {}; } }
+        let summary;
+        if (event.event_type === "crm_audit_state") {
+          summary = `File audit: ${payload.status || "checked"} · ${payload.issue_count || 0} issue${Number(payload.issue_count || 0) === 1 ? "" : "s"}`;
+        } else {
+          const department = payload.work_environment ? `${payload.work_environment}: ` : "";
+          const from = String(payload.from_stage || "start").replaceAll("_", " ");
+          const to = String(payload.to_stage || "updated").replaceAll("_", " ");
+          summary = department + from + " → " + to;
+        }
+        return `<div class="crm-timeline-row"><time>${esc(ctx, String(event.event_at || "").slice(0, 16).replace("T", " "))}</time><span>${esc(ctx, summary)}</span></div>`;
+      }).join("");
     const workspaceStateKey = "linguar.crm.workspace.expanded";
     let workspaceExpanded = false;
     try { workspaceExpanded = localStorage.getItem(workspaceStateKey) === "1"; }
@@ -477,7 +509,10 @@
           data.lifecycle_source === "manual" ? "Manual" : "Synced")}</span><span class="crm-workspace-chevron" aria-hidden="true">⌄</span></span>
       </button>
       <div class="crm-workspace-summary" aria-label="Job workspace summary">
+        <span class="crm-progress-rail" title="${progress.percent_complete || 0}% of requirements verified"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></span>
         <span class="crm-summary-pill"><small>Stage</small>${esc(ctx, lifecycleLabel)}</span>
+        ${(progress.counts?.overdue || 0) ? `<span class="crm-summary-count overdue">${progress.counts.overdue} overdue</span>` : ""}
+        ${(progress.counts?.required_now || 0) ? `<span class="crm-summary-count due">${progress.counts.required_now} due now</span>` : ""}
         ${data.priority && data.priority !== "normal" ? `<span class="crm-summary-pill priority-${escA(ctx, data.priority)}"><small>Priority</small>${esc(ctx, priorityLabel)}</span>` : ""}
         <span class="crm-summary-envs">${activeEnvironments.length ? activeEnvironments.map(([name, icon]) =>
           `<span class="crm-summary-env crm-summary-env-${name.toLowerCase()}"><span aria-hidden="true">${icon}</span>${esc(ctx, name)}</span>`).join("") : `<span class="muted">No work type selected</span>`}</span>
@@ -485,6 +520,14 @@
         <span class="crm-summary-latest">${latestLog ? `<small>Latest</small><strong>${esc(ctx, latestLog.work_type || "Update")}</strong>${latestLog.work_date ? ` · ${esc(ctx, latestLog.work_date)}` : ""}${latestLog.status ? ` · ${esc(ctx, latestLog.status.replaceAll("_", " "))}` : ""}` : `<span class="muted">No job-log entries yet</span>`}</span>
       </div>
       <div class="crm-workspace-body" ${workspaceExpanded ? "" : "hidden"}>
+      <section class="crm-progress-detail" aria-label="Job requirements">
+        ${progressGroups.overdue.length ? `<div class="crm-requirement-group overdue"><h4>Overdue from earlier stages</h4>${requirementRows(progressGroups.overdue, "")}</div>` : ""}
+        <div class="crm-requirement-group"><h4>Required now</h4>${requirementRows(progressGroups.required_now, "Nothing new is required at this stage.")}</div>
+        <details class="crm-progress-history"><summary>Completed &amp; history <span>${progressGroups.completed.length} completed · ${(data.timeline || []).length} events</span></summary>
+          <div class="crm-history-grid"><div><h4>Completed requirements</h4>${requirementRows(progressGroups.completed, "No verified requirements yet.")}</div>
+          <div><h4>Stage history</h4>${timelineRows || `<div class="muted crm-requirement-empty">Stage changes will appear here.</div>`}</div></div>
+        </details>
+      </section>
       <div class="crm-trello-link" data-crm-trello><span class="muted">Checking pinned Trello card…</span></div>
       <div class="crm-controls">
         <label>Lifecycle<select data-crm-field="lifecycle_stage">${options(stages, data.lifecycle_stage)}</select></label>
@@ -756,6 +799,7 @@
         "transition:width .15s ease;}" +
         ".cl-bar.cl-bar-done > i{background:var(--green,#3fb950);}" +
         ".detail-more{display:flex;flex-direction:row;flex-wrap:wrap;gap:4px;}" +
+        ".detail-audit-details{margin:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface)}.detail-audit-details>summary{cursor:pointer;padding:9px 11px;font-size:11px;font-weight:700}.detail-audit-details>summary span{margin-left:5px;color:var(--text-muted);font-weight:400}.detail-audit-body{padding:0 10px 8px}.detail-audit-body .detail-section{margin:7px 0}" +
         ".detail-more .action-btn{flex:0 0 auto;}" +
         ".secondary-action{display:none}.detail-actions.show-secondary .secondary-action{display:inline-flex}" +
         // Sticky job-name header that shrinks as you scroll (Trello-style).
@@ -769,6 +813,7 @@
         "background:var(--surface,#222);margin:8px 0 12px;}" +
         ".crm-workspace-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:0;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer}.crm-workspace-toggle:focus-visible{outline:2px solid var(--accent,#4c9aff);outline-offset:5px;border-radius:4px}.crm-workspace-title{display:flex;flex-direction:column;gap:2px}.crm-workspace-title>strong{font-size:14px}.crm-workspace-title>.muted{font-size:11px}.crm-workspace-toggle-end{display:flex;align-items:center;gap:8px}.crm-workspace-chevron{font-size:20px;line-height:1;color:var(--text-muted);transition:transform .14s ease}.crm-workspace.is-expanded .crm-workspace-chevron{transform:rotate(180deg)}" +
         ".crm-workspace-summary{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px;font-size:10.5px}.crm-summary-pill,.crm-summary-env,.crm-summary-trello{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid var(--border);border-radius:999px;background:var(--bg)}.crm-summary-pill small,.crm-summary-latest small{color:var(--text-muted);text-transform:uppercase;font-size:8px;font-weight:700;letter-spacing:.04em}.crm-summary-pill.priority-high,.crm-summary-pill.priority-urgent{border-color:#b7791f;color:#ffe5a1}.crm-summary-envs{display:inline-flex;gap:4px;flex-wrap:wrap}.crm-summary-env-ems{border-color:#4aa8e8}.crm-summary-env-contents{border-color:#d7a72e}.crm-summary-env-recon{border-color:#c67b47}.crm-summary-trello.linked{border-color:#287a50;color:#baf2d0}.crm-summary-trello.conflict{border-color:#b7791f;color:#ffe5a1}.crm-summary-trello.missing{border-style:dashed}.crm-summary-latest{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)}.crm-summary-latest strong{color:var(--text);margin-left:4px}.crm-workspace-body{margin-top:11px;padding-top:11px;border-top:1px solid var(--border)}.crm-workspace-body[hidden]{display:none}" +
+        ".crm-progress-rail{flex:0 0 58px;height:5px;border-radius:4px;background:var(--surface-2);overflow:hidden}.crm-progress-rail>i{display:block;height:100%;background:#46a66b}.crm-summary-count{padding:3px 7px;border-radius:999px;font-size:10px;font-weight:700}.crm-summary-count.overdue{background:#5b280f;color:#ffd2b5}.crm-summary-count.due{background:#183b60;color:#c9e4ff}.crm-progress-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}.crm-requirement-group{padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg)}.crm-requirement-group.overdue{border-color:#8a4a24}.crm-requirement-group h4,.crm-history-grid h4{margin:0 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)}.crm-requirement{display:flex;align-items:flex-start;gap:7px;padding:5px 0;border-top:1px solid color-mix(in srgb,var(--border) 65%,transparent)}.crm-requirement:first-of-type{border-top:0}.crm-requirement-mark{display:grid;place-items:center;flex:0 0 18px;height:18px;border-radius:50%;background:var(--surface-2);font-weight:800;font-size:10px}.crm-requirement-overdue .crm-requirement-mark{background:#6a3014;color:#ffd2b5}.crm-requirement-completed .crm-requirement-mark{background:#184e34;color:#baf2d0}.crm-requirement>span:last-child{display:flex;min-width:0;flex-direction:column}.crm-requirement strong{font-size:11px}.crm-requirement small{font-size:9px;color:var(--text-muted);text-transform:capitalize}.crm-requirement-empty{font-size:10px;padding:4px 0}.crm-progress-history{grid-column:1/-1;border-top:1px solid var(--border);padding-top:7px}.crm-progress-history>summary{cursor:pointer;font-size:11px;font-weight:700}.crm-progress-history>summary span{margin-left:5px;color:var(--text-muted);font-weight:400}.crm-history-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:9px 2px 2px}.crm-timeline-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:7px;padding:4px 0;font-size:10px}.crm-timeline-row time{color:var(--text-muted)}" +
         ".crm-job-log{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}" +
         ".crm-log-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}.crm-log-head>div:first-child{display:flex;flex-direction:column;gap:2px}" +
         ".crm-log-list{display:flex;flex-direction:column;gap:5px}.crm-log-row{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}" +
@@ -787,7 +832,7 @@
         ".crm-env select,.crm-env input{width:100%;box-sizing:border-box;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 6px;font:inherit;font-size:10px}.crm-env-ems.has-stage{border-color:#4aa8e8}.crm-env-contents.has-stage{border-color:#d7a72e}.crm-env-recon.has-stage{border-color:#c67b47}" +
         ".crm-relations{margin-top:7px;font-size:11px;}" +
         "@media(prefers-reduced-motion:reduce){.crm-workspace-chevron{transition:none}}" +
-        "@media(max-width:700px){.crm-controls,.crm-env-row,.crm-log-form{grid-template-columns:1fr}.crm-workspace{padding:9px}.crm-workspace-title>.muted{display:none}.crm-summary-latest{flex-basis:100%}.crm-log-row{grid-template-columns:68px minmax(0,1fr)}.crm-log-row>button{grid-column:2}.crm-log-head{align-items:flex-start;flex-direction:column}}";
+        "@media(max-width:700px){.crm-controls,.crm-env-row,.crm-log-form,.crm-progress-detail,.crm-history-grid{grid-template-columns:1fr}.crm-workspace{padding:9px}.crm-workspace-title>.muted{display:none}.crm-summary-latest{flex-basis:100%}.crm-progress-history{grid-column:1}.crm-log-row{grid-template-columns:68px minmax(0,1fr)}.crm-log-row>button{grid-column:2}.crm-log-head{align-items:flex-start;flex-direction:column}}";
       document.head.appendChild(st);
     }
     // ⋯ More — reveal the less-used row of actions.

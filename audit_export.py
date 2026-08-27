@@ -171,6 +171,23 @@ def update_audit_backlog(results):
         entry["found"]       = r.get("found", True)
         entry["week_start"]  = week
         entry["last_audited"]= now.isoformat()
+        # Preserve the job's audit story instead of replacing it with the
+        # newest scan.  One row per day, plus any same-day state change,
+        # keeps reports useful without recording identical refreshes.
+        history = entry.get("history") if isinstance(entry.get("history"), list) else []
+        snapshot = {
+            "audited_at": now.isoformat(), "status": entry["status"],
+            "form_issues": list(entry["form_issues"]),
+            "photo_issues": list(entry["photo_issues"]),
+            "note_issues": list(entry["note_issues"]),
+            "missing": list(entry["missing"]), "aging": entry["aging"],
+        }
+        comparable = {k: v for k, v in snapshot.items() if k != "audited_at"}
+        prior_snapshot = history[-1] if history else {}
+        prior_comparable = {k: v for k, v in prior_snapshot.items() if k != "audited_at"}
+        if prior_date != today_date or comparable != prior_comparable:
+            history.append(snapshot)
+        entry["history"] = history[-500:]
         # One bump per calendar day per job — the user re-runs audits
         # many times (jumping around the workflow), so per-run bumps
         # inflated audit_count into the hundreds. Per-day matches the
@@ -200,6 +217,24 @@ def update_audit_backlog(results):
         pass
 
     _write_backlog_md(all_jobs, now)
+
+
+def job_audit_history(client: str) -> list[dict]:
+    """Oldest-first preserved audit states for one displayed job name."""
+    wanted = " ".join((client or "").lower().split())
+    if not wanted:
+        return []
+    try:
+        jobs = load_audit_backlog().get("jobs", [])
+    except Exception:
+        return []
+    matches = [j for j in jobs
+               if " ".join(str(j.get("client") or "").lower().split()) == wanted]
+    history = []
+    for job in matches:
+        history.extend(job.get("history") or [])
+    history.sort(key=lambda row: row.get("audited_at") or "")
+    return history
 
 
 def _week_label(ws):

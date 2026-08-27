@@ -1326,6 +1326,7 @@ def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
     if source not in ("manual", "trello", "migration", "system"):
         raise ValueError(f"unknown lifecycle source: {source}")
     now = _now_iso()
+    stage_change = None
     with _LOCK, _connect() as c:
         row = c.execute("SELECT * FROM jobs WHERE canon_key=?",
                         (canon_key_value,)).fetchone()
@@ -1333,6 +1334,7 @@ def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
             raise KeyError(canon_key_value)
         updates, values = [], []
         if lifecycle_stage and lifecycle_stage != _row_get(row, "lifecycle_stage"):
+            stage_change = (_row_get(row, "lifecycle_stage") or "", lifecycle_stage)
             updates += ["lifecycle_stage=?", "stage_entered_at=?", "closed_at=?",
                         "lifecycle_source=?"]
             values += [lifecycle_stage, now,
@@ -1347,6 +1349,10 @@ def set_master_job_state(canon_key_value: str, *, lifecycle_stage: str = "",
             c.execute("UPDATE jobs SET " + ", ".join(updates)
                       + " WHERE canon_key=?", values + [canon_key_value])
             c.commit()
+    if stage_change:
+        log_event(canon_key_value, "crm_stage_changed", payload={
+            "from_stage": stage_change[0], "to_stage": stage_change[1],
+            "source": source})
     return get_master_job(canon_key_value)
 
 
@@ -1363,6 +1369,7 @@ def set_work_environment_state(canon_key_value: str, work_environment: str,
     if not job:
         raise KeyError(canon_key_value)
     now = _now_iso()
+    stage_change = None
     with _LOCK, _connect() as c:
         old = c.execute("""
             SELECT * FROM crm_job_departments
@@ -1370,6 +1377,7 @@ def set_work_environment_state(canon_key_value: str, work_environment: str,
         """, (job["job_id"], env)).fetchone()
         entered = (_row_get(old, "stage_entered_at") if old else "")
         if not old or (stage and stage != _row_get(old, "stage")):
+            stage_change = ((_row_get(old, "stage") if old else "") or "", stage)
             entered = now
         c.execute("""
             INSERT INTO crm_job_departments
@@ -1391,6 +1399,10 @@ def set_work_environment_state(canon_key_value: str, work_environment: str,
             SELECT * FROM crm_job_departments
             WHERE job_id=? AND work_environment=?
         """, (job["job_id"], env)).fetchone()
+    if stage_change:
+        log_event(canon_key_value, "crm_department_stage_changed", payload={
+            "work_environment": env, "from_stage": stage_change[0],
+            "to_stage": stage_change[1], "owner": owner})
     return dict(row)
 
 

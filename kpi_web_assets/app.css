@@ -99,6 +99,7 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 }
 .dashboard .card.weekly { grid-column: 1 / -1; }     /* full width */
 .dashboard .card.repeat { grid-column: 1 / -1; }
+.dashboard .card.performance { grid-column: 1 / -1; }
 
 .card {
   background: var(--surface);
@@ -240,6 +241,23 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 }
 .longest-list .days.hot { color: var(--red); }
 .longest-list .empty { color: var(--text-muted); font-style: italic; }
+
+.quota-rail { height: 7px; border-radius: 5px; background: var(--surface-2); overflow: hidden; margin: -3px 0 13px; }
+.quota-rail i { display: block; height: 100%; background: var(--green); }
+.performance-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.performance-columns .subhead { margin-top: 0; }
+.performance-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); text-transform: capitalize; }
+.performance-row:last-child { border-bottom: 0; }
+.performance-row strong { color: var(--amber); font-size: 12px; font-variant-numeric: tabular-nums; }
+.performance-row small { color: var(--text-muted); font-size: 10px; }
+.performance-row.stalled { grid-template-columns: minmax(0,1fr) auto; }
+.performance-row.stalled span { display: flex; flex-direction: column; text-transform: none; }
+.performance-row.stalled span small { text-transform: capitalize; }
+
+@media (max-width: 760px) {
+  .dashboard { grid-template-columns: 1fr; }
+  .performance-columns { grid-template-columns: 1fr; }
+}
 
 /* ── Repeat-offenders table ────────────────────────────────────── */
 .empty-inline {
