@@ -420,6 +420,7 @@ class HomeApi:
 
     # ── Top-level methods used by the shell itself ───────────────────
     def header(self):
+        import paths as _paths
         now = _dt.datetime.now()
         h = now.hour
         if h < 12:    greet = "Good morning"
@@ -436,6 +437,7 @@ class HomeApi:
             # late reply yanks them somewhere else.
             "last_panel": self.get_last_panel(),
             "work_environment": self.active_work_environment(),
+            "is_trial": bool(getattr(_paths, "IS_TRIAL", False)),
         }
 
     def active_work_environment(self) -> str:

@@ -15,12 +15,14 @@
   #define AppGuid   "9C6B4E2A-7F3D-4B1E-9A2C-3D5F7A1B9C03"
   #define OutBase   "Linguar-Hub-Trial-Setup"
   #define DirLeaf   "Linguar Hub Trial"
+  #define SetupIcon "linguar_hub_trial.ico"
 #else
   #define MyAppName "Linguar Hub"
   #define MyAppExe  "Linguar Hub.exe"
   #define AppGuid   "9C6B4E2A-7F3D-4B1E-9A2C-3D5F7A1B9C02"
   #define OutBase   "Linguar-Hub-Setup"
   #define DirLeaf   "Linguar Hub"
+  #define SetupIcon "linguar_hub.ico"
 #endif
 
 #ifndef SourceDir
@@ -49,6 +51,7 @@ OutputBaseFilename={#OutBase}-{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile={#SetupIcon}
 ; Close a running copy automatically, then reopen it after install.
 CloseApplications=yes
 RestartApplications=yes
