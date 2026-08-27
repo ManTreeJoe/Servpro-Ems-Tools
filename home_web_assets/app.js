@@ -67,33 +67,26 @@ async function loadShell() {
   renderWorkEnvironmentMark(state.header?.work_environment || "EMS");
 }
 
-function restorationCycleIcon(active, isTrial) {
-  const env = String(active || "ALL").toUpperCase();
-  const frame = isTrial ? "#ff7900" : "#86f000";
-  const dim = "#3b3f3d";
-  const ems = env === "ALL" || env === "EMS";
-  const contents = env === "ALL" || env === "CONTENTS";
-  const recon = env === "ALL" || env === "RECON";
-  const leftArc = env === "ALL" ? frame : (ems ? "#2688ff" : (contents ? "#e8f500" : dim));
-  const rightArc = env === "ALL" ? frame : (ems ? "#2688ff" : (recon ? "#ff7900" : dim));
-  const bottomArc = env === "ALL" ? frame : (contents ? "#e8f500" : (recon ? "#ff7900" : dim));
-  return `<svg viewBox="0 0 64 64" role="img" aria-label="${esc(env)} restoration">
-    <rect x="2" y="2" width="60" height="60" rx="13" fill="#090b0a" stroke="${frame}" stroke-width="3"/>
-    <path d="M29 8C25 14 23 17 23 21a9 9 0 0 0 18 0c0-4-3-8-6-13l-3-5z" fill="${ems ? "#2688ff" : dim}"/>
-    <path d="M18 25A21 21 0 0 1 27 12" fill="none" stroke="${leftArc}" stroke-width="5" stroke-linecap="square"/>
-    <path d="M37 12A21 21 0 0 1 46 25" fill="none" stroke="${rightArc}" stroke-width="5" stroke-linecap="square"/>
-    <path d="M18 45A21 21 0 0 0 46 45" fill="none" stroke="${bottomArc}" stroke-width="5" stroke-linecap="square"/>
-    <path d="M24 29l8-7 8 7v13H24z" fill="${frame}"/><rect x="29" y="34" width="6" height="8" fill="#090b0a"/>
-    <path d="M8 39l9-5 9 5-9 5zM8 39v10l9 5V44M26 39v10l-9 5" fill="none" stroke="${contents ? "#e8f500" : dim}" stroke-width="3" stroke-linejoin="round"/>
-    <path d="M44 34l3-3 11 11-3 3-4-4-10 10-3-3 10-10z" fill="${recon ? "#ff7900" : dim}"/>
-    ${isTrial ? '<path d="M51 8l1.5 3.5L56 13l-3.5 1.5L51 18l-1.5-3.5L46 13l3.5-1.5z" fill="#ff7900"/>' : ""}
+function workEnvironmentIcon(active) {
+  const env = String(active || "EMS").toUpperCase();
+  let symbol;
+  if (env === "CONTENTS") {
+    symbol = `<path d="M14 23l18-10 18 10-18 10zM14 23v20l18 10 18-10V23M32 33v20" fill="none" stroke="#f2e500" stroke-width="5" stroke-linejoin="round"/>`;
+  } else if (env === "RECON") {
+    symbol = `<path d="M17 15l8-7 19 18-8 8-6-6-15 18-7-6 16-18z" fill="#ff7900"/>`;
+  } else {
+    symbol = `<path d="M32 7C25 19 19 27 19 36a13 13 0 0 0 26 0C45 27 39 19 32 7z" fill="#2688ff"/>`;
+  }
+  return `<svg viewBox="0 0 64 64" role="img" aria-label="${esc(env)} workspace">
+    <rect x="2" y="2" width="60" height="60" rx="13" fill="#111512" stroke="#59615c" stroke-width="3"/>
+    ${symbol}
   </svg>`;
 }
 
 function renderWorkEnvironmentMark(active) {
   const mark = document.getElementById("work-env-mark");
   if (!mark) return;
-  mark.innerHTML = restorationCycleIcon(active, !!state.header?.is_trial);
+  mark.innerHTML = workEnvironmentIcon(active);
   mark.title = `${active === "CONTENTS" ? "Contents" : active === "RECON" ? "Recon" : "EMS"} workspace`;
 }
 

@@ -41,6 +41,19 @@ ROOT_INDEX_HTML = os.path.join(_HERE, "_ems_root_index.html")
 _INSTANCE_MUTEX = None
 
 
+def _set_windows_app_identity(is_trial=False):
+    """Give each channel its own taskbar group and icon-cache identity."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        app_id = ("Servpro.LinguarHub.Trial.2026"
+                  if is_trial else "Servpro.LinguarHub.Main.2026")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+    except Exception:
+        pass
+
+
 def _instance_mutex_name():
     """Keep Main and Trial single-instance within their own channels.
 
@@ -1049,6 +1062,7 @@ def main(argv=None):
         return
     _ensure_root_index()
     import paths as _paths
+    _set_windows_app_identity(getattr(_paths, "IS_TRIAL", False))
     # Dated copies of state.json / ems_jobs.db / config.json before the
     # app touches any of them. Threaded, and swallows everything — a
     # backup that can break startup is worse than no backup.

@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.9",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.9",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.9/Linguar-Hub-Trial-Setup-1.6.0-trial.9.exe",
-  "notes": "Sets the selected property-hub icon directly on the running Windows taskbar window and fixes the false update prompt by embedding the installed release version."
+  "version": "1.6.0-trial.10",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.10",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.10/Linguar-Hub-Trial-Setup-1.6.0-trial.10.exe",
+  "notes": "Breaks the old Windows taskbar icon cache with separate Main/Trial app identities. The in-app workspace mark is now one symbol at a time: water for EMS, box for Contents, and hammer for Recon."
 }

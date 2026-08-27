@@ -16,6 +16,7 @@
   #define OutBase   "Linguar-Hub-Trial-Setup"
   #define DirLeaf   "Linguar Hub Trial"
   #define SetupIcon "linguar_hub_trial.ico"
+  #define AppUserModelId "Servpro.LinguarHub.Trial.2026"
 #else
   #define MyAppName "Linguar Hub"
   #define MyAppExe  "Linguar Hub.exe"
@@ -23,6 +24,7 @@
   #define OutBase   "Linguar-Hub-Setup"
   #define DirLeaf   "Linguar Hub"
   #define SetupIcon "linguar_hub.ico"
+  #define AppUserModelId "Servpro.LinguarHub.Main.2026"
 #endif
 
 #ifndef SourceDir
@@ -80,9 +82,9 @@ Type: files; Name: "{autodesktop}\EMS Tools Trial.lnk"
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; AppUserModelID: "{#AppUserModelId}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; AppUserModelID: "{#AppUserModelId}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExe}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
