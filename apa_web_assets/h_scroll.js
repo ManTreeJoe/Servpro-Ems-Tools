@@ -15,7 +15,8 @@
     // engages when the mousedown lands on the container itself or
     // inert children.
     return !!el.closest(
-      "button, a, input, textarea, select, [contenteditable], [data-no-drag]");
+      "button, a, input, textarea, select, [contenteditable], " +
+      "[draggable=\"true\"], .item, [data-no-drag]");
   }
 
   function attachDragScroll(el) {
