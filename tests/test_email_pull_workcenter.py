@@ -68,6 +68,23 @@ def test_contact_picker_keeps_adjuster_separate(monkeypatch):
     assert result["customer_missing"] is False
 
 
+def test_contact_picker_puts_job_info_email_before_trello(monkeypatch):
+    api = audit_web.Api()
+    monkeypatch.setattr(api, "trello_enrichment", lambda *_a, **_k: {
+        "ok": True, "customer_email": "old-card@example.com",
+        "adjuster_email": "", "contacts": [],
+    })
+    fake_db = types.SimpleNamespace(find_job_by_name=lambda _name: {
+        "email": "correct-job-info@example.com", "adjuster_email": "",
+    })
+    monkeypatch.setitem(sys.modules, "ems_db", fake_db)
+    result = api.get_job_contacts("Customer", "card1")
+    assert result["contacts"][0] == {
+        "kind": "Customer", "email": "correct-job-info@example.com",
+        "source": "Job Info", "field": "",
+    }
+
+
 def test_workcenter_uses_configured_url(monkeypatch):
     import workcenter_client
 
@@ -96,4 +113,4 @@ def test_every_shared_card_loader_has_the_new_version():
         marker = "audit_detail.js?v="
         if marker in text:
             versions.add(text.split(marker, 1)[1].split('"', 1)[0])
-    assert versions == {"20260826a"}
+    assert versions == {"20260827b"}

@@ -1589,10 +1589,16 @@
     } else if (action === "job-info") {
       await openJobInfoModal(row, ctx);
     } else if (action === "copy-client") {
-      // Always copy as "First Last" when it's a Last,First personal name.
-      const nm = _firstLast(row.client);
+      const info = await pywebview.api.job_info_copy_data(row.client);
+      if (!info?.ok || !info.name) {
+        setStatus(ctx, info?.error || "No customer name saved in Job Info", "warn");
+        return;
+      }
+      // Job Info owns the value; presentation still uses First Last for a
+      // personal Last, First name.
+      const nm = _firstLast(info.name);
       const ok = await copyText(ctx, nm);
-      setStatus(ctx, ok ? `📋 Copied: ${nm}` : "Couldn't copy", ok ? "ok" : "error");
+      setStatus(ctx, ok ? `📋 Copied from Job Info: ${nm}` : "Couldn't copy", ok ? "ok" : "error");
     } else if (action === "copy-path") {
       if (!row.path) { setStatus(ctx, "No folder path for this job", "warn"); return; }
       const ok = await copyText(ctx, row.path);
@@ -1601,7 +1607,7 @@
       const res = await pywebview.api.get_claim_number(row.client);
       if (res && res.ok && res.claim) {
         const ok = await copyText(ctx, res.claim);
-        setStatus(ctx, ok ? `📋 Copied claim #: ${res.claim}` : "Couldn't copy", ok ? "ok" : "error");
+        setStatus(ctx, ok ? `📋 Copied claim # from ${res.source || "Job Info"}: ${res.claim}` : "Couldn't copy", ok ? "ok" : "error");
       } else {
         setStatus(ctx, (res && res.error) || "No claim # found", "warn");
       }
@@ -1609,7 +1615,7 @@
       const res = await pywebview.api.get_address(row.client);
       if (res && res.ok && res.address) {
         const ok = await copyText(ctx, res.address);
-        setStatus(ctx, ok ? `📋 Copied address: ${res.address}` : "Couldn't copy",
+        setStatus(ctx, ok ? `📋 Copied address from ${res.source || "Job Info"}: ${res.address}` : "Couldn't copy",
                   ok ? "ok" : "error");
       } else {
         setStatus(ctx, (res && res.error) || "No address found", "warn");

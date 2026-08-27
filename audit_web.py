@@ -1710,6 +1710,16 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             seen.add(match.group(0).lower())
             contacts.append({"kind": kind, "email": match.group(0),
                              "source": source, "field": field})
+        # Job Info is the user-editable source of truth, so add it first.
+        # `seen` then prevents an identical Trello value from replacing its
+        # label/source while still allowing other card contacts to appear.
+        try:
+            import ems_db as _db
+            job = _db.find_job_by_name(client) or {}
+            add("Customer", job.get("email"), "Job Info")
+            add("Adjuster", job.get("adjuster_email"), "Job Info")
+        except Exception:
+            pass
         try:
             tr = self.trello_enrichment(client, card_id)
             if tr and tr.get("ok"):
@@ -1718,13 +1728,6 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                         "Trello", c.get("field") or "")
                 add("Customer", tr.get("customer_email"), "Trello")
                 add("Adjuster", tr.get("adjuster_email"), "Trello")
-        except Exception:
-            pass
-        try:
-            import ems_db as _db
-            job = _db.find_job_by_name(client) or {}
-            add("Customer", job.get("email"), "saved job")
-            add("Adjuster", job.get("adjuster_email"), "saved job")
         except Exception:
             pass
         order = {"Customer": 0, "Property manager / POC": 1,
@@ -1949,6 +1952,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         try:
             import ems_db
             job = ems_db.find_job_by_name(client) or {}
+            try:
+                import job_settings
+                info = job_settings.stored_values(job)
+            except Exception:
+                info = {}
             links = ems_db.get_links(job.get("canon_key") or "") if job else []
             by_type = {}
             for link in links or []:
@@ -1958,17 +1966,35 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                     by_type[kind] = value
             cid = (card_id or "").strip()
             return {"ok": True,
-                    "job": job.get("display_name") or client,
-                    "carrier": job.get("carrier") or "",
-                    "claim_number": job.get("claim_number") or "",
-                    "address": job.get("address") or "",
-                    "customer_email": job.get("email") or "",
-                    "adjuster_name": job.get("adjuster_name") or "",
-                    "adjuster_email": job.get("adjuster_email") or "",
+                    "job": info.get("customer_name") or job.get("display_name") or client,
+                    "carrier": info.get("carrier") or job.get("carrier") or "",
+                    "claim_number": info.get("claim_number") or job.get("claim_number") or "",
+                    "address": info.get("address") or job.get("address") or "",
+                    "customer_email": info.get("email") or job.get("email") or "",
+                    "adjuster_name": info.get("adjuster_name") or job.get("adjuster_name") or "",
+                    "adjuster_email": info.get("adjuster_email") or job.get("adjuster_email") or "",
                     "trello": f"https://trello.com/c/{cid}" if cid else "",
                     "companycam": by_type.get("companycam", ""),
                     "xactanalysis": (by_type.get("xactanalysis", "")
                                       or by_type.get("xa", ""))}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def job_info_copy_data(self, client: str) -> dict:
+        """Copy-button facts from the saved Job Info record, never the row."""
+        try:
+            import ems_db
+            import job_settings
+            job = ems_db.find_job_by_name(client) or {}
+            if not job:
+                return {"ok": False, "error": "job is not in Job Info"}
+            values = job_settings.stored_values(job)
+            return {"ok": True,
+                    "name": values.get("customer_name") or job.get("display_name") or client,
+                    "claim_number": values.get("claim_number") or "",
+                    "address": values.get("address") or "",
+                    "email": values.get("email") or "",
+                    "adjuster_email": values.get("adjuster_email") or ""}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
@@ -2983,6 +3009,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         if not client:
             return {"ok": False, "error": "no client"}
         try:
+            import ems_db
+            job = ems_db.find_job_by_name(client) or {}
+            claim = (job.get("claim_number") or "").strip()
+            if claim:
+                return {"ok": True, "claim": claim, "source": "Job Info"}
+        except Exception:
+            pass
+        try:
             import trello_client as tc
             card_id = persistence.get_trello_card_id(client) or ""
             if not card_id:
@@ -2993,7 +3027,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                      .get("CLAIM NUMBER") or "").strip()
             if not claim:
                 return {"ok": False, "error": "no claim # on the card"}
-            return {"ok": True, "claim": claim}
+            return {"ok": True, "claim": claim, "source": "Trello fallback"}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
@@ -3009,6 +3043,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         if not client:
             return {"ok": False, "error": "no client"}
         try:
+            import ems_db
+            job = ems_db.find_job_by_name(client) or {}
+            addr = (job.get("address") or "").strip()
+            if addr:
+                return {"ok": True, "address": addr, "source": "Job Info"}
+        except Exception:
+            pass
+        try:
             import trello_client as tc
             card_id = persistence.get_trello_card_id(client) or ""
             if not card_id:
@@ -3020,7 +3062,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                     or cust.get("STREET") or "").strip()
             if not addr:
                 return {"ok": False, "error": "no address on the card"}
-            return {"ok": True, "address": addr}
+            return {"ok": True, "address": addr, "source": "Trello fallback"}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 

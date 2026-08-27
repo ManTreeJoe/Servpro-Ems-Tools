@@ -21,6 +21,8 @@ def api(monkeypatch):
                         lambda c: state["pin"])
     monkeypatch.setattr(tc, "get_card",
                         lambda cid, **kw: {"desc": state["desc"]})
+    import ems_db
+    monkeypatch.setattr(ems_db, "find_job_by_name", lambda _c: {})
     return a, state
 
 
