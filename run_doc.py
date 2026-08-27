@@ -14,6 +14,7 @@ import calendar as _calendar
 from datetime import datetime
 
 import config
+import paths
 import persistence
 from audit_logic import detect_activity, audit_jobs as _audit_jobs_core
 
@@ -23,7 +24,17 @@ from audit_logic import detect_activity, audit_jobs as _audit_jobs_core
 # still work via the module __getattr__ below; in-module code uses the
 # _runs_dir() / _audit_base() getters.
 def _runs_dir():
-    return config.load().get("runs_dir") or ""
+    configured = config.load().get("runs_dir") or ""
+    # A mapped archive can open successfully while containing no current
+    # Run Docs. Prefer the current per-user SharePoint/OneDrive library when
+    # auto-detection finds it; keep the configured path as the fallback.
+    try:
+        detected = paths.auto_detect().get("runs_dir") or ""
+        if detected and os.path.isdir(detected):
+            return detected
+    except Exception:
+        pass
+    return configured
 
 
 def _audit_base():

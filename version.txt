@@ -1,6 +1,6 @@
 {
-  "version": "1.5.7",
+  "version": "1.5.8",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.7/Linguar-Hub-Setup-1.5.7.exe",
-  "notes": "Reads IE Run Docs from the real Daily Run/year/EMS/month structure. Also includes the repeated-update, employee folder, and shared online job database fixes."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.8/Linguar-Hub-Setup-1.5.8.exe",
+  "notes": "Finds the current IE EMS Daily Run SharePoint library on each employee PC instead of accepting a reachable but stale X-drive archive. Includes the repeated-update and shared online job fixes."
 }
