@@ -197,10 +197,7 @@ function renderBoard() {
     cardEl.addEventListener("dragstart", onCardDragStart);
     cardEl.addEventListener("dragend", onCardDragEnd);
     cardEl.addEventListener("contextmenu", onCardContext);
-    cardEl.querySelector(".kcard-title")?.addEventListener("click", () => {
-      const url = cardEl.dataset.url;
-      if (url) pywebview.api.open_url(url);
-    });
+    cardEl.querySelector(".kcard-title")?.addEventListener("click", () => onAuditCard(cardEl));
     cardEl.querySelector('[data-act="audit"]')?.addEventListener("click", (e) => {
       e.stopPropagation(); onAuditCard(cardEl);
     });
@@ -256,7 +253,7 @@ function renderCard(c) {
                data-list-id="${escapeAttr(c.list_id)}"
                data-url="${escapeAttr(c.url)}"
                data-client="${escapeAttr(c.client)}">
-    <div class="kcard-title" title="Open in Trello">${escapeHtml(c.client || "(no name)")}</div>
+    <div class="kcard-title" title="Open job audit">${escapeHtml(c.client || "(no name)")}</div>
     ${chips ? `<div class="kcard-chips">${chips}</div>` : ""}
     <div class="kcard-actions">
       <button class="kbtn" data-act="audit" title="Run audit on this job">🔎</button>
@@ -345,7 +342,7 @@ async function onAuditCard(cardEl) {
   const res = await pywebview.api.audit_card(client);
   if (!res?.ok) { setStatus(`Audit failed: ${res?.error || "?"}`, "error"); return; }
   setStatus("");
-  openAuditModal(res);
+  openAuditModal(res, cardEl.dataset.url || "");
 }
 
 async function onFlagCard(cardEl) {
@@ -376,36 +373,59 @@ function onCardContext(ev) {
 }
 
 // ── Audit result modal (compact summary) ─────────────────────────
-function openAuditModal(res) {
+function openAuditModal(res, trelloUrl = "") {
   const issues = [];
   (res.form_issues || []).forEach((f) => issues.push({ kind: "Form", text: f }));
   (res.photo_issues || []).forEach((p) => issues.push({ kind: "Photos", text: p }));
   (res.requirements || []).forEach((r) => issues.push({ kind: "Photos", text: r }));
   const clean = res.found && !issues.length;
-  const body = !res.found
+  const missing = !res.found
     ? `<div class="aud-bad">📁 No job folder found for this client.</div>`
     : clean
       ? `<div class="aud-ok">✓ All required forms &amp; photos present.</div>`
       : `<ul class="aud-list">${issues.map((i) =>
           `<li><span class="aud-tag">${escapeHtml(i.kind)}</span> ${escapeHtml(i.text)}</li>`).join("")}</ul>`;
+  const facts = [
+    ["Carrier", res.carrier],
+    ["Technicians", (res.techs || []).join(", ")],
+    ["Last seen", res.last_seen],
+    ["Job folder", res.folder],
+  ].filter(([, value]) => value);
+  const activity = (res.activity || []).length
+    ? `<div class="aud-chips">${res.activity.map((a) => `<span>${escapeHtml(a)}</span>`).join("")}</div>`
+    : `<div class="aud-empty">No activity recorded for this run.</div>`;
+  const misplaced = [...(res.misplaced_forms || []), ...(res.misplaced_photos || [])];
+  const misplacedHtml = misplaced.length
+    ? `<ul class="aud-list">${misplaced.map((item) => `<li><span class="aud-tag aud-warn">Moved</span> ${escapeHtml(item.label || item)}${item.where ? ` <small>${escapeHtml(item.where)}</small>` : ""}</li>`).join("")}</ul>`
+    : "";
+  const body = `
+    ${facts.length ? `<section class="aud-section"><h3>Job details</h3><dl class="aud-facts">${facts.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl></section>` : ""}
+    <section class="aud-section"><h3>Current audit</h3>${missing}${misplacedHtml}</section>
+    <section class="aud-section"><h3>Run activity</h3>${activity}</section>`;
   const w = document.createElement("div");
-  w.className = "modal-scrim";
+  w.className = "modal-scrim audit-overlay";
   w.innerHTML = `
-    <div class="modal-box">
+    <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job audit">
       <header class="modal-head">
-        <div class="modal-title">🔎 Audit — ${escapeHtml(res.client || "")}</div>
-        <div class="modal-sub">${clean ? "Clean" : issues.length + " issue(s)"}${res.aging ? " · aging " + res.aging + "d" : ""}</div>
+        <div class="audit-head-copy"><div class="modal-title">${escapeHtml(res.client || "")}</div>
+        <div class="modal-sub">Job audit · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div></div>
+        <button class="audit-close" data-close aria-label="Close job audit">×</button>
       </header>
       <div class="modal-body">${body}</div>
       <footer class="modal-foot">
-        <button class="btn" data-open-audit>Open in Audit ▸</button>
-        <button class="btn btn-primary" data-close>Close</button>
+        <button class="btn" data-open-trello>Open in Trello ↗</button>
+        <button class="btn btn-primary" data-open-audit>Full job audit ▸</button>
       </footer>
     </div>`;
   document.body.appendChild(w);
   const close = () => w.remove();
   w.querySelector("[data-close]").addEventListener("click", close);
   w.addEventListener("click", (e) => { if (e.target === w) close(); });
+  const keyClose = (e) => { if (e.key === "Escape") { document.removeEventListener("keydown", keyClose); close(); } };
+  document.addEventListener("keydown", keyClose);
+  w.querySelector("[data-open-trello]").addEventListener("click", () => {
+    if (trelloUrl) pywebview.api.open_url(trelloUrl);
+  });
   w.querySelector("[data-open-audit]").addEventListener("click", () => {
     if (window.emsNavigateTo) window.emsNavigateTo("audit", res.client || "");
     close();

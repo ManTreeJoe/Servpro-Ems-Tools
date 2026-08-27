@@ -297,6 +297,14 @@ class Api:
             "requirements":  [r.get("label") for r
                               in (row.get("requirements") or [])],
             "aging":         int(row.get("aging") or 0),
+            "activity":      list(row.get("activity") or []),
+            "techs":         list(row.get("techs") or []),
+            "carrier":       row.get("carrier") or "",
+            "folder":        row.get("folder") or "",
+            "path":          row.get("path") or "",
+            "last_seen":     row.get("last_seen") or "",
+            "misplaced_forms": list(row.get("misplaced_forms") or []),
+            "misplaced_photos": list(row.get("misplaced_photos") or []),
         }
 
     def flag_missing_card(self, card_id: str, client: str,
