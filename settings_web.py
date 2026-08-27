@@ -1,6 +1,7 @@
 """Settings — Pywebview spike (config editor)."""
 from __future__ import annotations
 import os, sys
+from urllib.parse import unquote, urlparse
 import webview
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -184,6 +185,51 @@ def _invalidate(reason):
         return {"cleared": [], "failed": [str(ex)]}
 
 
+def _local_path(value):
+    """Turn a pasted Windows path/file URL into the path this PC can open."""
+    raw = str(value or "").strip().strip('"').strip("'")
+    if not raw:
+        return ""
+    raw = os.path.expandvars(os.path.expanduser(unquote(raw)))
+    if raw.lower().startswith("file:"):
+        parsed = urlparse(raw.replace("\\", "/"))
+        if parsed.netloc and parsed.netloc.lower() not in ("", "localhost"):
+            raw = f"//{parsed.netloc}{parsed.path}"
+        else:
+            raw = parsed.path
+        # file:///X:/Folder parses as /X:/Folder; Windows wants X:/Folder.
+        if len(raw) >= 3 and raw[0] == "/" and raw[2] == ":":
+            raw = raw[1:]
+    return os.path.normpath(raw.replace("/", os.sep))
+
+
+def _daily_run_under(job_root):
+    """Find the Daily Run directory stored directly under a job root."""
+    root = _local_path(job_root)
+    if not root or not os.path.isdir(root):
+        return ""
+    preferred = ("Daily Run", "Daily Runs", "Daily Run Docs",
+                 "Daily Run Documents")
+    try:
+        children = {entry.name.casefold(): entry.path for entry in os.scandir(root)
+                    if entry.is_dir()}
+    except OSError:
+        return ""
+    for name in preferred:
+        if name.casefold() in children:
+            return os.path.normpath(children[name.casefold()])
+    return ""
+
+
+def _use_shared_jobs_after_sign_in():
+    """Make a successful employee sign-in select the online job index."""
+    import ems_db
+    cfg = dict(config.load_base() or {})
+    config.save({**cfg, "ems_db_backend": "supabase"})
+    ems_db.use_backend("supabase")
+    _invalidate("signed in -> shared job database")
+
+
 class Api:
     def __init__(self): self._window = None
     def attach(self, w): self._window = w
@@ -238,8 +284,10 @@ class Api:
             rows = []
             for key in self._my_folder_departments():
                 profile = profiles.get(key) if isinstance(profiles.get(key), dict) else {}
-                job_root = str(profile.get("audit_base") or "").strip()
-                runs_dir = str(profile.get("runs_dir") or "").strip()
+                job_root = _local_path(profile.get("audit_base"))
+                runs_dir = _local_path(profile.get("runs_dir"))
+                if not runs_dir or not os.path.isdir(runs_dir):
+                    runs_dir = _daily_run_under(job_root) or runs_dir
                 rows.append({
                     "key": key,
                     "label": profile.get("label") or key,
@@ -258,8 +306,10 @@ class Api:
         key = (key or "").strip()
         if key not in self._my_folder_departments():
             return {"ok": False, "error": "That franchise is not assigned to you."}
-        job_root = os.path.normpath((job_root or "").strip())
-        runs_dir = os.path.normpath((runs_dir or "").strip())
+        job_root = _local_path(job_root)
+        runs_dir = _local_path(runs_dir)
+        if not runs_dir or not os.path.isdir(runs_dir):
+            runs_dir = _daily_run_under(job_root) or runs_dir
         missing = []
         if not job_root or not os.path.isdir(job_root):
             missing.append("job folders root")
@@ -839,6 +889,7 @@ class Api:
         try:
             import supabase_client
             supabase_client.sign_in_with_password(email, password)
+            _use_shared_jobs_after_sign_in()
             _invalidate("supabase password sign-in")
             try:
                 import web_health
@@ -872,6 +923,7 @@ class Api:
                 supabase_client.verify_magic_link(code, email=email)
             else:
                 supabase_client.verify_login_code(email, code)
+            _use_shared_jobs_after_sign_in()
             _invalidate("supabase sign-in")
             try:
                 import web_health

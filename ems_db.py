@@ -55,6 +55,16 @@ def _resolve_name():
     except Exception:
         return _DEFAULT
     if not name:
+        # New employee installs should join the shared job index as soon as
+        # their Supabase session exists. SQLite remains the offline/unsigned
+        # fallback, rather than silently becoming the empty primary index.
+        try:
+            import supabase_client
+            if (supabase_client.is_configured()
+                    and supabase_client.is_signed_in()):
+                return "supabase"
+        except Exception:
+            pass
         return _DEFAULT
     if name not in _BACKENDS:
         try:

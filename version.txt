@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.15",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.15",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.15/Linguar-Hub-Trial-Setup-1.6.0-trial.15.exe",
-  "notes": "Fixes the missing Supabase Job Log table error. Job Log now works locally and queues changes for shared sync until the database migration is installed. Includes all Trial 14 UI and matching improvements."
+  "version": "1.6.0-trial.16",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.16",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.16/Linguar-Hub-Trial-Setup-1.6.0-trial.16.exe",
+  "notes": "Adds the compact Job Workspace, cumulative stage requirements and job-performance tracking. Job Log now registers missing jobs, works without optional shared tables, and automatically imports editable activity from the verified Trello card without duplicates."
 }
