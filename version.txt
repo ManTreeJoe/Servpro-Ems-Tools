@@ -1,6 +1,6 @@
 {
-  "version": "1.5.6",
+  "version": "1.5.7",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.6/Linguar-Hub-Setup-1.5.6.exe",
-  "notes": "Fixes the repeated update prompt by reading the exact bundled app version. Also includes the employee folder, Daily Run discovery, and shared online job database fixes from 1.5.5."
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.7/Linguar-Hub-Setup-1.5.7.exe",
+  "notes": "Reads IE Run Docs from the real Daily Run/year/EMS/month structure. Also includes the repeated-update, employee folder, and shared online job database fixes."
 }

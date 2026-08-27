@@ -62,7 +62,19 @@ def _month_search_dirs(runs_dir, year, month):
     """Existing folders that may hold one month's run documents."""
     probe = datetime(year, month, 1)
     found = []
-    for root in (runs_dir, os.path.join(runs_dir, str(year))):
+    year_root = os.path.join(runs_dir, str(year))
+    roots = [runs_dir, year_root]
+    # IE stores daily runs under <Daily Run>/<year>/EMS/<month>. Other
+    # departments use the same extra division layer for Contents/Recon/Fire.
+    # A connected parent folder is therefore not proof the old two-level
+    # finder could see a single document.
+    for parent in (runs_dir, year_root):
+        for division in ("EMS", "FIRE", "Contents", "CONTENT",
+                         "Recon", "RECONSTRUCTION"):
+            candidate = os.path.join(parent, division)
+            if os.path.isdir(candidate):
+                roots.append(candidate)
+    for root in roots:
         for month_name in (probe.strftime("%B"), probe.strftime("%b")):
             candidate = os.path.join(root, month_name)
             if os.path.isdir(candidate):
@@ -175,17 +187,7 @@ def _find_run_doc_for_date(d):
     # (<root>\2026\<Month>\...). Checking both means the run folder can be
     # pointed at either the year folder or its parent and still resolve,
     # and it survives the year rollover without a settings change.
-    search_dirs = []
-    for root in (runs_dir, os.path.join(runs_dir, str(d.year))):
-        for mname in (month_full, month_abbr):
-            mdir = os.path.join(root, mname)
-            if os.path.isdir(mdir):
-                search_dirs.append(mdir)
-        # Also peek at the root directly — some techs save without the
-        # month subfolder. Cheap because os.listdir on a folder we already
-        # confirmed exists doesn't add a network round-trip per call.
-        if os.path.isdir(root):
-            search_dirs.append(root)
+    search_dirs = _month_search_dirs(runs_dir, d.year, d.month)
 
     for sd in search_dirs:
         try:
