@@ -273,20 +273,15 @@
           <div class="action-buttons">
           <button class="action-btn primary" data-action="job-info"
                   title="Carrier, claim number, adjuster, date of loss — edit here and it syncs with the Trello card">⚙ Job info</button>
-          <button class="action-btn secondary-action" data-action="copy-client">📋 Copy name</button>
-          <button class="action-btn secondary-action" data-action="copy-path"
-                  title="Copy this job's OD folder path to the clipboard"
-                  ${hasPath ? "" : "disabled"}>📋 Copy path</button>
-          <button class="action-btn secondary-action" data-action="copy-claim"
-                  title="Copy the claim number from this job's Trello card"
-                  ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
-          <button class="action-btn" data-action="copy-email" id="copy-email-btn"
-                  title="Choose a customer, property contact, tenant, or adjuster email">📧 Choose email</button>
-          <button class="action-btn secondary-action" data-action="copy-address"
-                  title="Copy the loss address from this Trello card"
-                  ${hasPin ? "" : "disabled"}>📋 Copy address</button>
-          <button class="action-btn secondary-action" data-action="copy-job-summary" data-track="copy_job_summary"
-                  title="Preview and copy the essential job facts">📋 Copy job summary</button>
+          <details class="copy-action-menu"><summary class="action-btn">📋 Copy…</summary><div class="copy-action-popover">
+            <button class="action-btn" data-action="copy-client">Customer name</button>
+            <button class="action-btn" data-action="copy-phone">Customer phone</button>
+            <button class="action-btn" data-action="copy-email" id="copy-email-btn">📧 Choose email</button>
+            <button class="action-btn" data-action="copy-address">Loss address</button>
+            <button class="action-btn" data-action="copy-claim">Claim number</button>
+            <button class="action-btn" data-action="copy-path" ${hasPath ? "" : "disabled"}>Job folder path</button>
+            <button class="action-btn" data-action="copy-job-summary" data-track="copy_job_summary">Formatted job summary…</button>
+          </div></details>
           <button class="action-btn secondary-action" data-action="copy-pics"
                   title="Stage every image in a PICS subfolder into a TEMP folder + open it in Explorer — drag into XactAnalysis from there. Auto-deletes after 1 min."
                   ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
@@ -778,7 +773,10 @@
     // is fine once and unaffordable times fifty.
     loadOdSummary(container, r, ctx);
     container.querySelectorAll(".action-btn[data-action]").forEach((b) => {
-      b.addEventListener("click", () => detailAction(b.dataset.action, r, ctx));
+      b.addEventListener("click", () => {
+        detailAction(b.dataset.action, r, ctx);
+        b.closest(".copy-action-menu")?.removeAttribute("open");
+      });
       // Changing the CompanyCam project is a correction, not a routine
       // step — it had its own caret button next to Pull, which spent
       // permanent space on something used rarely. Right-click keeps it
@@ -825,6 +823,7 @@
         ".detail-more{display:flex;flex-direction:row;flex-wrap:wrap;gap:4px;}" +
         ".detail-audit-details{margin:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface)}.detail-audit-details>summary{cursor:pointer;padding:9px 11px;font-size:11px;font-weight:700}.detail-audit-details>summary span{margin-left:5px;color:var(--text-muted);font-weight:400}.detail-audit-body{padding:0 10px 8px}.detail-audit-body .detail-section{margin:7px 0}" +
         ".detail-more .action-btn{flex:0 0 auto;}" +
+        ".copy-action-menu{position:relative}.copy-action-menu>summary{list-style:none;cursor:pointer}.copy-action-menu>summary::-webkit-details-marker{display:none}.copy-action-popover{position:absolute;z-index:30;top:calc(100% + 5px);left:0;display:grid;min-width:205px;padding:6px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 12px 30px rgba(0,0,0,.38)}.copy-action-popover .action-btn{justify-content:flex-start;width:100%;border-color:transparent;background:transparent}.copy-action-popover .action-btn:hover{background:var(--surface-2)}" +
         ".secondary-action{display:none}.detail-actions.show-secondary .secondary-action{display:inline-flex}" +
         // Sticky job-name header that shrinks as you scroll (Trello-style).
         ".detail-head{position:sticky;top:0;z-index:6;background:var(--bg,#1b1b1b);" +
@@ -1673,6 +1672,14 @@
       const nm = _firstLast(info.name);
       const ok = await copyText(ctx, nm);
       setStatus(ctx, ok ? `📋 Copied from Job Info: ${nm}` : "Couldn't copy", ok ? "ok" : "error");
+    } else if (action === "copy-phone") {
+      const info = await pywebview.api.job_info_copy_data(row.client);
+      if (!info?.ok || !info.phone) {
+        setStatus(ctx, info?.error || "No customer phone saved in Job Info", "warn");
+        return;
+      }
+      const ok = await copyText(ctx, info.phone);
+      setStatus(ctx, ok ? `📋 Copied customer phone: ${info.phone}` : "Couldn't copy", ok ? "ok" : "error");
     } else if (action === "copy-path") {
       if (!row.path) { setStatus(ctx, "No folder path for this job", "warn"); return; }
       const ok = await copyText(ctx, row.path);

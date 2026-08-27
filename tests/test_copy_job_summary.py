@@ -24,9 +24,11 @@ def test_job_summary_data_is_local_and_structured(monkeypatch):
 def test_summary_preview_keeps_individual_copy_actions():
     js = (ROOT / "web_shared" / "audit_detail.js").read_text(encoding="utf-8")
     assert "openCopyJobSummaryModal" in js
-    for action in ("copy-client", "copy-claim", "copy-email", "copy-address",
+    for action in ("copy-client", "copy-phone", "copy-claim", "copy-email", "copy-address",
                    "copy-path", "copy-job-summary"):
         assert f'data-action="{action}"' in js
+    assert 'class="copy-action-menu"' in js
+    assert "📋 Copy…" in js
 
 
 def test_copy_data_uses_saved_job_info_customer_name(monkeypatch):

@@ -2067,6 +2067,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             values = job_settings.stored_values(job)
             return {"ok": True,
                     "name": values.get("customer_name") or job.get("display_name") or client,
+                    "phone": values.get("phone") or "",
                     "claim_number": values.get("claim_number") or "",
                     "address": values.get("address") or "",
                     "email": values.get("email") or "",

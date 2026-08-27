@@ -527,6 +527,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().save_crm_job_log(client, entry)
     def crm_job_log_history(self, entry_id):
         return self._aw().crm_job_log_history(entry_id)
+    def delete_crm_job_log(self, client, entry_id):
+        return self._aw().delete_crm_job_log(client, entry_id)
     def import_crm_job_log_from_trello(self, client, card_id=""):
         return self._aw().import_crm_job_log_from_trello(client, card_id)
     def job_summary_data(self, client, card_id=""):

@@ -400,6 +400,19 @@ function openAuditModal(data, trelloUrl = "") {
       <dl class="aud-facts">${(section.fields || []).map((f) =>
         `<div><dt>${escapeHtml(f.label)}</dt><dd>${escapeHtml(f.value)}</dd></div>`).join("")}</dl>
     </section>`).join("");
+  const copyFacts = (data.info_sections || []).flatMap((section) => section.fields || []);
+  const copyField = (id) => (copyFacts.find((field) => field.id === id) || {}).value || "";
+  const copyValue = (...needles) => (copyFacts.find((field) => needles.some((needle) =>
+    String(field.label || "").toLowerCase().includes(needle))) || {}).value || "";
+  const copyOptions = [
+    ["Customer name", copyField("customer_name") || copyValue("customer name", "insured name") || data.client || res.client || ""],
+    ["Customer phone", copyField("phone")],
+    ["Customer email", copyField("email")],
+    ["Loss address", copyField("address")],
+    ["Claim number", copyField("claim_number")],
+    ["Job folder path", res.path || ""],
+    ["Trello link", trelloUrl],
+  ].filter((item) => item[1]);
   const activity = (res.activity || []).length
     ? `<div class="aud-chips">${res.activity.map((a) => `<span>${escapeHtml(a)}</span>`).join("")}</div>`
     : `<div class="aud-empty">No activity recorded for this run.</div>`;
@@ -468,6 +481,10 @@ function openAuditModal(data, trelloUrl = "") {
       </header>
       <div class="modal-body">${body}</div>
       <footer class="modal-foot">
+        <details class="job-copy-menu"><summary class="btn">📋 Copy…</summary><div>
+          ${copyOptions.map(([label, value]) => `<button data-copy-value="${escapeAttr(value)}">${escapeHtml(label)}</button>`).join("")}
+          <button data-copy-summary>Formatted job summary</button>
+        </div></details>
         <button class="btn" data-open-trello>Open in Trello ↗</button>
         <button class="btn btn-primary" data-open-audit>Full job audit ▸</button>
       </footer>
@@ -480,6 +497,17 @@ function openAuditModal(data, trelloUrl = "") {
   document.addEventListener("keydown", keyClose);
   w.querySelector("[data-open-trello]").addEventListener("click", () => {
     if (trelloUrl) pywebview.api.open_url(trelloUrl);
+  });
+  w.querySelectorAll("[data-copy-value]").forEach((button) => button.addEventListener("click", async () => {
+    await pywebview.api.copy_to_clipboard(button.dataset.copyValue || "");
+    button.closest(".job-copy-menu")?.removeAttribute("open");
+    setStatus(`Copied ${button.textContent}`, "ok");
+  }));
+  w.querySelector("[data-copy-summary]")?.addEventListener("click", async (event) => {
+    const summary = copyOptions.map(([label, value]) => `${label}: ${value}`).join("\n");
+    await pywebview.api.copy_to_clipboard(summary);
+    event.currentTarget.closest(".job-copy-menu")?.removeAttribute("open");
+    setStatus("Copied formatted job summary", "ok");
   });
   w.querySelectorAll("[data-attachment-url]").forEach((button) => button.addEventListener("click", () => {
     if (button.dataset.attachmentUrl) pywebview.api.open_url(button.dataset.attachmentUrl);

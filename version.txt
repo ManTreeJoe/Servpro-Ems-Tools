@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.18",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.18",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.18/Linguar-Hub-Trial-Setup-1.6.0-trial.18.exe",
-  "notes": "Turns each Pipeline card into a Trello-style full job workspace: client header, current audit, cumulative requirements, EMS/Contents/Recon states, live checklists, saved job information, attachments, and a separate comments/activity rail. The Job Log now uses structured Snapshot-style updates for date, activity, status, crew, work completed, and equipment/readings, with edit and delete controls. Comments save to Linguar Hub and mirror to Trello during transition."
+  "version": "1.6.0-trial.19",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.19",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.19/Linguar-Hub-Trial-Setup-1.6.0-trial.19.exe",
+  "notes": "Restores copy tools as one visible Copy menu on every job card. Copy customer name, phone, the correct contact email, loss address, claim number, folder path, Trello link, or a formatted job summary without exposing a row of separate buttons. Values come from saved Job Information."
 }

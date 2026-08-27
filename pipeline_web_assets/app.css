@@ -453,6 +453,12 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .comment-compose textarea:focus { border-color: var(--green); box-shadow: 0 0 0 2px rgba(46,139,87,.18); }
 .comment-compose > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .comment-compose [data-comment-state] { color: var(--text-dim); font-size: 10px; }
+.job-copy-menu { position: relative; margin-right: auto; }
+.job-copy-menu > summary { list-style: none; cursor: pointer; }
+.job-copy-menu > summary::-webkit-details-marker { display: none; }
+.job-copy-menu > div { position: absolute; z-index: 20; left: 0; bottom: calc(100% + 6px); display: grid; min-width: 210px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 14px 35px rgba(0,0,0,.42); }
+.job-copy-menu > div button { padding: 8px 9px; border: 0; border-radius: 5px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.job-copy-menu > div button:hover { background: var(--surface-2); }
 .section-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .section-title-row h3 { margin-bottom: 0; }
 .progress-label { color: var(--text-muted); font-size: 11px; }
