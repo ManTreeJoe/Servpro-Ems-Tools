@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.4",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.4",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.4/Linguar-Hub-Trial-Setup-1.6.0-trial.4.exe",
-  "notes": "Adds the restoration-cycle Windows icon and a compact icon beside Linguar Hub that follows the EMS, Contents, and Recon switch. The Windows icon remains the complete three-department mark."
+  "version": "1.6.0-trial.5",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.5",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.5/Linguar-Hub-Trial-Setup-1.6.0-trial.5.exe",
+  "notes": "Makes the Windows icon much larger and clearer at taskbar size with an oversized blue EMS drop, yellow Contents frame, and orange Recon frame."
 }
