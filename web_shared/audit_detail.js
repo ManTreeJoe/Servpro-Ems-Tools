@@ -34,6 +34,12 @@
 (function () {
   "use strict";
 
+  // Job Workspace is embedded in a detail card whose surrounding audit data
+  // can repaint in the background. Cache/dedupe its load so those unrelated
+  // repaints do not restart the workspace or flash its loading state.
+  const _crmWorkspaceCache = new Map();
+  const _crmWorkspaceLoads = new Map();
+
   // ── Default helpers (a tool may override via ctx.helpers) ──────────
   function _escapeHtml(s) {
     return String(s == null ? "" : s)
@@ -363,12 +369,30 @@
   // The whole point is not having to open Explorer to find out whether
   // the photos are actually there. Two levels, counts only; clicking a
   // group opens the browser at that folder.
-  async function loadCrmWorkspace(container, r, ctx) {
+  async function loadCrmWorkspace(container, r, ctx, force) {
     const box = container.querySelector("#crm-workspace");
     if (!box) return;
+    const cacheKey = String(r.client || "").trim().toLowerCase();
+    if (!force && box.dataset.crmReady === "1" &&
+        box.dataset.crmClient === cacheKey) return;
+    if (force) {
+      _crmWorkspaceCache.delete(cacheKey);
+      _crmWorkspaceLoads.delete(cacheKey);
+    }
     let data;
-    try { data = await pywebview.api.crm_job_workspace(r.client); }
-    catch (ex) { data = { ok: false, error: String(ex) }; }
+    if (!force && _crmWorkspaceCache.has(cacheKey)) {
+      data = _crmWorkspaceCache.get(cacheKey);
+    } else {
+      let pending = _crmWorkspaceLoads.get(cacheKey);
+      if (!pending) {
+        pending = pywebview.api.crm_job_workspace(r.client);
+        _crmWorkspaceLoads.set(cacheKey, pending);
+      }
+      try { data = await pending; }
+      catch (ex) { data = { ok: false, error: String(ex) }; }
+      finally { _crmWorkspaceLoads.delete(cacheKey); }
+      if (data && data.ok) _crmWorkspaceCache.set(cacheKey, data);
+    }
     if (!data || !data.ok) {
       box.innerHTML = `<div class="muted">CRM workspace unavailable — ${esc(ctx,
         (data && data.error) || "job not indexed")}</div>`;
@@ -401,6 +425,8 @@
       </div>`;
     }).join("");
     const relationCount = (data.relationships || []).length;
+    box.dataset.crmClient = cacheKey;
+    box.dataset.crmReady = "1";
     box.innerHTML = `
       <div class="crm-workspace-head">
         <div><h3>Job Workspace</h3><span class="muted">Tracked from intake through closeout</span></div>
@@ -428,7 +454,7 @@
           return;
         }
         setStatus(ctx, "Job workspace updated", "ok");
-        loadCrmWorkspace(container, r, ctx);
+        loadCrmWorkspace(container, r, ctx, true);
       });
     });
   }

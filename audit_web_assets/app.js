@@ -2790,7 +2790,17 @@ function renderDetail() {
   }
 
   const ctx = buildAuditDetailCtx();
+  // Preserve the live Job Workspace when this same job's surrounding audit
+  // detail repaints (SP enrichment, list/search updates, etc.). Replacing it
+  // made dropdowns close and showed "Loading job workspace" over and over.
+  const priorWorkspace = view.querySelector("#crm-workspace[data-crm-ready='1']");
+  const priorWorkspaceClient = priorWorkspace?.dataset.crmClient || "";
   view.innerHTML = window.AuditDetail.buildDetailBodyHTML(r, ctx);
+  const nextWorkspace = view.querySelector("#crm-workspace");
+  if (priorWorkspace && nextWorkspace &&
+      priorWorkspaceClient === String(r.client || "").trim().toLowerCase()) {
+    nextWorkspace.replaceWith(priorWorkspace);
+  }
   window.AuditDetail.wireDetail(view, r, ctx);
 }
 
