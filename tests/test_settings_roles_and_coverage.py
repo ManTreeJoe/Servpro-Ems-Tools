@@ -126,3 +126,37 @@ def test_regular_employee_cannot_edit_unassigned_franchise(monkeypatch):
             "IE", r"X:\IE_Public", r"X:\IE_Public\Daily Run")
     assert result["ok"] is False
     assert "not assigned" in result["error"]
+
+
+def test_franchise_folder_save_normalizes_pasted_url_and_finds_daily_run(
+        tmp_path, monkeypatch):
+    root = tmp_path / "IE_Public"
+    daily = root / "Daily Run"
+    daily.mkdir(parents=True)
+    state = {
+        "multi_department_enabled": True,
+        "active_department": "IE",
+        "departments": {"IE": {"label": "Inland Empire"}},
+    }
+    monkeypatch.setattr(settings_web, "_is_admin", lambda: True)
+    monkeypatch.setattr(settings_web.config, "load_base", lambda: dict(state))
+    monkeypatch.setattr(settings_web.config, "save", lambda cfg: state.update(cfg))
+    monkeypatch.setattr(settings_web, "_invalidate", lambda reason: {})
+    result = settings_web.Api().save_my_franchise_folders(
+        "IE", root.as_uri(), "")
+    assert result["ok"] is True
+    assert state["departments"]["IE"]["audit_base"] == str(root)
+    assert state["departments"]["IE"]["runs_dir"] == str(daily)
+
+
+def test_successful_sign_in_selects_shared_job_database(monkeypatch):
+    state = {"departments": {"IE": {}}, "active_department": "IE"}
+    selected = []
+    monkeypatch.setattr(settings_web.config, "load_base", lambda: dict(state))
+    monkeypatch.setattr(settings_web.config, "save", lambda cfg: state.update(cfg))
+    monkeypatch.setattr(settings_web, "_invalidate", lambda reason: {})
+    import ems_db
+    monkeypatch.setattr(ems_db, "use_backend", lambda name: selected.append(name))
+    settings_web._use_shared_jobs_after_sign_in()
+    assert state["ems_db_backend"] == "supabase"
+    assert selected == ["supabase"]

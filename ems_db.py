@@ -55,6 +55,13 @@ def _resolve_name():
     except Exception:
         return _DEFAULT
     if not name:
+        try:
+            import supabase_client
+            if (supabase_client.is_configured()
+                    and supabase_client.is_signed_in()):
+                return "supabase"
+        except Exception:
+            pass
         return _DEFAULT
     if name not in _BACKENDS:
         try:
