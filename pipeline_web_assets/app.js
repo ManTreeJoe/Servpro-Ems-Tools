@@ -541,12 +541,12 @@ function openAuditModal(data, trelloUrl = "") {
     <div class="work-type"><strong>${escapeHtml(env.work_environment || "")}</strong>
       <span>${escapeHtml((env.stage || "not applicable").replaceAll("_", " "))}</span>
       ${env.owner ? `<small>${escapeHtml(env.owner)}</small>` : ""}</div>`).join("");
-  const trelloLists = (data.checklists || []).map((list) => `
+  const checklistGroups = (data.checklists || []).map((list) => `
     <div class="trello-checklist"><h4>${escapeHtml(list.name || "Checklist")}</h4>
       ${(list.items || []).map((item) => `<label class="check-row ${item.complete ? "checked" : ""}">
         <input type="checkbox" data-check-item="${escapeAttr(item.id)}" ${item.complete ? "checked" : ""}/>
         <span>${escapeHtml(item.name || "")}</span></label>`).join("") || `<div class="aud-empty">No items</div>`}
-    </div>`).join("") || `<div class="aud-empty">No Trello checklist is attached.</div>`;
+    </div>`).join("") || `<div class="aud-empty">No checklist has been added to this job.</div>`;
   const logs = (crm.job_log || []).slice().reverse().slice(0, 40).map((entry) => `
     <article class="job-log-row" data-job-log-id="${escapeAttr(entry.entry_id || "")}">
       <time>${escapeHtml(entry.work_date || "")}</time><div class="job-log-copy">
@@ -574,7 +574,7 @@ function openAuditModal(data, trelloUrl = "") {
         <span class="progress-label">${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
       ${workTypes ? `<section class="aud-section"><h3>Work types</h3><div class="work-types">${workTypes}</div></section>` : ""}
-      <section class="aud-section"><h3>Checklists</h3>${trelloLists}</section>
+      <section class="aud-section"><div class="section-title-row"><div><h3>Checklists</h3><small>Stored in Linguar Hub · Trello sync is temporary</small></div></div>${checklistGroups}</section>
       ${facts || `<section class="aud-section"><h3>Job information</h3><div class="aud-empty">No saved job information yet.</div></section>`}
       <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
         <div class="signature-flow"><span class="${dsRequest.requested ? "done" : "active"}">1 Prepare</span><i></i><span class="${dsRequest.requested ? "active" : ""}">2 Send</span><i></i><span class="${(docs.files || []).some((file) => file.signed) ? "done" : ""}">3 Signed copy</span></div>
@@ -643,6 +643,10 @@ function openAuditModal(data, trelloUrl = "") {
     if (!result?.ok) {
       box.checked = !box.checked; row?.classList.toggle("checked", box.checked);
       setStatus(`Checklist update failed: ${result?.error || "Trello unavailable"}`, "error");
+    } else if (result.warning) {
+      setStatus(`Saved in Linguar Hub · Trello sync needs attention`, "warn");
+    } else {
+      setStatus("Checklist saved · Trello synced", "ok");
     }
   }));
   w.querySelector("[data-open-docusign]")?.addEventListener("click", () => pywebview.api.open_docusign());

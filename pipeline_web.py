@@ -376,17 +376,25 @@ class Api:
         except Exception:
             pass
         cid = (card_id or summary.get("trello_card_id") or "").strip()
+        # Linguar Hub is the durable source. Trello below is now an import/
+        # compatibility adapter and refreshes this local copy when available.
+        checklists = pipeline_store.list_checklists(cid)
         if cid:
             try:
                 import trello_client as tc
                 card = tc.get_card(cid) or {}
-                checklists = [{
+                imported_checklists = [{
                     "id": cl.get("id") or "", "name": cl.get("name") or "Checklist",
                     "items": [{"id": item.get("id") or "",
                                "name": item.get("name") or "",
                                "complete": item.get("state") == "complete"}
                               for item in (cl.get("checkItems") or [])],
                 } for cl in (card.get("checklists") or [])]
+                if imported_checklists:
+                    saved = pipeline_store.save_checklists(
+                        cid, imported_checklists, source="trello")
+                    checklists = (saved.get("checklists")
+                                  if saved.get("ok") else imported_checklists)
                 attachments = [{"name": a.get("name") or "Attachment",
                                 "url": a.get("url") or "",
                                 "date": a.get("date") or ""}
@@ -508,13 +516,24 @@ class Api:
 
     def set_job_check_item(self, card_id: str, item_id: str,
                            complete: bool) -> dict:
+        local = pipeline_store.set_check_item(card_id, item_id, complete)
+        synced = False
+        error = ""
         try:
             import trello_client as tc
-            ok = tc.set_check_item_state(card_id, item_id,
-                                         "complete" if complete else "incomplete")
-            return {"ok": bool(ok), "synced": bool(ok)}
+            synced = bool(tc.set_check_item_state(
+                card_id, item_id, "complete" if complete else "incomplete"))
+            if not synced:
+                error = "Trello did not accept the checklist update"
         except Exception as ex:
-            return {"ok": False, "error": str(ex)}
+            error = str(ex)
+        if synced:
+            pipeline_store.mark_card_sync(card_id, ok=True)
+        elif local.get("ok"):
+            pipeline_store.mark_card_sync(card_id, ok=False, error=error)
+        return {"ok": bool(local.get("ok")) or synced, "saved_local": bool(local.get("ok")),
+                "synced": synced, "warning": error if local.get("ok") and not synced else "",
+                "error": "" if local.get("ok") or synced else (local.get("error") or error)}
 
     def post_job_comment(self, client: str, card_id: str, text: str) -> dict:
         text = (text or "").strip()

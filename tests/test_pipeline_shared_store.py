@@ -53,6 +53,24 @@ def test_trello_projection_round_trips_through_shared_store(monkeypatch):
     assert card["sync_status"] == "synced"
 
 
+def test_full_checklists_are_owned_and_updated_by_linguar(monkeypatch):
+    fake = FakeSupabase()
+    monkeypatch.setattr(pipeline_store, "_sb", fake)
+    pipeline_store.mirror_boards(_payload())
+    lists = [{"id": "cl1", "name": "EMS", "items": [
+        {"id": "i1", "name": "Authorization", "complete": False},
+        {"id": "i2", "name": "Photos", "complete": True},
+    ]}]
+    saved = pipeline_store.save_checklists("c1", lists)
+    assert saved["ok"] is True
+    assert saved["summary"] == {"done": 1, "total": 2}
+    assert pipeline_store.set_check_item("c1", "i1", True)["ok"] is True
+    assert pipeline_store.list_checklists("c1")[0]["items"][0]["complete"] is True
+    loaded = pipeline_store.load_boards((('wip', 'WORK IN PROGRESS'),))
+    assert loaded["boards"][0]["lanes"][0]["cards"][0]["checklist"] == {
+        "done": 2, "total": 2}
+
+
 def test_pipeline_reads_shared_before_trello(monkeypatch):
     shared = {"ok": True, "source": "shared", "boards": [{"key": "wip"}]}
     monkeypatch.setattr(pipeline_web.pipeline_store, "load_boards",

@@ -44,6 +44,93 @@ def _upsert(table, row):
                     prefer="resolution=merge-duplicates")
 
 
+def _card_rows(card_id: str, select: str = "*") -> list:
+    """Find mirrored Trello or future native Linguar cards."""
+    card_id = str(card_id or "").strip()
+    if not card_id:
+        return []
+    rows = _rows("crm_pipeline_cards", external_id=f"eq.{card_id}",
+                 select=select, limit="1")
+    if rows:
+        return rows
+    return _rows("crm_pipeline_cards", card_key=f"eq.{card_id}",
+                 select=select, limit="1")
+
+
+def _decode_json(value, default):
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return default
+    return value if isinstance(value, type(default)) else default
+
+
+def checklist_summary(value) -> dict:
+    """Normalize both old progress-only and full Linguar checklist records."""
+    value = _decode_json(value, {})
+    if "lists" not in value:
+        return {"done": int(value.get("done") or 0),
+                "total": int(value.get("total") or 0)}
+    items = [item for group in (value.get("lists") or [])
+             for item in (group.get("items") or [])]
+    return {"done": sum(bool(item.get("complete")) for item in items),
+            "total": len(items)}
+
+
+def save_checklists(card_id: str, checklists: list, *, source="trello") -> dict:
+    """Store complete checklist structure in Linguar Hub's card record."""
+    try:
+        cards = _card_rows(card_id, "card_key")
+        if not cards:
+            return {"ok": False, "error": "job is not in the shared Pipeline yet"}
+        now = _now()
+        value = {"version": 1, "lists": list(checklists or []),
+                 "source": source, "updated_at": now}
+        value["summary"] = checklist_summary(value)
+        _sb.rest("PATCH", "crm_pipeline_cards",
+                 params={"card_key": f"eq.{cards[0]['card_key']}"},
+                 body={"checklist_json": value, "updated_at": now})
+        return {"ok": True, "checklists": value["lists"],
+                "summary": value["summary"]}
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+
+
+def list_checklists(card_id: str) -> list:
+    try:
+        cards = _card_rows(card_id, "checklist_json")
+        value = _decode_json((cards[0] if cards else {}).get("checklist_json"), {})
+        return list(value.get("lists") or [])
+    except Exception:
+        return []
+
+
+def set_check_item(card_id: str, item_id: str, complete: bool) -> dict:
+    """Update our durable checklist before any optional Trello write-back."""
+    lists = list_checklists(card_id)
+    found = False
+    for group in lists:
+        for item in group.get("items") or []:
+            if str(item.get("id") or "") == str(item_id or ""):
+                item["complete"] = bool(complete)
+                found = True
+                break
+    if not found:
+        return {"ok": False, "error": "checklist item is not imported yet"}
+    result = save_checklists(card_id, lists, source="linguar")
+    if result.get("ok"):
+        try:
+            cards = _card_rows(card_id, "card_key")
+            _sb.rest("PATCH", "crm_pipeline_cards",
+                     params={"card_key": f"eq.{cards[0]['card_key']}"},
+                     body={"sync_status": "pending", "sync_error": None,
+                           "updated_at": _now()})
+        except Exception:
+            pass
+    return result
+
+
 def mirror_boards(payload: dict) -> dict:
     """Upsert a shaped ``pipeline_web`` board payload into shared storage."""
     boards = list((payload or {}).get("boards") or [])
@@ -89,7 +176,6 @@ def mirror_boards(payload: dict) -> dict:
                         "external_id": ext_card or None,
                         "external_url": card.get("url") or None,
                         "labels_json": card.get("loss_types") or [],
-                        "checklist_json": card.get("checklist") or {},
                         "due_at": card.get("due") or None,
                         "due_complete": bool(card.get("due_complete")),
                         "last_activity_at": card.get("last_activity_at") or None,
@@ -145,7 +231,7 @@ def load_boards(board_specs) -> dict:
                     "url": c.get("external_url") or "",
                     "list_id": lane.get("external_id") or lane.get("lane_key"),
                     "lane": lane.get("name") or "", "loss_types": labels,
-                    "checklist": checklist, "due": c.get("due_at") or "",
+                    "checklist": checklist_summary(checklist), "due": c.get("due_at") or "",
                     "due_complete": bool(c.get("due_complete")), "overdue": False,
                     "days_in_lane": 0, "stall": "none",
                     "sync_status": c.get("sync_status") or "local",
