@@ -1,6 +1,6 @@
 {
-  "version": "1.5.3",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.3/Linguar-Hub-Setup-1.5.3.exe",
-  "notes": "Adds a My franchise folders setup panel for regular users. Employees can configure separate IE and OC job and run-doc locations on their own computer using mapped drives, server shares, or OneDrive and SharePoint folders."
+  "version": "1.6.0-trial.3",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.3",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.3/Linguar-Hub-Trial-Setup-1.6.0-trial.3.exe",
+  "notes": "CRM trial: shared start-to-finish job workspace with EMS, Contents, and Recon stages. Repairs sign-in controls, restores carrier tags on job rows, and asks for an Estimating or Service Call lane when a card leaves Snapshot after closeout."
 }
