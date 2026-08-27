@@ -36,6 +36,8 @@ pkg  = os.path.join(base, '_packaging')
 # runtime (a build whose path contains "trial" polls the trial update branch
 # and shows the TRIAL title). Data + config are shared between channels.
 APP_NAME = os.environ.get('LINGUAR_APP_NAME', 'Linguar Hub')
+ICON_FILE = ('linguar_hub_trial.ico' if 'Trial' in APP_NAME
+             else 'linguar_hub.ico')
 
 # ── Bundled data ────────────────────────────────────────────────────────────
 # pywebview runs with http_server=True rooted at the dir of the URL file
@@ -52,6 +54,8 @@ datas.append((os.path.join(base, 'web_shared'), 'web_shared'))
 # rewrites the shim at startup).
 datas.append((os.path.join(pkg, 'config.json'),          '.'))
 datas.append((os.path.join(pkg, '_ems_root_index.html'), '.'))
+datas.append((os.path.join(base, ICON_FILE), '.'))
+datas.append((os.path.join(base, 'version.txt'), '.'))
 
 # Static read-only resources used by various panels.
 for f in ('wrench.ico', 'trello.png', 'EMS_Admin_Cheat_Sheet.md',
@@ -143,7 +147,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name=APP_NAME,
-    icon='wrench.ico',
+    icon=ICON_FILE,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

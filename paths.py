@@ -23,6 +23,7 @@ import os
 import sys
 import glob
 import shutil
+import json
 
 VERSION = "1.5.3"
 
@@ -93,6 +94,22 @@ if FROZEN:
     RESOURCE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
 else:
     RESOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _bundled_version():
+    """Read the exact release version shipped with this build."""
+    try:
+        with open(os.path.join(RESOURCE_DIR, "version.txt"),
+                  "r", encoding="utf-8") as fh:
+            value = str((json.load(fh) or {}).get("version") or "").strip()
+            if value:
+                return value
+    except Exception:
+        pass
+    return VERSION
+
+
+VERSION = _bundled_version()
 
 # ── Writable data dir ───────────────────────────────────────────────────────
 APPDATA = os.environ.get("APPDATA") or os.path.expanduser(r"~\AppData\Roaming")
