@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.16",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.16",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.16/Linguar-Hub-Trial-Setup-1.6.0-trial.16.exe",
-  "notes": "Adds the compact Job Workspace, cumulative stage requirements and job-performance tracking. Job Log now registers missing jobs, works without optional shared tables, and automatically imports editable activity from the verified Trello card without duplicates."
+  "version": "1.6.0-trial.17",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.17",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.17/Linguar-Hub-Trial-Setup-1.6.0-trial.17.exe",
+  "notes": "Begins the Trello separation: Pipeline loads Linguar Hub's shared database first, mirrors Work in Progress, Estimating and Contents from Trello, saves moves to Linguar Hub before Trello, and shows pending conflicts. Adds the permanent Client to Claim to Job hierarchy."
 }

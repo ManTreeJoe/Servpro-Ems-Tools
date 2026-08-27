@@ -61,6 +61,11 @@ and never overwrites a value someone corrected by hand.
    editable Job Log.** This adds the shared ongoing job history and its
    append-only revision trail. Without it, the Job Workspace still opens
    but shared Job Log saves are blocked with a clear migration warning.
+7. ⚠ **SQL editor → run `supabase/011_pipeline_owned.sql` before testing
+   the Trello-independent Pipeline.** This creates the permanent hierarchy
+   **Client → Claim → Job → EMS/Contents/Recon**, plus Linguar-owned boards,
+   lanes, cards, activity and sync status. Until it runs, Trial deliberately
+   falls back to the live Trello boards so the current workflow still works.
 
 ## On each PC
 

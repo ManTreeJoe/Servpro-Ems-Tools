@@ -26,3 +26,13 @@ def test_trial_preflight_and_guide_require_v10_job_log_schema():
     assert 'crm_job_log_entries' in source
     assert 'supabase/010_job_log.sql' in source
     assert 'supabase/010_job_log.sql' in guide
+
+
+def test_trial_preflight_and_guide_require_v11_owned_pipeline_schema():
+    source = (ROOT / "trial_preflight.py").read_text(encoding="utf-8")
+    guide = (ROOT / "TRIAL_SETUP.md").read_text(encoding="utf-8")
+    assert 'Shared DB schema (v11 Pipeline)' in source
+    assert 'crm_pipeline_cards' in source
+    assert 'supabase/011_pipeline_owned.sql' in source
+    assert 'supabase/011_pipeline_owned.sql' in guide
+    assert 'Client → Claim → Job' in guide

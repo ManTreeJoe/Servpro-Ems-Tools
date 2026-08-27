@@ -387,6 +387,8 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .chip-mini.due-over { background: var(--red); color: #fff; }
 .chip-mini.stall-warn { background: #4A3A1A; color: var(--amber); }
 .chip-mini.stall-bad  { background: #4A1F1A; color: #E2A4A4; }
+.chip-mini.sync-pending { background: #3B3423; color: var(--amber); }
+.chip-mini.sync-conflict { background: #4A1F1A; color: #F0B0A8; }
 
 .kcard-actions { display: flex; gap: 4px; margin-top: 8px; }
 .kbtn {

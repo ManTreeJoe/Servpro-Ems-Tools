@@ -3,8 +3,8 @@
  * Two views, one panel:
  *   🗂 Board  — a live Trello-style kanban of WORK IN PROGRESS,
  *               ESTIMATING, and CONTENTS. Real lanes as columns, cards pulled
- *               fresh from Trello, drag-to-move (with a confirm that
- *               writes back to Trello), plus per-card audit buttons.
+ *               from Linguar Hub's shared Pipeline, with Trello mirrored
+ *               during the transition, plus per-card audit buttons.
  *   📊 Stages — the lifecycle stage table (read-only, from ems_db) with
  *               filter chips, sort, timeline, thresholds, export, sync.
  *
@@ -101,14 +101,16 @@ async function loadBoard(isRefresh) {
   const btn = $("#refresh-btn");
   if (isRefresh) { btn.disabled = true; btn.textContent = "↻ Refreshing…"; }
   if (!isRefresh) $("#board-loading")?.classList.remove("hidden");
-  setStatus("Loading boards from Trello…");
+  setStatus(isRefresh ? "Refreshing from Trello…" : "Loading shared Pipeline…");
   try {
-    const res = await pywebview.api.board_view();
+    const res = await pywebview.api.board_view(Boolean(isRefresh));
     if (!res?.ok) { setStatus(`Board load failed: ${res?.error || "?"}`, "error"); return; }
     state.board = res;
     renderBoard();
     const total = boardCardTotal();
-    setStatus(`✓ ${total} cards across ${res.boards.length} boards`, "ok");
+    const source = res.source === "shared" ? "shared Pipeline" :
+      (res.mirrored ? "Trello · saved to Pipeline" : "Trello");
+    setStatus(`✓ ${total} cards across ${res.boards.length} boards · ${source}`, "ok");
   } catch (ex) {
     setStatus(`Board error: ${ex}`, "error");
   } finally {
@@ -247,7 +249,11 @@ function renderCard(c) {
   const stallChip = c.days_in_lane > 0
     ? `<span class="chip-mini stall-${escapeAttr(c.stall)}" title="Days since last activity">${c.days_in_lane}d</span>`
     : "";
-  const chips = [loss, ckChip, dueChip, stallChip].filter(Boolean).join("");
+  const syncChip = c.sync_status === "conflict"
+    ? `<span class="chip-mini sync-conflict" title="Trello and Linguar Hub need review">⚠ Sync</span>`
+    : c.sync_status === "pending"
+      ? `<span class="chip-mini sync-pending" title="Saved in Linguar Hub; waiting for Trello">↻ Sync</span>` : "";
+  const chips = [loss, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
   return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="true"
                data-card-id="${escapeAttr(c.card_id)}"
                data-list-id="${escapeAttr(c.list_id)}"
@@ -313,7 +319,9 @@ async function onLaneDrop(ev) {
   // Optimistic local move so the board updates instantly.
   moveCardLocally(drag.cardId, drag.fromListId, toListId, toLane);
   renderBoard();
-  setStatus(`✓ Moved "${drag.name}" → ${toLane}`, "ok");
+  setStatus(res.synced === false
+    ? `✓ Moved in Linguar Hub · ${res.warning || "Trello needs review"}`
+    : `✓ Moved "${drag.name}" → ${toLane}`, res.synced === false ? "warn" : "ok");
 }
 
 function moveCardLocally(cardId, fromListId, toListId, toLane) {

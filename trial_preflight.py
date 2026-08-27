@@ -216,6 +216,27 @@ def main(argv=None):
               "Run supabase/010_job_log.sql in the Supabase SQL editor "
               "before using the editable Job Log on multiple PCs.")
 
+    # ── 4e. Linguar-owned Pipeline is installed ─────────────────────
+    try:
+        sb.rest("GET", "crm_clients",
+                params={"select": "client_id,display_name", "limit": "1"})
+        sb.rest("GET", "crm_claims",
+                params={"select": "claim_id,client_id", "limit": "1"})
+        sb.rest("GET", "crm_pipeline_boards",
+                params={"select": "board_key,sync_status", "limit": "1"})
+        sb.rest("GET", "crm_pipeline_lanes",
+                params={"select": "lane_key,board_key", "limit": "1"})
+        sb.rest("GET", "crm_pipeline_cards",
+                params={"select": "card_key,client_id,claim_id,job_id,sync_status",
+                        "limit": "1"})
+        check("Shared DB schema (v11 Pipeline)", OK,
+              "client-first shared boards and cards ready")
+    except Exception as ex:
+        check("Shared DB schema (v11 Pipeline)", FAIL,
+              str(ex).strip()[:70],
+              "Run supabase/011_pipeline_owned.sql in the Supabase SQL "
+              "editor before testing the database-first Pipeline.")
+
     # ── 5. Backend switch ─────────────────────────────────────────────
     backend = (cfg.get("ems_db_backend") or "sqlite").strip().lower()
     if backend == "supabase":

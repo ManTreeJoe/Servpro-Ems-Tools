@@ -29,6 +29,7 @@ if _HERE not in sys.path:
 
 import ems_db
 import pipeline_stages as ps
+import pipeline_store
 from web_helpers import run_bg as _wh_run_bg
 
 
@@ -199,7 +200,23 @@ def _card_to_board_dict(card, lane_name):
         "overdue":      overdue,
         "days_in_lane": days,
         "stall":        stall,
+        "last_activity_at": card.get("dateLastActivity") or "",
     }
+
+
+def _trello_board_payload():
+    """Pull all configured transition boards from the Trello adapter."""
+    import trello_client as tc
+    try:
+        boards_by_name = {
+            (b.get("name") or "").strip().upper(): b
+            for b in (tc.list_boards() or [])}
+    except Exception as ex:
+        return {"ok": False, "error": str(ex), "boards": []}
+    out = [_build_board(tc, ps, key, bname,
+                        boards_by_name.get(bname.strip().upper()))
+           for key, bname in BOARD_SPECS]
+    return {"ok": True, "boards": out, "source": "trello"}
 
 
 class Api:
@@ -218,22 +235,29 @@ class Api:
         self._audit = None  # lazily-built audit_web.Api for card audits
 
     # ── 🗂 Board view + drag-move + per-card audit actions ───────────
-    def board_view(self) -> dict:
-        """Live multi-board kanban payload pulled fresh from Trello. Each
-        board → its open lanes (noise lanes filtered) → the open cards in
-        each lane, shaped for the card UI. No DB; always current."""
-        import trello_client as tc
-        import pipeline_stages as ps
-        try:
-            boards_by_name = {
-                (b.get("name") or "").strip().upper(): b
-                for b in (tc.list_boards() or [])}
-        except Exception as ex:
-            return {"ok": False, "error": str(ex)}
-        out = [_build_board(tc, ps, key, bname,
-                            boards_by_name.get(bname.strip().upper()))
-               for key, bname in BOARD_SPECS]
-        return {"ok": True, "boards": out}
+    def board_view(self, force_trello: bool = False) -> dict:
+        """Load the Linguar-owned shared Pipeline first.
+
+        Trello is now an adapter: it seeds an empty Pipeline and refreshes it
+        only when requested.  Missing migration 011 fails soft to the legacy
+        live-Trello behaviour so an employee is never locked out by rollout.
+        """
+        if not force_trello:
+            shared = pipeline_store.load_boards(BOARD_SPECS)
+            if shared.get("ok") and shared.get("boards"):
+                return shared
+        live = _trello_board_payload()
+        if not live.get("ok"):
+            shared = pipeline_store.load_boards(BOARD_SPECS)
+            if shared.get("ok"):
+                shared["warning"] = "Trello unavailable; showing shared Pipeline"
+                return shared
+            return live
+        live.setdefault("source", "trello")
+        mirrored = pipeline_store.mirror_boards(live)
+        live["mirrored"] = bool(mirrored.get("ok"))
+        live["schema_missing"] = bool(mirrored.get("schema_missing"))
+        return live
 
     def board_view_one(self, key: str) -> dict:
         """Re-pull a SINGLE board (the per-board ↻ refresh) so the user
@@ -252,7 +276,9 @@ class Api:
         bname = spec[1]
         board = _build_board(tc, ps, key, bname,
                              boards_by_name.get(bname.strip().upper()))
-        return {"ok": True, "board": board}
+        mirrored = pipeline_store.mirror_boards({"boards": [board]})
+        return {"ok": True, "board": board, "source": "trello",
+                "mirrored": bool(mirrored.get("ok"))}
 
     def move_card(self, card_id: str, list_id: str) -> dict:
         """Move a card to another lane on the REAL Trello board. The
@@ -260,12 +286,25 @@ class Api:
         'Move X to <lane>?' prompt)."""
         if not card_id or not list_id:
             return {"ok": False, "error": "card_id + list_id required"}
+        shared = pipeline_store.move_card(card_id, list_id)
         try:
             import trello_client as tc
             ok = tc.move_card(card_id, list_id)
-            return {"ok": True} if ok else {
-                "ok": False, "error": "Trello rejected the move"}
+            pipeline_store.mark_card_sync(
+                card_id, ok=bool(ok),
+                error="Trello rejected the move" if not ok else "")
+            if ok:
+                return {"ok": True, "synced": True,
+                        "stored": bool(shared.get("ok"))}
+            if shared.get("ok"):
+                return {"ok": True, "synced": False,
+                        "warning": "Saved in Linguar Hub; Trello needs review"}
+            return {"ok": False, "error": "Trello rejected the move"}
         except Exception as ex:
+            pipeline_store.mark_card_sync(card_id, ok=False, error=str(ex))
+            if shared.get("ok"):
+                return {"ok": True, "synced": False,
+                        "warning": "Saved in Linguar Hub; Trello is unavailable"}
             return {"ok": False, "error": str(ex)}
 
     def _audit_api(self):
