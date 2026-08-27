@@ -159,7 +159,7 @@ async function renderWorkEnvironmentSwitch() {
   renderWorkEnvironmentMark(st.active);
   host.innerHTML = st.environments.map((item) =>
     `<button class="work-env-seg ${item.key === st.active ? "active" : ""}"
-      data-key="${esc(item.key)}" title="Work in ${esc(item.label)}">${esc(item.label)}</button>`
+      data-key="${esc(item.key)}" title="Show ${esc(item.label)} work">${esc(item.label)}</button>`
   ).join("");
   host.querySelectorAll(".work-env-seg").forEach((button) =>
     button.addEventListener("click", () => switchWorkEnvironment(button.dataset.key, st.active)));

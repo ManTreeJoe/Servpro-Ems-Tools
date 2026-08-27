@@ -1788,6 +1788,26 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def save_crm_work_environment(self, client: str, work_environment: str,
+                                  stage: str, owner: str = "") -> dict:
+        """Set one job's EMS, Contents or Recon state independently."""
+        allowed = {"not_applicable", "planned", "scheduled", "active",
+                   "waiting", "ready_for_billing", "closeout", "closed"}
+        stage = (stage or "").strip().lower()
+        if stage not in allowed:
+            return {"ok": False, "error": "invalid work-type stage"}
+        try:
+            import ems_db
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
+            saved = ems_db.set_work_environment_state(
+                job["canon_key"], work_environment, stage=stage,
+                owner=(owner or "").strip())
+            return {"ok": True, "work_environment": saved}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def save_crm_job_log(self, client: str, entry: dict) -> dict:
         """Create/edit an ongoing structured job-log entry."""
         try:

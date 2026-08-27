@@ -278,21 +278,21 @@
           <div class="action-buttons">
           <button class="action-btn primary" data-action="job-info"
                   title="Carrier, claim number, adjuster, date of loss — edit here and it syncs with the Trello card">⚙ Job info</button>
-          <button class="action-btn" data-action="copy-client">📋 Copy name</button>
-          <button class="action-btn" data-action="copy-path"
+          <button class="action-btn secondary-action" data-action="copy-client">📋 Copy name</button>
+          <button class="action-btn secondary-action" data-action="copy-path"
                   title="Copy this job's OD folder path to the clipboard"
                   ${hasPath ? "" : "disabled"}>📋 Copy path</button>
-          <button class="action-btn" data-action="copy-claim"
+          <button class="action-btn secondary-action" data-action="copy-claim"
                   title="Copy the claim number from this job's Trello card"
                   ${hasPin ? "" : "disabled"}>📋 Copy claim #</button>
           <button class="action-btn" data-action="copy-email" id="copy-email-btn"
                   title="Choose a customer, property contact, tenant, or adjuster email">📧 Choose email</button>
-          <button class="action-btn" data-action="copy-address"
+          <button class="action-btn secondary-action" data-action="copy-address"
                   title="Copy the loss address from this Trello card"
                   ${hasPin ? "" : "disabled"}>📋 Copy address</button>
-          <button class="action-btn" data-action="copy-job-summary" data-track="copy_job_summary"
+          <button class="action-btn secondary-action" data-action="copy-job-summary" data-track="copy_job_summary"
                   title="Preview and copy the essential job facts">📋 Copy job summary</button>
-          <button class="action-btn" data-action="copy-pics"
+          <button class="action-btn secondary-action" data-action="copy-pics"
                   title="Stage every image in a PICS subfolder into a TEMP folder + open it in Explorer — drag into XactAnalysis from there. Auto-deletes after 1 min."
                   ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
           </div>
@@ -303,16 +303,16 @@
           <button class="action-btn primary-action" data-action="add-update" ${hasPin ? "" : "disabled"}
                   title="Choose the kind of update, preview it, then post">＋ Add update</button>
           <button class="action-btn" data-action="comment" ${hasPin ? "" : "disabled"}>💬 Comment</button>
-          <button class="action-btn" data-action="initial-email" ${hasPin ? "" : "disabled"}
+          <button class="action-btn secondary-action" data-action="initial-email" ${hasPin ? "" : "disabled"}
                   title="Draft the Initial Inspection email from the card's notes, copy it, open XactAnalysis, then log it on the card">✉ Initial email</button>
-          <button class="action-btn" data-action="job-log-comment" ${hasPin ? "" : "disabled"}
+          <button class="action-btn secondary-action" data-action="job-log-comment" ${hasPin ? "" : "disabled"}
                   title="Post the dated job-log comment — pick what happened and who was there">🗒 Job log comment</button>
-          <button class="action-btn" data-action="activity-comment" ${hasPin ? "" : "disabled"}
+          <button class="action-btn secondary-action" data-action="activity-comment" ${hasPin ? "" : "disabled"}
                   title="Post the dated visit comment — pick the stage and who was there">📆 Activity comment</button>
-          <button class="action-btn" data-action="call-note" ${hasPin ? "" : "disabled"}
+          <button class="action-btn secondary-action" data-action="call-note" ${hasPin ? "" : "disabled"}
                   title="Log a call or contact on the card, timestamped">📞 Call note</button>
           <button class="action-btn" data-action="request-items">📨 Request items</button>
-          <button class="action-btn" data-action="add-child"
+          <button class="action-btn secondary-action" data-action="add-child"
                   ${hasPath ? "" : "disabled"}
                   title="Add another claim or unit under this client - finds the existing folder/card first">➕ Claim / Unit</button>
           <button class="action-btn" data-action="add-note" title="Add a tracked to-do note for this job">📝 Note</button>
@@ -320,7 +320,7 @@
             <button class="action-btn" data-action="sp-rundoc"
                     title="Open the run-doc for this SP folder's date (parsed from name, e.g. '3-19-26' → 3/19)">📄 Run-doc</button>` : ""}
           <button class="action-btn" type="button" id="detail-more-btn"
-                  title="Less-used actions">⋯ More</button>
+                  title="Show copying, comments, and less-used tools">⋯ More job actions</button>
           </div>
         </div>
         ${ctx && ctx.openSnapshot ? `
@@ -413,15 +413,32 @@
       ["high", "High"], ["urgent", "Urgent"]];
     const options = (items, current) => items.map(([value, label]) =>
       `<option value="${escA(ctx, value)}" ${value === current ? "selected" : ""}>${esc(ctx, label)}</option>`).join("");
-    const envs = ["EMS", "Contents", "Recon"];
+    const envs = [
+      ["EMS", "💧", "Water / mitigation"],
+      ["Contents", "▣", "Contents handling"],
+      ["Recon", "🔨", "Reconstruction"],
+    ];
     const byEnv = Object.fromEntries((data.work_environments || []).map(
       (x) => [x.work_environment, x]));
-    const envCards = envs.map((name) => {
+    const folderShells = new Set(((r.shells || {}).own || []).map((x) => String(x).toLowerCase()));
+    const envStageOptions = [
+      ["not_applicable", "Not part of this job"], ["planned", "Planned"],
+      ["scheduled", "Scheduled"], ["active", "Active"],
+      ["waiting", "Waiting"], ["ready_for_billing", "Ready for billing"],
+      ["closeout", "Closeout"], ["closed", "Complete"],
+    ];
+    const envCards = envs.map(([name, icon, description]) => {
       const state = byEnv[name] || {};
-      return `<div class="crm-env ${state.stage ? "has-stage" : ""}">
-        <strong>${esc(ctx, name)}</strong>
-        <span>${esc(ctx, state.stage || "Not started")}</span>
-        ${state.owner ? `<small>${esc(ctx, state.owner)}</small>` : ""}
+      const detected = folderShells.has(name.toLowerCase());
+      const current = state.stage || (detected ? "planned" : "not_applicable");
+      const active = current !== "not_applicable";
+      return `<div class="crm-env crm-env-${name.toLowerCase()} ${active ? "has-stage" : ""}">
+        <div class="crm-env-title"><span class="crm-env-icon" aria-hidden="true">${icon}</span>
+          <div><strong>${esc(ctx, name)}</strong><small>${esc(ctx, description)}</small></div></div>
+        <select data-crm-env="${escA(ctx, name)}" aria-label="${escA(ctx, name)} status">
+          ${envStageOptions.map(([value, label]) => `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`).join("")}
+        </select>
+        <input data-crm-env-owner="${escA(ctx, name)}" value="${escA(ctx, state.owner || "")}" placeholder="Owner / crew" aria-label="${escA(ctx, name)} owner or crew">
       </div>`;
     }).join("");
     const relationCount = (data.relationships || []).length;
@@ -526,6 +543,24 @@
           return;
         }
         setStatus(ctx, "Job workspace updated", "ok");
+        loadCrmWorkspace(container, r, ctx, true);
+      });
+    });
+    box.querySelectorAll("[data-crm-env]").forEach((select) => {
+      select.addEventListener("change", async () => {
+        const name = select.dataset.crmEnv;
+        const owner = box.querySelector(`[data-crm-env-owner="${name}"]`)?.value || "";
+        select.disabled = true;
+        let result;
+        try { result = await pywebview.api.save_crm_work_environment(
+          r.client, name, select.value, owner); }
+        catch (ex) { result = { ok:false, error:String(ex) }; }
+        select.disabled = false;
+        if (!result?.ok) {
+          setStatus(ctx, `Could not update ${name}: ${result?.error || "unknown"}`, "error");
+          return;
+        }
+        setStatus(ctx, `${name} updated for this job`, "ok");
         loadCrmWorkspace(container, r, ctx, true);
       });
     });
@@ -643,6 +678,7 @@
         ".cl-bar.cl-bar-done > i{background:var(--green,#3fb950);}" +
         ".detail-more{display:flex;flex-direction:row;flex-wrap:wrap;gap:4px;}" +
         ".detail-more .action-btn{flex:0 0 auto;}" +
+        ".secondary-action{display:none}.detail-actions.show-secondary .secondary-action{display:inline-flex}" +
         // Sticky job-name header that shrinks as you scroll (Trello-style).
         ".detail-head{position:sticky;top:0;z-index:6;background:var(--bg,#1b1b1b);" +
         "border-bottom:1px solid transparent;transition:padding .12s ease,border-color .12s ease;}" +
@@ -665,17 +701,22 @@
         ".crm-controls label{font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;}" +
         ".crm-controls select{display:block;width:100%;margin-top:4px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px;}" +
         ".crm-env-row{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:9px;}" +
-        ".crm-env{padding:7px 9px;border:1px solid var(--border);border-radius:7px;display:flex;flex-direction:column;gap:2px;}" +
-        ".crm-env strong{font-size:11px}.crm-env span{font-size:12px;color:var(--text-muted)}" +
-        ".crm-env.has-stage{border-color:rgba(74,158,255,.55);background:rgba(74,158,255,.08)}" +
-        ".crm-env small{font-size:10px;color:var(--text-muted)}.crm-relations{margin-top:7px;font-size:11px;}" +
+        ".crm-env{padding:9px;border:1px solid var(--border);border-radius:9px;display:flex;flex-direction:column;gap:7px;background:var(--bg);opacity:.62}" +
+        ".crm-env.has-stage{opacity:1}.crm-env-title{display:flex;align-items:center;gap:8px}.crm-env-title>div{display:flex;flex-direction:column}.crm-env-icon{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--surface-2);font-size:16px}.crm-env strong{font-size:12px}.crm-env small{font-size:9px;color:var(--text-muted)}" +
+        ".crm-env select,.crm-env input{width:100%;box-sizing:border-box;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 6px;font:inherit;font-size:10px}.crm-env-ems.has-stage{border-color:#4aa8e8}.crm-env-contents.has-stage{border-color:#d7a72e}.crm-env-recon.has-stage{border-color:#c67b47}" +
+        ".crm-relations{margin-top:7px;font-size:11px;}" +
         "@media(max-width:700px){.crm-controls,.crm-env-row,.crm-log-form{grid-template-columns:1fr}.crm-workspace{padding:9px}.crm-log-row{grid-template-columns:68px minmax(0,1fr)}.crm-log-row>button{grid-column:2}.crm-log-head{align-items:flex-start;flex-direction:column}}";
       document.head.appendChild(st);
     }
     // ⋯ More — reveal the less-used row of actions.
     container.querySelector("#detail-more-btn")?.addEventListener("click", () => {
       const m = container.querySelector("#detail-more");
-      if (m) m.style.display = (m.style.display === "none" ? "flex" : "none");
+      const actions = container.querySelector(".detail-actions");
+      const opening = m && m.style.display === "none";
+      if (m) m.style.display = opening ? "flex" : "none";
+      actions?.classList.toggle("show-secondary", !!opening);
+      const button = container.querySelector("#detail-more-btn");
+      if (button) button.textContent = opening ? "▴ Fewer job actions" : "⋯ More job actions";
     });
     // Trello checklists — each section collapsible, collapsed by default.
     // Trello info section collapsible (each checklist collapses individually

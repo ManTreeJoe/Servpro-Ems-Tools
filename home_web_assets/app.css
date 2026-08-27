@@ -36,6 +36,14 @@ body { background: var(--bg); }
 .brand-mark:hover { transform:scale(1.06); filter:drop-shadow(0 2px 7px rgba(134,240,0,.28)); }
 .brand-name { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0.01em; }
 .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.work-env-filter-label {
+  margin: 12px 3px 5px;
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
 
 .sb-nav {
   flex: 1;

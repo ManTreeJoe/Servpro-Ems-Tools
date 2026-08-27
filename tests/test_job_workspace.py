@@ -42,13 +42,37 @@ def test_workspace_edit_is_marked_manual(workspace):
     assert job["lifecycle_source"] == "manual"
 
 
+def test_each_work_type_can_be_changed_for_one_job(workspace):
+    db, api = workspace
+    key = db.upsert_job(display_name="Riley Stone")
+    result = api.save_crm_work_environment(
+        "Riley Stone", "Recon", "active", "Recon crew")
+    assert result["ok"]
+    master = db.get_master_job(key)
+    assert master["work_environments"][0]["work_environment"] == "Recon"
+    assert master["work_environments"][0]["stage"] == "active"
+    assert master["work_environments"][0]["owner"] == "Recon crew"
+
+
+def test_work_type_can_be_marked_not_part_of_job(workspace):
+    db, api = workspace
+    db.upsert_job(display_name="Only Water")
+    result = api.save_crm_work_environment(
+        "Only Water", "Contents", "not_applicable")
+    assert result["ok"]
+    loaded = api.crm_job_workspace("Only Water")
+    assert loaded["work_environments"][0]["stage"] == "not_applicable"
+
+
 def test_workspace_is_part_of_shared_job_detail():
     root = Path(__file__).resolve().parents[1]
     js = (root / "web_shared" / "audit_detail.js").read_text(encoding="utf-8")
     assert 'id="crm-workspace"' in js
     assert "crm_job_workspace" in js
     assert "save_crm_job_workspace" in js
-    assert '["EMS", "Contents", "Recon"]' in js
+    assert "save_crm_work_environment" in js
+    for work_type in ('["EMS", "💧"', '["Contents", "▣"', '["Recon", "🔨"'):
+        assert work_type in js
     assert "@media(max-width:700px)" in js
 
 
@@ -91,6 +115,14 @@ def test_shared_workspace_ui_has_log_editor_and_trello_import():
     for marker in ("data-log-new", "data-log-edit", "data-log-save",
                    "import_crm_job_log_from_trello", "crm_job_log_history"):
         assert marker in js
+
+
+def test_job_actions_keep_primary_work_visible_and_collapse_clutter():
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "web_shared" / "audit_detail.js").read_text(encoding="utf-8")
+    assert "More job actions" in js
+    assert "secondary-action" in js
+    assert "show-secondary" in js
 
 
 def test_trello_job_log_import_is_idempotent(workspace, monkeypatch):
