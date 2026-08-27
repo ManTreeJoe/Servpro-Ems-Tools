@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ems_db_common as common
 import ems_db_sqlite as sqlite_be
 import ems_db_supabase as sup
+from supabase_client import SupabaseError
 
 
 def _public(mod):
@@ -200,6 +201,42 @@ def test_shared_lifecycle_list_and_counts(fake):
     ]}
     assert [row["card_id"] for row in sup.lifecycle_list()] == ["1", "2"]
     assert sup.lifecycle_counts_by_stage() == {"mitigation": 1, "closeout": 1}
+
+
+def test_job_log_reads_shared_events_when_optional_tables_are_missing(monkeypatch):
+    monkeypatch.setattr(sup, "get_job", lambda _key: {"job_id": "job-1"})
+    missing = SupabaseError(404, '{"code":"PGRST205","message":"Could not find the table crm_job_log_entries"}')
+
+    def rows(table, **_params):
+        if table == "crm_job_log_entries":
+            raise missing
+        if table == "job_events":
+            return [{"id": 1, "canon_key": "smith", "event_type": "crm_job_log_revision",
+                     "event_at": "2026-08-27T10:00:00", "actor": "user@example.com",
+                     "payload_json": '{"entry_id":"entry-1","after":{"entry_id":"entry-1","work_date":"2026-08-27","work_type":"Monitor","created_at":"2026-08-27T10:00:00"}}'}]
+        return []
+
+    monkeypatch.setattr(sup, "_rows", rows)
+    result = sup.list_job_log_entries("smith")
+    assert result[0]["entry_id"] == "entry-1"
+    assert result[0]["work_type"] == "Monitor"
+
+
+def test_job_log_writes_shared_event_when_optional_tables_are_missing(monkeypatch):
+    monkeypatch.setattr(sup, "get_job", lambda _key: {"job_id": "job-1"})
+    missing = SupabaseError(404, '{"code":"PGRST205","message":"Could not find the table crm_job_log_entries"}')
+    monkeypatch.setattr(sup._sb, "rest", lambda method, table, **kwargs:
+                        (_ for _ in ()).throw(missing) if table == "crm_job_log_entries" else [])
+    captured = []
+    monkeypatch.setattr(sup, "log_event", lambda key, event_type, payload=None:
+                        captured.append((key, event_type, payload)))
+    saved = sup.save_job_log_entry("smith", {
+        "work_date": "2026-08-27", "work_type": "Monitor",
+        "status": "completed", "note": "Dry",
+    })
+    assert saved["work_type"] == "Monitor"
+    assert captured[0][0:2] == ("smith", "crm_job_log_revision")
+    assert captured[0][2]["after"]["note"] == "Dry"
 
 
 def test_find_job_by_name_falls_back_to_alias(fake):

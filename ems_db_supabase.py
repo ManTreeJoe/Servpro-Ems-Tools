@@ -328,12 +328,57 @@ _JOB_LOG_STATUSES = {"scheduled", "completed", "rescheduled", "cancelled",
                      "skipped", "needs_review"}
 
 
+def _job_log_schema_missing(ex) -> bool:
+    body = str(getattr(ex, "body", "") or ex)
+    return (getattr(ex, "status", None) == 404 and "PGRST205" in body
+            and ("crm_job_log_entries" in body
+                 or "crm_job_log_revisions" in body))
+
+
+def _event_job_log_rows(canon_key_value: str) -> list:
+    latest = {}
+    for event in reversed(list_events(canon_key_value,
+                                      "crm_job_log_revision", limit=1000)):
+        payload = event.get("payload") or {}
+        after = payload.get("after") or {}
+        entry_id = after.get("entry_id") or payload.get("entry_id")
+        if entry_id:
+            latest[entry_id] = after
+    return sorted(latest.values(), key=lambda row: (
+        row.get("work_date") or "", row.get("created_at") or "",
+        row.get("entry_id") or ""))
+
+
+def _event_job_log_history(entry_id: str) -> list:
+    rows = _rows("job_events", event_type="eq.crm_job_log_revision",
+                 select="id,event_at,payload_json,actor", order="id.desc")
+    out = []
+    for row in rows:
+        try:
+            payload = json.loads(row.get("payload_json") or "{}")
+        except (TypeError, ValueError):
+            continue
+        if payload.get("entry_id") != entry_id:
+            continue
+        out.append({"revision_id": row.get("id"), "entry_id": entry_id,
+                    "changed_at": row.get("event_at"),
+                    "changed_by": row.get("actor") or "",
+                    "before_json": json.dumps(payload.get("before")) if payload.get("before") else None,
+                    "after_json": json.dumps(payload.get("after") or {})})
+    return out
+
+
 def list_job_log_entries(canon_key_value: str) -> list:
     job = get_job(canon_key_value)
     if not job:
         return []
-    return _rows("crm_job_log_entries", job_id=f"eq.{job['job_id']}",
-                 select="*", order="work_date,created_at,entry_id")
+    try:
+        return _rows("crm_job_log_entries", job_id=f"eq.{job['job_id']}",
+                     select="*", order="work_date,created_at,entry_id")
+    except Exception as ex:
+        if not _job_log_schema_missing(ex):
+            raise
+        return _event_job_log_rows(canon_key_value)
 
 
 def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
@@ -353,11 +398,22 @@ def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
     source_id = str(entry.get("source_id") or "").strip()
     old = None
     entry_id = str(entry.get("entry_id") or "").strip()
-    if entry_id:
-        old = _one("crm_job_log_entries", entry_id=f"eq.{entry_id}", select="*")
-    if old is None and source_id:
-        old = _one("crm_job_log_entries", job_id=f"eq.{job['job_id']}",
-                   source=f"eq.{source}", source_id=f"eq.{source_id}", select="*")
+    use_events = False
+    try:
+        if entry_id:
+            old = _one("crm_job_log_entries", entry_id=f"eq.{entry_id}", select="*")
+        if old is None and source_id:
+            old = _one("crm_job_log_entries", job_id=f"eq.{job['job_id']}",
+                       source=f"eq.{source}", source_id=f"eq.{source_id}", select="*")
+    except Exception as ex:
+        if not _job_log_schema_missing(ex):
+            raise
+        use_events = True
+        existing = _event_job_log_rows(canon_key_value)
+        old = next((row for row in existing if
+                    (entry_id and row.get("entry_id") == entry_id) or
+                    (source_id and row.get("source") == source and
+                     row.get("source_id") == source_id)), None)
     entry_id = (old or {}).get("entry_id") or entry_id or str(uuid.uuid4())
     now = _now_iso()
     body = {
@@ -372,22 +428,39 @@ def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
         "updated_at": now,
         "updated_by": str(entry.get("updated_by") or "").strip() or None,
     }
-    rows = _sb.rest("POST", "crm_job_log_entries", body=body,
-                    prefer="resolution=merge-duplicates,return=representation")
-    saved = (rows or [body])[0]
-    _sb.rest("POST", "crm_job_log_revisions", body={
-        "entry_id": entry_id, "changed_at": now,
-        "changed_by": body["updated_by"], "before_json": old,
-        "after_json": saved,
-    })
+    if use_events:
+        saved = body
+        log_event(canon_key_value, "crm_job_log_revision", payload={
+            "entry_id": entry_id, "before": old, "after": saved})
+        return saved
+    try:
+        rows = _sb.rest("POST", "crm_job_log_entries", body=body,
+                        prefer="resolution=merge-duplicates,return=representation")
+        saved = (rows or [body])[0]
+        _sb.rest("POST", "crm_job_log_revisions", body={
+            "entry_id": entry_id, "changed_at": now,
+            "changed_by": body["updated_by"], "before_json": old,
+            "after_json": saved,
+        })
+    except Exception as ex:
+        if not _job_log_schema_missing(ex):
+            raise
+        saved = body
+        log_event(canon_key_value, "crm_job_log_revision", payload={
+            "entry_id": entry_id, "before": old, "after": saved})
     return saved
 
 
 def job_log_history(entry_id: str) -> list:
     if not entry_id:
         return []
-    return _rows("crm_job_log_revisions", entry_id=f"eq.{entry_id}",
-                 select="*", order="revision_id.desc")
+    try:
+        return _rows("crm_job_log_revisions", entry_id=f"eq.{entry_id}",
+                     select="*", order="revision_id.desc")
+    except Exception as ex:
+        if not _job_log_schema_missing(ex):
+            raise
+        return _event_job_log_history(entry_id)
 
 
 def relate_jobs(canon_key_value: str, related_canon_key: str,

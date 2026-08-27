@@ -471,7 +471,7 @@
       </div>`).join("") : `<div class="muted crm-requirement-empty">${esc(ctx, emptyText)}</div>`;
     const timelineRows = (data.timeline || []).filter((event) =>
       ["crm_stage_changed", "crm_department_stage_changed", "crm_audit_state"].includes(event.event_type)).slice(0, 12).map((event) => {
-        let payload = event.payload_json || {};
+        let payload = event.payload || event.payload_json || {};
         if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch (_) { payload = {}; } }
         let summary;
         if (event.event_type === "crm_audit_state") {
