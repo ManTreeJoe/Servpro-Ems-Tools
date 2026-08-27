@@ -36,6 +36,29 @@ def test_comma_swapped_name_matches(monkeypatch):
     assert cc.find_project_id("Bernardo, Foilan") == "proj_1"
 
 
+def test_od_last_first_searches_companycam_first_last(monkeypatch):
+    calls = []
+
+    def projects(query="", **_kwargs):
+        calls.append(query)
+        if query == "Jasmin Rose":
+            return _projects(("Jasmin Rose", "2 B St"))
+        return []
+
+    monkeypatch.setattr(cc, "list_projects", projects)
+    result = cc.find_project("Rose Jasmin")
+    assert result["match"]["name"] == "Jasmin Rose"
+    assert calls[:2] == ["Rose Jasmin", "Jasmin Rose"]
+
+
+def test_name_order_queries_deduplicate_the_same_project(monkeypatch):
+    monkeypatch.setattr(
+        cc, "list_projects",
+        lambda *a, **k: _projects(("Jasmin Rose", "2 B St")))
+    result = cc.find_project("Rose Jasmin")
+    assert len(result["candidates"]) == 1
+
+
 def test_subset_first_name_still_matches(monkeypatch):
     monkeypatch.setattr(
         cc, "list_projects",

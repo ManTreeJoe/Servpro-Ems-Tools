@@ -270,6 +270,36 @@ def _score(query_name, proj_name):
     return min(score, 99)
 
 
+def _project_name_queries(name):
+    """CompanyCam search spellings for an OD/job-folder name.
+
+    CompanyCam convention is ``First Last`` while the job share is commonly
+    ``Last First`` (with or without a comma). CompanyCam's server-side search
+    happens before our order-insensitive scorer, so query both orders or the
+    correct project may never reach the scorer at all.
+    """
+    raw = (name or "").strip()
+    if not raw:
+        return []
+    base = re.split(r"\s+-\s+", raw, maxsplit=1)[0].strip()
+    out = [raw]
+    if "," in base:
+        last, first = [p.strip() for p in base.split(",", 1)]
+        if first and last:
+            out.append(f"{first} {last}")
+    else:
+        parts = base.split()
+        if len(parts) == 2:
+            out.append(f"{parts[1]} {parts[0]}")
+    # A single surname query is a final narrow fallback for CompanyCam's
+    # stricter search endpoint; the token scorer below still rejects the
+    # wrong person and handles ambiguity instead of guessing.
+    tokens = base.replace(",", " ").split()
+    if tokens:
+        out.append(tokens[0])
+    return list(dict.fromkeys(q for q in out if q))
+
+
 def find_project(name, address_hint="", threshold=60):
     """Find the CompanyCam project for a job/client name and tie it to its
     id.
@@ -289,11 +319,18 @@ def find_project(name, address_hint="", threshold=60):
         return {"ok": False, "error": "no name given", "match": None,
                 "candidates": []}
     try:
-        # Server-side query narrows the set; fall back to a full scan only
-        # if the query returns nothing (e.g. project titled by address).
-        raw = list_projects(query=name)
-        if not raw:
-            raw = list_projects(query=name.split(",")[0].strip())
+        # Query both naming conventions. CompanyCam uses First Last while
+        # OneDrive uses Last First; its server search may return nothing for
+        # the reversed phrase even though our scorer would consider it exact.
+        raw, seen_ids = [], set()
+        for query in _project_name_queries(name):
+            for project in (list_projects(query=query) or []):
+                pid = str(project.get("id") or "")
+                marker = pid or repr(project)
+                if marker in seen_ids:
+                    continue
+                seen_ids.add(marker)
+                raw.append(project)
     except urllib.request.HTTPError as ex:
         return {"ok": False, "error": f"HTTP {ex.code}", "match": None,
                 "candidates": []}
