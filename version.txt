@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.7",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.7",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.7/Linguar-Hub-Trial-Setup-1.6.0-trial.7.exe",
-  "notes": "Lets Linguar Hub Main and Trial run side by side by giving each channel its own Windows single-instance lock. Also includes APA grab-to-pan and the larger restoration icon."
+  "version": "1.6.0-trial.8",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.8",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.8/Linguar-Hub-Trial-Setup-1.6.0-trial.8.exe",
+  "notes": "Uses the property-roof and connected-hub icon: dark green for Main and purple-white for Trial, with no icon text. Includes the Main/Trial startup fix and APA grab-to-pan."
 }
