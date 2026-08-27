@@ -139,3 +139,16 @@ def test_pipeline_opens_card_before_slow_workspace_lookup():
     for marker in ("Loading job workspace", "aria-busy", "element.isConnected",
                    "showError"):
         assert marker in js
+
+
+def test_pipeline_cards_click_to_open_and_hold_to_drag():
+    root = Path(__file__).parents[1]
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    css = (root / "pipeline_web_assets" / "app.css").read_text(encoding="utf-8")
+    for marker in ("wireCardClickAndHold(cardEl)", 'draggable="false"',
+                   'window.setTimeout(() => {', 'cardEl.draggable = true',
+                   'onAuditCard(cardEl)'):
+        assert marker in js
+    assert 'data-act="audit"' not in js
+    assert ".kcard.drag-ready" in css
+    assert ".kcard:hover .kcard-actions" in css

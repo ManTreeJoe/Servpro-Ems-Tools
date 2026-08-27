@@ -196,13 +196,10 @@ function renderBoard() {
     laneEl.addEventListener("drop", onLaneDrop);
   });
   root.querySelectorAll(".kcard").forEach((cardEl) => {
+    wireCardClickAndHold(cardEl);
     cardEl.addEventListener("dragstart", onCardDragStart);
     cardEl.addEventListener("dragend", onCardDragEnd);
     cardEl.addEventListener("contextmenu", onCardContext);
-    cardEl.querySelector(".kcard-title")?.addEventListener("click", () => onAuditCard(cardEl));
-    cardEl.querySelector('[data-act="audit"]')?.addEventListener("click", (e) => {
-      e.stopPropagation(); onAuditCard(cardEl);
-    });
     cardEl.querySelector('[data-act="flag"]')?.addEventListener("click", (e) => {
       e.stopPropagation(); onFlagCard(cardEl);
     });
@@ -254,15 +251,14 @@ function renderCard(c) {
     : c.sync_status === "pending"
       ? `<span class="chip-mini sync-pending" title="Saved in Linguar Hub; waiting for Trello">↻ Sync</span>` : "";
   const chips = [loss, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
-  return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="true"
+  return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false"
                data-card-id="${escapeAttr(c.card_id)}"
                data-list-id="${escapeAttr(c.list_id)}"
                data-url="${escapeAttr(c.url)}"
                data-client="${escapeAttr(c.client)}">
-    <div class="kcard-title" title="Open job audit">${escapeHtml(c.client || "(no name)")}</div>
+    <div class="kcard-title">${escapeHtml(c.client || "(no name)")}</div>
     ${chips ? `<div class="kcard-chips">${chips}</div>` : ""}
     <div class="kcard-actions">
-      <button class="kbtn" data-act="audit" title="Run audit on this job">🔎</button>
       <button class="kbtn" data-act="flag" title="Flag a missing item + comment Trello">🚩</button>
       <button class="kbtn" data-act="more" title="Open in… / Trello / folder / XA">⋯</button>
     </div>
@@ -270,8 +266,60 @@ function renderCard(c) {
 }
 
 // ── Drag to move (write-back with confirm) ───────────────────────
+function wireCardClickAndHold(cardEl) {
+  let holdTimer = null;
+  let startX = 0;
+  let startY = 0;
+  let dragArmed = false;
+  let suppressClick = false;
+  const interactive = (target) => Boolean(target.closest("button, a, input, textarea, select, [role='button']"));
+  const clearHold = () => {
+    if (holdTimer) window.clearTimeout(holdTimer);
+    holdTimer = null;
+  };
+  cardEl.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || interactive(event.target)) return;
+    startX = event.clientX;
+    startY = event.clientY;
+    dragArmed = false;
+    suppressClick = false;
+    clearHold();
+    holdTimer = window.setTimeout(() => {
+      dragArmed = true;
+      suppressClick = true;
+      cardEl.draggable = true;
+      cardEl.classList.add("drag-ready");
+    }, 180);
+  });
+  cardEl.addEventListener("pointermove", (event) => {
+    if (dragArmed || !holdTimer) return;
+    if (Math.hypot(event.clientX - startX, event.clientY - startY) > 5) {
+      suppressClick = true;
+      clearHold();
+    }
+  });
+  const release = () => {
+    clearHold();
+    dragArmed = false;
+    cardEl.classList.remove("drag-ready");
+    window.setTimeout(() => { cardEl.draggable = false; }, 0);
+  };
+  cardEl.addEventListener("pointerup", release);
+  cardEl.addEventListener("pointercancel", release);
+  cardEl.addEventListener("click", (event) => {
+    if (interactive(event.target)) return;
+    if (suppressClick || cardEl.dataset.didDrag === "true") {
+      suppressClick = false;
+      cardEl.dataset.didDrag = "false";
+      return;
+    }
+    onAuditCard(cardEl);
+  });
+}
+
 function onCardDragStart(ev) {
   const el = ev.currentTarget;
+  el.dataset.didDrag = "true";
   state.drag = {
     cardId:   el.dataset.cardId,
     name:     el.dataset.client,
@@ -282,7 +330,9 @@ function onCardDragStart(ev) {
 }
 
 function onCardDragEnd(ev) {
-  ev.currentTarget.classList.remove("dragging");
+  ev.currentTarget.draggable = false;
+  ev.currentTarget.classList.remove("dragging", "drag-ready");
+  state.drag = null;
   $$(".lane.drop-target").forEach((l) => l.classList.remove("drop-target"));
 }
 
