@@ -24,14 +24,24 @@ from audit_logic import detect_activity, audit_jobs as _audit_jobs_core
 # still work via the module __getattr__ below; in-module code uses the
 # _runs_dir() / _audit_base() getters.
 def _runs_dir():
-    configured = config.load().get("runs_dir") or ""
-    # A mapped archive can open successfully while containing no current
-    # Run Docs. Prefer the current per-user SharePoint/OneDrive library when
-    # auto-detection finds it; keep the configured path as the fallback.
+    configured = os.path.normpath(str(config.load().get("runs_dir") or "").strip())
+    # A folder explicitly selected by an employee is authoritative.  The only
+    # exception is the old shared X-drive archive, which can be reachable (and
+    # therefore appear healthy) while containing no current Run Docs.
+    stale_archives = {
+        os.path.normcase(os.path.normpath(r"X:\IE_Public\Daily Run")),
+        os.path.normcase(os.path.normpath(r"X:\IE Public\Daily Run")),
+    }
+    if (configured and os.path.isdir(configured)
+            and os.path.normcase(configured) not in stale_archives):
+        return configured
+
+    # If nothing usable was selected, locate the employee's synced
+    # SharePoint/OneDrive Daily Run library on that computer.
     try:
         detected = paths.auto_detect().get("runs_dir") or ""
         if detected and os.path.isdir(detected):
-            return detected
+            return os.path.normpath(detected)
     except Exception:
         pass
     return configured
