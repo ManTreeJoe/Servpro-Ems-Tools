@@ -152,19 +152,6 @@
     if ((r.sharepoint_new || 0) > 0) {
       chips.push(`<span class="detail-chip sp-new" style="background:var(--act-monitor);color:#fff;cursor:pointer;" title="Click to import — ${r.sharepoint_new} files on SharePoint not in OneDrive yet">📥 SP +${r.sharepoint_new} new</span>`);
     }
-    chips.push(`<span class="detail-chip commercial-chip ${r.is_commercial ? "on" : ""}"
-                  data-commercial-client="${escA(ctx, r.client)}"
-                  title="Toggle commercial — auto-resolves ATP/CIF/CER/CoS">
-                  🏢 ${r.is_commercial ? "Commercial" : "Mark commercial"}
-                </span>`);
-    // The mirror of the commercial chip, and NOT symmetric with it:
-    // commercial drops the four insurance forms, self-pay ADDS the home
-    // improvement contract + 3-day right to cancel.
-    chips.push(`<span class="detail-chip selfpay-chip ${r.is_self_pay ? "on" : ""}"
-                  data-selfpay-client="${escA(ctx, r.client)}"
-                  title="Toggle self-pay — requires Home Improvement Contract + 3 Day Right to Cancel">
-                  💵 ${r.is_self_pay ? "Self-pay" : "Mark self-pay"}
-                </span>`);
     for (const a of r.activity || []) {
       chips.push(`<span class="detail-chip activity" data-act="${escA(ctx, a)}">${esc(ctx, a)}</span>`);
     }
@@ -453,6 +440,7 @@
     const relationCount = (data.relationships || []).length;
     const logEntries = data.job_log || [];
     const lifecycleLabel = (stages.find(([value]) => value === data.lifecycle_stage) || ["", "Needs classification"])[1];
+    const jobTypeLabel = (types.find(([value]) => value === data.job_type) || ["", "Not set"])[1];
     const priorityLabel = (priorities.find(([value]) => value === data.priority) || ["normal", "Normal"])[1];
     const activeEnvironments = envs.map(([name, icon]) => {
       const state = byEnv[name] || {};
@@ -511,6 +499,7 @@
       <div class="crm-workspace-summary" aria-label="Job workspace summary">
         <span class="crm-progress-rail" title="${progress.percent_complete || 0}% of requirements verified"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></span>
         <span class="crm-summary-pill"><small>Stage</small>${esc(ctx, lifecycleLabel)}</span>
+        <span class="crm-summary-pill"><small>Type</small>${esc(ctx, jobTypeLabel)}</span>
         ${(progress.counts?.overdue || 0) ? `<span class="crm-summary-count overdue">${progress.counts.overdue} overdue</span>` : ""}
         ${(progress.counts?.required_now || 0) ? `<span class="crm-summary-count due">${progress.counts.required_now} due now</span>` : ""}
         ${data.priority && data.priority !== "normal" ? `<span class="crm-summary-pill priority-${escA(ctx, data.priority)}"><small>Priority</small>${esc(ctx, priorityLabel)}</span>` : ""}
@@ -931,53 +920,6 @@
       spChip.addEventListener("click", (e) => {
         e.stopPropagation();
         if (ctx.modals && ctx.modals.openSpImport) ctx.modals.openSpImport(r);
-      });
-    }
-    const selfPayChip = container.querySelector(".selfpay-chip");
-    if (selfPayChip) {
-      selfPayChip.style.cursor = "pointer";
-      selfPayChip.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const cur = !!r.is_self_pay;
-        const label = (on) => (on ? "💵 Self-pay" : "💵 Mark self-pay");
-        selfPayChip.textContent = "Working…";
-        const res = await pywebview.api.set_self_pay(r.client, !cur);
-        if (!res || !res.ok) {
-          setStatus(ctx, `Toggle failed: ${(res && res.error) || "?"}`, "error");
-          selfPayChip.textContent = label(cur);
-          return;
-        }
-        r.is_self_pay = res.self_pay;
-        selfPayChip.classList.toggle("on", !!res.self_pay);
-        selfPayChip.textContent = label(!!res.self_pay);
-        // Turning it ON adds requirements, so name them — otherwise the
-        // row just goes red and the user has to work out what appeared.
-        setStatus(ctx, res.self_pay
-          ? `💵 Self-pay · now needs ${(res.forms || []).join(" + ")}`
-          : "Unmarked self-pay", "ok");
-        if (ctx.reauditAndRerender) ctx.reauditAndRerender(r.client);
-      });
-    }
-    const commChip = container.querySelector(".commercial-chip");
-    if (commChip) {
-      commChip.style.cursor = "pointer";
-      commChip.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const cur = !!r.is_commercial;
-        commChip.textContent = "Working…";
-        const res = await pywebview.api.set_commercial(r.client, !cur);
-        if (!res || !res.ok) {
-          setStatus(ctx, `Toggle failed: ${(res && res.error) || "?"}`, "error");
-          commChip.textContent = (cur ? "🏢 Commercial" : "🏢 Mark commercial");
-          return;
-        }
-        r.is_commercial = res.on;
-        if (res.resolved_count) {
-          setStatus(ctx, `🏢 Marked commercial · ${res.resolved_count} forms auto-resolved`, "ok");
-        } else {
-          setStatus(ctx, res.on ? "🏢 Marked commercial" : "Unmarked commercial", "ok");
-        }
-        if (ctx.reauditAndRerender) ctx.reauditAndRerender(r.client);
       });
     }
     if (ctx.showCtxMenu) {

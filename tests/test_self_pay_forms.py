@@ -115,34 +115,11 @@ def _detail_js():
         encoding="utf-8").read()
 
 
-def test_the_chip_exists_and_toggles():
+def test_job_type_is_managed_in_job_workspace_not_duplicate_top_chips():
     src = _detail_js()
-    assert "selfpay-chip" in src
-    assert "set_self_pay" in src
-
-
-def test_the_chip_is_a_separate_flag_from_commercial():
-    """A job can be both. Reusing the commercial chip would make one
-    hide the other."""
-    src = _detail_js()
-    assert "commercial-chip" in src and "selfpay-chip" in src
-    assert "is_self_pay" in src and "is_commercial" in src
-
-
-def test_turning_it_on_names_the_forms_it_added():
-    """Otherwise the row just goes red and the user works out why."""
-    src = _detail_js()
-    i = src.index("set_self_pay(r.client")      # the handler, not the render
-    body = src[i:i + 1200]
-    assert "res.forms" in body
-
-
-def test_the_chip_has_its_own_styling():
-    """Same styling as commercial would read as the same state, and the
-    two mean opposite things."""
-    import io as _io
-    css = _io.open(os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "audit_web_assets", "app.css"),
-        encoding="utf-8").read()
-    assert ".detail-chip.selfpay-chip" in css
-    assert ".detail-chip.selfpay-chip.on" in css
+    assert "selfpay-chip" not in src
+    assert "commercial-chip" not in src
+    assert 'data-crm-field="job_type"' in src
+    assert "jobTypeLabel" in src
+    assert "types.find" in src
+# Job type remains one field; stage-specific requirements come from it.
