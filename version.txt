@@ -1,6 +1,6 @@
 {
-  "version": "1.5.4",
+  "version": "1.5.5",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/latest",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.4/Linguar-Hub-Setup-1.5.4.exe",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.5.5/Linguar-Hub-Setup-1.5.5.exe",
   "notes": "Fixes employee folder setup on other PCs, accepts pasted Windows and file URL paths, automatically finds Daily Run under the selected job root, and makes signed-in users load jobs from the shared online database instead of an empty local index."
 }
