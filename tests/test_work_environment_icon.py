@@ -51,8 +51,8 @@ def test_taskbar_identity_is_separate_and_matches_installer_shortcuts():
     shell = (ROOT / "home_web.py").read_text(encoding="utf-8")
     iss = (ROOT / "Linguar_Hub.iss").read_text(encoding="utf-8")
 
-    for app_id in ("Servpro.LinguarHub.Main.2026",
-                   "Servpro.LinguarHub.Trial.2026"):
+    for app_id in ("Servpro.LinguarHub.Main.2026.2",
+                   "Servpro.LinguarHub.Trial.2026.2"):
         assert app_id in shell
         assert app_id in iss
     assert "SetCurrentProcessExplicitAppUserModelID(app_id)" in shell

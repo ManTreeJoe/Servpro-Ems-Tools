@@ -47,8 +47,11 @@ def _set_windows_app_identity(is_trial=False):
         return
     try:
         import ctypes
-        app_id = ("Servpro.LinguarHub.Trial.2026"
-                  if is_trial else "Servpro.LinguarHub.Main.2026")
+        # Refresh the Windows icon cache. The first Linguar AUMIDs were
+        # briefly shipped while the executable still carried wrench.ico;
+        # Windows keeps that association even after the EXE icon changes.
+        app_id = ("Servpro.LinguarHub.Trial.2026.2"
+                  if is_trial else "Servpro.LinguarHub.Main.2026.2")
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
     except Exception:
         pass

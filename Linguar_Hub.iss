@@ -16,7 +16,7 @@
   #define OutBase   "Linguar-Hub-Trial-Setup"
   #define DirLeaf   "Linguar Hub Trial"
   #define SetupIcon "linguar_hub_trial.ico"
-  #define AppUserModelId "Servpro.LinguarHub.Trial.2026"
+  #define AppUserModelId "Servpro.LinguarHub.Trial.2026.2"
 #else
   #define MyAppName "Linguar Hub"
   #define MyAppExe  "Linguar Hub.exe"
@@ -24,7 +24,7 @@
   #define OutBase   "Linguar-Hub-Setup"
   #define DirLeaf   "Linguar Hub"
   #define SetupIcon "linguar_hub.ico"
-  #define AppUserModelId "Servpro.LinguarHub.Main.2026"
+  #define AppUserModelId "Servpro.LinguarHub.Main.2026.2"
 #endif
 
 #ifndef SourceDir

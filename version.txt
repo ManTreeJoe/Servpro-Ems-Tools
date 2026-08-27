@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.12",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.12",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.12/Linguar-Hub-Trial-Setup-1.6.0-trial.12.exe",
-  "notes": "Adds an editable ongoing Job Log to Job Workspace with scheduled/completed status, technicians, notes, equipment, Trello import, revision history, and Snapshot reuse. Office comment posters remain in the record without being counted as field technicians."
+  "version": "1.6.0-trial.13",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.13",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.13/Linguar-Hub-Trial-Setup-1.6.0-trial.13.exe",
+  "notes": "Refreshes the Windows taskbar identity so the running Main and Trial windows use the embedded Linguar Hub icons instead of Windows' cached legacy green wrench. Includes the editable ongoing Job Log from trial.12."
 }
