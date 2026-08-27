@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.11",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.11",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.11/Linguar-Hub-Trial-Setup-1.6.0-trial.11.exe",
-  "notes": "Stops Job Workspace from repeatedly loading and resetting during background audit, SharePoint, search, or list updates. It now refreshes only when changing jobs or saving workspace fields."
+  "version": "1.6.0-trial.12",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.12",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.12/Linguar-Hub-Trial-Setup-1.6.0-trial.12.exe",
+  "notes": "Adds an editable ongoing Job Log to Job Workspace with scheduled/completed status, technicians, notes, equipment, Trello import, revision history, and Snapshot reuse. Office comment posters remain in the record without being counted as field technicians."
 }
