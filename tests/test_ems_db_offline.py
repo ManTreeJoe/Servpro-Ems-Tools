@@ -23,6 +23,7 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(off, "QUEUE_PATH", str(tmp_path / "queue.jsonl"))
     monkeypatch.setattr(off, "FALLBACK_ENABLED", True)
     monkeypatch.setattr(off, "_degraded", False)
+    monkeypatch.setattr(off, "_schema_fallbacks", set())
     ems_db_sqlite.reset_db_path(str(tmp_path / "jobs.db"))
     return tmp_path
 
@@ -125,6 +126,25 @@ def test_bulk_operations_refuse_rather_than_queue(sandbox, monkeypatch):
     with pytest.raises(off.OfflineRefused):
         off.sync_from_trello([])
     assert off.queued() == []
+
+
+def test_missing_optional_job_log_table_falls_back_locally(sandbox,
+                                                            monkeypatch):
+    key = ems_db_sqlite.upsert_job(display_name="Local Job Log")
+    missing = supa_error(404, '{"code":"PGRST205","message":"Could not find '
+                         'the table public.crm_job_log_entries"}')
+    monkeypatch.setattr(ems_db_supabase, "list_job_log_entries",
+                        lambda *_a, **_k: (_ for _ in ()).throw(missing))
+    assert off.list_job_log_entries(key) == []
+    assert off.status()["schema_fallbacks"] == ["job_log"]
+
+
+def test_other_404_still_propagates(sandbox, monkeypatch):
+    monkeypatch.setattr(ems_db_supabase, "get_job",
+                        lambda *_a, **_k: (_ for _ in ()).throw(
+                            supa_error(404, '{"code":"PGRST205","message":"missing jobs"}')))
+    with pytest.raises(Exception):
+        off.get_job("x")
 
 
 def test_delete_refuses_offline_instead_of_replaying_later(sandbox,

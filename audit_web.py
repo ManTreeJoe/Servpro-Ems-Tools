@@ -1753,6 +1753,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             except Exception as ex:
                 log_error = ("Shared Job Log needs database setup: "
                              f"{type(ex).__name__}: {ex}")
+            log_notice = ""
+            try:
+                import ems_db_offline
+                if "job_log" in ems_db_offline.status().get("schema_fallbacks", []):
+                    log_notice = ("Job Log is available on this PC and will "
+                                  "sync after shared database setup finishes.")
+            except Exception:
+                pass
             return {
                 "ok": True,
                 "job_id": master.get("job_id") or "",
@@ -1767,6 +1775,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "relationships": master.get("relationships") or [],
                 "job_log": log_entries,
                 "job_log_error": log_error,
+                "job_log_notice": log_notice,
             }
         except Exception as ex:
             return {"ok": False, "migration_required": True,

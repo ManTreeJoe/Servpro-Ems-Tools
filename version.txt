@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.14",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.14",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.14/Linguar-Hub-Trial-Setup-1.6.0-trial.14.exe",
-  "notes": "Adds per-job EMS, Contents, and Recon controls; simplifies job actions; automatically pins one clear Trello match and flags conflicts; and makes copy actions use saved Job Info first."
+  "version": "1.6.0-trial.15",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.15",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.15/Linguar-Hub-Trial-Setup-1.6.0-trial.15.exe",
+  "notes": "Fixes the missing Supabase Job Log table error. Job Log now works locally and queues changes for shared sync until the database migration is installed. Includes all Trial 14 UI and matching improvements."
 }

@@ -477,6 +477,7 @@
           <button class="action-btn primary" type="button" data-log-new>+ Add entry</button></div></div>
         <div class="crm-log-editor" hidden></div>
         ${data.job_log_error ? `<div class="crm-log-warning">${esc(ctx, data.job_log_error)}</div>` : ""}
+        ${data.job_log_notice ? `<div class="crm-log-notice">${esc(ctx, data.job_log_notice)}</div>` : ""}
         <div class="crm-log-list">${logRows}</div>
       </div>`;
 
@@ -725,6 +726,7 @@
         ".crm-log-main{min-width:0}.crm-log-main p{margin:4px 0;white-space:pre-wrap}.crm-log-main small{margin-left:6px}.crm-log-status{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--surface-2);font-size:10px;text-transform:capitalize}.crm-log-status.completed{background:#184e34;color:#baf2d0}.crm-log-status.scheduled{background:#183b60;color:#c9e4ff}.crm-log-status.needs_review{background:#5b430d;color:#ffe5a1}" +
         ".crm-log-editor{margin:8px 0;padding:10px;border:1px solid var(--accent);border-radius:9px;background:var(--surface-2)}.crm-log-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.crm-log-form label{display:flex;flex-direction:column;gap:4px;font-size:11px}.crm-log-form .wide,.crm-log-actions,.crm-log-history{grid-column:1/-1}.crm-log-form input,.crm-log-form select,.crm-log-form textarea{width:100%;box-sizing:border-box}.crm-log-actions{display:flex;gap:7px}.crm-log-history{font-size:11px}" +
         ".crm-log-warning{margin:7px 0;padding:7px;border-radius:7px;background:#5b430d;color:#ffe5a1;font-size:11px}" +
+        ".crm-log-notice{margin:7px 0;padding:7px;border-radius:7px;border:1px solid #315d75;background:#163343;color:#c9e8f6;font-size:11px}" +
         ".crm-source{font-size:10px;padding:3px 7px;border-radius:10px;background:var(--surface-2);color:var(--text-muted);}" +
         ".crm-trello-link{display:flex;align-items:center;justify-content:space-between;gap:9px;margin:0 0 10px;padding:8px 9px;border:1px solid var(--border);border-radius:8px;font-size:11px}.crm-trello-link.linked{border-color:#287a50;background:#153b29;color:#c7f4d8}.crm-trello-link.conflict{border-color:#b7791f;background:#4b350e;color:#ffe5a1}.crm-trello-link.conflict>div{display:flex;flex-direction:column;gap:2px}.crm-trello-link.missing{border-style:dashed}" +
         ".crm-controls{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px;}" +

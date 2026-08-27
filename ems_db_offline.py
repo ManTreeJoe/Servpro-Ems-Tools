@@ -50,6 +50,7 @@ QUEUE_PATH = _paths.data("ems_db_queue.jsonl")
 _LOCK = threading.RLock()
 _last_error = ""
 _degraded = False
+_schema_fallbacks = set()
 
 # ── which calls change data ────────────────────────────────────────────
 # `tests/test_ems_db_offline.py` asserts these two sets together cover
@@ -111,6 +112,21 @@ def _is_unreachable(ex):
     if isinstance(ex, (TimeoutError, ConnectionError)):
         return True
     return getattr(ex, "status", None) == 0
+
+
+def _is_missing_feature_schema(name, ex):
+    """The optional Job Log may run locally until migration 010 lands.
+
+    This is intentionally narrower than `_is_unreachable`: a generic 404,
+    permission failure, or missing core table must still surface loudly.
+    """
+    if name not in {"list_job_log_entries", "save_job_log_entry",
+                    "job_log_history"}:
+        return False
+    body = str(getattr(ex, "body", "") or ex)
+    return (getattr(ex, "status", None) == 404 and "PGRST205" in body
+            and ("crm_job_log_entries" in body
+                 or "crm_job_log_revisions" in body))
 
 
 # ── replay queue ───────────────────────────────────────────────────────
@@ -200,7 +216,8 @@ def flush_queue() -> dict:
 def status() -> dict:
     """For Settings: are we degraded, and how much is waiting?"""
     return {"degraded": _degraded, "queued": len(queued()),
-            "last_error": _last_error, "queue_path": QUEUE_PATH}
+            "last_error": _last_error, "queue_path": QUEUE_PATH,
+            "schema_fallbacks": sorted(_schema_fallbacks)}
 
 
 # ── delegation ─────────────────────────────────────────────────────────
@@ -224,6 +241,9 @@ def _call(name, *args, **kwargs):
     try:
         out = remote(*args, **kwargs)
     except Exception as ex:
+        if FALLBACK_ENABLED and _is_missing_feature_schema(name, ex):
+            _schema_fallbacks.add("job_log")
+            return _fallback(name, ex, *args, **kwargs)
         if not (FALLBACK_ENABLED and _is_unreachable(ex)):
             raise
         _mark(True, str(ex))
