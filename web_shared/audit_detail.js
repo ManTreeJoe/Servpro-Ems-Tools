@@ -425,6 +425,19 @@
       </div>`;
     }).join("");
     const relationCount = (data.relationships || []).length;
+    const logEntries = data.job_log || [];
+    const logRows = logEntries.length ? logEntries.map((entry) => `
+      <div class="crm-log-row" data-log-id="${escA(ctx, entry.entry_id || "")}">
+        <div class="crm-log-date">${esc(ctx, entry.work_date || "")}</div>
+        <div class="crm-log-main"><strong>${esc(ctx, entry.work_type || "Update")}</strong>
+          <span class="crm-log-status ${escA(ctx, entry.status || "")}">${esc(ctx, (entry.status || "completed").replaceAll("_", " "))}</span>
+          ${entry.technicians ? `<small>${esc(ctx, entry.technicians)}</small>` : ""}
+          ${entry.note ? `<p>${esc(ctx, entry.note)}</p>` : ""}
+          ${entry.equipment ? `<p class="muted">Equipment: ${esc(ctx, entry.equipment)}</p>` : ""}
+          <small class="muted">${esc(ctx, entry.source || "pc")}${entry.updated_by ? ` · ${esc(ctx, entry.updated_by)}` : ""}</small>
+        </div>
+        <button class="action-btn" type="button" data-log-edit="${escA(ctx, entry.entry_id || "")}">Edit</button>
+      </div>`).join("") : `<div class="muted crm-log-empty">No job-log entries yet.</div>`;
     box.dataset.crmClient = cacheKey;
     box.dataset.crmReady = "1";
     box.innerHTML = `
@@ -439,7 +452,66 @@
         <label>Priority<select data-crm-field="priority">${options(priorities, data.priority)}</select></label>
       </div>
       <div class="crm-env-row">${envCards}</div>
-      ${relationCount ? `<div class="muted crm-relations">${relationCount} related job${relationCount === 1 ? "" : "s"}</div>` : ""}`;
+      ${relationCount ? `<div class="muted crm-relations">${relationCount} related job${relationCount === 1 ? "" : "s"}</div>` : ""}
+      <div class="crm-job-log">
+        <div class="crm-log-head"><div><strong>Job Log</strong><span class="muted">Editable throughout the job · Snapshot uses this history</span></div>
+          <div><button class="action-btn" type="button" data-log-import>Import Trello</button>
+          <button class="action-btn primary" type="button" data-log-new>+ Add entry</button></div></div>
+        <div class="crm-log-editor" hidden></div>
+        ${data.job_log_error ? `<div class="crm-log-warning">${esc(ctx, data.job_log_error)}</div>` : ""}
+        <div class="crm-log-list">${logRows}</div>
+      </div>`;
+
+    const openLogEditor = (entry = {}) => {
+      const editor = box.querySelector(".crm-log-editor");
+      if (!editor) return;
+      const today = new Date().toISOString().slice(0, 10);
+      const statuses = ["scheduled", "completed", "rescheduled", "cancelled", "skipped", "needs_review"];
+      editor.hidden = false;
+      editor.innerHTML = `
+        <div class="crm-log-form">
+          <label>Work date<input type="date" data-log-field="work_date" value="${escA(ctx, entry.work_date || today)}"></label>
+          <label>Work type<input data-log-field="work_type" value="${escA(ctx, entry.work_type || "")}" placeholder="Monitor, Demo, Inspection…"></label>
+          <label>Status<select data-log-field="status">${statuses.map((s) => `<option value="${s}" ${s === (entry.status || "completed") ? "selected" : ""}>${s.replaceAll("_", " ")}</option>`).join("")}</select></label>
+          <label>Technician / crew<input data-log-field="technicians" value="${escA(ctx, entry.technicians || "")}" placeholder="FB, PG, crew…"></label>
+          <label class="wide">Job note<textarea data-log-field="note" rows="3" placeholder="What happened today?">${esc(ctx, entry.note || "")}</textarea></label>
+          <label class="wide">Equipment<input data-log-field="equipment" value="${escA(ctx, entry.equipment || "")}" placeholder="Placed, moved, readings, pickup…"></label>
+          <div class="crm-log-actions"><button class="action-btn primary" type="button" data-log-save>Save entry</button>
+          <button class="action-btn" type="button" data-log-cancel>Cancel</button>
+          ${entry.entry_id ? `<button class="action-btn" type="button" data-log-history>History</button>` : ""}</div>
+          <div class="crm-log-history" hidden></div>
+        </div>`;
+      editor.querySelector("[data-log-cancel]")?.addEventListener("click", () => { editor.hidden = true; editor.innerHTML = ""; });
+      editor.querySelector("[data-log-save]")?.addEventListener("click", async (event) => {
+        const payload = { entry_id: entry.entry_id || "", source: entry.source || "pc",
+          source_id: entry.source_id || "", trello_comment_id: entry.trello_comment_id || "" };
+        editor.querySelectorAll("[data-log-field]").forEach((field) => { payload[field.dataset.logField] = field.value; });
+        const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
+        let result; try { result = await pywebview.api.save_crm_job_log(r.client, payload); }
+        catch (ex) { result = { ok:false, error:String(ex) }; }
+        if (!result?.ok) { button.disabled = false; button.textContent = "Save entry"; setStatus(ctx, `Job-log save failed: ${result?.error || "unknown"}`, "error"); return; }
+        setStatus(ctx, "Job-log entry saved", "ok"); loadCrmWorkspace(container, r, ctx, true);
+      });
+      editor.querySelector("[data-log-history]")?.addEventListener("click", async () => {
+        const host = editor.querySelector(".crm-log-history");
+        const result = await pywebview.api.crm_job_log_history(entry.entry_id);
+        host.hidden = false; host.innerHTML = result?.ok
+          ? `<strong>${(result.history || []).length} revision(s)</strong>` + (result.history || []).map((h) => `<div>${esc(ctx, h.changed_at || "")} ${h.changed_by ? `· ${esc(ctx, h.changed_by)}` : ""}</div>`).join("")
+          : esc(ctx, result?.error || "History unavailable");
+      });
+      editor.scrollIntoView({ behavior:"smooth", block:"nearest" });
+    };
+    box.querySelector("[data-log-new]")?.addEventListener("click", () => openLogEditor({}));
+    box.querySelectorAll("[data-log-edit]").forEach((button) => button.addEventListener("click", () => {
+      openLogEditor(logEntries.find((x) => x.entry_id === button.dataset.logEdit) || {});
+    }));
+    box.querySelector("[data-log-import]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget; button.disabled = true; button.textContent = "Reading Trello…";
+      let result; try { result = await pywebview.api.import_crm_job_log_from_trello(r.client, r.trello_card_id || ""); }
+      catch (ex) { result = { ok:false, error:String(ex) }; }
+      if (!result?.ok) { button.disabled = false; button.textContent = "Import Trello"; setStatus(ctx, `Import failed: ${result?.error || "unknown"}`, "error"); return; }
+      setStatus(ctx, `Imported ${result.imported || 0} recognized Trello event(s)`, "ok"); loadCrmWorkspace(container, r, ctx, true);
+    });
     box.querySelectorAll("[data-crm-field]").forEach((select) => {
       select.addEventListener("change", async () => {
         select.disabled = true;
@@ -582,6 +654,12 @@
         "background:var(--surface,#222);margin:8px 0 12px;}" +
         ".crm-workspace-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;}" +
         ".crm-workspace-head h3{margin:0 0 2px;font-size:14px;}" +
+        ".crm-job-log{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}" +
+        ".crm-log-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}.crm-log-head>div:first-child{display:flex;flex-direction:column;gap:2px}" +
+        ".crm-log-list{display:flex;flex-direction:column;gap:5px}.crm-log-row{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}" +
+        ".crm-log-main{min-width:0}.crm-log-main p{margin:4px 0;white-space:pre-wrap}.crm-log-main small{margin-left:6px}.crm-log-status{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--surface-2);font-size:10px;text-transform:capitalize}.crm-log-status.completed{background:#184e34;color:#baf2d0}.crm-log-status.scheduled{background:#183b60;color:#c9e4ff}.crm-log-status.needs_review{background:#5b430d;color:#ffe5a1}" +
+        ".crm-log-editor{margin:8px 0;padding:10px;border:1px solid var(--accent);border-radius:9px;background:var(--surface-2)}.crm-log-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.crm-log-form label{display:flex;flex-direction:column;gap:4px;font-size:11px}.crm-log-form .wide,.crm-log-actions,.crm-log-history{grid-column:1/-1}.crm-log-form input,.crm-log-form select,.crm-log-form textarea{width:100%;box-sizing:border-box}.crm-log-actions{display:flex;gap:7px}.crm-log-history{font-size:11px}" +
+        ".crm-log-warning{margin:7px 0;padding:7px;border-radius:7px;background:#5b430d;color:#ffe5a1;font-size:11px}" +
         ".crm-source{font-size:10px;padding:3px 7px;border-radius:10px;background:var(--surface-2);color:var(--text-muted);}" +
         ".crm-controls{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px;}" +
         ".crm-controls label{font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;}" +
@@ -591,7 +669,7 @@
         ".crm-env strong{font-size:11px}.crm-env span{font-size:12px;color:var(--text-muted)}" +
         ".crm-env.has-stage{border-color:rgba(74,158,255,.55);background:rgba(74,158,255,.08)}" +
         ".crm-env small{font-size:10px;color:var(--text-muted)}.crm-relations{margin-top:7px;font-size:11px;}" +
-        "@media(max-width:700px){.crm-controls,.crm-env-row{grid-template-columns:1fr}.crm-workspace{padding:9px}}";
+        "@media(max-width:700px){.crm-controls,.crm-env-row,.crm-log-form{grid-template-columns:1fr}.crm-workspace{padding:9px}.crm-log-row{grid-template-columns:68px minmax(0,1fr)}.crm-log-row>button{grid-column:2}.crm-log-head{align-items:flex-start;flex-direction:column}}";
       document.head.appendChild(st);
     }
     // ⋯ More — reveal the less-used row of actions.

@@ -27,6 +27,7 @@ per request and design accordingly.
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import supabase_client as _sb
@@ -43,7 +44,7 @@ from ems_db_common import (            # noqa: F401 — re-exported as API
     alias_probe_token, truncation_alias_is_ambiguous, dedupe_child_name,
 )
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 class DepartmentConflict(Exception):
@@ -77,6 +78,8 @@ _ORDER_BY = {
     "app_user_departments":  "user_id,department",
     "crm_job_departments":   "job_id,work_environment",
     "crm_job_relationships": "job_id,related_job_id,relationship_type",
+    "crm_job_log_entries":  "job_id,work_date,created_at,entry_id",
+    "crm_job_log_revisions": "entry_id,revision_id",
 }
 
 
@@ -308,6 +311,72 @@ def get_master_job(canon_key_value: str):
     job["work_environments"] = get_work_environment_states(canon_key_value)
     job["relationships"] = get_job_relationships(canon_key_value)
     return job
+
+
+_JOB_LOG_STATUSES = {"scheduled", "completed", "rescheduled", "cancelled",
+                     "skipped", "needs_review"}
+
+
+def list_job_log_entries(canon_key_value: str) -> list:
+    job = get_job(canon_key_value)
+    if not job:
+        return []
+    return _rows("crm_job_log_entries", job_id=f"eq.{job['job_id']}",
+                 select="*", order="work_date,created_at,entry_id")
+
+
+def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
+    if not isinstance(entry, dict):
+        raise ValueError("job log entry must be an object")
+    job = get_job(canon_key_value)
+    if not job:
+        raise KeyError(canon_key_value)
+    work_date = str(entry.get("work_date") or "").strip()
+    work_type = str(entry.get("work_type") or "").strip()
+    status = str(entry.get("status") or "completed").strip().lower()
+    if not work_date or not work_type:
+        raise ValueError("work date and work type are required")
+    if status not in _JOB_LOG_STATUSES:
+        raise ValueError(f"unknown job log status: {status}")
+    source = str(entry.get("source") or "pc").strip().lower() or "pc"
+    source_id = str(entry.get("source_id") or "").strip()
+    old = None
+    entry_id = str(entry.get("entry_id") or "").strip()
+    if entry_id:
+        old = _one("crm_job_log_entries", entry_id=f"eq.{entry_id}", select="*")
+    if old is None and source_id:
+        old = _one("crm_job_log_entries", job_id=f"eq.{job['job_id']}",
+                   source=f"eq.{source}", source_id=f"eq.{source_id}", select="*")
+    entry_id = (old or {}).get("entry_id") or entry_id or str(uuid.uuid4())
+    now = _now_iso()
+    body = {
+        "entry_id": entry_id, "job_id": job["job_id"],
+        "work_date": work_date, "work_type": work_type, "status": status,
+        "technicians": str(entry.get("technicians") or "").strip() or None,
+        "note": str(entry.get("note") or "").strip() or None,
+        "equipment": str(entry.get("equipment") or "").strip() or None,
+        "source": source, "source_id": source_id or None,
+        "trello_comment_id": str(entry.get("trello_comment_id") or "").strip() or None,
+        "created_at": (old or {}).get("created_at") or now,
+        "updated_at": now,
+        "updated_by": str(entry.get("updated_by") or "").strip() or None,
+    }
+    rows = _sb.rest("POST", "crm_job_log_entries", body=body,
+                    prefer="resolution=merge-duplicates,return=representation")
+    saved = (rows or [body])[0]
+    _sb.rest("POST", "crm_job_log_revisions", body={
+        "entry_id": entry_id, "changed_at": now,
+        "changed_by": body["updated_by"], "before_json": old,
+        "after_json": saved,
+    })
+    return saved
+
+
+def job_log_history(entry_id: str) -> list:
+    if not entry_id:
+        return []
+    return _rows("crm_job_log_revisions", entry_id=f"eq.{entry_id}",
+                 select="*", order="revision_id.desc")
 
 
 def relate_jobs(canon_key_value: str, related_canon_key: str,

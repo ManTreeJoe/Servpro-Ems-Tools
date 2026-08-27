@@ -57,6 +57,10 @@ and never overwrites a value someone corrected by hand.
    `legacy_unclassified` instead of pretending they entered Intake today.
    `trial_preflight.py` now checks both v6 and v9 and will report exactly
    which migration is missing.
+6. ⚠ **SQL editor → run `supabase/010_job_log.sql` before testing the
+   editable Job Log.** This adds the shared ongoing job history and its
+   append-only revision trail. Without it, the Job Workspace still opens
+   but shared Job Log saves are blocked with a clear migration warning.
 
 ## On each PC
 

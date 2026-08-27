@@ -517,6 +517,12 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().crm_job_workspace(client)
     def save_crm_job_workspace(self, client, patch):
         return self._aw().save_crm_job_workspace(client, patch)
+    def save_crm_job_log(self, client, entry):
+        return self._aw().save_crm_job_log(client, entry)
+    def crm_job_log_history(self, entry_id):
+        return self._aw().crm_job_log_history(entry_id)
+    def import_crm_job_log_from_trello(self, client, card_id=""):
+        return self._aw().import_crm_job_log_from_trello(client, card_id)
     def job_summary_data(self, client, card_id=""):
         return self._aw().job_summary_data(client, card_id)
     def companycam_probe(self, client, card_id=""):
@@ -1548,6 +1554,38 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 pass
         except Exception as ex:
             out["error"] = f"{type(ex).__name__}: {ex}"
+
+        # The PC Job Workspace owns the durable editable job log. Snapshot
+        # reads completed entries from that same record, so a correction made
+        # during the job survives closeout and does not depend on reparsing a
+        # Trello comment perfectly later.
+        try:
+            import ems_db
+            job = ems_db.find_job_by_name(
+                out.get("insured") or client_fallback or "")
+            if job:
+                for entry in ems_db.list_job_log_entries(job["canon_key"]):
+                    if (entry.get("status") or "").lower() != "completed":
+                        continue
+                    ds = entry.get("work_date") or ""
+                    try:
+                        ds = datetime.datetime.strptime(ds, "%Y-%m-%d").strftime(
+                            "%-m/%-d/%y")
+                    except (ValueError, OSError):
+                        try:
+                            parsed = datetime.datetime.strptime(ds, "%Y-%m-%d")
+                            ds = f"{parsed.month}/{parsed.day}/{parsed.strftime('%y')}"
+                        except ValueError:
+                            pass
+                    wd = sg.get_weekday(ds) if ds else ""
+                    out["logs"].append({
+                        "date": ds,
+                        "weekday": wd,
+                        "activity": entry.get("work_type") or "Update",
+                        "techs": entry.get("technicians") or "",
+                    })
+        except Exception:
+            pass
 
         # Merge run-doc logs from prefill_for so daily-log table also
         # populates. Trello comments emit "Initial Inspection - slab

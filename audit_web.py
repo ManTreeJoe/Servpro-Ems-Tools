@@ -1743,6 +1743,13 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 return {"ok": False, "missing": True,
                         "error": "job is not in the shared index yet"}
             master = ems_db.get_master_job(job.get("canon_key") or "") or job
+            log_entries, log_error = [], ""
+            try:
+                log_entries = ems_db.list_job_log_entries(
+                    master.get("canon_key") or job.get("canon_key") or "")
+            except Exception as ex:
+                log_error = ("Shared Job Log needs database setup: "
+                             f"{type(ex).__name__}: {ex}")
             return {
                 "ok": True,
                 "job_id": master.get("job_id") or "",
@@ -1755,6 +1762,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "priority": master.get("priority") or "normal",
                 "work_environments": master.get("work_environments") or [],
                 "relationships": master.get("relationships") or [],
+                "job_log": log_entries,
+                "job_log_error": log_error,
             }
         except Exception as ex:
             return {"ok": False, "migration_required": True,
@@ -1776,6 +1785,81 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 priority=patch.get("priority") or "",
                 source="manual")
             return {"ok": True, "job": master}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def save_crm_job_log(self, client: str, entry: dict) -> dict:
+        """Create/edit an ongoing structured job-log entry."""
+        try:
+            import ems_db
+            import supabase_client as sb
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
+            entry = dict(entry or {})
+            user = sb.current_user() or {}
+            entry["updated_by"] = user.get("email") or entry.get("updated_by") or ""
+            saved = ems_db.save_job_log_entry(job["canon_key"], entry)
+            return {"ok": True, "entry": saved,
+                    "entries": ems_db.list_job_log_entries(job["canon_key"])}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def crm_job_log_history(self, entry_id: str) -> dict:
+        try:
+            import ems_db
+            return {"ok": True, "history": ems_db.job_log_history(entry_id)}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def import_crm_job_log_from_trello(self, client: str,
+                                       card_id: str = "") -> dict:
+        """Idempotently adopt recognized Trello field events into CRM log."""
+        try:
+            import ems_db
+            import snapshot_logic as sg
+            import trello_client as tc
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
+            cid = (card_id or "").strip() or (
+                persistence.get_trello_card_id(client) or "")
+            if not cid:
+                return {"ok": False, "error": "no pinned Trello card"}
+            comments = tc.get_all_comments(cid) or []
+            imported = 0
+            existing_sources = {
+                (row.get("source"), row.get("source_id"))
+                for row in ems_db.list_job_log_entries(job["canon_key"])
+                if row.get("source_id")
+            }
+            for comment in comments:
+                comment_id = str(comment.get("id") or "").strip()
+                fresh = sg._fresh_text(comment)
+                for event in sg.extract_job_log([comment]):
+                    source_id = f"{comment_id}:{event['activity']}"
+                    if ("trello", source_id) in existing_sources:
+                        continue
+                    work_date = event["date"]
+                    try:
+                        work_date = _dt.datetime.strptime(
+                            work_date, "%m/%d/%y").strftime("%Y-%m-%d")
+                    except ValueError:
+                        pass
+                    ems_db.save_job_log_entry(job["canon_key"], {
+                        "work_date": work_date,
+                        "work_type": event["activity"],
+                        "status": "completed",
+                        "technicians": event.get("who") or "",
+                        "note": fresh,
+                        "source": "trello",
+                        "source_id": source_id,
+                        "trello_comment_id": comment_id,
+                    })
+                    imported += 1
+                    existing_sources.add(("trello", source_id))
+            return {"ok": True, "imported": imported,
+                    "entries": ems_db.list_job_log_entries(job["canon_key"])}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 

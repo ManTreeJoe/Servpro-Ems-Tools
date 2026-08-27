@@ -66,6 +66,7 @@ _WRITES = frozenset({
     "remove_child", "remove_link", "reset_db_path", "resolve_and_link",
     "set_child", "set_department", "set_link", "sync_from_trello",
     "set_master_job_state", "set_work_environment_state", "upsert_job",
+    "save_job_log_entry",
 })
 
 _READS = frozenset({
@@ -78,6 +79,7 @@ _READS = frozenset({
     "find_jobs_by_status", "find_property_of", "find_units_of",
     "get_aliases", "get_job", "get_job_by_id", "get_link", "get_links",
     "get_job_relationships", "get_master_job", "get_work_environment_states",
+    "list_job_log_entries", "job_log_history",
     "group_by_property",
     "iter_jobs", "job_identity", "lifecycle_counts_by_stage",
     "lifecycle_get", "lifecycle_list", "lifecycle_needs_action_enrichment",

@@ -74,7 +74,7 @@ from persistence import _canon_pin_key as _canon_pin_key_persistence
 # place when they need to back the suite up or migrate machines.
 DB_PATH = _paths.data("ems_jobs.db")
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 CRM_LIFECYCLE_STAGES = (
     "intake", "contacted", "scheduled", "active", "monitoring",
@@ -420,6 +420,39 @@ def _init_schema():
                     ON DELETE CASCADE,
                 CHECK (job_id <> related_job_id)
             );
+            CREATE TABLE IF NOT EXISTS crm_job_log_entries (
+                entry_id           TEXT PRIMARY KEY,
+                job_id             TEXT NOT NULL,
+                work_date          TEXT NOT NULL,
+                work_type          TEXT NOT NULL,
+                status             TEXT NOT NULL,
+                technicians        TEXT,
+                note                TEXT,
+                equipment           TEXT,
+                source              TEXT NOT NULL,
+                source_id           TEXT,
+                trello_comment_id   TEXT,
+                created_at          TEXT NOT NULL,
+                updated_at          TEXT NOT NULL,
+                updated_by          TEXT,
+                FOREIGN KEY (job_id) REFERENCES jobs(job_id)
+                    ON DELETE CASCADE,
+                UNIQUE (job_id, source, source_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_crm_job_log_job_date
+                ON crm_job_log_entries(job_id, work_date, created_at);
+            CREATE TABLE IF NOT EXISTS crm_job_log_revisions (
+                revision_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id           TEXT NOT NULL,
+                changed_at         TEXT NOT NULL,
+                changed_by         TEXT,
+                before_json        TEXT,
+                after_json         TEXT NOT NULL,
+                FOREIGN KEY (entry_id) REFERENCES crm_job_log_entries(entry_id)
+                    ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_crm_job_log_revisions_entry
+                ON crm_job_log_revisions(entry_id, revision_id);
         """)
         c.execute(
             "CREATE INDEX IF NOT EXISTS idx_jobs_parent ON jobs(parent_canon)")
@@ -1382,6 +1415,105 @@ def get_master_job(canon_key_value: str) -> dict | None:
     job["work_environments"] = get_work_environment_states(canon_key_value)
     job["relationships"] = get_job_relationships(canon_key_value)
     return job
+
+
+_JOB_LOG_STATUSES = {"scheduled", "completed", "rescheduled", "cancelled",
+                     "skipped", "needs_review"}
+
+
+def list_job_log_entries(canon_key_value: str) -> list:
+    job = get_job(canon_key_value)
+    if not job:
+        return []
+    with _LOCK, _connect() as c:
+        rows = c.execute("""
+            SELECT * FROM crm_job_log_entries WHERE job_id=?
+            ORDER BY work_date, created_at, entry_id
+        """, (job["job_id"],)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
+    """Create/update one durable job-log entry and append its revision."""
+    if not isinstance(entry, dict):
+        raise ValueError("job log entry must be an object")
+    job = get_job(canon_key_value)
+    if not job:
+        raise KeyError(canon_key_value)
+    work_date = str(entry.get("work_date") or "").strip()
+    work_type = str(entry.get("work_type") or "").strip()
+    status = str(entry.get("status") or "completed").strip().lower()
+    if not work_date or not work_type:
+        raise ValueError("work date and work type are required")
+    if status not in _JOB_LOG_STATUSES:
+        raise ValueError(f"unknown job log status: {status}")
+    now = _now_iso()
+    entry_id = str(entry.get("entry_id") or uuid.uuid4())
+    source = str(entry.get("source") or "pc").strip().lower() or "pc"
+    source_id = str(entry.get("source_id") or "").strip() or None
+    values = {
+        "entry_id": entry_id, "job_id": job["job_id"],
+        "work_date": work_date, "work_type": work_type, "status": status,
+        "technicians": str(entry.get("technicians") or "").strip(),
+        "note": str(entry.get("note") or "").strip(),
+        "equipment": str(entry.get("equipment") or "").strip(),
+        "source": source, "source_id": source_id,
+        "trello_comment_id": str(entry.get("trello_comment_id") or "").strip(),
+        "updated_at": now,
+        "updated_by": str(entry.get("updated_by") or "").strip(),
+    }
+    with _LOCK, _connect() as c:
+        old = c.execute(
+            "SELECT * FROM crm_job_log_entries WHERE entry_id=?",
+            (entry_id,)).fetchone()
+        if old is None and source_id:
+            old = c.execute("""
+                SELECT * FROM crm_job_log_entries
+                WHERE job_id=? AND source=? AND source_id=?
+            """, (job["job_id"], source, source_id)).fetchone()
+            if old is not None:
+                entry_id = old["entry_id"]
+                values["entry_id"] = entry_id
+        created = old["created_at"] if old else now
+        values["created_at"] = created
+        c.execute("""
+            INSERT INTO crm_job_log_entries
+              (entry_id,job_id,work_date,work_type,status,technicians,note,
+               equipment,source,source_id,trello_comment_id,created_at,
+               updated_at,updated_by)
+            VALUES (:entry_id,:job_id,:work_date,:work_type,:status,
+                    :technicians,:note,:equipment,:source,:source_id,
+                    :trello_comment_id,:created_at,:updated_at,:updated_by)
+            ON CONFLICT(entry_id) DO UPDATE SET
+              work_date=excluded.work_date, work_type=excluded.work_type,
+              status=excluded.status, technicians=excluded.technicians,
+              note=excluded.note, equipment=excluded.equipment,
+              trello_comment_id=excluded.trello_comment_id,
+              updated_at=excluded.updated_at, updated_by=excluded.updated_by
+        """, values)
+        after = c.execute(
+            "SELECT * FROM crm_job_log_entries WHERE entry_id=?",
+            (entry_id,)).fetchone()
+        c.execute("""
+            INSERT INTO crm_job_log_revisions
+              (entry_id,changed_at,changed_by,before_json,after_json)
+            VALUES (?,?,?,?,?)
+        """, (entry_id, now, values["updated_by"],
+              json.dumps(dict(old)) if old else None,
+              json.dumps(dict(after))))
+        c.commit()
+    return dict(after)
+
+
+def job_log_history(entry_id: str) -> list:
+    if not entry_id:
+        return []
+    with _LOCK, _connect() as c:
+        rows = c.execute("""
+            SELECT * FROM crm_job_log_revisions WHERE entry_id=?
+            ORDER BY revision_id DESC
+        """, (entry_id,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def relate_jobs(canon_key_value: str, related_canon_key: str,

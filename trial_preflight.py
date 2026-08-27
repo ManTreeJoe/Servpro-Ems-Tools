@@ -201,6 +201,21 @@ def main(argv=None):
               "Run supabase/009_crm_foundation.sql in the Supabase SQL "
               "editor before enabling the Phase 2 Job Workspace trial.")
 
+    # ── 4d. Durable editable job log is installed ────────────────────
+    try:
+        sb.rest("GET", "crm_job_log_entries",
+                params={"select": "entry_id,job_id,work_date,status",
+                        "limit": "1"})
+        sb.rest("GET", "crm_job_log_revisions",
+                params={"select": "revision_id,entry_id", "limit": "1"})
+        check("Shared DB schema (v10 Job Log)", OK,
+              "editable job history and revisions ready")
+    except Exception as ex:
+        check("Shared DB schema (v10 Job Log)", FAIL,
+              str(ex).strip()[:70],
+              "Run supabase/010_job_log.sql in the Supabase SQL editor "
+              "before using the editable Job Log on multiple PCs.")
+
     # ── 5. Backend switch ─────────────────────────────────────────────
     backend = (cfg.get("ems_db_backend") or "sqlite").strip().lower()
     if backend == "supabase":
