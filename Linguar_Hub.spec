@@ -36,8 +36,7 @@ pkg  = os.path.join(base, '_packaging')
 # runtime (a build whose path contains "trial" polls the trial update branch
 # and shows the TRIAL title). Data + config are shared between channels.
 APP_NAME = os.environ.get('LINGUAR_APP_NAME', 'Linguar Hub')
-ICON_FILE = ('linguar_hub_trial.ico' if 'Trial' in APP_NAME
-             else 'linguar_hub.ico')
+ICON_FILE = 'wrench.ico'
 
 # ── Bundled data ────────────────────────────────────────────────────────────
 # pywebview runs with http_server=True rooted at the dir of the URL file
