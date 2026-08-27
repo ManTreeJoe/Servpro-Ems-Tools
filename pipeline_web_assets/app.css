@@ -422,6 +422,19 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .audit-close { flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); font-size: 25px; line-height: 1; cursor: pointer; }
 .audit-close:hover { background: var(--surface-2); color: var(--text); }
 .audit-card .modal-body { flex: 1; min-height: 0; padding: 0; overflow: hidden; overscroll-behavior: contain; }
+.audit-loading-body { padding: 18px !important; background: var(--bg); }
+.job-card-loading-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 34%); gap: 16px; height: 100%; }
+.job-card-loading-main { display: grid; align-content: start; gap: 14px; }
+.job-card-skeleton { position: relative; overflow: hidden; min-height: 130px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.job-card-skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.055), transparent); animation: job-card-shimmer 1.35s infinite; }
+.job-card-skeleton.skeleton-medium { min-height: 180px; }
+.job-card-skeleton.skeleton-tall { min-height: 235px; }
+.job-card-skeleton.skeleton-side { min-height: 100%; }
+.job-card-load-error { width: min(520px, calc(100% - 40px)); margin: 70px auto; padding: 28px; text-align: center; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.job-card-load-error strong { display: block; margin-bottom: 8px; font-size: 18px; }
+.job-card-load-error p { margin: 0 0 20px; color: var(--text-muted); overflow-wrap: anywhere; }
+@keyframes job-card-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .job-card-skeleton::after { animation: none; } }
 .aud-section { padding: 20px 0; border-bottom: 1px solid var(--border); }
 .aud-section:last-child { border-bottom: 0; }
 .aud-section h3 { margin: 0 0 12px; color: var(--text); font-size: 13px; letter-spacing: .02em; }
@@ -544,6 +557,8 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
   .aud-facts { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
+  .job-card-loading-grid { grid-template-columns: 1fr; }
+  .job-card-skeleton.skeleton-side { display: none; }
   .job-card-layout { grid-template-columns: 1fr; overflow-y: auto; }
   .job-card-main { overflow: visible; }
   .job-card-activity { min-height: 480px; border-left: 0; border-top: 1px solid var(--border); }

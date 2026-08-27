@@ -344,13 +344,73 @@ function moveCardLocally(cardId, fromListId, toListId, toLane) {
 }
 
 // ── Per-card actions ─────────────────────────────────────────────
-async function onAuditCard(cardEl) {
-  const client = cardEl.dataset.client;
+async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "") {
+  const isCard = cardOrClient && typeof cardOrClient === "object" && cardOrClient.dataset;
+  const client = isCard ? cardOrClient.dataset.client : String(cardOrClient || "");
+  const resolvedCardId = isCard ? (cardOrClient.dataset.cardId || "") : cardId;
+  const resolvedUrl = isCard ? (cardOrClient.dataset.url || "") : trelloUrl;
+  const loading = openAuditLoadingModal(client);
   setStatus(`Opening "${client}"…`);
-  const res = await pywebview.api.job_card_workspace(client, cardEl.dataset.cardId || "");
-  if (!res?.ok) { setStatus(`Job workspace failed: ${res?.error || "?"}`, "error"); return; }
-  setStatus("");
-  openAuditModal(res, cardEl.dataset.url || "");
+  try {
+    const res = await pywebview.api.job_card_workspace(client, resolvedCardId);
+    if (!loading.element.isConnected) return;
+    if (!res?.ok) {
+      loading.showError(res?.error || "The job workspace could not be loaded.");
+      setStatus(`Job workspace failed: ${res?.error || "?"}`, "error");
+      return;
+    }
+    loading.close();
+    setStatus("");
+    openAuditModal(res, resolvedUrl);
+  } catch (error) {
+    if (!loading.element.isConnected) return;
+    loading.showError(error?.message || String(error));
+    setStatus(`Job workspace failed: ${error?.message || error}`, "error");
+  }
+}
+
+function openAuditLoadingModal(client) {
+  const w = document.createElement("div");
+  w.className = "modal-scrim audit-overlay";
+  w.innerHTML = `
+    <div class="modal-box audit-card audit-loading-card" role="dialog" aria-modal="true" aria-busy="true" aria-label="Loading job workspace">
+      <header class="modal-head">
+        <div class="audit-head-copy"><div class="modal-title">${escapeHtml(client || "Job workspace")}</div>
+        <div class="modal-sub" data-loading-label>Loading job workspace…</div></div>
+        <button class="audit-close" data-close aria-label="Close job workspace">×</button>
+      </header>
+      <div class="modal-body audit-loading-body" data-loading-body>
+        <div class="job-card-loading-grid" aria-hidden="true">
+          <div class="job-card-loading-main">
+            <div class="job-card-skeleton skeleton-tall"></div>
+            <div class="job-card-skeleton skeleton-medium"></div>
+            <div class="job-card-skeleton skeleton-tall"></div>
+          </div>
+          <div class="job-card-skeleton skeleton-side"></div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(w);
+  const keyClose = (event) => { if (event.key === "Escape") close(); };
+  const close = () => {
+    document.removeEventListener("keydown", keyClose);
+    w.remove();
+  };
+  w.querySelector("[data-close]").addEventListener("click", close);
+  w.addEventListener("click", (event) => { if (event.target === w) close(); });
+  document.addEventListener("keydown", keyClose);
+  return {
+    element: w,
+    close,
+    showError(message) {
+      w.querySelector(".audit-loading-card")?.setAttribute("aria-busy", "false");
+      const label = w.querySelector("[data-loading-label]");
+      if (label) label.textContent = "Could not load this job";
+      const body = w.querySelector("[data-loading-body]");
+      if (body) body.innerHTML = `<div class="job-card-load-error"><strong>Job workspace unavailable</strong><p>${escapeHtml(message)}</p><button class="btn" data-error-close>Close</button></div>`;
+      body?.querySelector("[data-error-close]")?.addEventListener("click", close);
+    },
+  };
 }
 
 async function onFlagCard(cardEl) {

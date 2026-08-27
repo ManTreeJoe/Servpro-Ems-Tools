@@ -128,3 +128,14 @@ def test_pipeline_card_is_the_full_job_workspace():
     assert 'class="aud-section compact-section"' in js
     assert ".job-card-layout" in css
     assert ".job-card-activity" in css
+
+
+def test_pipeline_opens_card_before_slow_workspace_lookup():
+    root = Path(__file__).parents[1]
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    handler = js[js.index("async function onAuditCard"):js.index("async function onFlagCard")]
+    assert handler.index("openAuditLoadingModal(client)") < handler.index(
+        "await pywebview.api.job_card_workspace")
+    for marker in ("Loading job workspace", "aria-busy", "element.isConnected",
+                   "showError"):
+        assert marker in js
