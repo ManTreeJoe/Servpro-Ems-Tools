@@ -345,7 +345,131 @@ class Api:
             "last_seen":     row.get("last_seen") or "",
             "misplaced_forms": list(row.get("misplaced_forms") or []),
             "misplaced_photos": list(row.get("misplaced_photos") or []),
+            "trello_card_id": row.get("trello_card_id") or "",
         }
+
+    def job_card_workspace(self, client: str, card_id: str = "") -> dict:
+        """Full Pipeline card: audit + CRM + Trello transition material."""
+        summary = self.audit_card(client)
+        if not summary.get("ok"):
+            return summary
+        audit_api = self._audit_api()
+        crm = audit_api.crm_job_workspace(client, summary)
+        info_sections, checklists, comments, attachments, members = [], [], [], [], []
+        try:
+            import ems_db
+            import job_settings
+            job = ems_db.find_job_by_name(client) or {}
+            values = job_settings.stored_values(job)
+            grouped = {}
+            order = []
+            for fid, section, _key, label, _core in job_settings.FIELDS:
+                value = str(values.get(fid) or "").strip()
+                if not value:
+                    continue
+                if section not in grouped:
+                    grouped[section] = []
+                    order.append(section)
+                grouped[section].append({"id": fid, "label": label, "value": value})
+            info_sections = [{"name": section.title(), "fields": grouped[section]}
+                             for section in order]
+        except Exception:
+            pass
+        cid = (card_id or summary.get("trello_card_id") or "").strip()
+        if cid:
+            try:
+                import trello_client as tc
+                card = tc.get_card(cid) or {}
+                checklists = [{
+                    "id": cl.get("id") or "", "name": cl.get("name") or "Checklist",
+                    "items": [{"id": item.get("id") or "",
+                               "name": item.get("name") or "",
+                               "complete": item.get("state") == "complete"}
+                              for item in (cl.get("checkItems") or [])],
+                } for cl in (card.get("checklists") or [])]
+                attachments = [{"name": a.get("name") or "Attachment",
+                                "url": a.get("url") or "",
+                                "date": a.get("date") or ""}
+                               for a in (card.get("attachments") or [])]
+                members = [m.get("fullName") or m.get("username") or ""
+                           for m in (card.get("members") or [])]
+                trello_comments = tc.get_all_comments(cid) or []
+                for action in trello_comments:
+                    text = str((action.get("data") or {}).get("text") or "").strip()
+                    if not text:
+                        continue
+                    actor = (action.get("memberCreator") or {}).get("fullName") or "Trello"
+                    comment = {"id": action.get("id") or "", "text": text,
+                               "actor": actor, "at": action.get("date") or "",
+                               "source": "trello"}
+                    comments.append(comment)
+                    pipeline_store.add_activity(cid, "comment", text, actor,
+                                                source="trello",
+                                                external_id=comment["id"])
+            except Exception as ex:
+                summary["trello_error"] = str(ex)
+        # Preserve Linguar-only comments when Trello was unavailable. Avoid
+        # duplicates for comments already mirrored by external action id.
+        seen = {c.get("id") for c in comments if c.get("id")}
+        for activity in pipeline_store.list_activity(cid):
+            ext = activity.get("external_id") or ""
+            if ext and ext in seen:
+                continue
+            if activity.get("action_type") == "comment":
+                comments.append({"id": ext or activity.get("activity_key") or "",
+                                 "text": activity.get("body") or "",
+                                 "actor": activity.get("actor_name") or "Linguar Hub",
+                                 "at": activity.get("happened_at") or "",
+                                 "source": activity.get("source") or "linguar"})
+        comments.sort(key=lambda c: c.get("at") or "", reverse=True)
+        return {"ok": True, "client": client, "card_id": cid,
+                "audit": summary, "crm": crm, "info_sections": info_sections,
+                "checklists": checklists, "comments": comments,
+                "attachments": attachments, "members": members}
+
+    def set_job_check_item(self, card_id: str, item_id: str,
+                           complete: bool) -> dict:
+        try:
+            import trello_client as tc
+            ok = tc.set_check_item_state(card_id, item_id,
+                                         "complete" if complete else "incomplete")
+            return {"ok": bool(ok), "synced": bool(ok)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def post_job_comment(self, client: str, card_id: str, text: str) -> dict:
+        text = (text or "").strip()
+        if not text:
+            return {"ok": False, "error": "write a comment first"}
+        actor = "Linguar Hub"
+        try:
+            import supabase_client
+            actor = (supabase_client.current_user() or {}).get("email") or actor
+        except Exception:
+            pass
+        local = pipeline_store.add_activity(card_id, "comment", text, actor)
+        posted = False
+        error = ""
+        if card_id:
+            try:
+                import trello_client as tc
+                posted = bool(tc.post_comment(card_id, text))
+                if not posted:
+                    error = "Trello did not accept the comment"
+            except Exception as ex:
+                error = str(ex)
+        return {"ok": bool(local) or posted, "posted_trello": posted,
+                "warning": error if local and not posted else "",
+                "comment": {"id": local.get("activity_key") or "",
+                            "text": text, "actor": actor,
+                            "at": local.get("happened_at") or _dt.datetime.now().isoformat(),
+                            "source": "linguar"}}
+
+    def save_job_log_update(self, client: str, entry: dict) -> dict:
+        return self._audit_api().save_crm_job_log(client, entry)
+
+    def delete_job_log_update(self, client: str, entry_id: str) -> dict:
+        return self._audit_api().delete_crm_job_log(client, entry_id)
 
     def flag_missing_card(self, card_id: str, client: str,
                           item_text: str, note: str = "") -> dict:

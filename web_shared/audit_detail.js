@@ -490,7 +490,8 @@
           ${entry.equipment ? `<p class="muted">Equipment: ${esc(ctx, entry.equipment)}</p>` : ""}
           <small class="muted">${esc(ctx, entry.source || "pc")}${entry.updated_by ? ` · ${esc(ctx, entry.updated_by)}` : ""}</small>
         </div>
-        <button class="action-btn" type="button" data-log-edit="${escA(ctx, entry.entry_id || "")}">Edit</button>
+        <div class="crm-log-row-actions"><button class="action-btn" type="button" data-log-edit="${escA(ctx, entry.entry_id || "")}">Edit</button>
+        <button class="action-btn danger" type="button" data-log-delete="${escA(ctx, entry.entry_id || "")}">Delete</button></div>
       </div>`).join("") : `<div class="muted crm-log-empty">No job-log entries yet.</div>`;
     box.dataset.crmClient = cacheKey;
     box.dataset.crmReady = "1";
@@ -624,11 +625,11 @@
       editor.innerHTML = `
         <div class="crm-log-form">
           <label>Work date<input type="date" data-log-field="work_date" value="${escA(ctx, entry.work_date || today)}"></label>
-          <label>Work type<input data-log-field="work_type" value="${escA(ctx, entry.work_type || "")}" placeholder="Monitor, Demo, Inspection…"></label>
+          <label>Activity<select data-log-field="work_type">${["Initial inspection", "Demo", "Monitor", "Equipment placed", "Equipment pickup", "Contents", "Recon", "Final inspection", "Other"].map((name) => `<option ${name === entry.work_type ? "selected" : ""}>${name}</option>`).join("")}</select></label>
           <label>Status<select data-log-field="status">${statuses.map((s) => `<option value="${s}" ${s === (entry.status || "completed") ? "selected" : ""}>${s.replaceAll("_", " ")}</option>`).join("")}</select></label>
           <label>Technician / crew<input data-log-field="technicians" value="${escA(ctx, entry.technicians || "")}" placeholder="FB, PG, crew…"></label>
-          <label class="wide">Job note<textarea data-log-field="note" rows="3" placeholder="What happened today?">${esc(ctx, entry.note || "")}</textarea></label>
-          <label class="wide">Equipment<input data-log-field="equipment" value="${escA(ctx, entry.equipment || "")}" placeholder="Placed, moved, readings, pickup…"></label>
+          <label class="wide">Work completed / update<textarea data-log-field="note" rows="3" placeholder="Areas worked, findings, what was completed, and the next step">${esc(ctx, entry.note || "")}</textarea></label>
+          <label class="wide">Equipment / readings<input data-log-field="equipment" value="${escA(ctx, entry.equipment || "")}" placeholder="Equipment placed, moved, readings, or pickup"></label>
           <div class="crm-log-actions"><button class="action-btn primary" type="button" data-log-save>Save entry</button>
           <button class="action-btn" type="button" data-log-cancel>Cancel</button>
           ${entry.entry_id ? `<button class="action-btn" type="button" data-log-history>History</button>` : ""}</div>
@@ -657,6 +658,15 @@
     box.querySelector("[data-log-new]")?.addEventListener("click", () => openLogEditor({}));
     box.querySelectorAll("[data-log-edit]").forEach((button) => button.addEventListener("click", () => {
       openLogEditor(logEntries.find((x) => x.entry_id === button.dataset.logEdit) || {});
+    }));
+    box.querySelectorAll("[data-log-delete]").forEach((button) => button.addEventListener("click", async () => {
+      const entry = logEntries.find((x) => x.entry_id === button.dataset.logDelete) || {};
+      if (!window.confirm(`Delete the ${entry.work_type || "Job Log"} update from ${entry.work_date || "this job"}?\n\nThis does not delete the original Trello comment.`)) return;
+      button.disabled = true; button.textContent = "Deleting…";
+      let result; try { result = await pywebview.api.delete_crm_job_log(r.client, entry.entry_id || ""); }
+      catch (ex) { result = {ok:false, error:String(ex)}; }
+      if (!result?.ok) { button.disabled = false; button.textContent = "Delete"; setStatus(ctx, `Job-log delete failed: ${result?.error || "unknown"}`, "error"); return; }
+      setStatus(ctx, "Job-log entry deleted", "ok"); loadCrmWorkspace(container, r, ctx, true);
     }));
     box.querySelector("[data-log-import]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget; button.disabled = true; button.textContent = "Reading Trello…";

@@ -160,10 +160,24 @@ def test_workspace_returns_job_log(workspace):
     assert result["job_log"][0]["work_type"] == "Demo"
 
 
+def test_job_log_entry_can_be_deleted_without_deleting_job(workspace):
+    db, api = workspace
+    key = db.upsert_job(display_name="Delete Log Test")
+    created = api.save_crm_job_log("Delete Log Test", {
+        "work_date": "2026-08-27", "work_type": "Monitor",
+        "status": "completed", "note": "Dry",
+    })
+    entry_id = created["entry"]["entry_id"]
+    result = api.delete_crm_job_log("Delete Log Test", entry_id)
+    assert result == {"ok": True, "deleted": True, "entries": []}
+    assert db.get_job(key) is not None
+    assert db.job_log_history(entry_id) == []
+
+
 def test_shared_workspace_ui_has_log_editor_and_trello_import():
     root = Path(__file__).resolve().parents[1]
     js = (root / "web_shared" / "audit_detail.js").read_text(encoding="utf-8")
-    for marker in ("data-log-new", "data-log-edit", "data-log-save",
+    for marker in ("data-log-new", "data-log-edit", "data-log-delete", "data-log-save",
                    "import_crm_job_log_from_trello", "crm_job_log_history"):
         assert marker in js
     assert "Refresh from Trello" in js

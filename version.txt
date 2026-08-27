@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.17",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.17",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.17/Linguar-Hub-Trial-Setup-1.6.0-trial.17.exe",
-  "notes": "Begins the Trello separation: Pipeline loads Linguar Hub's shared database first, mirrors Work in Progress, Estimating and Contents from Trello, saves moves to Linguar Hub before Trello, and shows pending conflicts. Adds the permanent Client to Claim to Job hierarchy."
+  "version": "1.6.0-trial.18",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.18",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.18/Linguar-Hub-Trial-Setup-1.6.0-trial.18.exe",
+  "notes": "Turns each Pipeline card into a Trello-style full job workspace: client header, current audit, cumulative requirements, EMS/Contents/Recon states, live checklists, saved job information, attachments, and a separate comments/activity rail. The Job Log now uses structured Snapshot-style updates for date, activity, status, crew, work completed, and equipment/readings, with edit and delete controls. Comments save to Linguar Hub and mirror to Trello during transition."
 }

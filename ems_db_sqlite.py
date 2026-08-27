@@ -1528,6 +1528,24 @@ def job_log_history(entry_id: str) -> list:
     return [dict(r) for r in rows]
 
 
+def delete_job_log_entry(canon_key_value: str, entry_id: str) -> bool:
+    """Remove one editable CRM job-log entry from the requested job."""
+    job = get_job(canon_key_value)
+    if not job or not entry_id:
+        return False
+    with _LOCK, _connect() as c:
+        row = c.execute(
+            "SELECT entry_id FROM crm_job_log_entries WHERE entry_id=? AND job_id=?",
+            (entry_id, job["job_id"])).fetchone()
+        if not row:
+            return False
+        c.execute("DELETE FROM crm_job_log_revisions WHERE entry_id=?", (entry_id,))
+        c.execute("DELETE FROM crm_job_log_entries WHERE entry_id=? AND job_id=?",
+                  (entry_id, job["job_id"]))
+        c.commit()
+    return True
+
+
 def relate_jobs(canon_key_value: str, related_canon_key: str,
                 relationship_type: str, *, created_by: str = "") -> bool:
     """Link two master jobs without merging their records or history."""

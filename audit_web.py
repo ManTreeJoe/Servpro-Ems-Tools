@@ -1946,6 +1946,19 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def delete_crm_job_log(self, client: str, entry_id: str) -> dict:
+        """Delete one Linguar Hub Job Log entry without touching Trello."""
+        try:
+            import ems_db
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
+            deleted = ems_db.delete_job_log_entry(job["canon_key"], entry_id)
+            return {"ok": True, "deleted": deleted,
+                    "entries": ems_db.list_job_log_entries(job["canon_key"])}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
     def import_crm_job_log_from_trello(self, client: str,
                                        card_id: str = "") -> dict:
         """Idempotently adopt recognized Trello field events into CRM log."""

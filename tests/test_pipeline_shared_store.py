@@ -83,3 +83,21 @@ def test_schema_puts_client_above_claim_job_and_pipeline_card():
     assert "client_id       uuid references crm_clients" in sql
     assert sql.index("create table if not exists crm_clients") < sql.index(
         "create table if not exists crm_claims")
+
+
+def test_pipeline_card_is_the_full_job_workspace():
+    root = Path(__file__).parents[1]
+    py = (root / "pipeline_web.py").read_text(encoding="utf-8")
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    css = (root / "pipeline_web_assets" / "app.css").read_text(encoding="utf-8")
+    for marker in ("job_card_workspace", "crm_job_workspace", "get_all_comments",
+                   "set_job_check_item", "post_job_comment"):
+        assert marker in py
+    for marker in ("Job requirements", "Checklists", "Job Log",
+                   "Comments and activity", "data-post-comment"):
+        assert marker in js
+    for marker in ("data-add-job-log", "data-edit-job-log", "data-delete-job-log",
+                   "save_job_log_update", "delete_job_log_update"):
+        assert marker in js
+    assert ".job-card-layout" in css
+    assert ".job-card-activity" in css

@@ -346,9 +346,9 @@ function moveCardLocally(cardId, fromListId, toListId, toLane) {
 // ── Per-card actions ─────────────────────────────────────────────
 async function onAuditCard(cardEl) {
   const client = cardEl.dataset.client;
-  setStatus(`Auditing "${client}"…`);
-  const res = await pywebview.api.audit_card(client);
-  if (!res?.ok) { setStatus(`Audit failed: ${res?.error || "?"}`, "error"); return; }
+  setStatus(`Opening "${client}"…`);
+  const res = await pywebview.api.job_card_workspace(client, cardEl.dataset.cardId || "");
+  if (!res?.ok) { setStatus(`Job workspace failed: ${res?.error || "?"}`, "error"); return; }
   setStatus("");
   openAuditModal(res, cardEl.dataset.url || "");
 }
@@ -381,7 +381,9 @@ function onCardContext(ev) {
 }
 
 // ── Audit result modal (compact summary) ─────────────────────────
-function openAuditModal(res, trelloUrl = "") {
+function openAuditModal(data, trelloUrl = "") {
+  const res = data.audit || {};
+  const crm = data.crm || {};
   const issues = [];
   (res.form_issues || []).forEach((f) => issues.push({ kind: "Form", text: f }));
   (res.photo_issues || []).forEach((p) => issues.push({ kind: "Photos", text: p }));
@@ -393,12 +395,11 @@ function openAuditModal(res, trelloUrl = "") {
       ? `<div class="aud-ok">✓ All required forms &amp; photos present.</div>`
       : `<ul class="aud-list">${issues.map((i) =>
           `<li><span class="aud-tag">${escapeHtml(i.kind)}</span> ${escapeHtml(i.text)}</li>`).join("")}</ul>`;
-  const facts = [
-    ["Carrier", res.carrier],
-    ["Technicians", (res.techs || []).join(", ")],
-    ["Last seen", res.last_seen],
-    ["Job folder", res.folder],
-  ].filter(([, value]) => value);
+  const facts = (data.info_sections || []).map((section) => `
+    <section class="aud-section info-section"><h3>${escapeHtml(section.name)}</h3>
+      <dl class="aud-facts">${(section.fields || []).map((f) =>
+        `<div><dt>${escapeHtml(f.label)}</dt><dd>${escapeHtml(f.value)}</dd></div>`).join("")}</dl>
+    </section>`).join("");
   const activity = (res.activity || []).length
     ? `<div class="aud-chips">${res.activity.map((a) => `<span>${escapeHtml(a)}</span>`).join("")}</div>`
     : `<div class="aud-empty">No activity recorded for this run.</div>`;
@@ -406,17 +407,63 @@ function openAuditModal(res, trelloUrl = "") {
   const misplacedHtml = misplaced.length
     ? `<ul class="aud-list">${misplaced.map((item) => `<li><span class="aud-tag aud-warn">Moved</span> ${escapeHtml(item.label || item)}${item.where ? ` <small>${escapeHtml(item.where)}</small>` : ""}</li>`).join("")}</ul>`
     : "";
-  const body = `
-    ${facts.length ? `<section class="aud-section"><h3>Job details</h3><dl class="aud-facts">${facts.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl></section>` : ""}
-    <section class="aud-section"><h3>Current audit</h3>${missing}${misplacedHtml}</section>
-    <section class="aud-section"><h3>Run activity</h3>${activity}</section>`;
+  const progress = crm.progress || {};
+  const required = (progress.items || []).map((item) => `
+    <div class="requirement-row req-${escapeAttr(item.status || "required_now")}">
+      <span class="requirement-mark">${item.status === "completed" ? "✓" : item.status === "overdue" ? "!" : "○"}</span>
+      <span class="requirement-copy"><strong>${escapeHtml(item.label || "")}</strong>
+      <small>${escapeHtml(item.introduced_stage_label || "")} · ${escapeHtml(item.owner || "")}${item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small></span>
+    </div>`).join("") || `<div class="aud-empty">No stage requirements are active yet.</div>`;
+  const workTypes = (crm.work_environments || []).map((env) => `
+    <div class="work-type"><strong>${escapeHtml(env.work_environment || "")}</strong>
+      <span>${escapeHtml((env.stage || "not applicable").replaceAll("_", " "))}</span>
+      ${env.owner ? `<small>${escapeHtml(env.owner)}</small>` : ""}</div>`).join("");
+  const trelloLists = (data.checklists || []).map((list) => `
+    <div class="trello-checklist"><h4>${escapeHtml(list.name || "Checklist")}</h4>
+      ${(list.items || []).map((item) => `<label class="check-row ${item.complete ? "checked" : ""}">
+        <input type="checkbox" data-check-item="${escapeAttr(item.id)}" ${item.complete ? "checked" : ""}/>
+        <span>${escapeHtml(item.name || "")}</span></label>`).join("") || `<div class="aud-empty">No items</div>`}
+    </div>`).join("") || `<div class="aud-empty">No Trello checklist is attached.</div>`;
+  const logs = (crm.job_log || []).slice().reverse().slice(0, 40).map((entry) => `
+    <article class="job-log-row" data-job-log-id="${escapeAttr(entry.entry_id || "")}">
+      <time>${escapeHtml(entry.work_date || "")}</time><div class="job-log-copy">
+      <div><strong>${escapeHtml(entry.work_type || "Job update")}</strong><span>${escapeHtml((entry.status || "").replaceAll("_", " "))}</span></div>
+      ${entry.technicians ? `<small>Crew: ${escapeHtml(entry.technicians)}</small>` : ""}
+      ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
+      ${entry.equipment ? `<small>Equipment / readings: ${escapeHtml(entry.equipment)}</small>` : ""}</div>
+      <div class="job-log-actions"><button class="text-btn" data-edit-job-log="${escapeAttr(entry.entry_id || "")}">Edit</button>
+      <button class="text-btn danger" data-delete-job-log="${escapeAttr(entry.entry_id || "")}">Delete</button></div></article>`).join("") || `<div class="aud-empty">No Job Log updates yet.</div>`;
+  const attachments = (data.attachments || []).map((a) =>
+    `<button class="attachment-row" data-attachment-url="${escapeAttr(a.url || "")}">📎 ${escapeHtml(a.name || "Attachment")}</button>`).join("") || `<div class="aud-empty">No attachments.</div>`;
+  const comments = (data.comments || []).map(renderJobComment).join("") || `<div class="aud-empty activity-empty">No comments yet. Start the job conversation below.</div>`;
+  const body = `<div class="job-card-layout">
+    <div class="job-card-main">
+      <section class="aud-section audit-summary"><h3>Current audit</h3>${missing}${misplacedHtml}</section>
+      <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
+        <span class="progress-label">${progress.percent_complete || 0}% complete</span></div>
+        <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
+      ${workTypes ? `<section class="aud-section"><h3>Work types</h3><div class="work-types">${workTypes}</div></section>` : ""}
+      <section class="aud-section"><h3>Checklists</h3>${trelloLists}</section>
+      ${facts || `<section class="aud-section"><h3>Job information</h3><div class="aud-empty">No saved job information yet.</div></section>`}
+      <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
+        <button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div>
+        <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div></section>
+      <section class="aud-section"><h3>Run activity</h3>${activity}</section>
+      <section class="aud-section"><h3>Attachments</h3>${attachments}</section>
+    </div>
+    <aside class="job-card-activity"><div class="activity-head"><h3>Comments and activity</h3>
+      <span>${(data.comments || []).length}</span></div>
+      <div class="comment-stream" data-comment-stream>${comments}</div>
+      <div class="comment-compose"><textarea data-comment-input rows="3" placeholder="Write an update for this job…"></textarea>
+        <div><span data-comment-state></span><button class="btn btn-primary" data-post-comment>Add comment</button></div></div>
+    </aside></div>`;
   const w = document.createElement("div");
   w.className = "modal-scrim audit-overlay";
   w.innerHTML = `
     <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job audit">
       <header class="modal-head">
-        <div class="audit-head-copy"><div class="modal-title">${escapeHtml(res.client || "")}</div>
-        <div class="modal-sub">Job audit · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div></div>
+        <div class="audit-head-copy"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div>
+        <div class="modal-sub">${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}${(data.members || []).length ? " · " + escapeHtml(data.members.join(", ")) : ""}</div></div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button>
       </header>
       <div class="modal-body">${body}</div>
@@ -434,10 +481,84 @@ function openAuditModal(res, trelloUrl = "") {
   w.querySelector("[data-open-trello]").addEventListener("click", () => {
     if (trelloUrl) pywebview.api.open_url(trelloUrl);
   });
+  w.querySelectorAll("[data-attachment-url]").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.attachmentUrl) pywebview.api.open_url(button.dataset.attachmentUrl);
+  }));
+  w.querySelectorAll("[data-check-item]").forEach((box) => box.addEventListener("change", async () => {
+    const row = box.closest(".check-row");
+    row?.classList.toggle("checked", box.checked);
+    const result = await pywebview.api.set_job_check_item(data.card_id || "", box.dataset.checkItem, box.checked);
+    if (!result?.ok) {
+      box.checked = !box.checked; row?.classList.toggle("checked", box.checked);
+      setStatus(`Checklist update failed: ${result?.error || "Trello unavailable"}`, "error");
+    }
+  }));
+  const openJobLogEditor = (entry = {}) => {
+    const host = w.querySelector("[data-job-log-editor]");
+    const today = new Date().toISOString().slice(0, 10);
+    const activities = ["Initial inspection", "Demo", "Monitor", "Equipment placed", "Equipment pickup", "Contents", "Recon", "Final inspection", "Other"];
+    const statuses = ["scheduled", "completed", "rescheduled", "cancelled", "skipped", "needs_review"];
+    host.hidden = false;
+    host.innerHTML = `<div class="job-log-form">
+      <label>Date<input type="date" data-log-field="work_date" value="${escapeAttr(entry.work_date || today)}"></label>
+      <label>Activity<select data-log-field="work_type">${activities.map((x) => `<option ${x === entry.work_type ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      <label>Status<select data-log-field="status">${statuses.map((x) => `<option value="${x}" ${x === (entry.status || "completed") ? "selected" : ""}>${x.replaceAll("_", " ")}</option>`).join("")}</select></label>
+      <label>Technician / crew<input data-log-field="technicians" value="${escapeAttr(entry.technicians || "")}" placeholder="Who completed the work?"></label>
+      <label class="wide">Work completed / update<textarea rows="3" data-log-field="note" placeholder="Areas worked, findings, what was completed, and the next step">${escapeHtml(entry.note || "")}</textarea></label>
+      <label class="wide">Equipment / readings<input data-log-field="equipment" value="${escapeAttr(entry.equipment || "")}" placeholder="Equipment placed, moved, readings, or pickup"></label>
+      <div class="job-log-form-actions"><button class="btn btn-primary" data-save-job-log>Save update</button><button class="btn" data-cancel-job-log>Cancel</button></div></div>`;
+    host.querySelector("[data-cancel-job-log]").addEventListener("click", () => { host.hidden = true; host.innerHTML = ""; });
+    host.querySelector("[data-save-job-log]").addEventListener("click", async (event) => {
+      const payload = {entry_id: entry.entry_id || "", source: entry.source || "pc", source_id: entry.source_id || "", trello_comment_id: entry.trello_comment_id || ""};
+      host.querySelectorAll("[data-log-field]").forEach((field) => { payload[field.dataset.logField] = field.value; });
+      const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
+      const result = await pywebview.api.save_job_log_update(data.client || "", payload);
+      if (!result?.ok) { button.disabled = false; button.textContent = "Save update"; setStatus(result?.error || "Job Log could not be saved", "error"); return; }
+      close(); await onAuditCard(data.client || res.client || "", data.card_id || ""); setStatus("Job Log updated", "ok");
+    });
+  };
+  w.querySelector("[data-add-job-log]")?.addEventListener("click", () => openJobLogEditor({}));
+  w.querySelectorAll("[data-edit-job-log]").forEach((button) => button.addEventListener("click", () => {
+    openJobLogEditor((crm.job_log || []).find((entry) => entry.entry_id === button.dataset.editJobLog) || {});
+  }));
+  w.querySelectorAll("[data-delete-job-log]").forEach((button) => button.addEventListener("click", async () => {
+    const entry = (crm.job_log || []).find((item) => item.entry_id === button.dataset.deleteJobLog) || {};
+    if (!window.confirm(`Delete the ${entry.work_type || "Job Log"} update from ${entry.work_date || "this job"}?\n\nThis removes the Linguar Hub entry. It does not delete the original Trello comment.`)) return;
+    button.disabled = true; button.textContent = "Deleting…";
+    const result = await pywebview.api.delete_job_log_update(data.client || "", entry.entry_id || "");
+    if (!result?.ok) { button.disabled = false; button.textContent = "Delete"; setStatus(result?.error || "Job Log entry could not be deleted", "error"); return; }
+    close(); await onAuditCard(data.client || res.client || "", data.card_id || ""); setStatus("Job Log entry deleted", "ok");
+  }));
+  w.querySelector("[data-post-comment]")?.addEventListener("click", async () => {
+    const input = w.querySelector("[data-comment-input]");
+    const stateEl = w.querySelector("[data-comment-state]");
+    const text = input.value.trim();
+    if (!text) return;
+    stateEl.textContent = "Saving…";
+    const result = await pywebview.api.post_job_comment(data.client || "", data.card_id || "", text);
+    if (!result?.ok) { stateEl.textContent = result?.error || "Could not save"; return; }
+    w.querySelector("[data-comment-stream]").insertAdjacentHTML("afterbegin", renderJobComment(result.comment));
+    input.value = "";
+    stateEl.textContent = result.posted_trello ? "Saved · Trello synced" : (result.warning || "Saved in Linguar Hub");
+  });
   w.querySelector("[data-open-audit]").addEventListener("click", () => {
     if (window.emsNavigateTo) window.emsNavigateTo("audit", res.client || "");
     close();
   });
+}
+
+function renderJobComment(comment) {
+  const actor = comment?.actor || "Linguar Hub";
+  const initial = actor.trim().charAt(0).toUpperCase() || "L";
+  return `<article class="job-comment"><div class="comment-avatar">${escapeHtml(initial)}</div>
+    <div><header><strong>${escapeHtml(actor)}</strong><time>${escapeHtml(formatCommentDate(comment?.at || ""))}</time></header>
+    <p>${escapeHtml(comment?.text || "")}</p>${comment?.source === "trello" ? `<small>Trello</small>` : ""}</div></article>`;
+}
+
+function formatCommentDate(value) {
+  if (!value) return "now";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"});
 }
 
 function fmtDue(iso) {

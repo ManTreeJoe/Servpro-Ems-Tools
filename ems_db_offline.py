@@ -67,7 +67,7 @@ _WRITES = frozenset({
     "remove_child", "remove_link", "reset_db_path", "resolve_and_link",
     "set_child", "set_department", "set_link", "sync_from_trello",
     "set_master_job_state", "set_work_environment_state", "upsert_job",
-    "save_job_log_entry",
+    "save_job_log_entry", "delete_job_log_entry",
 })
 
 _READS = frozenset({
@@ -93,7 +93,7 @@ _READS = frozenset({
 # (reset_db_path, import_db). Offline, these raise rather than pretend.
 _NO_QUEUE = frozenset({
     "backfill_departments", "backfill_stage_entered_dates", "import_db",
-    "delete_job", "lifecycle_purge_where", "merge_jobs", "prune_dead_folder_links",
+    "delete_job", "delete_job_log_entry", "lifecycle_purge_where", "merge_jobs", "prune_dead_folder_links",
     "reset_db_path", "sync_from_trello",
 })
 
@@ -120,7 +120,7 @@ def _is_missing_feature_schema(name, ex):
     This is intentionally narrower than `_is_unreachable`: a generic 404,
     permission failure, or missing core table must still surface loudly.
     """
-    if name not in {"list_job_log_entries", "save_job_log_entry",
+    if name not in {"list_job_log_entries", "save_job_log_entry", "delete_job_log_entry",
                     "job_log_history"}:
         return False
     body = str(getattr(ex, "body", "") or ex)

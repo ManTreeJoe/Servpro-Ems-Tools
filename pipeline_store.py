@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import uuid
 
 import supabase_client as _sb
 
@@ -187,3 +188,40 @@ def mark_card_sync(external_card_id: str, *, ok: bool, error: str = "") -> None:
                        "updated_at": _now()})
     except Exception:
         pass
+
+
+def add_activity(external_card_id: str, action_type: str, body: str,
+                 actor_name: str = "", *, source: str = "linguar",
+                 external_id: str = "") -> dict:
+    """Append one permanent card activity; returns empty when v11 is absent."""
+    try:
+        cards = _rows("crm_pipeline_cards",
+                      external_id=f"eq.{external_card_id}",
+                      select="card_key", limit="1")
+        if not cards:
+            return {}
+        now = _now()
+        key = f"{source}:{external_id}" if external_id else f"linguar:{uuid.uuid4()}"
+        row = {"activity_key": key, "card_key": cards[0]["card_key"],
+               "action_type": action_type, "body": body,
+               "actor_name": actor_name, "happened_at": now,
+               "source": source, "external_id": external_id or None,
+               "metadata_json": {}, "created_at": now}
+        _upsert("crm_pipeline_activity", row)
+        return row
+    except Exception:
+        return {}
+
+
+def list_activity(external_card_id: str, *, limit: int = 100) -> list:
+    try:
+        cards = _rows("crm_pipeline_cards",
+                      external_id=f"eq.{external_card_id}",
+                      select="card_key", limit="1")
+        if not cards:
+            return []
+        return _rows("crm_pipeline_activity",
+                     card_key=f"eq.{cards[0]['card_key']}", select="*",
+                     order="happened_at.desc", limit=str(limit))
+    except Exception:
+        return []

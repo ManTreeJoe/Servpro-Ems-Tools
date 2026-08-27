@@ -463,6 +463,27 @@ def job_log_history(entry_id: str) -> list:
         return _event_job_log_history(entry_id)
 
 
+def delete_job_log_entry(canon_key_value: str, entry_id: str) -> bool:
+    job = get_job(canon_key_value)
+    if not job or not entry_id:
+        return False
+    try:
+        old = _one("crm_job_log_entries", entry_id=f"eq.{entry_id}",
+                   job_id=f"eq.{job['job_id']}", select="entry_id")
+        if not old:
+            return False
+        _sb.rest("DELETE", "crm_job_log_revisions",
+                 params={"entry_id": f"eq.{entry_id}"})
+        _sb.rest("DELETE", "crm_job_log_entries", params={
+            "entry_id": f"eq.{entry_id}", "job_id": f"eq.{job['job_id']}"})
+        return True
+    except Exception as ex:
+        if not _job_log_schema_missing(ex):
+            raise
+        # Legacy event-backed rows cannot be physically removed safely.
+        raise RuntimeError("Shared Job Log update is required before entries can be deleted")
+
+
 def relate_jobs(canon_key_value: str, related_canon_key: str,
                 relationship_type: str, *, created_by: str = "") -> bool:
     from ems_db_sqlite import CRM_RELATIONSHIP_TYPES
