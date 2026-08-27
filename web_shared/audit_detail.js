@@ -39,6 +39,10 @@
   // repaints do not restart the workspace or flash its loading state.
   const _crmWorkspaceCache = new Map();
   const _crmWorkspaceLoads = new Map();
+  // Read each verified Trello card once per app session when its workspace is
+  // opened.  The backend is also idempotent, but this avoids an unnecessary
+  // network request whenever an audit row repaints.
+  const _crmTrelloAutoImports = new Set();
 
   // ── Default helpers (a tool may override via ctx.helpers) ──────────
   function _escapeHtml(s) {
@@ -527,7 +531,7 @@
       ${relationCount ? `<div class="muted crm-relations">${relationCount} related job${relationCount === 1 ? "" : "s"}</div>` : ""}
       <div class="crm-job-log">
         <div class="crm-log-head"><div><strong>Job Log</strong><span class="muted">Editable throughout the job · Snapshot uses this history</span></div>
-          <div><button class="action-btn" type="button" data-log-import>Import Trello</button>
+          <div><button class="action-btn" type="button" data-log-import>Refresh from Trello</button>
           <button class="action-btn primary" type="button" data-log-new>+ Add entry</button></div></div>
         <div class="crm-log-editor" hidden></div>
         ${data.job_log_error ? `<div class="crm-log-warning">${esc(ctx, data.job_log_error)}</div>` : ""}
@@ -585,6 +589,27 @@
         trelloState.innerHTML = `<span class="muted">Trello pin could not be verified right now</span>`;
       }
       trelloState.querySelector("[data-fix-trello]")?.addEventListener("click", () => openPinModal(r, ctx));
+
+      // Trello is the temporary source of truth for the job history. Pull its
+      // recognized events as soon as the pinned card has been verified, then
+      // reload once so the editable entries are visible immediately.
+      if (link?.card_id && (link.state === "linked" || link.state === "auto_pinned")) {
+        const importKey = `${String(r.client || "").trim().toLowerCase()}::${link.card_id}`;
+        if (!_crmTrelloAutoImports.has(importKey)) {
+          _crmTrelloAutoImports.add(importKey);
+          let imported;
+          try {
+            imported = await pywebview.api.import_crm_job_log_from_trello(r.client, link.card_id);
+          } catch (ex) {
+            imported = { ok:false, error:String(ex) };
+          }
+          if (imported?.ok && (imported.imported || 0) > 0) {
+            setStatus(ctx, `Added ${imported.imported} new Trello job-log event(s)`, "ok");
+            await loadCrmWorkspace(container, r, ctx, true);
+            return;
+          }
+        }
+      }
     } catch (_) {
       trelloSummary.textContent = "Trello not verified";
       trelloState.innerHTML = `<span class="muted">Trello pin could not be verified right now</span>`;
@@ -637,8 +662,8 @@
       const button = event.currentTarget; button.disabled = true; button.textContent = "Reading Trello…";
       let result; try { result = await pywebview.api.import_crm_job_log_from_trello(r.client, r.trello_card_id || ""); }
       catch (ex) { result = { ok:false, error:String(ex) }; }
-      if (!result?.ok) { button.disabled = false; button.textContent = "Import Trello"; setStatus(ctx, `Import failed: ${result?.error || "unknown"}`, "error"); return; }
-      setStatus(ctx, `Imported ${result.imported || 0} recognized Trello event(s)`, "ok"); loadCrmWorkspace(container, r, ctx, true);
+      if (!result?.ok) { button.disabled = false; button.textContent = "Refresh from Trello"; setStatus(ctx, `Trello refresh failed: ${result?.error || "unknown"}`, "error"); return; }
+      setStatus(ctx, result.imported ? `Added ${result.imported} new Trello job-log event(s)` : "Job Log is already up to date with Trello", "ok"); loadCrmWorkspace(container, r, ctx, true);
     });
     box.querySelectorAll("[data-crm-field]").forEach((select) => {
       select.addEventListener("change", async () => {

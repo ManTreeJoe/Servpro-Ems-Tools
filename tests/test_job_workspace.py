@@ -166,6 +166,11 @@ def test_shared_workspace_ui_has_log_editor_and_trello_import():
     for marker in ("data-log-new", "data-log-edit", "data-log-save",
                    "import_crm_job_log_from_trello", "crm_job_log_history"):
         assert marker in js
+    assert "Refresh from Trello" in js
+    assert "_crmTrelloAutoImports" in js
+    assert js.index("reconcile_crm_trello_pin") < js.index(
+        "_crmTrelloAutoImports.has")
+    assert 'link.state === "linked" || link.state === "auto_pinned"' in js
 
 
 def test_job_workspace_starts_compact_and_remembers_expansion():
