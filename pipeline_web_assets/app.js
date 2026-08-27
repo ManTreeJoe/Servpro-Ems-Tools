@@ -1,8 +1,8 @@
 /* Linguar Hub Pipeline — Pywebview frontend.
  *
  * Two views, one panel:
- *   🗂 Board  — a live Trello-style kanban of the WORK IN PROGRESS and
- *               ESTIMATING boards. Real lanes as columns, cards pulled
+ *   🗂 Board  — a live Trello-style kanban of WORK IN PROGRESS,
+ *               ESTIMATING, and CONTENTS. Real lanes as columns, cards pulled
  *               fresh from Trello, drag-to-move (with a confirm that
  *               writes back to Trello), plus per-card audit buttons.
  *   📊 Stages — the lifecycle stage table (read-only, from ems_db) with

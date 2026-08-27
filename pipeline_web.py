@@ -79,6 +79,7 @@ def _row_to_jsdict(r: dict) -> dict:
 BOARD_SPECS = (
     ("wip", "WORK IN PROGRESS"),
     ("est", "ESTIMATING"),
+    ("contents", "CONTENTS"),
 )
 
 # Lanes never shown on the board — spacers + admin/template columns that
@@ -218,7 +219,7 @@ class Api:
 
     # ── 🗂 Board view + drag-move + per-card audit actions ───────────
     def board_view(self) -> dict:
-        """Live two-board kanban payload pulled fresh from Trello. Each
+        """Live multi-board kanban payload pulled fresh from Trello. Each
         board → its open lanes (noise lanes filtered) → the open cards in
         each lane, shaped for the card UI. No DB; always current."""
         import trello_client as tc
@@ -236,7 +237,7 @@ class Api:
 
     def board_view_one(self, key: str) -> dict:
         """Re-pull a SINGLE board (the per-board ↻ refresh) so the user
-        can refresh just WIP or just ESTIMATING without waiting on both."""
+        can refresh one division board without waiting on all three."""
         spec = next((s for s in BOARD_SPECS if s[0] == key), None)
         if not spec:
             return {"ok": False, "error": f"unknown board '{key}'"}
