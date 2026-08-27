@@ -156,6 +156,16 @@ def test_shared_workspace_ui_has_log_editor_and_trello_import():
         assert marker in js
 
 
+def test_job_workspace_starts_compact_and_remembers_expansion():
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "web_shared" / "audit_detail.js").read_text(encoding="utf-8")
+    for marker in ("crm-workspace-toggle", "crm-workspace-summary",
+                   "crm-workspace-body", "aria-expanded",
+                   "linguar.crm.workspace.expanded", "data-crm-trello-summary"):
+        assert marker in js
+    assert "let workspaceExpanded = false" in js
+
+
 def test_job_actions_keep_primary_work_visible_and_collapse_clutter():
     root = Path(__file__).resolve().parents[1]
     js = (root / "web_shared" / "audit_detail.js").read_text(encoding="utf-8")

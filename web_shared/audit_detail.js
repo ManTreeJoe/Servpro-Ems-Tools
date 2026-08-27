@@ -443,6 +443,19 @@
     }).join("");
     const relationCount = (data.relationships || []).length;
     const logEntries = data.job_log || [];
+    const lifecycleLabel = (stages.find(([value]) => value === data.lifecycle_stage) || ["", "Needs classification"])[1];
+    const priorityLabel = (priorities.find(([value]) => value === data.priority) || ["normal", "Normal"])[1];
+    const activeEnvironments = envs.map(([name, icon]) => {
+      const state = byEnv[name] || {};
+      const detected = folderShells.has(name.toLowerCase());
+      const current = state.stage || (detected ? "planned" : "not_applicable");
+      return current !== "not_applicable" ? [name, icon] : null;
+    }).filter(Boolean);
+    const latestLog = logEntries.length ? logEntries[logEntries.length - 1] : null;
+    const workspaceStateKey = "linguar.crm.workspace.expanded";
+    let workspaceExpanded = false;
+    try { workspaceExpanded = localStorage.getItem(workspaceStateKey) === "1"; }
+    catch (_) { workspaceExpanded = false; }
     const logRows = logEntries.length ? logEntries.map((entry) => `
       <div class="crm-log-row" data-log-id="${escA(ctx, entry.entry_id || "")}">
         <div class="crm-log-date">${esc(ctx, entry.work_date || "")}</div>
@@ -458,11 +471,20 @@
     box.dataset.crmClient = cacheKey;
     box.dataset.crmReady = "1";
     box.innerHTML = `
-      <div class="crm-workspace-head">
-        <div><h3>Job Workspace</h3><span class="muted">Tracked from intake through closeout</span></div>
-        <span class="crm-source" title="Last lifecycle source">${esc(ctx,
-          data.lifecycle_source === "manual" ? "Manual" : "Synced")}</span>
+      <button class="crm-workspace-toggle" type="button" aria-expanded="${workspaceExpanded ? "true" : "false"}">
+        <span class="crm-workspace-title"><strong>Job Workspace</strong><span class="muted">Tracked from intake through closeout</span></span>
+        <span class="crm-workspace-toggle-end"><span class="crm-source" title="Last lifecycle source">${esc(ctx,
+          data.lifecycle_source === "manual" ? "Manual" : "Synced")}</span><span class="crm-workspace-chevron" aria-hidden="true">⌄</span></span>
+      </button>
+      <div class="crm-workspace-summary" aria-label="Job workspace summary">
+        <span class="crm-summary-pill"><small>Stage</small>${esc(ctx, lifecycleLabel)}</span>
+        ${data.priority && data.priority !== "normal" ? `<span class="crm-summary-pill priority-${escA(ctx, data.priority)}"><small>Priority</small>${esc(ctx, priorityLabel)}</span>` : ""}
+        <span class="crm-summary-envs">${activeEnvironments.length ? activeEnvironments.map(([name, icon]) =>
+          `<span class="crm-summary-env crm-summary-env-${name.toLowerCase()}"><span aria-hidden="true">${icon}</span>${esc(ctx, name)}</span>`).join("") : `<span class="muted">No work type selected</span>`}</span>
+        <span class="crm-summary-trello" data-crm-trello-summary>Checking Trello…</span>
+        <span class="crm-summary-latest">${latestLog ? `<small>Latest</small><strong>${esc(ctx, latestLog.work_type || "Update")}</strong>${latestLog.work_date ? ` · ${esc(ctx, latestLog.work_date)}` : ""}${latestLog.status ? ` · ${esc(ctx, latestLog.status.replaceAll("_", " "))}` : ""}` : `<span class="muted">No job-log entries yet</span>`}</span>
       </div>
+      <div class="crm-workspace-body" ${workspaceExpanded ? "" : "hidden"}>
       <div class="crm-trello-link" data-crm-trello><span class="muted">Checking pinned Trello card…</span></div>
       <div class="crm-controls">
         <label>Lifecycle<select data-crm-field="lifecycle_stage">${options(stages, data.lifecycle_stage)}</select></label>
@@ -479,33 +501,60 @@
         ${data.job_log_error ? `<div class="crm-log-warning">${esc(ctx, data.job_log_error)}</div>` : ""}
         ${data.job_log_notice ? `<div class="crm-log-notice">${esc(ctx, data.job_log_notice)}</div>` : ""}
         <div class="crm-log-list">${logRows}</div>
+      </div>
       </div>`;
 
+    const workspaceToggle = box.querySelector(".crm-workspace-toggle");
+    const workspaceBody = box.querySelector(".crm-workspace-body");
+    const applyWorkspaceState = (expanded) => {
+      workspaceToggle?.setAttribute("aria-expanded", expanded ? "true" : "false");
+      if (workspaceBody) workspaceBody.hidden = !expanded;
+      box.classList.toggle("is-expanded", expanded);
+    };
+    applyWorkspaceState(workspaceExpanded);
+    workspaceToggle?.addEventListener("click", () => {
+      workspaceExpanded = workspaceToggle.getAttribute("aria-expanded") !== "true";
+      applyWorkspaceState(workspaceExpanded);
+      try { localStorage.setItem(workspaceStateKey, workspaceExpanded ? "1" : "0"); }
+      catch (_) { /* preference is optional */ }
+    });
+
     const trelloState = box.querySelector("[data-crm-trello]");
+    const trelloSummary = box.querySelector("[data-crm-trello-summary]");
     try {
       const link = await pywebview.api.reconcile_crm_trello_pin(r.client);
       const candidates = link?.candidates || [];
       if (link?.card_id) r.trello_card_id = link.card_id;
       if (link?.state === "auto_pinned") {
+        trelloSummary.textContent = "Trello linked";
+        trelloSummary.className = "crm-summary-trello linked";
         trelloState.className = "crm-trello-link linked";
         trelloState.innerHTML = `<span>📌 Trello card found and pinned automatically</span>`;
       } else if (link?.state === "linked") {
+        trelloSummary.textContent = "Trello linked";
+        trelloSummary.className = "crm-summary-trello linked";
         trelloState.className = "crm-trello-link linked";
         trelloState.innerHTML = `<span>📌 Trello card linked</span>`;
       } else if (link?.state === "conflict") {
+        trelloSummary.textContent = "Trello conflict";
+        trelloSummary.className = "crm-summary-trello conflict";
         const reason = link.reason === "saved_pin_disagrees"
           ? "The saved card conflicts with the current Trello match."
           : `Found ${Math.max(candidates.length, (link.pins || []).length)} possible cards.`;
         trelloState.className = "crm-trello-link conflict";
         trelloState.innerHTML = `<div><strong>⚠ Trello card conflict</strong><span>${esc(ctx, reason)} Choose the correct card before posting updates.</span></div><button class="action-btn" type="button" data-fix-trello>Review cards</button>`;
       } else if (link?.state === "missing") {
+        trelloSummary.textContent = "Trello missing";
+        trelloSummary.className = "crm-summary-trello missing";
         trelloState.className = "crm-trello-link missing";
         trelloState.innerHTML = `<span>○ No matching Trello card found</span><button class="action-btn" type="button" data-fix-trello>Find card</button>`;
       } else {
+        trelloSummary.textContent = "Trello not verified";
         trelloState.innerHTML = `<span class="muted">Trello pin could not be verified right now</span>`;
       }
       trelloState.querySelector("[data-fix-trello]")?.addEventListener("click", () => openPinModal(r, ctx));
     } catch (_) {
+      trelloSummary.textContent = "Trello not verified";
       trelloState.innerHTML = `<span class="muted">Trello pin could not be verified right now</span>`;
     }
 
@@ -718,8 +767,8 @@
         ".detail-head.shrunk .detail-techs{display:none;}" +
         ".crm-workspace{padding:12px;border:1px solid var(--border);border-radius:10px;" +
         "background:var(--surface,#222);margin:8px 0 12px;}" +
-        ".crm-workspace-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;}" +
-        ".crm-workspace-head h3{margin:0 0 2px;font-size:14px;}" +
+        ".crm-workspace-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:0;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer}.crm-workspace-toggle:focus-visible{outline:2px solid var(--accent,#4c9aff);outline-offset:5px;border-radius:4px}.crm-workspace-title{display:flex;flex-direction:column;gap:2px}.crm-workspace-title>strong{font-size:14px}.crm-workspace-title>.muted{font-size:11px}.crm-workspace-toggle-end{display:flex;align-items:center;gap:8px}.crm-workspace-chevron{font-size:20px;line-height:1;color:var(--text-muted);transition:transform .14s ease}.crm-workspace.is-expanded .crm-workspace-chevron{transform:rotate(180deg)}" +
+        ".crm-workspace-summary{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px;font-size:10.5px}.crm-summary-pill,.crm-summary-env,.crm-summary-trello{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid var(--border);border-radius:999px;background:var(--bg)}.crm-summary-pill small,.crm-summary-latest small{color:var(--text-muted);text-transform:uppercase;font-size:8px;font-weight:700;letter-spacing:.04em}.crm-summary-pill.priority-high,.crm-summary-pill.priority-urgent{border-color:#b7791f;color:#ffe5a1}.crm-summary-envs{display:inline-flex;gap:4px;flex-wrap:wrap}.crm-summary-env-ems{border-color:#4aa8e8}.crm-summary-env-contents{border-color:#d7a72e}.crm-summary-env-recon{border-color:#c67b47}.crm-summary-trello.linked{border-color:#287a50;color:#baf2d0}.crm-summary-trello.conflict{border-color:#b7791f;color:#ffe5a1}.crm-summary-trello.missing{border-style:dashed}.crm-summary-latest{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)}.crm-summary-latest strong{color:var(--text);margin-left:4px}.crm-workspace-body{margin-top:11px;padding-top:11px;border-top:1px solid var(--border)}.crm-workspace-body[hidden]{display:none}" +
         ".crm-job-log{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}" +
         ".crm-log-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}.crm-log-head>div:first-child{display:flex;flex-direction:column;gap:2px}" +
         ".crm-log-list{display:flex;flex-direction:column;gap:5px}.crm-log-row{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}" +
@@ -737,7 +786,8 @@
         ".crm-env.has-stage{opacity:1}.crm-env-title{display:flex;align-items:center;gap:8px}.crm-env-title>div{display:flex;flex-direction:column}.crm-env-icon{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--surface-2);font-size:16px}.crm-env strong{font-size:12px}.crm-env small{font-size:9px;color:var(--text-muted)}" +
         ".crm-env select,.crm-env input{width:100%;box-sizing:border-box;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 6px;font:inherit;font-size:10px}.crm-env-ems.has-stage{border-color:#4aa8e8}.crm-env-contents.has-stage{border-color:#d7a72e}.crm-env-recon.has-stage{border-color:#c67b47}" +
         ".crm-relations{margin-top:7px;font-size:11px;}" +
-        "@media(max-width:700px){.crm-controls,.crm-env-row,.crm-log-form{grid-template-columns:1fr}.crm-workspace{padding:9px}.crm-log-row{grid-template-columns:68px minmax(0,1fr)}.crm-log-row>button{grid-column:2}.crm-log-head{align-items:flex-start;flex-direction:column}}";
+        "@media(prefers-reduced-motion:reduce){.crm-workspace-chevron{transition:none}}" +
+        "@media(max-width:700px){.crm-controls,.crm-env-row,.crm-log-form{grid-template-columns:1fr}.crm-workspace{padding:9px}.crm-workspace-title>.muted{display:none}.crm-summary-latest{flex-basis:100%}.crm-log-row{grid-template-columns:68px minmax(0,1fr)}.crm-log-row>button{grid-column:2}.crm-log-head{align-items:flex-start;flex-direction:column}}";
       document.head.appendChild(st);
     }
     // ⋯ More — reveal the less-used row of actions.
