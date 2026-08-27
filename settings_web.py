@@ -1011,13 +1011,23 @@ class Api:
     def employee_setup_status(self) -> dict:
         """Plain-language first-day checklist for a regular employee."""
         cfg = config.load() or {}
+        access_error = ""
         try:
             import supabase_client as sb
             user = sb.current_user() or {}
             signed_in = bool(user.get("id"))
-            access = sb.rpc("my_app_access") if signed_in else {}
-        except Exception:
+        except Exception as ex:
             user, signed_in, access = {}, False, {}
+            access_error = f"Sign-in status unavailable: {ex}"
+        else:
+            try:
+                access = sb.rpc("my_app_access") if signed_in else {}
+            except Exception as ex:
+                # A temporary permission/network failure must not turn a
+                # perfectly valid local session into "Not signed in". Keep
+                # identity and franchise access as separate setup checks.
+                access = {}
+                access_error = f"Could not check franchise access: {ex}"
         departments = list((access or {}).get("departments") or [])
         active = (config.active_department() or "").strip()
         trello_set = bool((cfg.get("trello_api_key") or "").strip()
@@ -1035,7 +1045,8 @@ class Api:
              "help": "Nathan assigns this. You do not need to enter a code.",
              "done": bool(departments),
              "detail": (", ".join(departments) if departments
-                        else "Ask Nathan to assign your franchise")},
+                        else (access_error or
+                              "Ask Nathan to assign your franchise"))},
             {"key": "trello", "title": "Connect Trello",
              "help": "Open Trello, click Allow, then come back here.",
              "done": trello_set,

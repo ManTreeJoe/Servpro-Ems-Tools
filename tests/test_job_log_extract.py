@@ -64,6 +64,50 @@ def test_proposal_email_does_not_fake_cleaning_visit():
     assert "Cleaning" not in _by_activity(log)
 
 
+def test_real_field_note_structures_are_recognized():
+    comments = [
+        _c("2026-08-14T18:00:00.000Z", "Field Supervisor",
+           "Reinspection completed. Master bath drywall affected."),
+        _c("2026-08-20T18:00:00.000Z", "Contents Technician",
+           "Content Manipulation completed for this job. Boxes left in garage."),
+        _c("2026-08-22T18:00:00.000Z", "Field Supervisor",
+           "Job closed. Teardown completed. All plastic removed."),
+        _c("2026-08-23T18:00:00.000Z", "Field Supervisor",
+           "Stopped by and grabbed the EQ I stacked up on Saturday."),
+        _c("2026-08-24T18:00:00.000Z", "Office Coordinator",
+           "Kitchen containment passed the post fungal remediation criteria."),
+    ]
+    acts = _by_activity(sg.extract_job_log(comments))
+    assert "Reinspection" in acts
+    assert "Pack Out" in acts
+    assert "Teardown" in acts
+    assert "EQ picked up" in acts
+    assert "Mold Clearance - Passed" in acts
+
+
+def test_scheduled_requested_and_future_work_is_not_logged_as_completed():
+    comments = [
+        _c("2026-08-14T18:00:00.000Z", "Coordinator",
+           "Re-inspection scheduled for tomorrow between 1-3pm."),
+        _c("2026-08-15T18:00:00.000Z", "Coordinator",
+           "Please dispatch mold clearance. This will be ready by Saturday."),
+        _c("2026-08-16T18:00:00.000Z", "Coordinator",
+           "Pack out approval pending management review."),
+        _c("2026-08-17T18:00:00.000Z", "Coordinator",
+           "Demo approved to proceed next week."),
+    ]
+    assert sg.extract_job_log(comments) == []
+
+
+def test_completed_and_future_events_in_same_comment_stay_separate():
+    log = sg.extract_job_log([_c(
+        "2026-08-20T18:00:00.000Z", "Field Supervisor",
+        "Demo completed today. Monitor scheduled tomorrow morning.")])
+    acts = _by_activity(log)
+    assert "Demo" in acts
+    assert "Monitor" not in acts
+
+
 def test_job_log_sorted_oldest_first():
     log = sg.extract_job_log(COMMENTS)
     dates = [r["date"] for r in log]

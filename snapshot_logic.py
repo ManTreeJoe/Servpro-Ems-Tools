@@ -870,13 +870,72 @@ _JOBLOG_WORK_EVENTS = [
      r'(?:placed|set|in\s+the\b)'),
     ("EQ picked up",
      r'\beq\s+pick(?:ed)?\s*up\b|equipment\s+pick(?:ed)?\s*up|'
+     r'\b(?:grabbed|removed|retrieved|collected)\b[^.\n]{0,25}\beq\b|'
      r'\b(?:air\s*scrubber|dehu(?:midifier)?|air\s*mover)s?\b[^.\n]{0,20}'
      r'pick(?:ed)?\s*up|pick(?:ed)?\s*up[^.\n]{0,20}'
      r'(?:air\s*scrubber|dehu|equipment)'),
+    ("Reinspection",
+     r'\bre[\s-]?inspection\s+(?:was\s+)?(?:completed|performed|done)\b|'
+     r'\bcompleted\s+(?:a\s+)?re[\s-]?inspection\b|'
+     r'^\s*re[\s-]?inspection\s+completed\b'),
+    ("Teardown",
+     r'\btear[\s-]?down\s+(?:was\s+)?(?:completed|performed|done)\b|'
+     r'\b(?:completed|performed)\s+(?:the\s+)?tear[\s-]?down\b'),
+    ("Pack Out",
+     r'\b(?:pack[\s-]?out|content(?:s)?\s+manipulation)\s+'
+     r'(?:was\s+)?(?:completed|performed|done)\b|'
+     r'\b(?:completed|performed)\s+(?:the\s+)?(?:pack[\s-]?out|content(?:s)?\s+manipulation)\b'),
+    ("Pack Back",
+     r'\bpack[\s-]?(?:back|in)\s+(?:was\s+)?(?:completed|performed|done)\b|'
+     r'\b(?:completed|performed)\s+(?:the\s+)?pack[\s-]?(?:back|in)\b'),
+    ("Mold Clearance - Passed",
+     r'\b(?:mold\s+)?(?:clearance|containment)\b[^.\n]{0,55}\bpass(?:ed)?\b|'
+     r'\bpass(?:ed)?\b[^.\n]{0,35}\b(?:mold\s+)?clearance\b'),
+    ("Mold Clearance - Failed",
+     r'\b(?:mold\s+)?(?:clearance|containment)\b[^.\n]{0,55}\bfail(?:ed)?\b|'
+     r'\bfail(?:ed)?\b[^.\n]{0,35}\b(?:mold\s+)?clearance\b'),
     ("Demo", r'\bdemo(?:lition|ed|\'d)?\b'),
-    ("Monitor", r'\bmonitor(?:ing|ed)?\b'),
+    ("Monitor", r'\bmonitor(?:ing|ed)?\b|\bdrying\s+in\s+progress\b'),
     ("Cleaning", r'\bhepa\s+vac|detailed\s+clean|cleaning\s+(?:complete|done)'),
 ]
+
+_PLANNING_RE = re.compile(
+    r'\b(?:schedul(?:e|ed|ing)|dispatch|request(?:ed)?|need(?:s|ed)?\s+to|'
+    r'will\s+(?:be|start|begin|perform)|plan(?:ned|ning)?|pending|approved?\s+to|'
+    r'authorization\s+for|ready\s+by|tomorrow|next\s+(?:week|day))\b',
+    re.IGNORECASE)
+_COMPLETED_RE = re.compile(
+    r'\b(?:completed?|performed|finished|done|picked\s+up|grabbed|retrieved|'
+    r'collected|placed|set\s+up|in\s+progress|passed|failed|discovered)\b',
+    re.IGNORECASE)
+
+
+def _planning_only(text):
+    """True for a request/future plan that does not also report completed work."""
+    return bool(_PLANNING_RE.search(text) and not _COMPLETED_RE.search(text))
+
+
+def _event_is_planning_only(text, pattern):
+    """Check planning language near this event, not elsewhere in the comment.
+
+    A common Trello update says "Demo completed. Monitor scheduled tomorrow."
+    Looking at the whole comment would let the completed demo accidentally make
+    the future monitor look completed too, so each match gets its own sentence-
+    sized window.
+    """
+    matches = list(re.finditer(pattern, text, re.IGNORECASE))
+    if not matches:
+        return False
+    for match in matches:
+        left = max(text.rfind(".", 0, match.start()),
+                   text.rfind("\n", 0, match.start()))
+        right_candidates = [p for p in (text.find(".", match.end()),
+                                        text.find("\n", match.end())) if p >= 0]
+        right = min(right_candidates) if right_candidates else len(text)
+        context = text[left + 1:right]
+        if not _planning_only(context):
+            return False
+    return True
 # Decision / status events (mined from EVERY note, incl. emails).
 _JOBLOG_DECISION_EVENTS = [
     ("Job lost — went with another firm",
@@ -971,6 +1030,9 @@ def extract_job_log(comments):
             events = _JOBLOG_WORK_EVENTS + events
         for label, pat in events:
             if not re.search(pat, fresh, re.IGNORECASE):
+                continue
+            if ((label, pat) in _JOBLOG_WORK_EVENTS
+                    and _event_is_planning_only(fresh, pat)):
                 continue
             # Respect explicit "No" answers on the field template
             # (e.g. "Equipment Placed: No" must not log EQ placed).

@@ -16,6 +16,21 @@ def test_employee_setup_has_four_plain_ordered_steps():
     assert result["all_done"] is False
 
 
+def test_franchise_check_failure_does_not_make_signed_in_user_look_signed_out():
+    api = settings_web.Api.__new__(settings_web.Api)
+    with patch.object(settings_web.config, "load", return_value={}), \
+         patch.object(settings_web.config, "active_department", return_value="IE"), \
+         patch("supabase_client.current_user", return_value={
+             "id": "user-1", "email": "employee@example.test"}), \
+         patch("supabase_client.rpc", side_effect=RuntimeError("temporary outage")):
+        result = api.employee_setup_status()
+    steps = {step["key"]: step for step in result["steps"]}
+    assert steps["signin"]["done"] is True
+    assert steps["signin"]["detail"] == "employee@example.test"
+    assert steps["franchise"]["done"] is False
+    assert "Could not check franchise access" in steps["franchise"]["detail"]
+
+
 def test_regular_user_sees_only_assigned_franchises():
     api = home_web.HomeApi.__new__(home_web.HomeApi)
     departments = [{"key": "IE", "label": "IE"},
