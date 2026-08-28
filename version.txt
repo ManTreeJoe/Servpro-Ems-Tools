@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.34",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.34",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.34/Linguar-Hub-Trial-Setup-1.6.0-trial.34.exe",
-  "notes": "Auto-reconciles each job's EMS, Contents, and Recon Trello cards independently. One unambiguous match is pinned to its division automatically; multiple candidates or a saved-link disagreement are never overwritten and instead show a visible Review Trello card links warning before users post updates to the wrong card."
+  "version": "1.6.0-trial.35",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.35",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.35/Linguar-Hub-Trial-Setup-1.6.0-trial.35.exe",
+  "notes": "Makes job requirements cumulative and easier to act on inside Pipeline: overdue work from earlier stages is separated from requirements due at the current stage, while completed previous requirements stay available in a collapsible history. Every Job Log row now also has a History action showing all saved revisions, who changed it, when, and the saved status/note."
 }

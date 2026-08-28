@@ -209,6 +209,19 @@ def test_pipeline_job_card_has_one_trello_pin_per_work_type():
     assert "Use open card" in js
 
 
+def test_pipeline_groups_cumulative_requirements_and_exposes_log_history():
+    root = Path(__file__).parents[1]
+    py = (root / "pipeline_web.py").read_text(encoding="utf-8")
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    for marker in ("Overdue from earlier stages", "Required at",
+                   "Completed &amp; previous requirements", "requirementGroups"):
+        assert marker in js
+    for marker in ("data-history-job-log", "openJobLogHistoryModal",
+                   "job_log_update_history"):
+        assert marker in js
+    assert "def job_log_update_history" in py
+
+
 def test_pipeline_applies_personal_view_preferences():
     root = Path(__file__).parents[1]
     py = (root / "pipeline_web.py").read_text(encoding="utf-8")

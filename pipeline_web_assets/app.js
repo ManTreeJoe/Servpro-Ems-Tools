@@ -568,12 +568,20 @@ function openAuditModal(data, trelloUrl = "") {
     ? `<ul class="aud-list">${misplaced.map((item) => `<li><span class="aud-tag aud-warn">Moved</span> ${escapeHtml(item.label || item)}${item.where ? ` <small>${escapeHtml(item.where)}</small>` : ""}</li>`).join("")}</ul>`
     : "";
   const progress = crm.progress || {};
-  const required = (progress.items || []).map((item) => `
+  const requirementRows = (items) => items.map((item) => `
     <div class="requirement-row req-${escapeAttr(item.status || "required_now")}">
       <span class="requirement-mark">${item.status === "completed" ? "✓" : item.status === "overdue" ? "!" : "○"}</span>
       <span class="requirement-copy"><strong>${escapeHtml(item.label || "")}</strong>
       <small>${escapeHtml(item.introduced_stage_label || "")} · ${escapeHtml(item.owner || "")}${item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small></span>
-    </div>`).join("") || `<div class="aud-empty">No stage requirements are active yet.</div>`;
+    </div>`).join("");
+  const requirementGroups = {overdue: [], required_now: [], completed: []};
+  (progress.items || []).forEach((item) =>
+    (requirementGroups[item.status] || requirementGroups.required_now).push(item));
+  const required = (progress.items || []).length ? `
+    ${requirementGroups.overdue.length ? `<div class="requirement-group overdue"><h4>Overdue from earlier stages</h4>${requirementRows(requirementGroups.overdue)}</div>` : ""}
+    <div class="requirement-group"><h4>Required at ${escapeHtml(progress.stage_label || "this stage")}</h4>${requirementRows(requirementGroups.required_now) || `<div class="aud-empty">Nothing new is required at this stage.</div>`}</div>
+    <details class="requirement-history"><summary>Completed &amp; previous requirements <span>${requirementGroups.completed.length}</span></summary>${requirementRows(requirementGroups.completed) || `<div class="aud-empty">No verified requirements yet.</div>`}</details>`
+    : `<div class="aud-empty">No stage requirements are active yet.</div>`;
   const workTypeState = Object.fromEntries((crm.work_environments || []).map((env) =>
     [String(env.work_environment || "").toLowerCase(), env]));
   const divisionCards = Object.fromEntries((data.division_trello_cards || []).map((card) =>
@@ -619,7 +627,7 @@ function openAuditModal(data, trelloUrl = "") {
       ${entry.technicians ? `<small>Crew: ${escapeHtml(entry.technicians)}</small>` : ""}
       ${entry.note ? `<p>${escapeHtml(entry.note)}</p>` : ""}
       ${entry.equipment ? `<small>Equipment / readings: ${escapeHtml(entry.equipment)}</small>` : ""}</div>
-      <div class="job-log-actions"><button class="text-btn" data-edit-job-log="${escapeAttr(entry.entry_id || "")}">Edit</button>
+      <div class="job-log-actions"><button class="text-btn" data-history-job-log="${escapeAttr(entry.entry_id || "")}">History</button><button class="text-btn" data-edit-job-log="${escapeAttr(entry.entry_id || "")}">Edit</button>
       <button class="text-btn danger" data-delete-job-log="${escapeAttr(entry.entry_id || "")}">Delete</button></div></article>`).join("") || `<div class="aud-empty">No Job Log updates yet.</div>`;
   const docs = data.documents || {};
   const dsRequest = docs.request || {};
@@ -847,6 +855,11 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelectorAll("[data-edit-job-log]").forEach((button) => button.addEventListener("click", () => {
     openJobLogEditor((crm.job_log || []).find((entry) => entry.entry_id === button.dataset.editJobLog) || {});
   }));
+  w.querySelectorAll("[data-history-job-log]").forEach((button) => button.addEventListener("click", async () => {
+    const result = await pywebview.api.job_log_update_history(button.dataset.historyJobLog || "");
+    if (!result?.ok) { setStatus(result?.error || "Could not load revision history", "error"); return; }
+    openJobLogHistoryModal(result.history || []);
+  }));
   w.querySelectorAll("[data-delete-job-log]").forEach((button) => button.addEventListener("click", async () => {
     const entry = (crm.job_log || []).find((item) => item.entry_id === button.dataset.deleteJobLog) || {};
     if (!window.confirm(`Delete the ${entry.work_type || "Job Log"} update from ${entry.work_date || "this job"}?\n\nThis removes the Linguar Hub entry. It does not delete the original Trello comment.`)) return;
@@ -871,6 +884,29 @@ function openAuditModal(data, trelloUrl = "") {
     if (window.emsNavigateTo) window.emsNavigateTo("audit", res.client || "");
     close();
   });
+}
+
+function openJobLogHistoryModal(history) {
+  const rows = (history || []).map((revision, index) => {
+    let after = {};
+    try { after = JSON.parse(revision.after_json || "{}"); } catch (_) {}
+    return `<article class="revision-row">
+      <div><strong>${index === 0 ? "Current version" : `Revision ${history.length - index}`}</strong><time>${escapeHtml(formatCommentDate(revision.changed_at || ""))}</time></div>
+      <small>${escapeHtml(revision.changed_by || "Linguar Hub")}</small>
+      <p>${escapeHtml(after.note || after.work_type || "Saved update")}</p>
+      <span>${escapeHtml((after.status || "").replaceAll("_", " "))}</span>
+    </article>`;
+  }).join("") || `<div class="aud-empty">No revisions have been saved for this entry.</div>`;
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay";
+  modal.innerHTML = `<div class="modal-box revision-modal" role="dialog" aria-modal="true" aria-label="Job Log revision history">
+    <header class="modal-head"><div><div class="modal-title">Job Log History</div><div class="modal-sub">Every saved version, newest first</div></div><button class="audit-close" data-close aria-label="Close history">×</button></header>
+    <div class="modal-body revision-list">${rows}</div>
+    <footer class="modal-foot"><button class="btn" data-close>Close</button></footer></div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
+  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
 }
 
 async function openXaStageModal(client) {

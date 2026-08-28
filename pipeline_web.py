@@ -638,6 +638,9 @@ class Api:
     def delete_job_log_update(self, client: str, entry_id: str) -> dict:
         return self._audit_api().delete_crm_job_log(client, entry_id)
 
+    def job_log_update_history(self, entry_id: str) -> dict:
+        return self._audit_api().crm_job_log_history(entry_id)
+
     def flag_missing_card(self, card_id: str, client: str,
                           item_text: str, note: str = "") -> dict:
         """Record a missing-item flag + post a Trello comment straight
