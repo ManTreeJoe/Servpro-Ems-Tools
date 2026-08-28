@@ -162,6 +162,18 @@
                 border-left:3px solid var(--border);background:var(--surface-2);
                 border-radius:0 6px 6px 0;">checking…</div>
 
+    <div id="sb-profile-name" data-settings-scope="personal"
+         style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);">
+      <div style="font-size:12px;font-weight:700;margin-bottom:4px;">Your name on comments</div>
+      <div class="muted" style="font-size:11px;margin-bottom:8px;">Use your real first and last name so coworkers know who posted each update.</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="sb-display-name" type="text" maxlength="80" autocomplete="name"
+               placeholder="First and last name" style="flex:1 1 240px;min-width:200px;" />
+        <button class="btn btn-primary" id="sb-save-display-name" type="button">Save name</button>
+      </div>
+      <div id="sb-profile-name-msg" class="muted" style="font-size:11px;margin-top:7px;"></div>
+    </div>
+
     <div id="sb-signin" data-settings-scope="personal" style="display:none;margin-bottom:12px;">
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
         <input id="sb-email" name="email" type="email" aria-label="Email address"
@@ -838,11 +850,25 @@ function bindSupabaseControls() {
       await refreshSupabase();
     } catch (e) { sbMsg(`Sign out failed: ${e}`, true); }
   });
+  document.getElementById("sb-save-display-name")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const input = document.getElementById("sb-display-name");
+    const msg = document.getElementById("sb-profile-name-msg");
+    button.disabled = true; button.textContent = "Saving…"; msg.textContent = "";
+    let r;
+    try { r = await pywebview.api.save_my_display_name(input.value); }
+    catch (e) { r = {ok:false, error:String(e)}; }
+    button.disabled = false; button.textContent = "Save name";
+    msg.textContent = r?.ok ? r.message : (r?.error || "Could not save your name");
+    msg.style.color = r?.ok ? "var(--green)" : "var(--red)";
+    if (r?.ok) await refreshSupabase();
+  });
 }
 
 async function refreshSupabase() {
   const box = document.getElementById("sb-status");
   const signin = document.getElementById("sb-signin");
+  const profile = document.getElementById("sb-profile-name");
   let s = null;
   try { s = await pywebview.api.supabase_status(); } catch (_) {}
   if (!s || !s.ok) {
@@ -856,10 +882,12 @@ async function refreshSupabase() {
       + "<b>anon / publishable key</b> above, save, then come back.";
     box.style.borderLeftColor = "var(--amber)";
     signin.style.display = "none";
+    profile.style.display = "none";
   } else if (!s.signed_in) {
     box.textContent = "Set up, but you're not signed in yet.";
     box.style.borderLeftColor = "var(--amber)";
     signin.style.display = "";
+    profile.style.display = "none";
   } else {
     const who = (s.user && s.user.email) || "you";
     box.innerHTML = `Signed in as <b>${esc(who)}</b> — currently reading the `
@@ -868,6 +896,18 @@ async function refreshSupabase() {
          + "right now.</span>");
     box.style.borderLeftColor = cloud ? "var(--green)" : "var(--border)";
     signin.style.display = "none";
+    profile.style.display = "";
+    const nameInput = document.getElementById("sb-display-name");
+    if (document.activeElement !== nameInput)
+      nameInput.value = (s.user && s.user.display_name) || "";
+    const nameMsg = document.getElementById("sb-profile-name-msg");
+    if (!(s.user && s.user.display_name)) {
+      nameMsg.textContent = "Required before you can add comments.";
+      nameMsg.style.color = "var(--amber)";
+    } else if (!nameMsg.textContent) {
+      nameMsg.textContent = `Comments show as ${s.user.display_name}.`;
+      nameMsg.style.color = "var(--green)";
+    }
   }
 
   // Anything written while the shared database was unreachable. Shown

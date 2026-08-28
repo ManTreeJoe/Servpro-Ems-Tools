@@ -2034,7 +2034,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 return {"ok": False, "error": "job not found"}
             entry = dict(entry or {})
             user = sb.current_user() or {}
-            entry["updated_by"] = user.get("email") or entry.get("updated_by") or ""
+            entry["updated_by"] = (user.get("display_name") or user.get("email")
+                                   or entry.get("updated_by") or "")
             saved = ems_db.save_job_log_entry(job["canon_key"], entry)
             return {"ok": True, "entry": saved,
                     "entries": ems_db.list_job_log_entries(job["canon_key"])}

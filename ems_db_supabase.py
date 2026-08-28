@@ -1210,8 +1210,9 @@ def log_event(canon_key_value: str, event_type: str, *,
             "payload_json": json.dumps(payload) if payload else None}
     try:
         user = _sb.current_user() or {}
-        if user.get("email"):
-            body["actor"] = user["email"]
+        actor = user.get("display_name") or user.get("email")
+        if actor:
+            body["actor"] = actor
     except Exception:
         pass
     _sb.rest("POST", "job_events", body=body)

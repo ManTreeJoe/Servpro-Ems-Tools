@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.26",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.26",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.26/Linguar-Hub-Trial-Setup-1.6.0-trial.26.exe",
-  "notes": "Each job can now pin a separate Trello card for EMS, Contents, and Recon. The correct card controls live inside each work-type tile in Pipeline, Audit, and Snapshot, with Open, Pin/Change, and Remove actions. Pipeline can explicitly assign the currently open card to a division; the app never guesses across divisions. Existing single-card jobs remain linked as EMS for compatibility."
+  "version": "1.6.0-trial.27",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.27",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.27/Linguar-Hub-Trial-Setup-1.6.0-trial.27.exe",
+  "notes": "Adds a required personal display name for signed-in users. The name is stored securely in the user's Supabase Auth profile and follows them between computers. New Pipeline comments show the person's name instead of their email, job-log and audit updates use the same author name, and the employee setup checklist now includes this step. Existing historical entries are left unchanged."
 }

@@ -868,6 +868,16 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def save_my_display_name(self, display_name: str) -> dict:
+        """Save the signed-in user's human-readable comment author name."""
+        try:
+            import supabase_client
+            user = supabase_client.update_display_name(display_name)
+            return {"ok": True, "user": user,
+                    "message": f"Comments will show as {user['display_name']}."}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     def supabase_send_code(self, email) -> dict:
         """Mail a 6-digit login code."""
         email = (email or "").strip()
@@ -1095,6 +1105,10 @@ class Api:
              "help": "Use your SERVPRO work email and the password Nathan gave you.",
              "done": signed_in,
              "detail": user.get("email") or "Not signed in"},
+            {"key": "profile_name", "title": "Add your name",
+             "help": "This is the name coworkers see on your comments and job updates.",
+             "done": bool(user.get("display_name")),
+             "detail": user.get("display_name") or "Name still needed"},
             {"key": "franchise", "title": "Get your franchise",
              "help": "Nathan assigns this. You do not need to enter a code.",
              "done": bool(departments),

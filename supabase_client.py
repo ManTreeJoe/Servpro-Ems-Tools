@@ -133,11 +133,39 @@ def sign_out() -> None:
 
 
 def current_user() -> dict | None:
-    """{'id', 'email'} for the signed-in user, or None."""
+    """Signed-in identity, including the user-chosen display name."""
     u = (_read_session().get("user") or {})
     if not u.get("id"):
         return None
-    return {"id": u.get("id"), "email": u.get("email") or ""}
+    metadata = u.get("user_metadata") or {}
+    return {"id": u.get("id"), "email": u.get("email") or "",
+            "display_name": str(metadata.get("display_name") or "").strip()}
+
+
+def update_display_name(display_name: str) -> dict:
+    """Store a person's comment name in Supabase Auth user metadata."""
+    name = " ".join(str(display_name or "").split())
+    if len(name) < 2:
+        raise ValueError("Enter your first and last name.")
+    if len(name) > 80:
+        raise ValueError("Name must be 80 characters or fewer.")
+    payload = _raw("PUT", "/auth/v1/user",
+                   body={"data": {"display_name": name}},
+                   token=access_token()) or {}
+    user = payload.get("user") if isinstance(payload.get("user"), dict) else payload
+    if not isinstance(user, dict) or not user.get("id"):
+        raise SupabaseError(500, "Supabase did not return the updated user")
+    with _LOCK:
+        sess = _read_session()
+        sess["user"] = user
+        _write_session(sess)
+    return current_user() or {}
+
+
+def actor_name(fallback: str = "Linguar Hub") -> str:
+    """Human-facing author label for comments, logs, and audit events."""
+    user = current_user() or {}
+    return user.get("display_name") or user.get("email") or fallback
 
 
 def is_signed_in() -> bool:

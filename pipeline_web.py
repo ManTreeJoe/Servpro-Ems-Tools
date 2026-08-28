@@ -566,7 +566,11 @@ class Api:
         actor = "Linguar Hub"
         try:
             import supabase_client
-            actor = (supabase_client.current_user() or {}).get("email") or actor
+            user = supabase_client.current_user() or {}
+            if user.get("id") and not user.get("display_name"):
+                return {"ok": False, "error":
+                        "Add your name in My Settings before commenting."}
+            actor = supabase_client.actor_name(actor)
         except Exception:
             pass
         local = pipeline_store.add_activity(card_id, "comment", text, actor)

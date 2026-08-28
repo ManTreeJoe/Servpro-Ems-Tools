@@ -4,14 +4,14 @@ import home_web
 import settings_web
 
 
-def test_employee_setup_has_four_plain_ordered_steps():
+def test_employee_setup_includes_comment_display_name():
     api = settings_web.Api.__new__(settings_web.Api)
     with patch.object(settings_web.config, "load", return_value={}), \
          patch.object(settings_web.config, "active_department", return_value="IE"), \
          patch("supabase_client.current_user", return_value=None):
         result = api.employee_setup_status()
     assert [step["key"] for step in result["steps"]] == [
-        "signin", "franchise", "trello", "folders"
+        "signin", "profile_name", "franchise", "trello", "folders"
     ]
     assert result["all_done"] is False
 
@@ -21,12 +21,15 @@ def test_franchise_check_failure_does_not_make_signed_in_user_look_signed_out():
     with patch.object(settings_web.config, "load", return_value={}), \
          patch.object(settings_web.config, "active_department", return_value="IE"), \
          patch("supabase_client.current_user", return_value={
-             "id": "user-1", "email": "employee@example.test"}), \
+             "id": "user-1", "email": "employee@example.test",
+             "display_name": "Samantha Test"}), \
          patch("supabase_client.rpc", side_effect=RuntimeError("temporary outage")):
         result = api.employee_setup_status()
     steps = {step["key"]: step for step in result["steps"]}
     assert steps["signin"]["done"] is True
     assert steps["signin"]["detail"] == "employee@example.test"
+    assert steps["profile_name"]["done"] is True
+    assert steps["profile_name"]["detail"] == "Samantha Test"
     assert steps["franchise"]["done"] is False
     assert "Could not check franchise access" in steps["franchise"]["detail"]
 
