@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.31",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.31",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.31/Linguar-Hub-Trial-Setup-1.6.0-trial.31.exe",
-  "notes": "Turns the Pipeline summary into a daily action queue. Active Jobs, Need Attention, Due Soon, and Waiting to Sync now filter the board immediately, show a clear selected state, combine with search and board tabs, and remember each user's last filter."
+  "version": "1.6.0-trial.32",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.32",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.32/Linguar-Hub-Trial-Setup-1.6.0-trial.32.exe",
+  "notes": "Adds a shared responsive UI system across the app shell, Jobs/Pipeline, Job Search, Settings, Snapshot, and Run Doc Editor. Text and spacing scale smoothly, toolbars wrap instead of clipping, forms collapse cleanly, modals fit narrow windows, focus states are visible, touch behavior is improved, and reduced-motion preferences are honored."
 }

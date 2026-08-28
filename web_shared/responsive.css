@@ -1,0 +1,69 @@
+/* Shared responsive layer for the web workspaces.
+   Loaded after each panel stylesheet so fixed desktop assumptions yield
+   consistently without changing the panel's visual identity. */
+:root {
+  color-scheme: dark;
+  --ui-type: clamp(12px, calc(11px + .16vw), 13px);
+  --ui-gap: clamp(6px, 1vw, 12px);
+  --ui-pad: clamp(10px, 1.5vw, 18px);
+}
+
+html { font-size: var(--ui-type); }
+body.responsive-ui { min-width: 0; }
+.responsive-ui *, .responsive-ui *::before, .responsive-ui *::after { min-width: 0; }
+.responsive-ui button, .responsive-ui input, .responsive-ui select,
+.responsive-ui textarea, .responsive-ui summary { touch-action: manipulation; }
+.responsive-ui :is(button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--green, #2e8b57);
+  outline-offset: 2px;
+}
+.responsive-ui :is(h1, h2, h3, .modal-title, .brand-name) { text-wrap: balance; }
+.responsive-ui :is(p, dd, .notice, .status-msg) { overflow-wrap: anywhere; }
+.responsive-ui .topbar {
+  gap: var(--ui-gap) !important;
+  padding: 7px var(--ui-pad) !important;
+}
+.responsive-ui .topbar-actions { min-width: 0; flex: 1; justify-content: flex-end; }
+.responsive-ui .search { width: clamp(150px, 28vw, 340px); max-width: 100%; }
+.responsive-ui .btn { white-space: nowrap; }
+.responsive-ui :is(.modal-box, .audit-card, [role="dialog"]) {
+  max-width: calc(100vw - 20px);
+  overscroll-behavior: contain;
+}
+.responsive-ui :is(.wrap, .editor-shell, .board-wrap) {
+  padding-inline: var(--ui-pad);
+}
+
+@media (max-width: 900px) {
+  .responsive-ui .topbar { align-items: stretch; flex-wrap: wrap; }
+  .responsive-ui .topbar-actions { width: 100%; flex-wrap: wrap; }
+  .responsive-ui .topbar-actions .search { flex: 1 1 220px; }
+  .responsive-ui .card { padding: 13px 14px; }
+  .responsive-ui .modal-scrim { padding: 8px; }
+}
+
+@media (max-width: 680px) {
+  .responsive-ui .brand-tag { display: none; }
+  .responsive-ui .topbar-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
+  .responsive-ui .topbar-actions .search { grid-column: 1 / -1; width: 100%; }
+  .responsive-ui .statusbar { padding-inline: 10px; gap: 8px; }
+  .responsive-ui .statusbar > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .responsive-ui :is(.form-row.two, .pm-fields, .job-log-form, .aud-facts) { grid-template-columns: 1fr !important; }
+  .responsive-ui :is(.modal-foot, .fr-actions) { flex-wrap: wrap; }
+  .responsive-ui :is(.modal-foot, .fr-actions) > .btn { flex: 1 1 auto; }
+}
+
+@media (max-width: 460px) {
+  .responsive-ui .btn { padding-inline: 10px; }
+  .responsive-ui .brand-name { font-size: 13px; }
+  .responsive-ui :is(.wrap, .editor-shell, .board-wrap) { padding-inline: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .responsive-ui *, .responsive-ui *::before, .responsive-ui *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
