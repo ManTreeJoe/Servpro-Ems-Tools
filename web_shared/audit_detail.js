@@ -479,7 +479,11 @@
       }).join("");
     const workspaceStateKey = "linguar.crm.workspace.expanded";
     let workspaceExpanded = false;
-    try { workspaceExpanded = localStorage.getItem(workspaceStateKey) === "1"; }
+    try {
+      const savedWorkspaceState = localStorage.getItem(workspaceStateKey);
+      workspaceExpanded = savedWorkspaceState === null
+        ? !!data.workspace_default_expanded : savedWorkspaceState === "1";
+    }
     catch (_) { workspaceExpanded = false; }
     const logRows = logEntries.length ? logEntries.map((entry) => `
       <div class="crm-log-row" data-log-id="${escA(ctx, entry.entry_id || "")}">

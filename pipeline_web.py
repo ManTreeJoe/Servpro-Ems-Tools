@@ -234,6 +234,16 @@ class Api:
         self._sync_running = False
         self._audit = None  # lazily-built audit_web.Api for card audits
 
+    def personal_preferences(self) -> dict:
+        """Safe presentation-only choices for this Windows user."""
+        import config
+        cfg = config.load() or {}
+        return {
+            "density": (cfg.get("ui_density") or "comfortable"),
+            "default_view": (cfg.get("pipeline_default_view") or "board"),
+            "reduce_motion": bool(cfg.get("reduce_motion", False)),
+        }
+
     # ── 🗂 Board view + drag-move + per-card audit actions ───────────
     def board_view(self, force_trello: bool = False) -> dict:
         """Load the Linguar-owned shared Pipeline first.

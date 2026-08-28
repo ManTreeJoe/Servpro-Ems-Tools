@@ -1741,6 +1741,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         """Master CRM summary for the selected Jobs/Snapshot detail card."""
         try:
             import ems_db
+            import config as _config
             job = ems_db.find_job_by_name(client)
             if not job:
                 # A real audit/Trello/folder row may predate the shared job
@@ -1832,6 +1833,9 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "job_log_notice": log_notice,
                 "progress": progress,
                 "timeline": timeline,
+                "workspace_default_expanded": bool(
+                    (_config.load() or {}).get(
+                        "job_workspace_default_open", False)),
             }
         except Exception as ex:
             return {"ok": False, "migration_required": True,

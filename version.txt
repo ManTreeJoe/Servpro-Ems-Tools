@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.28",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.28",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.28/Linguar-Hub-Trial-Setup-1.6.0-trial.28.exe",
-  "notes": "Routes Pipeline Trello data through the correct work-division card. Jobs with multiple pinned cards get a compact EMS, Contents, and Recon selector. Checklists, comments, new comment posting, attachments, members, and Job Log imports use the selected division's card. Opening a pinned Contents or Recon card selects it automatically, while legacy jobs continue to default safely to EMS."
+  "version": "1.6.0-trial.29",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.29",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.29/Linguar-Hub-Trial-Setup-1.6.0-trial.29.exe",
+  "notes": "Adds safe per-user interface preferences under My Settings: comfortable or compact spacing, Board or Stages as the Pipeline starting view, whether Job Workspace details start expanded, and reduced motion. Operational requirements, shared job data, and franchise rules remain controlled centrally so customization cannot create different job truth for different employees."
 }

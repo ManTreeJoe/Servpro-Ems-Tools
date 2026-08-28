@@ -209,6 +209,21 @@ def test_pipeline_job_card_has_one_trello_pin_per_work_type():
     assert "Use open card" in js
 
 
+def test_pipeline_applies_personal_view_preferences():
+    root = Path(__file__).parents[1]
+    py = (root / "pipeline_web.py").read_text(encoding="utf-8")
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    css = (root / "pipeline_web_assets" / "app.css").read_text(encoding="utf-8")
+    for marker in ("def personal_preferences", "ui_density",
+                   "pipeline_default_view", "reduce_motion"):
+        assert marker in py
+    for marker in ("personal_preferences()", "density-compact",
+                   "reduce-motion", "preferences.default_view"):
+        assert marker in js
+    assert ".density-compact" in css
+    assert ".reduce-motion" in css
+
+
 def test_pipeline_workspace_routes_trello_data_to_selected_division(monkeypatch):
     api = pipeline_web.Api()
     monkeypatch.setattr(api, "audit_card", lambda _client: {

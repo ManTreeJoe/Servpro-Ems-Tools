@@ -53,6 +53,12 @@ FIELDS = [
     ("appearance",          "Appearance",                 "choice", ["system","light","dark"]),
     ("ui_scale",            "UI scale",                   "choice",
                             ["auto","1.0","1.25","1.5","1.75","2.0","2.25","2.5"]),
+    ("ui_density",          "Information spacing",        "choice",
+                            ["comfortable", "compact"]),
+    ("pipeline_default_view", "Pipeline opens to",        "choice",
+                            ["board", "stages"]),
+    ("job_workspace_default_open", "Open Job Workspace details by default", "bool"),
+    ("reduce_motion",       "Reduce interface motion",    "bool"),
     ("global_hotkey_enabled", "Use a shortcut to show Linguar Hub", "bool"),
     ("global_hotkey",       "Show-app shortcut",           "choice",
                             ["ctrl+alt+space", "ctrl+shift+space",
@@ -61,7 +67,9 @@ FIELDS = [
 ]
 
 _PERSONAL_FIELDS = {
-    "appearance", "ui_scale", "global_hotkey_enabled", "global_hotkey",
+    "appearance", "ui_scale", "ui_density", "pipeline_default_view",
+    "job_workspace_default_open", "reduce_motion",
+    "global_hotkey_enabled", "global_hotkey",
     "preferred_browser", "show_sort_files", "show_new_job",
     # These are paths as THIS Windows machine reaches the shared storage.
     # That may be a mapped drive, a UNC server share, or a locally synced
@@ -76,6 +84,10 @@ _PERSONAL_FIELDS = {
 
 _FIELD_GROUPS = {
     "appearance": "Appearance & shortcuts", "ui_scale": "Appearance & shortcuts",
+    "ui_density": "Appearance & shortcuts",
+    "pipeline_default_view": "Appearance & shortcuts",
+    "job_workspace_default_open": "Appearance & shortcuts",
+    "reduce_motion": "Appearance & shortcuts",
     "global_hotkey_enabled": "Appearance & shortcuts", "global_hotkey": "Appearance & shortcuts",
     "preferred_browser": "Appearance & shortcuts", "show_sort_files": "Appearance & shortcuts",
     "show_new_job": "Appearance & shortcuts",

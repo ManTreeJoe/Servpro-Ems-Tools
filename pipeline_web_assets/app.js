@@ -38,7 +38,11 @@ window.addEventListener("pywebviewready", async () => {
   // stage chip and the search box. The panel is destroyed on navigate,
   // so all four reset on every visit before this.
   await PanelState.init("pipeline");
-  state.view           = PanelState.get("view", state.view);
+  let preferences = {};
+  try { preferences = await pywebview.api.personal_preferences() || {}; } catch (_) {}
+  document.documentElement.classList.toggle("density-compact", preferences.density === "compact");
+  document.documentElement.classList.toggle("reduce-motion", !!preferences.reduce_motion);
+  state.view           = PanelState.get("view", preferences.default_view || state.view);
   state.activeBoardKey = PanelState.get("activeBoardKey", null);
   state.active_stage   = PanelState.get("active_stage", state.active_stage);
   state.search         = PanelState.get("search", "");
@@ -73,7 +77,11 @@ window.addEventListener("pywebviewready", async () => {
   window.addEventListener("pipeline:sync-progress", onSyncProgress);
   window.addEventListener("pipeline:sync-done", onSyncDone);
 
-  await loadBoard();   // board is the default view
+  const initialView = state.view;
+  state.view = "";
+  setView(initialView);
+  await loadBoard();
+  if (state.view === "stages" && !state.stages.length) await loadStages();
 });
 
 // ── View switching ───────────────────────────────────────────────

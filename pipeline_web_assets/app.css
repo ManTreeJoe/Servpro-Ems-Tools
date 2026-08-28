@@ -454,6 +454,11 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .job-card-load-error p { margin: 0 0 20px; color: var(--text-muted); overflow-wrap: anywhere; }
 @keyframes job-card-shimmer { to { transform: translateX(100%); } }
 @media (prefers-reduced-motion: reduce) { .job-card-skeleton::after { animation: none; } }
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important; }
+.density-compact .lane { width:260px; }
+.density-compact .kcard { padding:8px 9px; }
+.density-compact .aud-section { padding:10px; }
+.density-compact .job-card-main { gap:8px; }
 .aud-section { padding: 20px 0; border-bottom: 1px solid var(--border); }
 .aud-section:last-child { border-bottom: 0; }
 .aud-section h3 { margin: 0 0 12px; color: var(--text); font-size: 13px; letter-spacing: .02em; }

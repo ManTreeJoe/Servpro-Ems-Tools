@@ -246,6 +246,7 @@ def test_job_workspace_starts_compact_and_remembers_expansion():
                    "linguar.crm.workspace.expanded", "data-crm-trello-summary"):
         assert marker in js
     assert "let workspaceExpanded = false" in js
+    assert "workspace_default_expanded" in js
 
 
 def test_job_actions_keep_primary_work_visible_and_collapse_clutter():
