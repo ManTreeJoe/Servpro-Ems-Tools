@@ -522,6 +522,12 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .division-trello.is-pinned>span { color:var(--success); }
 .division-trello>div { display:flex;gap:8px;align-items:center;flex-wrap:wrap; }
 .division-trello .text-btn { padding:0;font-size:10px; }
+.division-data-tabs { display:flex;gap:4px;align-items:center;flex-wrap:wrap; }
+.division-data-tabs button { border:1px solid var(--border);border-radius:999px;background:var(--surface-2);color:var(--text-dim);padding:4px 8px;font:inherit;font-size:10px;cursor:pointer; }
+.division-data-tabs button.active { color:var(--text);border-color:var(--green);background:var(--green-soft); }
+.activity-head>div { display:flex;flex-direction:column;gap:2px; }
+.activity-head small { color:var(--text-dim);font-size:9px;text-transform:uppercase;letter-spacing:.05em; }
+.section-actions { display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end; }
 .signatures-section .section-title-row > div { display: flex; flex-direction: column; gap: 3px; }
 .signatures-section .section-title-row small { color: var(--text-dim); font-size: 10px; }
 .signature-state { padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font-size: 10px; font-weight: 700; }

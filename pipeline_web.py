@@ -348,7 +348,8 @@ class Api:
             "trello_card_id": row.get("trello_card_id") or "",
         }
 
-    def job_card_workspace(self, client: str, card_id: str = "") -> dict:
+    def job_card_workspace(self, client: str, card_id: str = "",
+                           division: str = "") -> dict:
         """Full Pipeline card: audit + CRM + Trello transition material."""
         summary = self.audit_card(client)
         if not summary.get("ok"):
@@ -356,6 +357,7 @@ class Api:
         audit_api = self._audit_api()
         crm = audit_api.crm_job_workspace(client, summary)
         division_trello_cards = audit_api.crm_division_trello_cards(client)
+        division_cards = division_trello_cards.get("cards", [])
         info_sections, checklists, comments, attachments, members = [], [], [], [], []
         try:
             import ems_db
@@ -376,7 +378,22 @@ class Api:
                              for section in order]
         except Exception:
             pass
-        cid = (card_id or summary.get("trello_card_id") or "").strip()
+        from ems_db_common import normalize_division
+        requested_division = normalize_division(division) if division else ""
+        opened_id = (card_id or "").strip()
+        if not requested_division and opened_id:
+            requested_division = next((
+                str(card.get("division") or "") for card in division_cards
+                if str(card.get("card_id") or "").casefold() == opened_id.casefold()
+            ), "")
+        selected_division = requested_division or "EMS"
+        selected_card = next((card for card in division_cards
+                              if card.get("division") == selected_division), {})
+        cid = str(selected_card.get("card_id") or "").strip()
+        # A just-opened legacy card can predate the shared pin. It remains
+        # the EMS card until the user explicitly assigns another division.
+        if not cid and selected_division == "EMS":
+            cid = opened_id or (summary.get("trello_card_id") or "").strip()
         # Linguar Hub is the durable source. Trello below is now an import/
         # compatibility adapter and refreshes this local copy when available.
         checklists = pipeline_store.list_checklists(cid)
@@ -434,8 +451,11 @@ class Api:
         documents = self._document_signature_workspace(
             client, cid, summary.get("path") or "")
         return {"ok": True, "client": client, "card_id": cid,
+                "selected_division": selected_division,
+                "selected_trello_url": (f"https://trello.com/c/{cid}"
+                                        if cid else ""),
                 "audit": summary, "crm": crm, "info_sections": info_sections,
-                "division_trello_cards": division_trello_cards.get("cards", []),
+                "division_trello_cards": division_cards,
                 "checklists": checklists, "comments": comments,
                 "attachments": attachments, "members": members,
                 "documents": documents}
@@ -593,6 +613,10 @@ class Api:
 
     def save_job_log_update(self, client: str, entry: dict) -> dict:
         return self._audit_api().save_crm_job_log(client, entry)
+
+    def import_job_log_from_trello(self, client: str, card_id: str) -> dict:
+        """Import recognized work events from the selected division card."""
+        return self._audit_api().import_crm_job_log_from_trello(client, card_id)
 
     def delete_job_log_update(self, client: str, entry_id: str) -> dict:
         return self._audit_api().delete_crm_job_log(client, entry_id)

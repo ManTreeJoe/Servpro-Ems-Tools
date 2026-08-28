@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.27",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.27",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.27/Linguar-Hub-Trial-Setup-1.6.0-trial.27.exe",
-  "notes": "Adds a required personal display name for signed-in users. The name is stored securely in the user's Supabase Auth profile and follows them between computers. New Pipeline comments show the person's name instead of their email, job-log and audit updates use the same author name, and the employee setup checklist now includes this step. Existing historical entries are left unchanged."
+  "version": "1.6.0-trial.28",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.28",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.28/Linguar-Hub-Trial-Setup-1.6.0-trial.28.exe",
+  "notes": "Routes Pipeline Trello data through the correct work-division card. Jobs with multiple pinned cards get a compact EMS, Contents, and Recon selector. Checklists, comments, new comment posting, attachments, members, and Job Log imports use the selected division's card. Opening a pinned Contents or Recon card selects it automatically, while legacy jobs continue to default safely to EMS."
 }

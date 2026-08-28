@@ -385,7 +385,7 @@ function moveCardLocally(cardId, fromListId, toListId, toLane) {
 }
 
 // ── Per-card actions ─────────────────────────────────────────────
-async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "") {
+async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division = "") {
   const isCard = cardOrClient && typeof cardOrClient === "object" && cardOrClient.dataset;
   const client = isCard ? cardOrClient.dataset.client : String(cardOrClient || "");
   const resolvedCardId = isCard ? (cardOrClient.dataset.cardId || "") : cardId;
@@ -393,7 +393,7 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "") {
   const loading = openAuditLoadingModal(client);
   setStatus(`Opening "${client}"…`);
   try {
-    const res = await pywebview.api.job_card_workspace(client, resolvedCardId);
+    const res = await pywebview.api.job_card_workspace(client, resolvedCardId, division);
     if (!loading.element.isConnected) return;
     if (!res?.ok) {
       loading.showError(res?.error || "The job workspace could not be loaded.");
@@ -402,7 +402,7 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "") {
     }
     loading.close();
     setStatus("");
-    openAuditModal(res, resolvedUrl);
+    openAuditModal(res, res.selected_trello_url || resolvedUrl);
   } catch (error) {
     if (!loading.element.isConnected) return;
     loading.showError(error?.message || String(error));
@@ -538,6 +538,11 @@ function openAuditModal(data, trelloUrl = "") {
     ["scheduled", "Scheduled"], ["active", "Active"], ["waiting", "Waiting"],
     ["ready_for_billing", "Ready for billing"], ["closeout", "Closeout"], ["closed", "Complete"],
   ];
+  const pinnedDivisionCards = (data.division_trello_cards || []).filter((card) => card.pinned);
+  const selectedDivision = data.selected_division || "EMS";
+  const divisionDataTabs = pinnedDivisionCards.length > 1 ? `<div class="division-data-tabs" role="tablist" aria-label="Trello card data">
+    ${pinnedDivisionCards.map((card) => `<button type="button" role="tab" data-division-data="${escapeAttr(card.division)}" aria-selected="${card.division === selectedDivision ? "true" : "false"}" class="${card.division === selectedDivision ? "active" : ""}">${card.division === "EMS" ? "💧 EMS" : card.division === "CONTENTS" ? "▣ Contents" : "🔨 Recon"}</button>`).join("")}
+  </div>` : "";
   const workTypes = [["EMS", "💧", "Mitigation"], ["Contents", "▣", "Contents"], ["Recon", "🔨", "Reconstruction"]]
     .map(([name, icon, label]) => {
       const env = workTypeState[name.toLowerCase()] || {};
@@ -589,7 +594,7 @@ function openAuditModal(data, trelloUrl = "") {
         <span class="progress-label">${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div></div><div class="work-types">${workTypes}</div></section>
-      <section class="aud-section"><div class="section-title-row"><div><h3>Checklists</h3><small>Stored in Linguar Hub · Trello sync is temporary</small></div></div>${checklistGroups}</section>
+      <section class="aud-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} card · stored in Linguar Hub · Trello sync is temporary</small></div>${divisionDataTabs}</div>${checklistGroups}</section>
       ${facts || `<section class="aud-section"><h3>Job information</h3><div class="aud-empty">No saved job information yet.</div></section>`}
       <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
         <div class="signature-flow"><span class="${dsRequest.requested ? "done" : "active"}">1 Prepare</span><i></i><span class="${dsRequest.requested ? "active" : ""}">2 Send</span><i></i><span class="${(docs.files || []).some((file) => file.signed) ? "done" : ""}">3 Signed copy</span></div>
@@ -598,12 +603,12 @@ function openAuditModal(data, trelloUrl = "") {
         <div class="signature-actions"><button class="btn btn-primary" data-open-docusign>Open DocuSign ↗</button><button class="btn" data-mark-docusign-sent ${dsRequest.state ? "disabled" : ""}>Mark envelope sent</button><button class="btn" data-open-docs-folder ${res.path ? "" : "disabled"}>Open job folder</button></div>
         <div class="signature-files">${documentRows}</div></section>
       <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
-        <button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div>
+        <div class="section-actions">${data.card_id ? `<button class="btn compact" data-import-job-log>Refresh from ${escapeHtml(selectedDivision)} Trello</button>` : ""}<button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div></div>
         <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div></section>
       <details class="aud-section compact-section"><summary>Run activity <span>${(res.activity || []).length}</span></summary>${activity}</details>
       <details class="aud-section compact-section"><summary>Other attachments <span>${(data.attachments || []).length}</span></summary>${attachments}</details>
     </div>
-    <aside class="job-card-activity"><div class="activity-head"><h3>Comments and activity</h3>
+    <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>${escapeHtml(selectedDivision)} Trello card</small></div>
       <span>${(data.comments || []).length}</span></div>
       <div class="comment-stream" data-comment-stream>${comments}</div>
       <div class="comment-compose"><textarea data-comment-input rows="3" placeholder="Write an update for this job…"></textarea>
@@ -638,6 +643,11 @@ function openAuditModal(data, trelloUrl = "") {
   w.addEventListener("click", (e) => { if (e.target === w) close(); });
   const keyClose = (e) => { if (e.key === "Escape") { document.removeEventListener("keydown", keyClose); close(); } };
   document.addEventListener("keydown", keyClose);
+  w.querySelectorAll("[data-division-data]").forEach((button) => button.addEventListener("click", async () => {
+    if (button.dataset.divisionData === selectedDivision) return;
+    close();
+    await onAuditCard(data.client || res.client || "", "", "", button.dataset.divisionData || "EMS");
+  }));
   w.querySelector("[data-open-trello]").addEventListener("click", () => {
     if (trelloUrl) pywebview.api.open_url(trelloUrl);
   });
@@ -704,7 +714,7 @@ function openAuditModal(data, trelloUrl = "") {
       return;
     }
     close();
-    await onAuditCard(data.client || res.client || "", data.card_id || "");
+    await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS");
     setStatus(`${division} Trello card pinned`, "ok");
   };
   w.querySelectorAll("[data-division-trello-open]").forEach((button) =>
@@ -732,7 +742,7 @@ function openAuditModal(data, trelloUrl = "") {
       const result = await pywebview.api.unpin_crm_division_trello(
         data.client || res.client || "", division);
       if (!result?.ok) { setStatus(result?.error || "Could not remove card", "error"); return; }
-      close(); await onAuditCard(data.client || res.client || "", data.card_id || "");
+      close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS");
       setStatus(`${division} Trello card removed`, "ok");
     }));
   w.querySelector("[data-open-docusign]")?.addEventListener("click", () => pywebview.api.open_docusign());
@@ -746,7 +756,7 @@ function openAuditModal(data, trelloUrl = "") {
     const result = await pywebview.api.mark_docusign_sent(
       data.client || "", data.card_id || "", copyField("email") || "");
     if (!result?.ok) { button.disabled = false; button.textContent = "Mark envelope sent"; setStatus(result?.error || "Could not track DocuSign request", "error"); return; }
-    close(); await onAuditCard(data.client || res.client || "", data.card_id || ""); setStatus("DocuSign request marked sent", "ok");
+    close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("DocuSign request marked sent", "ok");
   });
   const openJobLogEditor = (entry = {}) => {
     const host = w.querySelector("[data-job-log-editor]");
@@ -769,10 +779,19 @@ function openAuditModal(data, trelloUrl = "") {
       const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
       const result = await pywebview.api.save_job_log_update(data.client || "", payload);
       if (!result?.ok) { button.disabled = false; button.textContent = "Save update"; setStatus(result?.error || "Job Log could not be saved", "error"); return; }
-      close(); await onAuditCard(data.client || res.client || "", data.card_id || ""); setStatus("Job Log updated", "ok");
+      close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("Job Log updated", "ok");
     });
   };
   w.querySelector("[data-add-job-log]")?.addEventListener("click", () => openJobLogEditor({}));
+  w.querySelector("[data-import-job-log]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget; button.disabled = true; button.textContent = "Reading Trello…";
+    const result = await pywebview.api.import_job_log_from_trello(
+      data.client || "", data.card_id || "");
+    if (!result?.ok) { button.disabled = false; button.textContent = `Refresh from ${selectedDivision} Trello`; setStatus(result?.error || "Could not import the job log", "error"); return; }
+    close();
+    await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS");
+    setStatus(result.imported ? `Added ${result.imported} ${selectedDivision} job-log event(s)` : `${selectedDivision} Job Log is up to date`, "ok");
+  });
   w.querySelectorAll("[data-edit-job-log]").forEach((button) => button.addEventListener("click", () => {
     openJobLogEditor((crm.job_log || []).find((entry) => entry.entry_id === button.dataset.editJobLog) || {});
   }));
@@ -782,7 +801,7 @@ function openAuditModal(data, trelloUrl = "") {
     button.disabled = true; button.textContent = "Deleting…";
     const result = await pywebview.api.delete_job_log_update(data.client || "", entry.entry_id || "");
     if (!result?.ok) { button.disabled = false; button.textContent = "Delete"; setStatus(result?.error || "Job Log entry could not be deleted", "error"); return; }
-    close(); await onAuditCard(data.client || res.client || "", data.card_id || ""); setStatus("Job Log entry deleted", "ok");
+    close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("Job Log entry deleted", "ok");
   }));
   w.querySelector("[data-post-comment]")?.addEventListener("click", async () => {
     const input = w.querySelector("[data-comment-input]");

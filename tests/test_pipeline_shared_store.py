@@ -128,10 +128,12 @@ def test_pipeline_card_is_the_full_job_workspace():
     js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     css = (root / "pipeline_web_assets" / "app.css").read_text(encoding="utf-8")
     for marker in ("job_card_workspace", "crm_job_workspace", "get_all_comments",
-                   "set_job_check_item", "post_job_comment"):
+                   "set_job_check_item", "post_job_comment",
+                   "import_job_log_from_trello"):
         assert marker in py
     for marker in ("Job requirements", "Checklists", "Job Log",
-                   "Comments and activity", "data-post-comment"):
+                   "Comments and activity", "data-post-comment",
+                   "data-division-data", "data-import-job-log"):
         assert marker in js
     for marker in ("data-add-job-log", "data-edit-job-log", "data-delete-job-log",
                    "save_job_log_update", "delete_job_log_update"):
@@ -205,3 +207,62 @@ def test_pipeline_job_card_has_one_trello_pin_per_work_type():
                    "pin_crm_division_trello", "unpin_crm_division_trello"):
         assert marker in js
     assert "Use open card" in js
+
+
+def test_pipeline_workspace_routes_trello_data_to_selected_division(monkeypatch):
+    api = pipeline_web.Api()
+    monkeypatch.setattr(api, "audit_card", lambda _client: {
+        "ok": True, "client": "Three Card Job", "path": "",
+        "trello_card_id": "ems12345", "form_issues": [],
+        "photo_issues": [], "requirements": [], "activity": [],
+    })
+    class AuditStub:
+        def crm_job_workspace(self, *_a): return {"ok": True, "job_log": []}
+        def crm_division_trello_cards(self, *_a): return {"ok": True, "cards": [
+            {"division": "EMS", "card_id": "ems12345", "pinned": True},
+            {"division": "CONTENTS", "card_id": "cont1234", "pinned": True},
+            {"division": "RECON", "card_id": "recon123", "pinned": True},
+        ]}
+    monkeypatch.setattr(api, "_audit_api", lambda: AuditStub())
+    monkeypatch.setattr(pipeline_web.pipeline_store, "list_checklists", lambda cid: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store, "save_checklists",
+                        lambda *_a, **_k: {"ok": True, "checklists": []})
+    monkeypatch.setattr(pipeline_web.pipeline_store, "add_activity",
+                        lambda *_a, **_k: {})
+    monkeypatch.setattr(pipeline_web.pipeline_store, "list_activity", lambda _cid: [])
+    monkeypatch.setattr("trello_client.get_card", lambda cid: {
+        "checklists": [], "attachments": [], "members": [], "name": cid})
+    monkeypatch.setattr("trello_client.get_all_comments", lambda cid: [{
+        "id": "comment", "date": "2026-08-28", "memberCreator": {"fullName": "Tech"},
+        "data": {"text": f"comment from {cid}"},
+    }])
+    monkeypatch.setattr("ems_db.find_job_by_name", lambda _name: {})
+
+    result = api.job_card_workspace("Three Card Job", "ems12345", "RECON")
+    assert result["selected_division"] == "RECON"
+    assert result["card_id"] == "recon123"
+    assert result["comments"][0]["text"] == "comment from recon123"
+
+
+def test_opened_contents_card_selects_contents_automatically(monkeypatch):
+    api = pipeline_web.Api()
+    monkeypatch.setattr(api, "audit_card", lambda _client: {
+        "ok": True, "path": "", "trello_card_id": "ems12345",
+        "form_issues": [], "photo_issues": [], "requirements": [], "activity": [],
+    })
+    class AuditStub:
+        def crm_job_workspace(self, *_a): return {"ok": True, "job_log": []}
+        def crm_division_trello_cards(self, *_a): return {"ok": True, "cards": [
+            {"division": "EMS", "card_id": "ems12345", "pinned": True},
+            {"division": "CONTENTS", "card_id": "cont1234", "pinned": True},
+            {"division": "RECON", "card_id": "", "pinned": False},
+        ]}
+    monkeypatch.setattr(api, "_audit_api", lambda: AuditStub())
+    monkeypatch.setattr(pipeline_web.pipeline_store, "list_checklists", lambda _cid: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store, "list_activity", lambda _cid: [])
+    monkeypatch.setattr("trello_client.get_card", lambda _cid: {})
+    monkeypatch.setattr("trello_client.get_all_comments", lambda _cid: [])
+    monkeypatch.setattr("ems_db.find_job_by_name", lambda _name: {})
+    result = api.job_card_workspace("Three Card Job", "cont1234")
+    assert result["selected_division"] == "CONTENTS"
+    assert result["card_id"] == "cont1234"
