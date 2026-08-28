@@ -14,18 +14,13 @@ def test_shell_header_exposes_channel_for_icon_family():
     assert header["work_environment"] in {"EMS", "CONTENTS", "RECON"}
 
 
-def test_header_mark_tracks_the_existing_environment_switch():
+def test_header_uses_generic_hub_mark_instead_of_job_division():
     js = (ROOT / "home_web_assets" / "app.js").read_text(encoding="utf-8")
     html = (ROOT / "home_web_assets" / "index.html").read_text(encoding="utf-8")
-    assert 'id="work-env-mark"' in html
-    assert "renderWorkEnvironmentMark(st.active)" in js
-    assert 'env === "CONTENTS"' in js
-    assert 'env === "RECON"' in js
-    assert 'fill="#2688ff"' in js
-    assert 'stroke="#f2e500"' in js
-    assert 'fill="#ff7900"' in js
-    assert "workEnvironmentIcon(active)" in js
-    assert "restorationCycleIcon" not in js
+    assert 'id="work-env-mark"' not in html
+    assert '../linguar_hub.png' in html
+    assert "renderWorkEnvironmentMark" not in js
+    assert "workEnvironmentIcon" not in js
 
 
 def test_main_and_trial_windows_icons_are_separate_assets():
@@ -35,6 +30,7 @@ def test_main_and_trial_windows_icons_are_separate_assets():
     assert "SetupIconFile={#SetupIcon}" in iss
     for name in ("linguar_hub.ico", "linguar_hub_trial.ico"):
         assert (ROOT / name).is_file()
+    assert "linguar_hub.png" in spec
 
 
 def test_running_window_receives_channel_taskbar_icon():

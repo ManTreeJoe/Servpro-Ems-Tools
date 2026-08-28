@@ -529,10 +529,23 @@ function openAuditModal(data, trelloUrl = "") {
       <span class="requirement-copy"><strong>${escapeHtml(item.label || "")}</strong>
       <small>${escapeHtml(item.introduced_stage_label || "")} · ${escapeHtml(item.owner || "")}${item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small></span>
     </div>`).join("") || `<div class="aud-empty">No stage requirements are active yet.</div>`;
-  const workTypes = (crm.work_environments || []).map((env) => `
-    <div class="work-type"><strong>${escapeHtml(env.work_environment || "")}</strong>
-      <span>${escapeHtml((env.stage || "not applicable").replaceAll("_", " "))}</span>
-      ${env.owner ? `<small>${escapeHtml(env.owner)}</small>` : ""}</div>`).join("");
+  const workTypeState = Object.fromEntries((crm.work_environments || []).map((env) =>
+    [String(env.work_environment || "").toLowerCase(), env]));
+  const workTypeStages = [
+    ["not_applicable", "Not part of this job"], ["planned", "Planned"],
+    ["scheduled", "Scheduled"], ["active", "Active"], ["waiting", "Waiting"],
+    ["ready_for_billing", "Ready for billing"], ["closeout", "Closeout"], ["closed", "Complete"],
+  ];
+  const workTypes = [["EMS", "💧", "Mitigation"], ["Contents", "▣", "Contents"], ["Recon", "🔨", "Reconstruction"]]
+    .map(([name, icon, label]) => {
+      const env = workTypeState[name.toLowerCase()] || {};
+      const stage = env.stage || "not_applicable";
+      return `<div class="work-type work-type-${name.toLowerCase()} ${stage !== "not_applicable" ? "has-stage" : ""}" data-work-type-card="${name}">
+        <div class="work-type-head"><span aria-hidden="true">${icon}</span><div><strong>${label}</strong><small>${name}</small></div></div>
+        <select data-work-env="${name}" aria-label="${label} status">${workTypeStages.map(([value, text]) => `<option value="${value}" ${value === stage ? "selected" : ""}>${text}</option>`).join("")}</select>
+        <input data-work-env-owner="${name}" value="${escapeAttr(env.owner || "")}" placeholder="Owner or crew" aria-label="${label} owner or crew">
+      </div>`;
+    }).join("");
   const checklistGroups = (data.checklists || []).map((list) => `
     <div class="trello-checklist"><h4>${escapeHtml(list.name || "Checklist")}</h4>
       ${(list.items || []).map((item) => `<label class="check-row ${item.complete ? "checked" : ""}">
@@ -565,7 +578,7 @@ function openAuditModal(data, trelloUrl = "") {
       <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
         <span class="progress-label">${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
-      ${workTypes ? `<section class="aud-section"><h3>Work types</h3><div class="work-types">${workTypes}</div></section>` : ""}
+      <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div></div><div class="work-types">${workTypes}</div></section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Checklists</h3><small>Stored in Linguar Hub · Trello sync is temporary</small></div></div>${checklistGroups}</section>
       ${facts || `<section class="aud-section"><h3>Job information</h3><div class="aud-empty">No saved job information yet.</div></section>`}
       <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
@@ -651,6 +664,28 @@ function openAuditModal(data, trelloUrl = "") {
       setStatus("Checklist saved · Trello synced", "ok");
     }
   }));
+  const saveWorkType = async (select) => {
+    const name = select.dataset.workEnv;
+    const tile = select.closest("[data-work-type-card]");
+    const owner = tile?.querySelector(`[data-work-env-owner="${name}"]`)?.value || "";
+    select.disabled = true;
+    const result = await pywebview.api.save_crm_work_environment(
+      data.client || res.client || "", name, select.value, owner);
+    select.disabled = false;
+    if (!result?.ok) {
+      setStatus(`Could not update ${name}: ${result?.error || "unknown error"}`, "error");
+      return;
+    }
+    tile?.classList.toggle("has-stage", select.value !== "not_applicable");
+    setStatus(`${name} updated for this job`, "ok");
+  };
+  w.querySelectorAll("[data-work-env]").forEach((select) =>
+    select.addEventListener("change", () => saveWorkType(select)));
+  w.querySelectorAll("[data-work-env-owner]").forEach((input) =>
+    input.addEventListener("change", () => {
+      const select = w.querySelector(`[data-work-env="${input.dataset.workEnvOwner}"]`);
+      if (select) saveWorkType(select);
+    }));
   w.querySelector("[data-open-docusign]")?.addEventListener("click", () => pywebview.api.open_docusign());
   w.querySelector("[data-open-docs-folder]")?.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || ""));
   w.querySelectorAll("[data-document-path]").forEach((button) => button.addEventListener("click", () => {

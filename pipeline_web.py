@@ -520,6 +520,11 @@ class Api:
     def copy_pics_to_clipboard(self, client: str, stage: str = "") -> dict:
         return self._audit_api().copy_pics_to_clipboard(client, stage)
 
+    def save_crm_work_environment(self, client: str, work_environment: str,
+                                  stage: str, owner: str = "") -> dict:
+        return self._audit_api().save_crm_work_environment(
+            client, work_environment, stage, owner)
+
     def set_job_check_item(self, card_id: str, item_id: str,
                            complete: bool) -> dict:
         local = pipeline_store.set_check_item(card_id, item_id, complete)

@@ -32,19 +32,10 @@ body { background: var(--bg); }
   filter: drop-shadow(0 2px 5px rgba(0,0,0,.45));
   transition: filter 140ms ease, transform 140ms ease;
 }
-.brand-mark svg { display:block; width:32px; height:32px; }
+.brand-mark img { display:block; width:32px; height:32px; border-radius:8px; }
 .brand-mark:hover { transform:scale(1.06); filter:drop-shadow(0 2px 7px rgba(134,240,0,.28)); }
 .brand-name { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0.01em; }
 .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
-.work-env-filter-label {
-  margin: 12px 3px 5px;
-  color: var(--text-dim);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
 .sb-nav {
   flex: 1;
   overflow-y: auto;
@@ -275,20 +266,6 @@ body { background: var(--bg); }
     padding: 2px !important;
   }
   .dept-seg { padding: 4px 2px !important; font-size: 10px !important; }
-  .work-env-switch {
-    display: flex !important;
-    flex-direction: column;
-    margin-top: 7px !important;
-    padding: 2px !important;
-  }
-  .work-env-seg {
-    width: 42px;
-    height: 25px;
-    padding: 0 2px !important;
-    font-size: 8px !important;
-    letter-spacing: 0;
-  }
-
   .sb-nav { padding: 8px 7px; overflow-x: hidden; }
   .sb-group {
     height: 1px;

@@ -34,8 +34,13 @@ def test_switch_rejects_unknown_environment():
     assert _api().switch_work_environment("roofing")["ok"] is False
 
 
-def test_shell_routes_environment_to_panels():
+def test_shell_does_not_treat_job_division_as_a_global_mode():
     path = home_web.os.path.join(home_web._HERE, "home_web_assets", "app.js")
     with open(path, encoding="utf-8") as handle:
         javascript = handle.read()
-    assert 'params.set("work_environment", state.header.work_environment)' in javascript
+    html_path = home_web.os.path.join(home_web._HERE, "home_web_assets", "index.html")
+    with open(html_path, encoding="utf-8") as handle:
+        html = handle.read()
+    assert 'params.set("work_environment", state.header.work_environment)' not in javascript
+    assert 'id="work-env-switch"' not in html
+    assert "renderWorkEnvironmentSwitch" not in javascript

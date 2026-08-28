@@ -63,31 +63,6 @@ async function loadShell() {
   renderWelcome();
   updateClock();
   renderDeptSwitch();
-  renderWorkEnvironmentSwitch();
-  renderWorkEnvironmentMark(state.header?.work_environment || "EMS");
-}
-
-function workEnvironmentIcon(active) {
-  const env = String(active || "EMS").toUpperCase();
-  let symbol;
-  if (env === "CONTENTS") {
-    symbol = `<path d="M14 23l18-10 18 10-18 10zM14 23v20l18 10 18-10V23M32 33v20" fill="none" stroke="#f2e500" stroke-width="5" stroke-linejoin="round"/>`;
-  } else if (env === "RECON") {
-    symbol = `<path d="M17 15l8-7 19 18-8 8-6-6-15 18-7-6 16-18z" fill="#ff7900"/>`;
-  } else {
-    symbol = `<path d="M32 7C25 19 19 27 19 36a13 13 0 0 0 26 0C45 27 39 19 32 7z" fill="#2688ff"/>`;
-  }
-  return `<svg viewBox="0 0 64 64" role="img" aria-label="${esc(env)} workspace">
-    <rect x="2" y="2" width="60" height="60" rx="13" fill="#111512" stroke="#59615c" stroke-width="3"/>
-    ${symbol}
-  </svg>`;
-}
-
-function renderWorkEnvironmentMark(active) {
-  const mark = document.getElementById("work-env-mark");
-  if (!mark) return;
-  mark.innerHTML = workEnvironmentIcon(active);
-  mark.title = `${active === "CONTENTS" ? "Contents" : active === "RECON" ? "Recon" : "EMS"} workspace`;
 }
 
 function restoreLastPanel() {
@@ -144,44 +119,6 @@ async function switchDept(key, active) {
   }
 }
 
-// EMS / Contents / Recon is the part of a job being worked, not a franchise.
-async function renderWorkEnvironmentSwitch() {
-  const host = document.getElementById("work-env-switch");
-  if (!host) return;
-  let st;
-  try { st = await pywebview.api.work_environment_state(); } catch (_) { st = null; }
-  if (!st?.ok || !(st.environments || []).length) {
-    host.style.display = "none";
-    return;
-  }
-  host.style.display = "grid";
-  state.header.work_environment = st.active;
-  renderWorkEnvironmentMark(st.active);
-  host.innerHTML = st.environments.map((item) =>
-    `<button class="work-env-seg ${item.key === st.active ? "active" : ""}"
-      data-key="${esc(item.key)}" title="Show ${esc(item.label)} work">${esc(item.label)}</button>`
-  ).join("");
-  host.querySelectorAll(".work-env-seg").forEach((button) =>
-    button.addEventListener("click", () => switchWorkEnvironment(button.dataset.key, st.active)));
-}
-
-async function switchWorkEnvironment(key, active) {
-  if (!key || key === active) return;
-  const buttons = document.querySelectorAll(".work-env-seg");
-  buttons.forEach((button) => (button.disabled = true));
-  try {
-    const result = await pywebview.api.switch_work_environment(key);
-    if (!result?.ok) {
-      buttons.forEach((button) => (button.disabled = false));
-      window.toastLog?.(`Could not switch work environment: ${result?.error || "unknown error"}`);
-      return;
-    }
-    if (result.reload) { location.reload(); return; }
-    await renderWorkEnvironmentSwitch();
-  } catch (_) {
-    buttons.forEach((button) => (button.disabled = false));
-  }
-}
 
 // Cross-frame message bus — settings panel posts
 // {type:"sidebar-reload"} when a panel-visibility toggle changes,
@@ -194,7 +131,6 @@ window.addEventListener("message", async (ev) => {
     renderSidebar();
     refreshCounts();
     renderDeptSwitch();
-    renderWorkEnvironmentSwitch();
   } else if (d.type === "ems-navigate" && d.key) {
     // Cross-tool jump from a panel's "Open in…" right-click. Switch the
     // content frame to the target tool, handing it `focus` (a client
@@ -349,9 +285,6 @@ function navigate(key, src, focus, isRestore) {
   let url = src || item.src;
   const params = new URLSearchParams();
   if (focus) params.set("focus", focus);
-  if (state.header?.work_environment) {
-    params.set("work_environment", state.header.work_environment);
-  }
   if (params.size) url += (url.indexOf("?") >= 0 ? "&" : "?") + params.toString();
   $("#content-frame").src = url;
   // Remember where we are for next launch. Fire-and-forget: a failure here

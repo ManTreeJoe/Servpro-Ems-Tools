@@ -182,3 +182,15 @@ def test_daily_copy_and_xa_actions_stay_visible_on_job_card():
     assert "openXaStageModal" in js
     assert "def list_pics_stages" in py
     assert "def copy_pics_to_clipboard" in py
+
+
+def test_work_divisions_are_editable_per_job_not_in_sidebar():
+    root = Path(__file__).parents[1]
+    pipeline_js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    pipeline_py = (root / "pipeline_web.py").read_text(encoding="utf-8")
+    home_html = (root / "home_web_assets" / "index.html").read_text(encoding="utf-8")
+    for marker in ('data-work-env="${name}"', 'data-work-env-owner="${name}"',
+                   "Work on this job", "save_crm_work_environment"):
+        assert marker in pipeline_js
+    assert "def save_crm_work_environment" in pipeline_py
+    assert 'id="work-env-switch"' not in home_html

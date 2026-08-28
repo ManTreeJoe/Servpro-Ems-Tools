@@ -58,6 +58,7 @@ datas.append((os.path.join(pkg, '_ems_root_index.html'), '.'))
 # alone does not set pywebview's taskbar icon, and the manifest supplies the
 # exact installed version used by update_check.
 datas.append((os.path.join(base, ICON_FILE), '.'))
+datas.append((os.path.join(base, 'linguar_hub.png'), '.'))
 datas.append((os.path.join(base, 'version.txt'), '.'))
 
 # Static read-only resources used by various panels.
