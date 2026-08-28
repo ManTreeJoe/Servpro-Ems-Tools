@@ -366,6 +366,12 @@ class Api:
             return summary
         audit_api = self._audit_api()
         crm = audit_api.crm_job_workspace(client, summary)
+        reconcile_divisions = getattr(
+            audit_api, "reconcile_crm_division_trello_cards", None)
+        division_reconciliation = (reconcile_divisions(client)
+                                   if reconcile_divisions else
+                                   {"ok": True, "divisions": [],
+                                    "has_conflict": False})
         division_trello_cards = audit_api.crm_division_trello_cards(client)
         division_cards = division_trello_cards.get("cards", [])
         info_sections, checklists, comments, attachments, members = [], [], [], [], []
@@ -466,6 +472,7 @@ class Api:
                                         if cid else ""),
                 "audit": summary, "crm": crm, "info_sections": info_sections,
                 "division_trello_cards": division_cards,
+                "division_card_reconciliation": division_reconciliation,
                 "checklists": checklists, "comments": comments,
                 "attachments": attachments, "members": members,
                 "documents": documents}

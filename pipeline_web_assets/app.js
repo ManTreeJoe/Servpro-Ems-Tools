@@ -632,8 +632,15 @@ function openAuditModal(data, trelloUrl = "") {
   const attachments = (data.attachments || []).map((a) =>
     `<button class="attachment-row" data-attachment-url="${escapeAttr(a.url || "")}">📎 ${escapeHtml(a.name || "Attachment")}</button>`).join("") || `<div class="aud-empty">No attachments.</div>`;
   const comments = (data.comments || []).map(renderJobComment).join("") || `<div class="aud-empty activity-empty">No comments yet. Start the job conversation below.</div>`;
+  const divisionConflicts = (data.division_card_reconciliation?.divisions || [])
+    .filter((item) => item.state === "conflict");
+  const divisionConflictBanner = divisionConflicts.length ? `<div class="division-conflict-banner" role="alert">
+    <strong>⚠ Review Trello card links</strong>
+    <span>${divisionConflicts.map((item) => escapeHtml(item.division)).join(", ")} ${divisionConflicts.length === 1 ? "has" : "have"} more than one possible card or a saved card that no longer matches. Choose the correct card before posting updates.</span>
+  </div>` : "";
   const body = `<div class="job-card-layout">
     <div class="job-card-main">
+      ${divisionConflictBanner}
       <section class="aud-section audit-summary"><h3>Current audit</h3>${missing}${misplacedHtml}</section>
       <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
         <span class="progress-label">${progress.percent_complete || 0}% complete</span></div>

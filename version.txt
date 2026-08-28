@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.33",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.33",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.33/Linguar-Hub-Trial-Setup-1.6.0-trial.33.exe",
-  "notes": "Extends the responsive UI system to every remaining web workspace, including APA, Disputes, Hygiene, Notifications, Health, Photo Folders, WC Audit, spreadsheets, notes, resources, multi-unit tools, and quick import. Older panels now include correct viewport and theme metadata so scaling works consistently throughout the app."
+  "version": "1.6.0-trial.34",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.34",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.34/Linguar-Hub-Trial-Setup-1.6.0-trial.34.exe",
+  "notes": "Auto-reconciles each job's EMS, Contents, and Recon Trello cards independently. One unambiguous match is pinned to its division automatically; multiple candidates or a saved-link disagreement are never overwritten and instead show a visible Review Trello card links warning before users post updates to the wrong card."
 }

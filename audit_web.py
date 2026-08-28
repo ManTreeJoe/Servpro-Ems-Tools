@@ -2028,6 +2028,64 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return {"ok": True, "state": "missing", "card_id": "",
                 "candidates": []}
 
+    def reconcile_crm_division_trello_cards(self, client: str) -> dict:
+        """Auto-link one clear Trello card per work division.
+
+        Contents and Recon are inferred only from explicit board/lane names;
+        all other strong matches remain EMS for backward compatibility.
+        Ambiguous or disagreeing matches are reported, never overwritten.
+        """
+        name = (client or "").strip()
+        if not name:
+            return {"ok": False, "error": "job name required", "divisions": []}
+        try:
+            hits = self.search_trello(name) or []
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "divisions": []}
+        strong = [h for h in hits if float(h.get("score") or 0) >= .92
+                  and h.get("tier") != "archive"]
+        grouped = {"EMS": [], "CONTENTS": [], "RECON": []}
+        for hit in strong:
+            context = " ".join(str(hit.get(key) or "")
+                               for key in ("board", "lane")).casefold()
+            division = ("CONTENTS" if "content" in context else
+                        "RECON" if any(word in context for word in
+                                       ("recon", "reconstruction", "repair"))
+                        else "EMS")
+            card_id = str(hit.get("card_id") or "").strip()
+            if card_id and not any(c["card_id"] == card_id for c in grouped[division]):
+                grouped[division].append({
+                    "card_id": card_id, "name": hit.get("name") or "",
+                    "board": hit.get("board") or "", "lane": hit.get("lane") or "",
+                })
+        current = {card["division"]: card for card in
+                   self.crm_division_trello_cards(name).get("cards", [])}
+        results = []
+        for division in ("EMS", "CONTENTS", "RECON"):
+            pin = str(current.get(division, {}).get("card_id") or "")
+            candidates = grouped[division]
+            candidate_ids = {card["card_id"] for card in candidates}
+            if pin and candidate_ids and pin not in candidate_ids:
+                state, reason = "conflict", "saved_pin_disagrees"
+            elif pin:
+                state, reason = "linked", ""
+            elif len(candidates) == 1:
+                saved = self.pin_crm_division_trello(
+                    name, division, candidates[0]["card_id"])
+                state = "auto_pinned" if saved.get("ok") else "error"
+                reason = "" if saved.get("ok") else saved.get("error", "auto-pin failed")
+                if saved.get("ok"):
+                    pin = candidates[0]["card_id"]
+            elif len(candidates) > 1:
+                state, reason = "conflict", "multiple_matches"
+            else:
+                state, reason = "missing", ""
+            results.append({"division": division, "state": state,
+                            "reason": reason, "card_id": pin,
+                            "candidates": candidates})
+        return {"ok": True, "divisions": results,
+                "has_conflict": any(r["state"] == "conflict" for r in results)}
+
     def save_crm_job_log(self, client: str, entry: dict) -> dict:
         """Create/edit an ongoing structured job-log entry."""
         try:

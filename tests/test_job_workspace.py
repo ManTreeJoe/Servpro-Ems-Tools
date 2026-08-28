@@ -162,6 +162,32 @@ def test_disagreeing_saved_trello_pin_is_flagged(workspace, monkeypatch):
     assert result["reason"] == "saved_pin_disagrees"
 
 
+def test_division_cards_auto_link_separately_and_flag_conflicts(workspace, monkeypatch):
+    db, api = workspace
+    db.upsert_job(display_name="Taylor Job")
+    monkeypatch.setattr(api, "search_trello", lambda _n: [
+        {"card_id": "abcde123", "name": "Taylor Job", "board": "WIP",
+         "lane": "Active", "tier": "active", "score": 1.0},
+        {"card_id": "bcdef234", "name": "Taylor Job Contents",
+         "board": "Contents", "lane": "Pack out", "tier": "active", "score": 1.0},
+        {"card_id": "cdefa345", "name": "Taylor Job", "board": "Recon",
+         "lane": "Repairs", "tier": "active", "score": 1.0},
+        {"card_id": "defab456", "name": "Taylor Job", "board": "Reconstruction",
+         "lane": "Planning", "tier": "active", "score": 1.0},
+    ])
+    result = api.reconcile_crm_division_trello_cards("Taylor Job")
+    states = {row["division"]: row for row in result["divisions"]}
+    assert states["EMS"]["state"] == "auto_pinned"
+    assert states["CONTENTS"]["state"] == "auto_pinned"
+    assert states["RECON"]["state"] == "conflict"
+    assert result["has_conflict"] is True
+    cards = {row["division"]: row["card_id"] for row in
+             api.crm_division_trello_cards("Taylor Job")["cards"]}
+    assert cards["EMS"] == "abcde123"
+    assert cards["CONTENTS"] == "bcdef234"
+    assert cards["RECON"] == ""
+
+
 def test_workspace_is_part_of_shared_job_detail():
     root = Path(__file__).resolve().parents[1]
     js = (root / "web_shared" / "audit_detail.js").read_text(encoding="utf-8")

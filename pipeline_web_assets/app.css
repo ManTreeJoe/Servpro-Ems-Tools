@@ -513,6 +513,9 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .req-overdue .requirement-mark { border-color: #7B3A33; background: #4A2622; color: #F0B0A8; }
 .req-overdue .requirement-copy strong { color: #E3B0AB; }
 .work-types { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.division-conflict-banner { display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #9a681c;border-radius:8px;background:#402f13;color:#f4d594; }
+.division-conflict-banner strong { flex:0 0 auto;font-size:11px; }
+.division-conflict-banner span { min-width:0;font-size:11px;line-height:1.4;overflow-wrap:anywhere; }
 .work-type { display: flex; flex-direction: column; gap: 8px; padding: 11px; border: 1px solid var(--border); border-top-width: 3px; border-radius: 8px; background: var(--surface); opacity: .68; transition: opacity .14s ease, border-color .14s ease; }
 .work-type.has-stage { opacity: 1; }
 .work-type-ems { border-top-color: #398FE8; }
