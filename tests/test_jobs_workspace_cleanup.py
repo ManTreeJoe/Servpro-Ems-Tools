@@ -6,16 +6,18 @@ import home_web
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_jobs_are_primary_and_reporting_is_grouped():
+def test_pipeline_is_the_primary_jobs_workspace_and_reporting_is_grouped():
     groups = {name: items for name, items in home_web.NAV_GROUPS}
     work = {key: label for key, _icon, label in groups["Work"]}
     reports = {key: label for key, _icon, label in groups["Reports"]}
 
-    assert list(work)[0] == "audit"
-    assert work["audit"] == "Jobs"
+    assert list(work)[0] == "pipeline"
+    assert work["pipeline"] == "Jobs"
+    assert work["audit"] == "Job Search"
     assert work["snapshot"] == "Snapshot"
     assert reports["apa"] == "APA"
     assert "hygiene" in reports
+    assert "pipeline" not in reports
     assert "kpi" not in reports
 
 

@@ -144,14 +144,14 @@ def _ensure_root_index():
 # from the tool's asset folder name automatically.
 NAV_GROUPS = [
     ("Work", [
-        ("audit",       "🔎", "Jobs"),
+        ("pipeline",    "▦", "Jobs"),
+        ("audit",       "🔎", "Job Search"),
         ("snapshot",    "📸", "Snapshot"),
         ("run_doc_editor", "📋", "Run Doc Editor"),
         ("photo_folders","📷", "Photo Folders"),
     ]),
     ("Reports", [
         ("apa",         "📊", "APA"),
-        ("pipeline",    "🛤", "Pipeline"),
         ("exceptions",  "⚠", "Exceptions"),
         ("notifications", "🔔", "Notifications"),
         ("hygiene",     "⚠", "Hygiene"),

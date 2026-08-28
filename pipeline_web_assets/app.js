@@ -107,7 +107,7 @@ function setView(v) {
 // ════════════════════════════════════════════════════════════════
 async function loadBoard(isRefresh) {
   const btn = $("#refresh-btn");
-  if (isRefresh) { btn.disabled = true; btn.textContent = "↻ Refreshing…"; }
+  if (isRefresh) { btn.disabled = true; btn.textContent = "↻ Syncing…"; }
   if (!isRefresh) $("#board-loading")?.classList.remove("hidden");
   setStatus(isRefresh ? "Refreshing from Trello…" : "Loading shared Pipeline…");
   try {
@@ -122,7 +122,7 @@ async function loadBoard(isRefresh) {
   } catch (ex) {
     setStatus(`Board error: ${ex}`, "error");
   } finally {
-    if (isRefresh) { btn.disabled = false; btn.textContent = "↻ Refresh"; }
+    if (isRefresh) { btn.disabled = false; btn.textContent = "↻ Sync"; }
   }
 }
 
@@ -148,6 +148,18 @@ function boardCardTotal() {
   return n;
 }
 
+function boardSummary(boards) {
+  const cards = [];
+  for (const board of boards || [])
+    for (const lane of board.lanes || []) cards.push(...(lane.cards || []));
+  return {
+    total: cards.length,
+    attention: cards.filter((c) => c.stall === "bad" || c.overdue || c.sync_status === "conflict").length,
+    due: cards.filter((c) => c.due && !c.overdue).length,
+    waiting: cards.filter((c) => c.sync_status === "pending").length,
+  };
+}
+
 // ONE board at a time: a tab strip switches between WORK IN PROGRESS and
 // ESTIMATING; only the active board's lanes render. The lanes row is
 // `data-hdrag` so h_scroll.js gives it Trello-style grab-to-scroll.
@@ -164,6 +176,7 @@ function renderBoard() {
   state.activeBoardKey = active.key;
   const countFor = (b) =>
     (b.lanes || []).reduce((s, l) => s + laneMatches(l, q).length, 0);
+  const summary = boardSummary(boards);
 
   const tabs = boards.map((b) =>
     `<button class="board-tab ${b.key === active.key ? "active" : ""}" data-board-tab="${escapeAttr(b.key)}">
@@ -179,6 +192,13 @@ function renderBoard() {
   }
 
   root.innerHTML = `
+    <section class="pipeline-summary" aria-label="Pipeline summary">
+      <div class="summary-primary"><strong>${summary.total}</strong><span>Active jobs</span></div>
+      <div class="summary-item ${summary.attention ? "needs-attention" : ""}"><strong>${summary.attention}</strong><span>Need attention</span></div>
+      <div class="summary-item"><strong>${summary.due}</strong><span>Due soon</span></div>
+      ${summary.waiting ? `<div class="summary-item"><strong>${summary.waiting}</strong><span>Waiting to sync</span></div>` : ""}
+      <div class="summary-help">Click to open · hold to move</div>
+    </section>
     <div class="board-tabs">
       ${tabs}
       <span class="board-tabs-spacer"></span>

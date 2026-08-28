@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.29",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.29",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.29/Linguar-Hub-Trial-Setup-1.6.0-trial.29.exe",
-  "notes": "Adds safe per-user interface preferences under My Settings: comfortable or compact spacing, Board or Stages as the Pipeline starting view, whether Job Workspace details start expanded, and reduced motion. Operational requirements, shared job data, and franchise rules remain controlled centrally so customization cannot create different job truth for different employees."
+  "version": "1.6.0-trial.30",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.30",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.30/Linguar-Hub-Trial-Setup-1.6.0-trial.30.exe",
+  "notes": "Makes the Trello-style Pipeline the primary Jobs workspace and the default landing page. Adds a clean job-health summary, wider readable lanes, simplified Sync and More controls, responsive narrow-window behavior, and keeps the older search screen available as Job Search."
 }

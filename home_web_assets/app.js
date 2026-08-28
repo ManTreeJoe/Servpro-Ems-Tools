@@ -67,7 +67,9 @@ async function loadShell() {
 
 function restoreLastPanel() {
   if (state.userNavigated) return;          // you clicked first — you win
-  const key = state.header?.last_panel || "audit";
+  // Jobs/Pipeline is the operating home. Preserve an explicit last panel,
+  // but make the board the first screen on new installs and cleared state.
+  const key = state.header?.last_panel || "pipeline";
   const item = findItem(key);
   if (!item) return;                         // panel hidden or gone
   navigate(key, item.src, "", true);

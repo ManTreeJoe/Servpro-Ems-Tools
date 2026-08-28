@@ -15,24 +15,27 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Pipeline — Linguar Hub</title>
-<link rel="stylesheet" href="app.css?v=20260828b" />
+<link rel="stylesheet" href="app.css?v=20260828c" />
 </head>
 <body>
 <header class="topbar">
-  <div class="view-toggle">
-    <button id="view-board-btn" class="vtab active" title="Live Trello board view">🗂 Board</button>
-    <button id="view-stages-btn" class="vtab" title="Lifecycle stage table">📊 Stages</button>
+  <div class="pipeline-heading">
+    <div class="pipeline-title">Jobs</div>
+    <div class="view-toggle" aria-label="Choose jobs view">
+      <button id="view-board-btn" class="vtab active" title="Move and open jobs by lane">Board</button>
+      <button id="view-stages-btn" class="vtab" title="Review cycle time and stalled jobs">Stages</button>
+    </div>
   </div>
   <div class="topbar-actions">
     <input
       id="search-box"
       class="search"
       type="search"
-      placeholder="🔎 Search client / lane…"
+      placeholder="Search jobs…"
       autocomplete="off"
     />
-    <button id="refresh-btn" class="btn btn-primary view-board-only" title="Re-pull both boards live from Trello">↻ Refresh</button>
-    <details class="toolbar-more view-stages-only hidden"><summary class="btn">More ▾</summary><div>
+    <button id="refresh-btn" class="btn btn-primary view-board-only" title="Refresh shared jobs and Trello">↻ Sync</button>
+    <details class="toolbar-more"><summary class="btn icon-btn" aria-label="More Pipeline actions" title="More Pipeline actions">•••</summary><div>
       <button id="thresholds-btn" class="btn" title="Edit per-stage day thresholds">⏱ Thresholds</button>
       <button id="export-btn" class="btn" title="Export the current pipeline to an Excel workbook, one sheet per stage">📊 Export</button>
       <button id="sync-btn" class="btn">↻ Sync lifecycle</button>
@@ -89,6 +92,6 @@
   <button data-action="copy-id">📋 Copy card ID</button>
 </div>
 
-<script src="app.js?v=20260828e"></script>
+<script src="app.js?v=20260828f"></script>
 </body>
 </html>

@@ -56,6 +56,8 @@ body {
   border-bottom: 1px solid var(--border);
   gap: 16px;
 }
+.pipeline-heading { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.pipeline-title { font-size: 18px; line-height: 1; font-weight: 750; letter-spacing: -.02em; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark {
   width: 18px; height: 18px;
@@ -89,7 +91,7 @@ body {
   padding: 7px 12px;
   border-radius: var(--radius);
   font-size: 13px;
-  width: 340px;
+  width: min(360px, 38vw);
   outline: none;
   transition: border-color 120ms ease;
 }
@@ -605,4 +607,34 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
   .job-card-main { overflow: visible; }
   .job-card-activity { min-height: 480px; border-left: 0; border-top: 1px solid var(--border); }
   .work-types { grid-template-columns: 1fr; }
+}
+
+/* Jobs-home pass: keep the board operational, compact, and readable. */
+.topbar { padding: 9px 14px !important; gap: 10px !important; }
+.icon-btn { min-width: 38px; padding-inline: 10px; letter-spacing: .08em; }
+.board-wrap { padding: 10px 14px 12px; }
+.pipeline-summary {
+  display: flex; align-items: center; min-height: 46px; flex-shrink: 0;
+  background: linear-gradient(90deg, rgba(46,139,87,.13), transparent 45%);
+  border: 1px solid var(--border); border-radius: 9px; overflow: hidden;
+}
+.summary-primary, .summary-item { display: flex; align-items: baseline; gap: 7px; padding: 8px 14px; border-right: 1px solid var(--border); }
+.summary-primary strong { color: #aee0bf; font-size: 19px; }
+.summary-item strong { color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; }
+.summary-primary span, .summary-item span, .summary-help { color: var(--text-muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.summary-item.needs-attention strong { color: #f0b35a; }
+.summary-help { margin-left: auto; padding: 0 14px; color: var(--text-dim); }
+.lane { flex-basis: 272px; width: 272px; }
+.kcard { padding: 10px 11px; transition: border-color 100ms ease, background 100ms ease, transform 100ms ease; }
+.kcard:hover { transform: translateY(-1px); }
+
+@media (max-width: 780px) {
+  .pipeline-title { display: none; }
+  .topbar { align-items: stretch; }
+  .topbar-actions { gap: 6px; }
+  .search { width: 100%; min-width: 120px; }
+  .pipeline-summary { min-height: 40px; }
+  .summary-primary, .summary-item { padding: 7px 10px; }
+  .summary-help, .summary-primary span, .summary-item span { display: none; }
+  .lane { flex-basis: 252px; width: 252px; }
 }
