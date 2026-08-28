@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../web_shared/usage_track.js?v=20260825a"></script>
+<script src="../web_shared/health_banner.js?v=20260820a"></script>
+<script src="../web_shared/progress_bar.js?v=20260818a"></script>
+<script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+<script src="../web_shared/panel_state.js?v=20260811a"></script>
+<script src="../web_shared/util.js?v=20260731j"></script>
+<script src="../web_shared/ctx_menu.js?v=20260731j"></script>
+<script src="../web_shared/open_in.js?v=20260731j"></script>
+<script src="../web_shared/keyboard.js?v=20260812a"></script>
+<script src="../web_shared/toast_log.js?v=20260731j"></script>
+<script src="../web_shared/h_scroll.js?v=20260731j"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pipeline — Linguar Hub</title>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="view-toggle">
+    <button id="view-board-btn" class="vtab active" title="Live Trello board view">🗂 Board</button>
+    <button id="view-stages-btn" class="vtab" title="Lifecycle stage table">📊 Stages</button>
+  </div>
+  <div class="topbar-actions">
+    <input
+      id="search-box"
+      class="search"
+      type="search"
+      placeholder="🔎 Search client / lane…"
+      autocomplete="off"
+    />
+    <button id="refresh-btn" class="btn btn-primary view-board-only" title="Re-pull both boards live from Trello">↻ Refresh</button>
+    <button id="thresholds-btn" class="btn view-stages-only hidden" title="Edit per-stage day thresholds">⏱ Thresholds</button>
+    <button id="export-btn" class="btn view-stages-only hidden" title="Export the current pipeline to an Excel workbook, one sheet per stage">📊 Export</button>
+    <button id="sync-btn" class="btn btn-primary view-stages-only hidden">↻ Sync</button>
+  </div>
+</header>
+
+<!-- ── Board view (live Trello kanban) ───────────────────────────── -->
+<main id="board-view" class="board-wrap">
+  <div id="board-loading" class="loading-state">Loading boards from Trello…</div>
+</main>
+
+<!-- ── Stages view (lifecycle table) ─────────────────────────────── -->
+<div id="table-view" class="hidden view-stack">
+  <nav id="filter-chips" class="filter-chips" aria-label="Stage filters">
+    <!-- Filter chips injected by app.js -->
+  </nav>
+
+  <main class="table-wrap">
+    <table id="pipeline-table" class="pipeline-table">
+      <thead>
+        <tr>
+          <th data-sort="client">Client</th>
+          <th data-sort="stage">Stage</th>
+          <th data-sort="days_in_stage" class="num">Days in Stage</th>
+          <th data-sort="age" class="num">Age</th>
+          <th data-sort="last_activity">Last Activity</th>
+          <th data-sort="owner">Owner</th>
+          <th data-sort="board">Board / Lane</th>
+        </tr>
+      </thead>
+      <tbody id="pipeline-tbody">
+        <!-- Rows injected by app.js -->
+      </tbody>
+    </table>
+    <div id="empty-state" class="empty-state hidden">
+      <div class="empty-emoji">🛤</div>
+      <div>No jobs match the current filter.</div>
+    </div>
+    <div id="loading-state" class="loading-state">Loading lifecycle…</div>
+  </main>
+</div>
+
+<footer class="statusbar">
+  <span id="status-counts">— jobs</span>
+  <span id="status-msg" class="status-msg"></span>
+</footer>
+
+<!-- Context menu (right-click on a Stages-table row) -->
+<div id="ctx-menu" class="ctx-menu hidden">
+  <button data-action="open-trello">🔗 Open in Trello</button>
+  <button data-action="timeline">🕒 Stage timeline…</button>
+  <button data-action="copy-client">📋 Copy client name</button>
+  <button data-action="copy-id">📋 Copy card ID</button>
+</div>
+
+<script src="app.js?v=20260827b"></script>
+</body>
+</html>

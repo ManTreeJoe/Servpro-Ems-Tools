@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../web_shared/usage_track.js?v=20260825a"></script>
+<script src="../web_shared/health_banner.js?v=20260820a"></script>
+<script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+<script src="../web_shared/panel_state.js?v=20260811a"></script>
+<script src="../web_shared/util.js?v=20260731j"></script>
+<meta charset="UTF-8" />
+<title>Photo Folders — Linguar Hub</title>
+<link rel="stylesheet" href="theme.css" />
+<style>
+  .wrap { flex: 1; overflow-y: auto; padding: 20px 24px; max-width: 1100px; margin: 0 auto; width: 100%; }
+  .top {
+    display: flex; gap: 10px; align-items: center;
+    margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .muted { color: var(--text-muted); font-size: 12px; }
+  .stats { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+  .job {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .job.all-exist { opacity: 0.55; }
+  .job-head {
+    display: grid; grid-template-columns: 24px 1fr auto;
+    align-items: center; gap: 12px;
+    padding: 12px 16px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .job-head .job-cb { margin: 0; cursor: pointer; }
+  .job-head .name { font-weight: 600; font-size: 14px; color: var(--text); }
+  .job-head .sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .job-head .nl-badge {
+    display: inline-block; margin-left: 8px;
+    color: var(--green); font-size: 9px; font-weight: 700;
+    padding: 1px 6px; border: 1px solid var(--green); border-radius: 3px;
+    letter-spacing: 0.06em;
+  }
+  .job-head .summary { font-size: 11px; color: var(--text-muted); }
+  /* Activity badge — what techs are doing on this job (demo, mit, etc).
+     Color codes whether photos are needed (green) or not (gray). */
+  .activity-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-left: 8px; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  }
+  .activity-badge.needs-photos { background: #1B3A2A; color: #88E1A3; }
+  .activity-badge.no-photos    { background: #2A2A2A; color: var(--text-dim); }
+  .expects-hint {
+    font-size: 11px; color: var(--text-muted); font-style: italic;
+    margin-top: 2px;
+  }
+
+  /* Per-tech row inside the job */
+  .tech-list { display: flex; flex-direction: column; }
+  .tech-row {
+    display: grid; grid-template-columns: 24px auto 1fr auto;
+    align-items: center; gap: 12px;
+    padding: 8px 16px 8px 44px;  /* indent under the job-head */
+    border-bottom: 1px solid #2A2A2A;
+    cursor: pointer;
+    user-select: none;
+  }
+  .tech-row:last-child { border-bottom: none; }
+  .tech-row:hover { background: var(--row-hover); }
+  .tech-row.exists { color: var(--text-muted); }
+  .tech-row.exists .tech-name { color: var(--text-muted); }
+  .tech-row .tech-cb { margin: 0; cursor: pointer; }
+  .tech-row .tech-cb:disabled { cursor: not-allowed; }
+  .tech-pill {
+    padding: 2px 9px; border-radius: 4px;
+    background: var(--chip-bg); color: var(--text);
+    font-weight: 700; font-size: 11px;
+    letter-spacing: 0.02em;
+    min-width: 38px; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .tech-pill.exists {
+    background: var(--green); color: #FFFFFF;
+  }
+  .tech-name { font-size: 13px; color: var(--text); flex: 1; }
+  .tech-state {
+    font-size: 11px;
+    font-style: italic;
+  }
+  .tech-state.create { color: var(--green); }
+  .tech-state.skip { color: var(--text-dim); }
+
+  #out {
+    margin-top: 18px; padding: 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    font-size: 12px; max-height: 320px; overflow-y: auto;
+  }
+  #out.hidden { display: none; }
+  #out h4 {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--text-muted); margin: 8px 0 4px;
+  }
+  #out ul { list-style: none; padding: 0; margin: 0; }
+  #out li {
+    padding: 4px 8px;
+    font-family: "Cascadia Mono", "Consolas", monospace; font-size: 11px;
+  }
+  #out .created { color: var(--green); }
+  #out .skipped { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · Photo Folders</span>
+    <span class="brand-tag">web</span>
+  </div>
+  <div class="topbar-actions" style="flex-wrap:wrap;">
+    <!-- Day walker inline with the action buttons — keeps everything
+         on one row when there's horizontal space, wraps gracefully
+         on narrow windows. -->
+    <button class="btn" id="day-prev" title="Previous day">⏮</button>
+    <button class="btn" id="day-today" title="Today">📅 Today</button>
+    <button class="btn" id="day-next" title="Next day">⏭</button>
+    <span id="audit-date-label"
+          style="font-weight:600;font-size:13px;color:var(--text);
+                 padding:4px 10px;background:var(--surface-2);border-radius:5px;">—</span>
+    <button class="btn" id="open-doc-btn">📄 Open run-doc</button>
+    <span id="day-meta" class="muted" style="font-size:11px;"></span>
+    <span style="flex:1;"></span>
+    <button id="refresh-btn" class="btn">↻ Refresh</button>
+    <button id="cleanup-empty-btn" class="btn"
+            title="Walk every tech's SharePoint folder, list ones with zero photos, send selected to the Recycle Bin"
+            style="background:#F5A623;color:#FFF;border-color:#F5A623;">🗑 Cleanup empty</button>
+    <button id="create-btn" class="btn btn-primary">📷 Create selected</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="top">
+    <label style="font-size:12px;display:flex;gap:6px;align-items:center;cursor:pointer;">
+      <input type="checkbox" id="select-all" /> <span>Select all (skip existing)</span>
+    </label>
+    <span id="run-date-label" class="muted">—</span>
+    <span class="stats" id="stats">—</span>
+  </div>
+
+  <div id="rows"></div>
+  <div id="out" class="hidden"></div>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+// state.selected: Map of client → Set(tech names selected)
+// state.dayOffset: 0 = today, -1 = yesterday, etc.
+// state.loadSeq: every day-load takes a ticket. find_run_doc_for and
+// today_jobs are both slow (run-doc parse + folder scan), so clicking ⏭
+// while a day was still loading left two requests in flight — and whichever
+// landed LAST won, usually the older slower one. The label showed the new
+// day while the rows stayed on the old one, and since dayOffset had already
+// moved nothing ever re-requested, so that day never loaded. A response
+// whose ticket is no longer current is now dropped.
+const state = { jobs: [], selected: new Map(), dayOffset: 0, loadSeq: 0 };
+
+window.addEventListener("pywebviewready", async () => {
+  // Remember the day you were on. It's an OFFSET from today, not a date,
+  // so "yesterday" still means yesterday tomorrow — and 📅 Today is one
+  // click away when you want back.
+  await PanelState.init("photo_folders");
+  state.dayOffset = Number(PanelState.get("dayOffset", 0)) || 0;
+
+  // Wrapped, not passed bare: a bare handler hands load() the click Event
+  // as its `seq` argument, which never equals state.loadSeq, so every
+  // refresh would discard its own result.
+  $("#refresh-btn").addEventListener("click", () => load());
+  $("#create-btn").addEventListener("click", create);
+  $("#cleanup-empty-btn").addEventListener("click", openCleanupEmptyModal);
+  $("#day-prev").addEventListener("click", () => walkDay(-1));
+  $("#day-today").addEventListener("click", () => walkDay(0));
+  $("#day-next").addEventListener("click", () => walkDay(+1));
+  $("#open-doc-btn").addEventListener("click",
+    () => pywebview.api.open_run_doc(state.dayOffset));
+  $("#select-all").addEventListener("change", (e) => {
+    state.selected.clear();
+    if (e.target.checked) {
+      // Auto-select every tech that doesn't already have a folder
+      for (const j of state.jobs) {
+        const toCreate = (j.tech_status || []).filter((t) => !t.exists);
+        if (toCreate.length) {
+          state.selected.set(j.client, new Set(toCreate.map((t) => t.tech)));
+        }
+      }
+    }
+    render();
+  });
+  await refreshDayLabel();
+  await load();
+});
+
+async function walkDay(delta) {
+  if (delta === 0) state.dayOffset = 0;
+  else state.dayOffset = (state.dayOffset || 0) + delta;
+  PanelState.set({ dayOffset: state.dayOffset });
+  // One ticket for the whole day-change, so the label and the rows can
+  // never end up from different days. Taken here rather than inside each
+  // call — otherwise load() would issue a newer ticket than the label
+  // fetch it is paired with.
+  const seq = ++state.loadSeq;
+  $("#day-meta").textContent = "Loading…";
+  await refreshDayLabel(seq);
+  await load(seq);
+}
+
+async function refreshDayLabel(seq) {
+  if (seq === undefined) seq = ++state.loadSeq;
+  const offset = state.dayOffset;
+  const r = await pywebview.api.find_run_doc_for(offset);
+  if (seq !== state.loadSeq) return;      // a newer day was picked
+  if (!r?.ok) {
+    $("#audit-date-label").textContent = "—";
+    $("#day-meta").textContent = "";
+    return;
+  }
+  $("#audit-date-label").textContent = r.date_label || "—";
+  $("#open-doc-btn").disabled = !r.exists;
+  $("#open-doc-btn").style.opacity = r.exists ? "1" : "0.5";
+  $("#day-meta").textContent = r.is_today
+    ? "Today"
+    : (state.dayOffset < 0
+        ? `${-state.dayOffset} day${state.dayOffset === -1 ? "" : "s"} ago`
+        : `${state.dayOffset} day${state.dayOffset === 1 ? "" : "s"} ahead`);
+}
+
+async function load(seq) {
+  // Called bare by the 🔄 Refresh button too — take a ticket so a refresh
+  // mid-day-change can't resurrect the day you just left.
+  if (seq === undefined) seq = ++state.loadSeq;
+  const data = await pywebview.api.today_jobs(state.dayOffset);
+  if (seq !== state.loadSeq) return;      // a newer day was picked
+  if (!data?.ok) {
+    $("#rows").innerHTML = `<div class="muted" style="padding:40px;text-align:center;">${esc(data?.error || "no data")}</div>`;
+    $("#run-date-label").textContent = data?.date_label || "";
+    $("#stats").textContent = "";
+    state.jobs = [];
+    state.selected.clear();
+    return;
+  }
+  state.jobs = data.rows || [];
+  $("#run-date-label").textContent = data.run_date_label || data.run_date || "";
+  state.selected.clear();
+  render();
+}
+
+function selectedTechCount() {
+  let n = 0;
+  for (const s of state.selected.values()) n += s.size;
+  return n;
+}
+
+function render() {
+  const all_exist_count = state.jobs.filter((j) => j.all_exist).length;
+  const totalToCreate = state.jobs.reduce(
+    (n, j) => n + (j.tech_status || []).filter((t) => !t.exists).length, 0);
+  $("#stats").textContent =
+    `${state.jobs.length} jobs · ${totalToCreate} folders to create · ${selectedTechCount()} selected`;
+
+  $("#rows").innerHTML = state.jobs.map((j, jIx) => {
+    const sel = state.selected.get(j.client) || new Set();
+    const toCreate = (j.tech_status || []).filter((t) => !t.exists);
+    const allTechs = j.tech_status || [];
+    const allSelected =
+      toCreate.length > 0 && toCreate.every((t) => sel.has(t.tech));
+    const someSelected =
+      toCreate.some((t) => sel.has(t.tech));
+    return `
+      <div class="job ${j.all_exist ? "all-exist" : ""}" data-client="${esc(j.client)}">
+        <div class="job-head">
+          <input type="checkbox" class="job-cb" data-client="${esc(j.client)}"
+            ${allSelected ? "checked" : ""}
+            ${someSelected && !allSelected ? "data-indeterminate=true" : ""}
+            ${j.all_exist ? "disabled" : ""} />
+          <div>
+            <div class="name">${esc(j.client)}${j.new_loss ? `<span class="nl-badge">NEW LOSS</span>` : ""}${
+              (j.activity_labels && j.activity_labels.length)
+                ? `<span class="activity-badge ${j.needs_photos ? "needs-photos" : "no-photos"}">${j.needs_photos ? "📷" : "⊝"} ${esc(j.activity_labels.join(" · "))}</span>`
+                : ""
+            }</div>
+            ${j.section === "monitor" ? `<div class="sub">📡 Monitor</div>` : ""}
+            ${(j.needs_photos && j.expected_folders && j.expected_folders.length)
+              ? `<div class="expects-hint">expects: ${esc(j.expected_folders.map((f) => f + " pics").join(", "))}</div>`
+              : (!j.needs_photos
+                ? `<div class="expects-hint">No photos required for this job type.</div>`
+                : "")}
+          </div>
+          <div class="summary">
+            ${j.all_exist ? "✓ all created"
+              : `${toCreate.length} of ${allTechs.length} to create`}
+          </div>
+        </div>
+        <div class="tech-list">
+          ${allTechs.map((t) => {
+            const exists = t.exists;
+            const isSel = sel.has(t.tech);
+            const stateLabel = exists
+              ? `<span class="tech-state skip">already exists — will skip</span>`
+              : (isSel
+                ? `<span class="tech-state create">📁 will create</span>`
+                : `<span class="tech-state skip">unchecked — won't create</span>`);
+            return `
+              <label class="tech-row ${exists ? "exists" : ""}"
+                     data-client="${esc(j.client)}" data-tech="${esc(t.tech)}">
+                <input type="checkbox" class="tech-cb"
+                  data-client="${esc(j.client)}" data-tech="${esc(t.tech)}"
+                  ${isSel ? "checked" : ""}
+                  ${exists ? "disabled" : ""} />
+                <span class="tech-pill ${exists ? "exists" : ""}">${esc(t.tech)}</span>
+                <span class="tech-name">${esc(j.client)}</span>
+                ${stateLabel}
+              </label>`;
+          }).join("")}
+        </div>
+      </div>`;
+  }).join("");
+
+  // Set indeterminate state on partial-job checkboxes (HTML attr alone
+  // doesn't toggle the visual indeterminate look — must be set in JS).
+  document.querySelectorAll(".job-cb").forEach((cb) => {
+    const c = cb.dataset.client;
+    const sel = state.selected.get(c) || new Set();
+    const job = state.jobs.find((j) => j.client === c);
+    if (!job) return;
+    const toCreate = (job.tech_status || []).filter((t) => !t.exists);
+    const all = toCreate.length > 0 && toCreate.every((t) => sel.has(t.tech));
+    const some = toCreate.some((t) => sel.has(t.tech));
+    cb.checked = all;
+    cb.indeterminate = some && !all;
+  });
+
+  // Per-tech checkbox click
+  document.querySelectorAll(".tech-cb").forEach((cb) => {
+    cb.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const c = cb.dataset.client;
+      const t = cb.dataset.tech;
+      if (!state.selected.has(c)) state.selected.set(c, new Set());
+      const set = state.selected.get(c);
+      if (cb.checked) set.add(t); else set.delete(t);
+      if (!set.size) state.selected.delete(c);
+      render();
+    });
+  });
+
+  // Per-job checkbox = toggle all techs in that job
+  document.querySelectorAll(".job-cb").forEach((cb) => {
+    cb.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const c = cb.dataset.client;
+      const job = state.jobs.find((j) => j.client === c);
+      if (!job) return;
+      const toCreate = (job.tech_status || []).filter((t) => !t.exists);
+      if (cb.checked) {
+        state.selected.set(c, new Set(toCreate.map((t) => t.tech)));
+      } else {
+        state.selected.delete(c);
+      }
+      render();
+    });
+  });
+}
+
+async function create() {
+  const selections = [];
+  for (const [client, techs] of state.selected.entries()) {
+    if (techs.size) {
+      selections.push({ client, techs: Array.from(techs) });
+    }
+  }
+  if (!selections.length) { alert("Select at least one tech."); return; }
+  const btn = $("#create-btn");
+  btn.disabled = true; btn.textContent = "Creating…";
+  const res = await pywebview.api.create_folders(selections, state.dayOffset);
+  btn.disabled = false; btn.textContent = "📷 Create selected";
+  const out = $("#out");
+  out.classList.remove("hidden");
+  if (!res?.ok) {
+    out.innerHTML = `<div style="color:var(--red);">Failed: ${esc(res?.error || "?")}</div>`;
+    return;
+  }
+  out.innerHTML = `
+    <h4>Created (${(res.created || []).length})</h4>
+    <ul>${(res.created || []).map((n) =>
+      `<li class="created">✓ ${esc(n)}</li>`).join("") || '<li class="muted">— none</li>'}</ul>
+    <h4>Skipped (${(res.skipped || []).length})</h4>
+    <ul>${(res.skipped || []).map((n) =>
+      `<li class="skipped">• ${esc(n)}</li>`).join("") || '<li class="muted">— none</li>'}</ul>`;
+  state.selected.clear();
+  await load();
+}
+
+function esc(s) {
+  return String(s ?? "")
+    .replaceAll("&","&amp;").replaceAll("<","&lt;")
+    .replaceAll(">","&gt;").replaceAll('"',"&quot;");
+}
+
+// ── 🗑 Cleanup empty SP folders ────────────────────────────────
+// Mirrors Tk daily_photos_gui.py:764 _open_cleanup_empty_dialog.
+// Walks SP folders, surfaces empties, lets user filter by age +
+// tech, send selected to the Recycle Bin (recoverable).
+const cleanupState = { rows: [], filterAge: 7, filterTech: "All", selected: new Set() };
+
+async function openCleanupEmptyModal() {
+  const w = document.createElement("div");
+  w.id = "cleanup-modal";
+  w.style.cssText = "position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;";
+  w.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(820px,94vw);height:min(720px,88vh);display:flex;flex-direction:column;overflow:hidden;">
+      <header style="padding:14px 20px;background:var(--surface);border-bottom:1px solid var(--border);">
+        <div style="font-size:14px;font-weight:700;">🗑 Cleanup empty photo folders</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.4;">
+          Walks every tech's SharePoint job folders and lists the ones
+          with zero photos. Filter by age, uncheck anything to keep,
+          send the rest to the Recycle Bin (recoverable).
+        </div>
+      </header>
+      <div style="padding:10px 20px;display:flex;gap:12px;align-items:center;background:var(--surface);border-bottom:1px solid var(--border);">
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center;">
+          <span>Older than:</span>
+          <input id="cu-age" type="number" min="0" max="365" value="${cleanupState.filterAge}" style="width:70px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font:inherit;" />
+          <span class="muted">days</span>
+        </label>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center;">
+          <span>Tech:</span>
+          <select id="cu-tech" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font:inherit;">
+            <option value="All">All</option>
+          </select>
+        </label>
+        <span style="flex:1;"></span>
+        <button class="btn btn-primary" id="cu-rescan">🔄 Rescan</button>
+      </div>
+      <div id="cu-status" style="padding:8px 20px;font-size:11px;font-style:italic;color:var(--text-muted);background:var(--surface);border-bottom:1px solid var(--border);">Scanning…</div>
+      <div id="cu-list" style="flex:1;overflow-y:auto;padding:8px 20px;"></div>
+      <footer style="padding:12px 20px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;">
+        <button class="btn" id="cu-sel-all">Select all visible</button>
+        <button class="btn" id="cu-sel-none">Select none</button>
+        <span id="cu-sel-count" class="muted" style="font-size:11px;">0 selected</span>
+        <span style="flex:1;"></span>
+        <button class="btn" id="cu-close">Close</button>
+        <button class="btn" id="cu-delete" style="background:var(--red,#C0392B);color:#FFF;border-color:var(--red,#C0392B);" disabled>🗑 Move selected to Recycle Bin</button>
+      </footer>
+    </div>`;
+  document.body.appendChild(w);
+
+  const closeBtn = () => w.remove();
+  $("#cu-close").addEventListener("click", closeBtn);
+  w.addEventListener("click", (e) => { if (e.target === w) closeBtn(); });
+
+  const ageIn = $("#cu-age");
+  const techSel = $("#cu-tech");
+  ageIn.addEventListener("input", () => { cleanupState.filterAge = parseInt(ageIn.value, 10) || 0; renderList(); });
+  techSel.addEventListener("change", () => { cleanupState.filterTech = techSel.value; renderList(); });
+  $("#cu-rescan").addEventListener("click", scan);
+  $("#cu-sel-all").addEventListener("click", () => {
+    for (const r of visibleRows()) cleanupState.selected.add(r.path);
+    renderList();
+  });
+  $("#cu-sel-none").addEventListener("click", () => {
+    for (const r of visibleRows()) cleanupState.selected.delete(r.path);
+    renderList();
+  });
+  $("#cu-delete").addEventListener("click", doDelete);
+
+  function passes(r) {
+    if (r.age_days < cleanupState.filterAge) return false;
+    if (cleanupState.filterTech !== "All" && (r.tech || "—") !== cleanupState.filterTech) return false;
+    return true;
+  }
+  function visibleRows() { return cleanupState.rows.filter(passes); }
+
+  function renderList() {
+    const visible = visibleRows();
+    const sel = [...cleanupState.selected].filter((p) => visible.some((r) => r.path === p));
+    $("#cu-sel-count").textContent = `${sel.length} selected of ${visible.length} shown`;
+    $("#cu-delete").disabled = sel.length === 0;
+    if (!visible.length) {
+      $("#cu-list").innerHTML = `<div class="muted" style="padding:20px;text-align:center;">No empty folders match the current filter.</div>`;
+      return;
+    }
+    $("#cu-list").innerHTML = visible.map((r) => `
+      <div data-path="${esc(r.path)}" style="display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;margin-bottom:3px;background:var(--surface);">
+        <input type="checkbox" class="cu-cb" data-path="${esc(r.path)}" ${cleanupState.selected.has(r.path) ? "checked" : ""} />
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:12px;">${esc(r.name)}</div>
+          <div class="muted" style="font-size:10px;word-break:break-all;">
+            ${esc(r.tech || "—")} · ${r.age_days}d old · ${esc(r.path)}
+          </div>
+        </div>
+        <button class="btn cu-od" data-name="${esc(r.name)}" style="font-size:10px;padding:3px 8px;">📁 OD</button>
+        <button class="btn cu-open" data-path="${esc(r.path)}" style="font-size:10px;padding:3px 8px;">📂 SP</button>
+      </div>`).join("");
+    $("#cu-list").querySelectorAll(".cu-cb").forEach((cb) =>
+      cb.addEventListener("change", (e) => {
+        const p = e.target.dataset.path;
+        if (e.target.checked) cleanupState.selected.add(p);
+        else cleanupState.selected.delete(p);
+        // Live-update only count + delete-button state without re-render
+        const sel2 = [...cleanupState.selected].filter((q) => visible.some((r) => r.path === q));
+        $("#cu-sel-count").textContent = `${sel2.length} selected of ${visible.length} shown`;
+        $("#cu-delete").disabled = sel2.length === 0;
+      }));
+    $("#cu-list").querySelectorAll(".cu-open").forEach((b) =>
+      b.addEventListener("click", () => pywebview.api.open_run_doc) // placeholder
+    );
+    $("#cu-list").querySelectorAll(".cu-open").forEach((b) => {
+      b.onclick = null;
+      b.addEventListener("click", () => pywebview.api.open_folder?.(b.dataset.path));
+    });
+    $("#cu-list").querySelectorAll(".cu-od").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const od = await pywebview.api.find_od_for_sp_name(b.dataset.name);
+        if (od) pywebview.api.open_folder?.(od);
+        else $("#cu-status").textContent = `No OD folder found for "${b.dataset.name}"`;
+      }));
+  }
+
+  async function scan() {
+    $("#cu-status").textContent = "Scanning… this can take 10-30s on a slow share.";
+    $("#cu-list").innerHTML = `<div class="muted" style="padding:20px;text-align:center;">Scanning SharePoint folders…</div>`;
+    const res = await pywebview.api.scan_empty_sp_folders();
+    if (!res?.ok) {
+      $("#cu-status").textContent = `Scan failed: ${res?.error || "?"}`;
+      $("#cu-list").innerHTML = "";
+      return;
+    }
+    cleanupState.rows = res.rows || [];
+    // Repopulate tech filter dropdown
+    const techs = res.techs || [];
+    techSel.innerHTML = `<option value="All">All</option>` +
+      techs.map((t) => `<option value="${esc(t)}" ${t === cleanupState.filterTech ? "selected" : ""}>${esc(t)}</option>`).join("");
+    $("#cu-status").textContent = `Found ${cleanupState.rows.length} empty folder${cleanupState.rows.length !== 1 ? "s" : ""}. Filter + select then click delete.`;
+    renderList();
+  }
+
+  async function doDelete() {
+    const visible = visibleRows();
+    const picked = visible.filter((r) => cleanupState.selected.has(r.path));
+    if (!picked.length) return;
+    if (!confirm(`Move ${picked.length} empty folder${picked.length !== 1 ? "s" : ""} to the Recycle Bin?\n\nThey can be restored from the Recycle Bin if this was a mistake.`)) return;
+    const btn = $("#cu-delete");
+    btn.disabled = true; btn.textContent = "Deleting…";
+    const res = await pywebview.api.delete_empty_sp_folders(picked.map((r) => r.path));
+    btn.disabled = false; btn.textContent = "🗑 Move selected to Recycle Bin";
+    if (!res?.ok) {
+      $("#cu-status").textContent = `Delete failed: ${res?.error || "?"}`;
+      return;
+    }
+    const deletedSet = new Set(res.deleted || []);
+    cleanupState.rows = cleanupState.rows.filter((r) => !deletedSet.has(r.path));
+    for (const p of deletedSet) cleanupState.selected.delete(p);
+    if (res.failed_count) {
+      $("#cu-status").textContent = `Deleted ${res.deleted_count} · ${res.failed_count} failed`;
+    } else {
+      $("#cu-status").textContent = `✓ Done — ${res.deleted_count} moved to Recycle Bin.`;
+    }
+    renderList();
+  }
+
+  // Initial scan
+  scan();
+}
+</script>
+</body>
+</html>

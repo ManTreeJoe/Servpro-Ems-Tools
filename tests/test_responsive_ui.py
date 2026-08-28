@@ -2,17 +2,14 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PANELS = (
-    "home_web_assets/index.html",
-    "pipeline_web_assets/index.html",
-    "audit_web_assets/index.html",
-    "settings_web_assets/index.html",
-    "snapshot_web_assets/index.html",
-    "run_doc_editor_web_assets/index.html",
-)
+PANELS = tuple(sorted(
+    path.relative_to(ROOT).as_posix()
+    for path in ROOT.glob("*_web_assets/index.html")
+))
 
 
 def test_primary_workspaces_load_the_shared_responsive_layer():
+    assert len(PANELS) >= 20
     for rel in PANELS:
         html = (ROOT / rel).read_text(encoding="utf-8")
         assert "web_shared/responsive.css" in html, rel

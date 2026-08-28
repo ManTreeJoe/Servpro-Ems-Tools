@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../web_shared/usage_track.js?v=20260825a"></script>
+<script src="../web_shared/health_banner.js?v=20260820a"></script>
+<script src="../web_shared/progress_bar.js?v=20260818a"></script>
+<script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+<script src="../web_shared/util.js?v=20260731j"></script>
+<script src="../web_shared/ctx_menu.js?v=20260731j"></script>
+<script src="../web_shared/open_in.js?v=20260731j"></script>
+<script src="../web_shared/trello_hover.js?v=20260812a"></script>
+<script src="../web_shared/keyboard.js?v=20260812a"></script>
+<script src="../web_shared/toast_log.js?v=20260731j"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>APA Monitor — Linguar Hub</title>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · APA Monitor</span>
+    <span class="brand-tag">web spike · read-only</span>
+  </div>
+  <div class="topbar-actions">
+    <div id="apa-trello-wrap" style="position:relative;">
+      <input id="apa-trello-search" class="search" type="search"
+             style="width:280px;"
+             placeholder="🔍 Search Trello → auto-add…" autocomplete="off" />
+      <div id="apa-trello-results"
+           style="position:absolute;top:36px;left:0;right:0;
+                  background:var(--surface);border:1px solid var(--border);
+                  border-radius:6px;max-height:380px;overflow-y:auto;
+                  z-index:60;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4);"></div>
+    </div>
+    <select id="franchise-filter" class="search" title="Filter rows by franchise tag"
+            style="width:160px;">
+      <option value="">All franchises</option>
+    </select>
+    <input id="search-box" class="search" type="search"
+           placeholder="🔎 Filter items…" autocomplete="off" />
+    <button id="create-doc-btn" class="btn" style="display:none;" title="Auto-create today's APA file (carries forward active items from yesterday)">＋ Create today's APA</button>
+    <button id="refresh-lanes-btn" class="btn" style="display:none;" title="Re-route carried-forward items into the section matching each job's CURRENT Trello lane (new-day cleanup)">🔄 Refresh lanes from Trello</button>
+    <button id="teams-all-btn" class="btn btn-primary">✉ Send Teams (all)</button>
+    <button id="eod-btn" class="btn">📧 Send EOD email</button>
+    <button id="bulk-paste-btn" class="btn">📋 Bulk paste</button>
+    <button id="refresh-btn" class="btn">↻ Refresh</button>
+    <div id="more-wrap" style="position:relative;">
+      <button id="more-btn" class="btn" title="More actions">⋯ More</button>
+      <div id="more-menu"
+           style="position:absolute;top:36px;right:0;
+                  background:var(--surface);border:1px solid var(--border);
+                  border-radius:6px;min-width:200px;
+                  z-index:60;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4);
+                  overflow:hidden;">
+        <button class="more-item" id="open-word-btn">📝 Open in Word</button>
+        <button class="more-item" id="reveal-btn">📁 Show in Explorer</button>
+        <button class="more-item" id="contacts-btn">👥 Contacts</button>
+        <button class="more-item" id="manage-sections-btn">📋 Manage sections…</button>
+        <button class="more-item" id="manage-franchises-btn">🏢 Manage franchises…</button>
+        <button class="more-item" id="clear-all-btn">🧹 Clear all items…</button>
+      </div>
+    </div>
+  </div>
+  <style>
+    .more-item {
+      display: block; width: 100%; text-align: left;
+      background: transparent; color: var(--text);
+      border: none; padding: 9px 14px; cursor: pointer;
+      font: inherit; font-size: 13px;
+    }
+    .more-item:hover { background: var(--row-hover); }
+    .more-item + .more-item { border-top: 1px solid var(--border); }
+  </style>
+</header>
+
+<!-- Date navigator -->
+<nav class="date-nav" id="date-nav" aria-label="Date navigator">
+  <button class="nav-arrow" id="prev-date" title="Previous working day">◀</button>
+  <div class="date-current">
+    <div class="date-label" id="date-label">—</div>
+    <div class="date-meta" id="date-meta">—</div>
+  </div>
+  <button class="nav-arrow" id="next-date" title="Next working day">▶</button>
+  <button class="nav-today" id="today-btn">Today</button>
+  <div class="date-strip" id="date-strip">
+    <!-- Quick-pick chips for recent working days -->
+  </div>
+</nav>
+
+<!-- Section toggles -->
+<div class="section-toggles">
+  <button class="toggle-btn active" data-toggle="all">All sections</button>
+  <button class="toggle-btn" data-toggle="estimator">Estimators only</button>
+  <button class="toggle-btn" data-toggle="builtin">Builtins only</button>
+  <button class="toggle-btn" data-toggle="nonempty">Non-empty only</button>
+</div>
+
+<main class="board" id="board">
+  <!-- Section columns injected by app.js -->
+</main>
+
+<div id="empty-state" class="empty-state hidden">
+  <div class="empty-emoji">📄</div>
+  <div class="empty-title">No APA doc found for this date.</div>
+  <div class="empty-sub">Click the button below to auto-create one — active items from the prior day carry forward.</div>
+  <button id="empty-create-btn" class="btn btn-primary" style="margin-top:18px;padding:10px 22px;font-size:14px;">＋ Create APA doc for this day</button>
+</div>
+
+<footer class="statusbar">
+  <span id="status-counts">— items</span>
+  <span id="status-msg" class="status-msg"></span>
+</footer>
+
+<script src="app.js?v=20260826b"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.32",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.32",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.32/Linguar-Hub-Trial-Setup-1.6.0-trial.32.exe",
-  "notes": "Adds a shared responsive UI system across the app shell, Jobs/Pipeline, Job Search, Settings, Snapshot, and Run Doc Editor. Text and spacing scale smoothly, toolbars wrap instead of clipping, forms collapse cleanly, modals fit narrow windows, focus states are visible, touch behavior is improved, and reduced-motion preferences are honored."
+  "version": "1.6.0-trial.33",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.33",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.33/Linguar-Hub-Trial-Setup-1.6.0-trial.33.exe",
+  "notes": "Extends the responsive UI system to every remaining web workspace, including APA, Disputes, Hygiene, Notifications, Health, Photo Folders, WC Audit, spreadsheets, notes, resources, multi-unit tools, and quick import. Older panels now include correct viewport and theme metadata so scaling works consistently throughout the app."
 }

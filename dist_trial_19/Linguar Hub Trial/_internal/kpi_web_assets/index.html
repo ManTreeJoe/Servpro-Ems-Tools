@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="../web_shared/health_banner.js?v=20260820a"></script>
+<script src="../web_shared/progress_bar.js?v=20260818a"></script>
+<script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+<script src="../web_shared/panel_state.js?v=20260811a"></script>
+<script src="../web_shared/util.js?v=20260731j"></script>
+<script src="../web_shared/keyboard.js?v=20260812a"></script>
+<script src="../web_shared/toast_log.js?v=20260731j"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KPI — Linguar Hub</title>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · EMS KPI</span>
+    <span class="brand-tag">web spike</span>
+  </div>
+  <div class="topbar-actions">
+    <span id="last-refresh" class="muted">—</span>
+    <button id="refresh-btn" class="btn btn-primary">↻ Refresh</button>
+  </div>
+</header>
+
+<main class="dashboard">
+  <!-- ── Right now ───────────────────────────────────────────── -->
+  <section class="card right-now">
+    <header class="card-head">
+      <h2>📡 Right now</h2>
+      <span id="rn-status" class="muted">—</span>
+    </header>
+    <div id="right-now-grid" class="metric-grid">
+      <!-- 5 big-number tiles injected by app.js -->
+    </div>
+  </section>
+
+  <!-- ── Weekly trends ────────────────────────────────────────── -->
+  <section class="card weekly">
+    <header class="card-head">
+      <h2>📅 Weekly trends</h2>
+      <span class="muted">Most recent 4 weeks (newest first)</span>
+    </header>
+    <div id="weekly-table-wrap">
+      <table id="weekly-table" class="metric-table">
+        <thead><tr id="weekly-head"></tr></thead>
+        <tbody id="weekly-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Cycle time ───────────────────────────────────────────── -->
+  <section class="card cycle">
+    <header class="card-head">
+      <h2>⏱ Cycle time</h2>
+      <span id="cycle-summary" class="muted">—</span>
+    </header>
+    <div class="cycle-stats" id="cycle-stats-grid">
+      <!-- avg/median/p90 boxes -->
+    </div>
+    <h3 class="subhead">Longest open</h3>
+    <ul id="longest-open" class="longest-list"></ul>
+  </section>
+
+  <section class="card performance">
+    <header class="card-head">
+      <h2>Job performance</h2>
+      <span id="quota-summary" class="muted">—</span>
+    </header>
+    <div id="quota-rail" class="quota-rail" hidden><i></i></div>
+    <div class="performance-columns">
+      <div><h3 class="subhead">Slowest stages</h3><div id="stage-bottlenecks"></div></div>
+      <div><h3 class="subhead">Stalled jobs</h3><div id="stalled-jobs"></div></div>
+    </div>
+  </section>
+
+  <!-- ── Repeat offenders ─────────────────────────────────────── -->
+  <section class="card repeat">
+    <header class="card-head">
+      <h2>🔁 Repeat offenders</h2>
+      <span class="muted">Jobs flagged ≥5 audits</span>
+    </header>
+    <table id="repeat-table" class="metric-table">
+      <thead>
+        <tr>
+          <th>Client</th>
+          <th class="num">Audits</th>
+          <th>Last audited</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="repeat-body"></tbody>
+    </table>
+    <div id="repeat-empty" class="empty-inline hidden">No repeat offenders right now.</div>
+  </section>
+</main>
+
+<footer class="statusbar">
+  <span id="status-msg" class="status-msg"></span>
+</footer>
+
+<script src="app.js?v=20260811a"></script>
+</body>
+</html>

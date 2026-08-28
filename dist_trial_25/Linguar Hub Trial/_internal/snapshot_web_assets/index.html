@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="../web_shared/health_banner.js?v=20260820a"></script>
+<script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+<script src="../web_shared/panel_state.js?v=20260811a"></script>
+<script src="../web_shared/util.js?v=20260731j"></script>
+<script src="../web_shared/progress_bar.js?v=20260817a"></script>
+<script src="../web_shared/modal.js?v=20260812a"></script>
+<link rel="stylesheet" href="../web_shared/modal.css?v=20260813a" />
+<script src="../web_shared/umbrella_group.js?v=20260731j"></script>
+<script src="../web_shared/usage_track.js?v=20260825a"></script>
+<script src="../web_shared/request_items.js?v=20260731j"></script>
+<script src="../web_shared/xactimate_prep.js?v=20260731j"></script>
+<link rel="stylesheet" href="../web_shared/xactimate_prep.css?v=20260723a" />
+<script src="../web_shared/ctx_menu.js?v=20260731j"></script>
+<script src="../web_shared/open_in.js?v=20260731j"></script>
+<script src="../web_shared/trello_hover.js?v=20260812a"></script>
+<script src="../web_shared/trello_attachments.js?v=20260731j"></script>
+<script src="../web_shared/stage_picker.js?v=20260814a"></script>
+<script src="../web_shared/keyboard.js?v=20260812a"></script>
+<script src="../web_shared/toast_log.js?v=20260731j"></script>
+<meta charset="UTF-8" />
+<title>Close-out Snapshot — Linguar Hub</title>
+<link rel="stylesheet" href="../web_shared/umbrella_group.css?v=20260722a" />
+<link rel="stylesheet" href="theme.css" />
+<style>
+  /* The scroller is full-width so its scrollbar sits at the WINDOW's
+     right edge. Capping .wrap itself put the bar at the edge of an
+     1100px column with dead space beyond, which read as the panel being
+     clipped. Content stays centred and readable — the cap moved inwards
+     to the children, and went wider. */
+  .wrap { flex: 1; overflow-y: auto; padding: 20px 24px; width: 100%; }
+  .wrap > * { max-width: 1400px; margin-left: auto; margin-right: auto; }
+  .wrap.hidden { display: none; }
+  .col { background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 18px; margin-bottom: 16px; }
+  .col h2 { margin: 0 0 12px; font-size: 14px; color: var(--text); font-weight: 600; }
+  .form-h3 { font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-muted); margin-top: 18px; margin-bottom: 8px; }
+  .form-row { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
+  .form-row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-row.two > div { display: flex; flex-direction: column; gap: 4px; }
+  .form-row label, .form-row > div label {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .form-row input, .form-row select {
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 12px; font: inherit; font-size: 13px; outline: none;
+  }
+  .form-row input:focus { border-color: var(--green); }
+  .row-table {
+    width: 100%; border-collapse: collapse; margin-top: 4px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden;
+  }
+  .row-table th { font-size: 10px; font-weight: 600; color: var(--text-muted);
+    letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border);
+    background: var(--surface); }
+  .row-table td { padding: 4px 6px; border-bottom: 1px solid #2A2A2A; }
+  .row-table tr:last-child td { border-bottom: none; }
+  .row-table input {
+    width: 100%;
+    background: transparent; color: var(--text);
+    border: none; outline: none;
+    padding: 6px 8px; font: inherit; font-size: 12px;
+    border-radius: 3px;
+  }
+  .row-table input:focus { background: var(--surface-2); }
+  .row-table td.col-rm { width: 32px; text-align: center; }
+  .row-table td.col-drag {
+    width: 22px; text-align: center;
+    color: var(--text-dim); cursor: grab; user-select: none;
+    font-size: 14px;
+  }
+  .row-table td.col-drag:hover { color: var(--text); }
+  .row-table tr.dragging {
+    opacity: 0.4; background: var(--surface-2);
+  }
+  .row-table tr.drop-target {
+    border-top: 2px solid var(--green) !important;
+  }
+  .row-table tr.drop-target-below {
+    border-bottom: 2px solid var(--green);
+  }
+  .row-table .rm-btn {
+    background: transparent; color: var(--text-dim); border: none;
+    cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: 3px;
+  }
+  .row-table .rm-btn:hover { background: rgba(192,57,43,0.18); color: var(--red); }
+  .add-row-btn {
+    width: 100%; margin-top: 4px;
+    background: transparent; border: 1px dashed var(--border);
+    color: var(--text-muted); padding: 8px; border-radius: 4px;
+    font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .add-row-btn:hover { border-color: var(--green); color: var(--green);
+    background: rgba(46,139,87,0.06); }
+
+  .pdf-row {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
+    padding: 9px 12px; border-bottom: 1px solid var(--border);
+    align-items: center; cursor: pointer;
+  }
+  .pdf-row:hover { background: var(--row-hover); }
+  .pdf-row:last-child { border-bottom: none; }
+  .pdf-name { font-size: 13px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pdf-meta { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+  .closeout-row {
+    display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+  .closeout-row:last-child { border-bottom: none; }
+  .closeout-row .name { font-size: 13px; font-weight: 500; }
+  .closeout-row .sub { font-size: 11px; color: var(--text-muted); }
+  .empty-inline { padding: 20px; text-align: center; color: var(--text-muted); }
+
+  .gen-foot { margin-top: 22px; display: flex; gap: 10px; align-items: center; }
+  .post-actions {
+    margin-top: 24px; padding: 16px;
+    background: var(--surface); border: 1px solid var(--green);
+    border-left-width: 4px; border-radius: 6px;
+  }
+  .post-actions.hidden { display: none; }
+  .post-action-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ── Inline audit subview ───────────────────────────────── */
+  /* Mirrors audit_web_assets/app.css detail styles so the snapshot's
+     per-job audit looks identical to the standalone Audit panel —
+     same chips, lists, meta grid, action buttons. */
+  .audit-subview {
+    margin-top: 22px; padding: 18px 22px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .audit-subview.hidden { display: none; }
+  .audit-head {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+  }
+  /* Chip row (same look as Audit detail view) */
+  .detail-chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .detail-chip {
+    padding: 4px 10px; border-radius: 4px; font-size: 11px;
+    font-weight: 600; background: var(--chip-bg); color: var(--text);
+  }
+  /* Carrier chip — colours come inline from the shared carrier table in
+     audit_detail.js; this only matches the audit panel's weight. */
+  .detail-chip.carrier-chip {
+    font-weight: 700; letter-spacing: 0.01em; max-width: 160px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .detail-chip.activity { color: #FFFFFF; background: var(--act-monitor); }
+  .detail-chip.aging   { background: var(--amber); color: #FFFFFF; }
+  .detail-chip.aging.hot { background: var(--red); }
+  .detail-chip.missing { background: var(--red); color: #FFFFFF; }
+  .detail-chip.ok      { background: var(--green); color: #FFFFFF; }
+  .detail-chip.not-found {
+    background: transparent; color: var(--amber);
+    border: 1px solid var(--amber);
+  }
+  .detail-chip.new-loss {
+    background: transparent; color: var(--green);
+    border: 1px solid var(--green);
+  }
+  .detail-chip.sp-new { background: var(--act-monitor); color: #FFFFFF; cursor: pointer; }
+  .detail-chip.commercial-chip {
+    background: transparent; color: var(--text-muted);
+    border: 1px dashed var(--border); cursor: pointer;
+    transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
+  }
+  .detail-chip.commercial-chip:hover { border-color: #B86FCB; color: #B86FCB; }
+  .detail-chip.commercial-chip.on {
+    background: #8E44AD; color: #FFFFFF; border: 1px solid #8E44AD;
+  }
+  .detail-chip.commercial-chip.on:hover { background: #A055C0; }
+
+  /* Issue sections (forms / photos) */
+  .audit-issue-group { margin: 14px 0; }
+  .audit-issue-lbl {
+    font-size: 11px; color: var(--text-muted);
+    letter-spacing: 0.06em; text-transform: uppercase;
+    margin: 0 0 10px; font-weight: 700;
+  }
+  .audit-issue-list {
+    list-style: none; margin: 0; padding: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; overflow: hidden;
+  }
+  .audit-issue-list li {
+    padding: 9px 14px; font-size: 13px; color: var(--text);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .audit-issue-list li:last-child { border-bottom: none; }
+  .audit-issue-list li::before {
+    content: "•"; color: var(--red); font-weight: 700; flex-shrink: 0;
+  }
+  .audit-issue-list.photos li::before { color: var(--amber); }
+  /* Misfiled (found in wrong folder) — amber dot + inline path code. */
+  .audit-issue-list.misplaced li::before { content: "⚠"; color: var(--amber); }
+  .audit-issue-list.misplaced code {
+    background: var(--surface-2); padding: 0 4px; border-radius: 3px;
+  }
+
+  /* Meta grid (folder / path / last activity) */
+  .audit-meta {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px 14px; font-size: 12px;
+    display: grid; grid-template-columns: 130px 1fr;
+    gap: 6px 12px; margin: 14px 0;
+  }
+  .audit-meta .label { color: var(--text-muted); font-weight: 600; }
+  .audit-meta .value {
+    color: var(--text); font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 11px; word-break: break-all;
+  }
+
+  /* Clean-row callout */
+  .audit-clean {
+    background: var(--surface); border: 1px solid var(--green);
+    border-left-width: 4px; border-radius: 6px;
+    padding: 18px; color: var(--green); font-weight: 600;
+    text-align: center;
+  }
+
+  /* Action buttons (matches Audit panel exactly) */
+  .detail-actions {
+    display: flex; flex-direction: column; gap: 7px;
+    margin-top: 22px; padding: 14px;
+    border-top: 1px solid var(--border);
+    background: var(--surface); border-radius: 10px;
+  }
+  .action-row { display:flex; gap:12px; align-items:flex-start; width:100%; padding:8px 10px; border:1px solid transparent; border-radius:8px; }
+  .action-row:hover { background:rgba(255,255,255,.018); border-color:var(--border); }
+  .action-group-label { width:72px; flex:0 0 72px; padding-top:7px; color:var(--text-dim); font-size:9px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+  .action-buttons { min-width:0; flex:1; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+  .detail-actions > .action-btn { align-self: flex-start; }
+  .action-btn {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border);
+    padding: 7px 11px; border-radius: 7px;
+    font: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background-color 100ms ease, border-color 100ms ease;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .action-btn:hover { background: var(--border); }
+  .action-btn:focus-visible { outline:2px solid #79b48d; outline-offset:2px; }
+  .action-btn.primary {
+    background: var(--green); border-color: var(--green); color: #FFFFFF;
+  }
+  .action-btn.primary:hover { background: var(--green-hover, #258A4F); }
+  .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .action-btn img { width: 13px; height: 13px; vertical-align: middle; }
+  @media (max-width:760px) {
+    .detail-actions { padding:10px; }
+    .action-row { display:block; padding:8px; }
+    .action-group-label { display:block; width:auto; padding:0 0 7px; }
+  }
+
+  /* Right-click context menu (parity with audit) */
+  .ctx-menu {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; min-width: 240px; padding: 4px 0;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5); z-index: 200; overflow: hidden;
+  }
+  .ctx-item {
+    display: block; width: 100%; text-align: left;
+    background: transparent; color: var(--text); border: 0;
+    padding: 8px 14px; cursor: pointer; font: inherit; font-size: 13px;
+  }
+  .ctx-item:hover:not(:disabled):not(.disabled) { background: var(--row-hover, var(--border)); }
+  .ctx-item:disabled, .ctx-item.disabled { opacity: 0.45; cursor: not-allowed; }
+  .muted { color: var(--text-muted); font-size: 12px; }
+  #gen-status { margin-top: 10px; text-align: right; }
+  #gen-status.ok { color: var(--green); }
+  #gen-status.error { color: var(--red); }
+
+  .candidate-pill {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    background: var(--chip-bg); color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+  .candidate-pill.closeout { background: var(--amber); color: #FFFFFF; }
+  .candidate-pill.rundoc { background: var(--act-monitor); color: #FFFFFF; }
+  .queue-gate {
+    display:flex; align-items:center; gap:12px; margin-bottom:12px;
+    padding:11px 14px; border:1px solid rgba(82,159,105,.4);
+    border-left:4px solid var(--green); border-radius:8px;
+    background:rgba(46,139,87,.08);
+  }
+  .queue-gate-mark { font-size:20px; }
+  .queue-gate-title { font-size:12px; font-weight:700; color:var(--text); }
+  .queue-gate-sub { margin-top:2px; font-size:10px; color:var(--text-muted); }
+  .queue-filters {
+    display:grid; grid-template-columns:minmax(180px,1fr) 170px 170px auto auto;
+    gap:8px; align-items:end; margin-bottom:12px; padding:10px 12px;
+    border:1px solid var(--border); border-radius:8px; background:var(--surface);
+  }
+  .queue-filter { display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .queue-filter label { color:var(--text-muted); font-size:9px; font-weight:750; letter-spacing:.07em; text-transform:uppercase; }
+  .queue-filter .search { width:100%; }
+  #queue-count { align-self:center; white-space:nowrap; font-size:11px; color:var(--text-muted); }
+  .toolbar-overflow { position:relative; }
+  .toolbar-overflow summary { list-style:none; }
+  .toolbar-overflow summary::-webkit-details-marker { display:none; }
+  .toolbar-overflow > div { position:absolute;z-index:80;right:0;top:calc(100% + 6px);display:grid;gap:5px;min-width:190px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 12px 30px rgba(0,0,0,.42); }
+  .toolbar-overflow > div .btn { width:100%;text-align:left;white-space:nowrap; }
+  .toolbar-check { display:flex;gap:7px;align-items:center;padding:7px 9px;color:var(--text-muted);font-size:11px;cursor:pointer; }
+  #tab-tracked .col { overflow:visible !important; }
+  @media (max-width:900px) {
+    .queue-filters { grid-template-columns:1fr 1fr; }
+    .queue-filter:first-child { grid-column:1 / -1; }
+  }
+</style>
+</head>
+<body class="snapshot-panel">
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-name">SERVPRO · Close-out Snapshot</span>
+    <span class="brand-tag">final audit</span>
+  </div>
+  <div class="topbar-actions">
+    <div id="trello-search-wrap" style="position:relative;">
+      <input id="trello-search" class="search" type="search"
+             style="width:260px;"
+             placeholder="🔎 Search any Trello job to snapshot…"
+             autocomplete="off" />
+      <div id="trello-search-results"
+           style="position:absolute;top:36px;left:0;right:0;
+                  background:var(--surface);border:1px solid var(--border);
+                  border-radius:6px;max-height:380px;overflow-y:auto;
+                  z-index:60;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4);"></div>
+    </div>
+    <button id="view-list-btn" class="btn">📸 Queue</button>
+    <button id="view-gen-btn" class="btn">＋ Manual snapshot</button>
+    <details class="toolbar-overflow"><summary class="btn">More ▾</summary><div>
+      <button id="refresh-btn" class="btn">↻ Refresh</button>
+      <button id="open-folder-btn" class="btn">📁 Snapshot folder</button>
+    </div></details>
+  </div>
+</header>
+
+<!-- LIST VIEW — two tabs:
+     • Today (Estimating board's SNAPSHOT lane + recent PDFs)
+     • Tracked (Snapshots <YY>.xlsx as a clean dispute-style table) -->
+<nav class="tabs" id="snap-tabs" style="display:flex;gap:4px;padding:0 18px 0;border-bottom:1px solid var(--border);background:var(--surface);">
+  <button class="tab-btn active" data-tab="today"
+          style="background:transparent;color:var(--text);border:0;border-bottom:2px solid transparent;padding:10px 16px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;">
+    📸 Close-out queue
+  </button>
+  <button class="tab-btn" data-tab="tracked"
+          style="background:transparent;color:var(--text);border:0;border-bottom:2px solid transparent;padding:10px 16px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;">
+    📋 Tracked <span class="muted" style="font-size:11px;font-weight:500;" id="tab-tracked-count"></span>
+  </button>
+</nav>
+
+<main id="view-list" class="wrap">
+  <!-- Today tab — Estimating SNAPSHOT lane + recent PDFs -->
+  <div id="tab-today">
+    <section class="col">
+      <h2>📸 Final close-out audits</h2>
+      <div class="queue-gate">
+        <span class="queue-gate-mark">◆</span>
+        <div>
+          <div class="queue-gate-title">Live Trello Snapshot lane</div>
+          <div class="queue-gate-sub">Anyone can move a card into Snapshot in Trello. It will appear here automatically so you can open it and complete the close-out. Use the Snapshot toggle if you need to move it yourself.</div>
+        </div>
+      </div>
+      <div class="queue-filters">
+        <div class="queue-filter">
+          <label for="queue-search">Find job</label>
+          <input id="queue-search" class="search" type="search" autocomplete="off" placeholder="Filter by job name…" />
+        </div>
+        <div class="queue-filter">
+          <label for="queue-board">Estimating board</label>
+          <select id="queue-board" class="search"><option value="all">All boards</option></select>
+        </div>
+        <div class="queue-filter">
+          <label for="queue-lane">Snapshot lane</label>
+          <select id="queue-lane" class="search"><option value="all">All lanes</option></select>
+        </div>
+        <label class="show-all-jobs"><input type="checkbox" id="queue-show-all"> Show all Estimating jobs</label>
+        <span id="queue-count">—</span>
+        <span id="queue-synced" class="muted" style="font-size:10px;">Checking Trello…</span>
+      </div>
+      <div id="candidates"></div>
+    </section>
+    <section class="col">
+      <h2>📄 Recent snapshot PDFs</h2>
+      <div id="pdfs"></div>
+    </section>
+  </div>
+  <!-- Tracked tab — Snapshots <YY>.xlsx (Tk's "snapshot tracker") -->
+  <div id="tab-tracked" class="hidden">
+    <section class="col" style="padding:0;overflow:hidden;">
+      <div style="display:flex;gap:8px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface-2);">
+        <strong style="font-size:13px;">📋 Tracked snapshots</strong>
+        <span class="muted" id="tracked-meta" style="font-size:11px;">—</span>
+        <span style="flex:1;"></span>
+        <input id="tracked-search" class="search" type="search"
+               placeholder="🔎 Filter…" style="width:200px;" />
+        <select id="tracked-sheet" class="search" style="width:140px;">
+          <option value="all">All sheets</option>
+          <option value="NEW LOSS">NEW LOSS</option>
+          <option value="Completed">Completed</option>
+          <option value="Incomplete">Incomplete</option>
+          <option value="Needs Attention">Needs Attention</option>
+        </select>
+        <details class="toolbar-overflow"><summary class="btn">Tracking tools ▾</summary><div>
+          <button class="btn" id="tracked-refresh">↻ Refresh</button>
+          <button class="btn" id="tracked-reconcile" title="Move closed jobs off NEW LOSS and flag unmatched rows">🔄 Reconcile</button>
+          <label class="toolbar-check" title="Automatically reconcile whenever the Tracked tab opens"><input type="checkbox" id="tracked-auto-recon" /> Auto reconcile</label>
+          <button class="btn" id="tracked-open-xlsx">📊 Open Excel</button>
+          <button class="btn" id="tracked-change-dir" title="Change where tracking workbooks are stored">📁 Tracking folder</button>
+        </div></details>
+      </div>
+      <div id="tracked-loc" class="muted" style="font-size:11px;padding:6px 16px;border-bottom:1px solid var(--border);opacity:.7;"></div>
+      <div style="overflow:auto;max-height:calc(100vh - 220px);">
+        <table id="tracked-tbl" style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead style="position:sticky;top:0;background:var(--surface);z-index:5;">
+            <tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Sheet</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Received</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Name</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Carrier</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Claim#</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Type</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Lead</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Inspection</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Demo</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Docusketch</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Scope</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Final</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Closing</th>
+              <th style="text-align:right;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;"></th>
+            </tr>
+          </thead>
+          <tbody id="tracked-tbody"></tbody>
+        </table>
+        <div id="tracked-empty" class="muted hidden" style="padding:30px;text-align:center;">No snapshot rows match.</div>
+      </div>
+    </section>
+  </div>
+</main>
+<style>
+  #snap-tabs .tab-btn.active { color: var(--green); border-bottom-color: var(--green); }
+  #snap-tabs .tab-btn:hover { background: var(--surface-2); }
+  #tracked-tbl tbody tr { border-bottom: 1px solid var(--border); transition: background 100ms; cursor: pointer; }
+  #tracked-tbl tbody tr:hover { background: var(--surface-2); }
+  #tracked-tbl td { padding: 8px 10px; vertical-align: top; }
+  .sheet-pill {
+    display: inline-block; padding: 1px 8px; border-radius: 3px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .sheet-pill.NEW-LOSS  { background: var(--act-monitor); color: #FFF; }
+  .sheet-pill.Completed { background: var(--green); color: #FFF; }
+  .sheet-pill.Incomplete{ background: var(--amber); color: #FFF; }
+  .sheet-pill.Needs-Attention { background: var(--red); color: #FFF; }
+  .cell-done { color: var(--green); font-weight: 700; }
+  .cell-x    { color: var(--text-muted); }
+  .snapshot-form-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px; }
+  .snapshot-form-heading h2 { margin:0; }
+  @media (max-width:620px) { .snapshot-form-heading { align-items:flex-start;flex-direction:column; } }
+</style>
+
+<!-- GENERATE VIEW -->
+<main id="view-gen" class="wrap hidden">
+  <section class="col">
+    <div class="snapshot-form-heading">
+      <h2>＋ New snapshot</h2>
+      <button class="btn" id="snapshot-comments-btn" disabled title="Read and post comments on this job's Trello card">💬 Trello comments</button>
+    </div>
+    <div class="form-row">
+      <label>Insured / job name *</label>
+      <input id="f-insured" type="text" autocomplete="off" placeholder="Smith, John — Mercury" />
+    </div>
+    <div class="form-row two">
+      <div>
+        <label>Carrier · Claim #</label>
+        <input id="f-carrier" type="text" placeholder="Mercury · 1234567" />
+      </div>
+      <div>
+        <label>Date of loss</label>
+        <input id="f-dol" type="text" placeholder="5/1/26" />
+      </div>
+    </div>
+    <div class="form-row two">
+      <div>
+        <label>First site visit</label>
+        <input id="f-first" type="text" placeholder="5/2/26" />
+      </div>
+      <div>
+        <label>Cause / category / class</label>
+        <input id="f-cause" type="text" placeholder="Water · Cat 2 · Class 3" />
+      </div>
+    </div>
+
+    <!-- Trello comments dump → parse to subs/logs/first-visit/scope.
+         Mirrors Tk's `txt_comments` box at the bottom of the form. -->
+    <h3 class="form-h3">📋 Trello comments paste
+      <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">— optional, parses to subs/logs/first-visit/scope below</span></h3>
+    <textarea id="f-comments" rows="6"
+              placeholder="Paste a Trello comments dump here to auto-populate the rows below…"
+              style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font:inherit;font-family:'Cascadia Mono','Consolas',monospace;font-size:12px;outline:none;resize:vertical;"></textarea>
+    <button class="btn" id="parse-comments-btn" style="margin-top:4px;">✂ Parse comments</button>
+
+    <!-- Autocomplete source for every Techs field (subs + logs). Kept in
+         sync with the canonical roster by loadTechRoster(). -->
+    <datalist id="tech-options"></datalist>
+
+    <h3 class="form-h3">Subcontractors used <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">— drag ⋮⋮ to reorder</span></h3>
+    <table class="row-table" id="subs-table">
+      <thead><tr><th></th><th>Date</th><th>Day</th><th>Activity</th><th>Techs</th><th></th></tr></thead>
+      <tbody id="subs-body"></tbody>
+    </table>
+    <button class="add-row-btn" data-tbl="subs">+ Add sub</button>
+
+    <h3 class="form-h3">Daily job log <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">— drag ⋮⋮ to reorder</span></h3>
+    <table class="row-table" id="logs-table">
+      <thead><tr><th></th><th>Date</th><th>Day</th><th>Activity</th><th>Techs</th><th></th></tr></thead>
+      <tbody id="logs-body"></tbody>
+    </table>
+    <button class="add-row-btn" data-tbl="logs">+ Add log row</button>
+    <button class="add-row-btn" id="manage-techs-btn" title="Add or remove techs. New techs are recognized in Trello comments everywhere, right away."
+            style="margin-left:8px;">👷 Manage techs</button>
+
+    <!-- Inline audit subview — runs the same per-client audit the Audit panel does,
+         so the user can see what's missing before generating. -->
+    <div id="audit-subview" class="audit-subview hidden">
+      <div class="audit-head">
+        <h3 class="form-h3" style="margin:0;">🔎 Audit subview</h3>
+        <span id="audit-summary" class="muted">—</span>
+        <button class="btn" id="audit-run-btn" style="margin-left:auto;">↻ Run audit</button>
+      </div>
+      <div id="audit-result" class="audit-result"></div>
+    </div>
+
+    <div class="gen-foot">
+      <button class="btn" id="gen-scope">📋 Scope</button>
+      <button class="btn" id="gen-docusign-email" title="Copy the closeout DocuSign request email (property city auto-filled) to paste into DocuSign / Outlook">📝 Copy DS email</button>
+      <details class="toolbar-overflow"><summary class="btn">More ▾</summary><div>
+        <button class="btn" id="gen-find">🔍 Find Trello card</button>
+        <button class="btn" id="gen-audit">🔎 Open full Audit</button>
+      </div></details>
+      <span style="flex:1;"></span>
+      <button class="btn" id="gen-cancel">Cancel</button>
+      <button class="btn btn-primary" id="gen-go">📸 Generate PDF</button>
+    </div>
+    <div id="gen-status"></div>
+
+    <!-- Post-generate action panel: shown after a successful generate -->
+    <div id="post-actions" class="post-actions hidden">
+      <h3 class="form-h3">After-generate actions</h3>
+      <div class="post-action-row">
+        <button class="btn btn-primary" id="post-trello-btn">
+          <img src="../web_shared/trello.png" alt=""
+               style="width:14px;height:14px;vertical-align:middle;margin-right:6px;" />
+          Attach PDF + post comment to Trello
+        </button>
+        <button class="btn" id="snapshot-history-btn">🕘 Revision history</button>
+        <button class="btn" id="open-pdf-btn">
+          📄 Open PDF again
+        </button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Manage-techs modal — add/remove techs on the canonical roster used
+     for Trello comment recognition + the field autocomplete. -->
+<div id="techs-overlay" class="modal-overlay hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:60;">
+  <div class="modal-card" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;width:min(460px,92vw);max-height:86vh;overflow:auto;padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+    <h3 style="margin:0 0 2px;">👷 Manage techs</h3>
+    <p class="muted" style="margin:0 0 12px;font-size:12px;">
+      Every tech here is recognized in Trello comments across all tools and
+      appears in the Techs autocomplete. Add, adjust, or remove any of them.
+    </p>
+    <div id="techs-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:12px;">
+      <input id="tech-add-name" type="text" placeholder="Name (e.g. Uli)"
+             style="flex:1 1 150px;min-width:120px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font:inherit;outline:none;" />
+      <input id="tech-add-initials" type="text" placeholder="Initials (opt.)" maxlength="4"
+             style="width:110px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font:inherit;outline:none;text-transform:uppercase;" />
+      <button class="btn btn-primary" id="tech-add-btn">+ Add</button>
+    </div>
+    <div id="techs-modal-status" class="muted" style="font-size:12px;margin-top:8px;min-height:16px;"></div>
+    <div style="text-align:right;margin-top:14px;">
+      <button class="btn" id="techs-close-btn">Done</button>
+    </div>
+  </div>
+</div>
+
+<footer class="statusbar">
+  <span id="status-counts">—</span>
+  <span id="status-msg" class="status-msg"></span>
+</footer>
+
+<script src="../web_shared/audit_detail.js?v=20260828a"></script>
+<script src="app.js?v=20260826a"></script>
+</body>
+</html>
