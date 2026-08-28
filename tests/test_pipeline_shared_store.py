@@ -224,6 +224,17 @@ def test_pipeline_applies_personal_view_preferences():
     assert ".reduce-motion" in css
 
 
+def test_pipeline_summary_filters_are_actionable_and_persisted():
+    root = Path(__file__).parents[1]
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    css = (root / "pipeline_web_assets" / "app.css").read_text(encoding="utf-8")
+    for marker in ('boardFilter: "all"', 'data-board-filter="attention"',
+                   'data-board-filter="due"', 'data-board-filter="sync"',
+                   "cardMatchesBoardFilter", "PanelState.set({ boardFilter"):
+        assert marker in js
+    assert ".summary-item.active" in css
+
+
 def test_pipeline_workspace_routes_trello_data_to_selected_division(monkeypatch):
     api = pipeline_web.Api()
     monkeypatch.setattr(api, "audit_card", lambda _client: {

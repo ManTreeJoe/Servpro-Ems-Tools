@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.30",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.30",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.30/Linguar-Hub-Trial-Setup-1.6.0-trial.30.exe",
-  "notes": "Makes the Trello-style Pipeline the primary Jobs workspace and the default landing page. Adds a clean job-health summary, wider readable lanes, simplified Sync and More controls, responsive narrow-window behavior, and keeps the older search screen available as Job Search."
+  "version": "1.6.0-trial.31",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.31",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.31/Linguar-Hub-Trial-Setup-1.6.0-trial.31.exe",
+  "notes": "Turns the Pipeline summary into a daily action queue. Active Jobs, Need Attention, Due Soon, and Waiting to Sync now filter the board immediately, show a clear selected state, combine with search and board tabs, and remember each user's last filter."
 }

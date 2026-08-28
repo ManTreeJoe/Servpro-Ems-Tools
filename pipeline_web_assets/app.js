@@ -17,6 +17,7 @@ const state = {
   // Board view
   board: { boards: [] },
   activeBoardKey: null,     // which board is shown (one at a time)
+  boardFilter: "all",       // all | attention | due | sync
   drag: null,               // {cardId, name, fromListId, fromLane, boardKey}
   // Stages table view
   rows: [],
@@ -44,6 +45,7 @@ window.addEventListener("pywebviewready", async () => {
   document.documentElement.classList.toggle("reduce-motion", !!preferences.reduce_motion);
   state.view           = PanelState.get("view", preferences.default_view || state.view);
   state.activeBoardKey = PanelState.get("activeBoardKey", null);
+  state.boardFilter    = PanelState.get("boardFilter", "all");
   state.active_stage   = PanelState.get("active_stage", state.active_stage);
   state.search         = PanelState.get("search", "");
 
@@ -160,6 +162,14 @@ function boardSummary(boards) {
   };
 }
 
+function cardMatchesBoardFilter(card) {
+  if (state.boardFilter === "attention")
+    return card.stall === "bad" || card.overdue || card.sync_status === "conflict";
+  if (state.boardFilter === "due") return Boolean(card.due && !card.overdue);
+  if (state.boardFilter === "sync") return card.sync_status === "pending";
+  return true;
+}
+
 // ONE board at a time: a tab strip switches between WORK IN PROGRESS and
 // ESTIMATING; only the active board's lanes render. The lanes row is
 // `data-hdrag` so h_scroll.js gives it Trello-style grab-to-scroll.
@@ -192,11 +202,11 @@ function renderBoard() {
   }
 
   root.innerHTML = `
-    <section class="pipeline-summary" aria-label="Pipeline summary">
-      <div class="summary-primary"><strong>${summary.total}</strong><span>Active jobs</span></div>
-      <div class="summary-item ${summary.attention ? "needs-attention" : ""}"><strong>${summary.attention}</strong><span>Need attention</span></div>
-      <div class="summary-item"><strong>${summary.due}</strong><span>Due soon</span></div>
-      ${summary.waiting ? `<div class="summary-item"><strong>${summary.waiting}</strong><span>Waiting to sync</span></div>` : ""}
+    <section class="pipeline-summary" aria-label="Filter jobs by status">
+      <button class="summary-primary ${state.boardFilter === "all" ? "active" : ""}" data-board-filter="all"><strong>${summary.total}</strong><span>Active jobs</span></button>
+      <button class="summary-item ${summary.attention ? "needs-attention" : ""} ${state.boardFilter === "attention" ? "active" : ""}" data-board-filter="attention"><strong>${summary.attention}</strong><span>Need attention</span></button>
+      <button class="summary-item ${state.boardFilter === "due" ? "active" : ""}" data-board-filter="due"><strong>${summary.due}</strong><span>Due soon</span></button>
+      ${summary.waiting ? `<button class="summary-item ${state.boardFilter === "sync" ? "active" : ""}" data-board-filter="sync"><strong>${summary.waiting}</strong><span>Waiting to sync</span></button>` : ""}
       <div class="summary-help">Click to open · hold to move</div>
     </section>
     <div class="board-tabs">
@@ -210,6 +220,12 @@ function renderBoard() {
     b.addEventListener("click", () => {
       state.activeBoardKey = b.dataset.boardTab;
       PanelState.set({ activeBoardKey: state.activeBoardKey });
+      renderBoard();
+    }));
+  root.querySelectorAll("[data-board-filter]").forEach((button) =>
+    button.addEventListener("click", () => {
+      state.boardFilter = button.dataset.boardFilter || "all";
+      PanelState.set({ boardFilter: state.boardFilter });
       renderBoard();
     }));
   // Wire drag + drop + per-card actions.
@@ -230,9 +246,10 @@ function renderBoard() {
 }
 
 function laneMatches(lane, q) {
-  if (!q) return lane.cards || [];
-  return (lane.cards || []).filter((c) =>
-    `${c.client} ${lane.name}`.toLowerCase().includes(q));
+  return (lane.cards || []).filter((c) => {
+    if (!cardMatchesBoardFilter(c)) return false;
+    return !q || `${c.client} ${lane.name}`.toLowerCase().includes(q);
+  });
 }
 
 function renderLane(board, lane, q) {
