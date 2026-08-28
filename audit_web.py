@@ -1824,6 +1824,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "job_type": master.get("job_type") or "",
                 "priority": master.get("priority") or "normal",
                 "work_environments": master.get("work_environments") or [],
+                "division_trello_cards": self.crm_division_trello_cards(
+                    client).get("cards", []),
                 "relationships": master.get("relationships") or [],
                 "job_log": log_entries,
                 "job_log_error": log_error,
@@ -1871,6 +1873,106 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 job["canon_key"], work_environment, stage=stage,
                 owner=(owner or "").strip())
             return {"ok": True, "work_environment": saved}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def crm_division_trello_cards(self, client: str) -> dict:
+        """Return the independently pinned EMS, Contents, and Recon cards.
+
+        The historical unsuffixed ``trello_card`` link is EMS.  Keeping that
+        meaning lets every existing job continue to work while Contents and
+        Recon use their own link types.
+        """
+        try:
+            import ems_db
+            from ems_db_common import DIVISIONS, LINK_TRELLO, division_link_type
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found", "cards": []}
+            cards = []
+            for division in DIVISIONS:
+                link_type = division_link_type(LINK_TRELLO, division)
+                links = ems_db.get_links(job["canon_key"], link_type) or []
+                card_id = str((links[0] if links else {}).get("link_value") or "")
+                cards.append({
+                    "division": division,
+                    "card_id": card_id,
+                    "url": f"https://trello.com/c/{card_id}" if card_id else "",
+                    "pinned": bool(card_id),
+                })
+            return {"ok": True, "cards": cards}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}",
+                    "cards": []}
+
+    def open_url(self, url: str) -> bool:
+        """Open a validated web link from shared job-card controls."""
+        value = (url or "").strip()
+        if not value.lower().startswith(("https://", "http://")):
+            return False
+        try:
+            import dept_browser
+            dept_browser.open_url(value)
+            return True
+        except Exception:
+            return False
+
+    def pin_crm_division_trello(self, client: str, division: str,
+                                card_id_or_url: str) -> dict:
+        """Replace one division's Trello pin without touching the others."""
+        try:
+            import ems_db
+            import trello_client as tc
+            from ems_db_common import (DIV_EMS, LINK_TRELLO,
+                                       division_link_type, normalize_division)
+            card_id = tc.parse_card_identifier(card_id_or_url)
+            if not card_id:
+                return {"ok": False,
+                        "error": "Paste a Trello card link or card ID"}
+            normalized = normalize_division(division)
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                key = ems_db.upsert_job(display_name=client,
+                                        metadata={"created_from": "division_trello_pin"})
+                job = ems_db.get_job(key)
+            link_type = division_link_type(LINK_TRELLO, normalized)
+            ems_db.remove_link(job["canon_key"], link_type)
+            ems_db.set_link(job["canon_key"], link_type, card_id,
+                            added_by="crm_division_pin",
+                            metadata={"division": normalized})
+            # Old tools consume persistence's single card as the EMS card.
+            if normalized == DIV_EMS:
+                persistence.set_trello_card_id(client, card_id)
+                for rows in (getattr(self, "_last_rows", []) or [],
+                             getattr(self, "_oneoff_rows", []) or []):
+                    for row in rows:
+                        if row.get("client") == client:
+                            row["trello_card_id"] = card_id
+            return {"ok": True, "division": normalized, "card_id": card_id,
+                    "url": f"https://trello.com/c/{card_id}"}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def unpin_crm_division_trello(self, client: str, division: str) -> dict:
+        """Remove one division's Trello pin, leaving sibling pins intact."""
+        try:
+            import ems_db
+            from ems_db_common import (DIV_EMS, LINK_TRELLO,
+                                       division_link_type, normalize_division)
+            normalized = normalize_division(division)
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
+            ems_db.remove_link(job["canon_key"],
+                               division_link_type(LINK_TRELLO, normalized))
+            if normalized == DIV_EMS:
+                persistence.set_trello_card_id(client, "")
+                for rows in (getattr(self, "_last_rows", []) or [],
+                             getattr(self, "_oneoff_rows", []) or []):
+                    for row in rows:
+                        if row.get("client") == client:
+                            row["trello_card_id"] = ""
+            return {"ok": True, "division": normalized}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 

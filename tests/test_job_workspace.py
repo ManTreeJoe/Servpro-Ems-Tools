@@ -66,6 +66,55 @@ def test_each_work_type_can_be_changed_for_one_job(workspace):
     assert master["work_environments"][0]["owner"] == "Recon crew"
 
 
+def test_each_work_type_keeps_its_own_trello_card(workspace, monkeypatch):
+    db, api = workspace
+    db.upsert_job(display_name="Three Division Job")
+    monkeypatch.setattr("audit_web.persistence.set_trello_card_id",
+                        lambda *_args: None)
+    for division, card in (("EMS", "Ems12345"),
+                           ("Contents", "Cont1234"),
+                           ("Recon", "Recon123")):
+        result = api.pin_crm_division_trello(
+            "Three Division Job", division, f"https://trello.com/c/{card}")
+        assert result["ok"]
+
+    cards = api.crm_division_trello_cards("Three Division Job")["cards"]
+    assert {c["division"]: c["card_id"] for c in cards} == {
+        "EMS": "ems12345", "CONTENTS": "cont1234", "RECON": "recon123"}
+    workspace_data = api.crm_job_workspace("Three Division Job")
+    assert len(workspace_data["division_trello_cards"]) == 3
+
+
+def test_replacing_one_division_card_does_not_touch_the_others(workspace,
+                                                               monkeypatch):
+    db, api = workspace
+    db.upsert_job(display_name="Replace One Card")
+    monkeypatch.setattr("audit_web.persistence.set_trello_card_id",
+                        lambda *_args: None)
+    api.pin_crm_division_trello("Replace One Card", "EMS", "Ems12345")
+    api.pin_crm_division_trello("Replace One Card", "Recon", "Recon123")
+    api.pin_crm_division_trello("Replace One Card", "Recon", "Newrc123")
+    cards = {c["division"]: c["card_id"] for c in
+             api.crm_division_trello_cards("Replace One Card")["cards"]}
+    assert cards["EMS"] == "ems12345"
+    assert cards["RECON"] == "newrc123"
+
+
+def test_removing_contents_card_leaves_ems_pin(workspace, monkeypatch):
+    db, api = workspace
+    db.upsert_job(display_name="Remove One Card")
+    monkeypatch.setattr("audit_web.persistence.set_trello_card_id",
+                        lambda *_args: None)
+    api.pin_crm_division_trello("Remove One Card", "EMS", "Ems12345")
+    api.pin_crm_division_trello("Remove One Card", "Contents", "Cont1234")
+    result = api.unpin_crm_division_trello("Remove One Card", "Contents")
+    assert result["ok"]
+    cards = {c["division"]: c["card_id"] for c in
+             api.crm_division_trello_cards("Remove One Card")["cards"]}
+    assert cards["EMS"] == "ems12345"
+    assert cards["CONTENTS"] == ""
+
+
 def test_work_type_can_be_marked_not_part_of_job(workspace):
     db, api = workspace
     db.upsert_job(display_name="Only Water")
@@ -121,6 +170,8 @@ def test_workspace_is_part_of_shared_job_detail():
     assert "save_crm_job_workspace" in js
     assert "save_crm_work_environment" in js
     assert "reconcile_crm_trello_pin" in js
+    assert "pin_crm_division_trello" in js
+    assert "unpin_crm_division_trello" in js
     assert "Trello card conflict" in js
     for work_type in ('["EMS", "💧"', '["Contents", "▣"', '["Recon", "🔨"'):
         assert work_type in js

@@ -194,3 +194,14 @@ def test_work_divisions_are_editable_per_job_not_in_sidebar():
         assert marker in pipeline_js
     assert "def save_crm_work_environment" in pipeline_py
     assert 'id="work-env-switch"' not in home_html
+
+
+def test_pipeline_job_card_has_one_trello_pin_per_work_type():
+    root = Path(__file__).parents[1]
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    for marker in ("division_trello_cards", "data-division-trello-open",
+                   "data-division-trello-use", "data-division-trello-pin",
+                   "data-division-trello-remove",
+                   "pin_crm_division_trello", "unpin_crm_division_trello"):
+        assert marker in js
+    assert "Use open card" in js

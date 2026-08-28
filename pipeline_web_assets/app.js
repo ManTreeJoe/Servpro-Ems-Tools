@@ -531,6 +531,8 @@ function openAuditModal(data, trelloUrl = "") {
     </div>`).join("") || `<div class="aud-empty">No stage requirements are active yet.</div>`;
   const workTypeState = Object.fromEntries((crm.work_environments || []).map((env) =>
     [String(env.work_environment || "").toLowerCase(), env]));
+  const divisionCards = Object.fromEntries((data.division_trello_cards || []).map((card) =>
+    [String(card.division || "").toLowerCase(), card]));
   const workTypeStages = [
     ["not_applicable", "Not part of this job"], ["planned", "Planned"],
     ["scheduled", "Scheduled"], ["active", "Active"], ["waiting", "Waiting"],
@@ -539,11 +541,19 @@ function openAuditModal(data, trelloUrl = "") {
   const workTypes = [["EMS", "💧", "Mitigation"], ["Contents", "▣", "Contents"], ["Recon", "🔨", "Reconstruction"]]
     .map(([name, icon, label]) => {
       const env = workTypeState[name.toLowerCase()] || {};
+      const trello = divisionCards[name.toLowerCase()] || {};
       const stage = env.stage || "not_applicable";
       return `<div class="work-type work-type-${name.toLowerCase()} ${stage !== "not_applicable" ? "has-stage" : ""}" data-work-type-card="${name}">
         <div class="work-type-head"><span aria-hidden="true">${icon}</span><div><strong>${label}</strong><small>${name}</small></div></div>
         <select data-work-env="${name}" aria-label="${label} status">${workTypeStages.map(([value, text]) => `<option value="${value}" ${value === stage ? "selected" : ""}>${text}</option>`).join("")}</select>
         <input data-work-env-owner="${name}" value="${escapeAttr(env.owner || "")}" placeholder="Owner or crew" aria-label="${label} owner or crew">
+        <div class="division-trello ${trello.pinned ? "is-pinned" : ""}">
+          <span>${trello.pinned ? "📌 Trello card pinned" : "○ No Trello card"}</span>
+          <div>${trello.pinned ? `<button class="text-btn" data-division-trello-open="${name}">Open</button>` : ""}
+          ${data.card_id && data.card_id !== trello.card_id ? `<button class="text-btn" data-division-trello-use="${name}">Use open card</button>` : ""}
+          <button class="text-btn" data-division-trello-pin="${name}">${trello.pinned ? "Change" : "Pin"}</button>
+          ${trello.pinned ? `<button class="text-btn danger" data-division-trello-remove="${name}">Remove</button>` : ""}</div>
+        </div>
       </div>`;
     }).join("");
   const checklistGroups = (data.checklists || []).map((list) => `
@@ -685,6 +695,45 @@ function openAuditModal(data, trelloUrl = "") {
     input.addEventListener("change", () => {
       const select = w.querySelector(`[data-work-env="${input.dataset.workEnvOwner}"]`);
       if (select) saveWorkType(select);
+    }));
+  const pinDivisionCard = async (division, value) => {
+    const result = await pywebview.api.pin_crm_division_trello(
+      data.client || res.client || "", division, value || "");
+    if (!result?.ok) {
+      setStatus(`Could not pin ${division}: ${result?.error || "unknown error"}`, "error");
+      return;
+    }
+    close();
+    await onAuditCard(data.client || res.client || "", data.card_id || "");
+    setStatus(`${division} Trello card pinned`, "ok");
+  };
+  w.querySelectorAll("[data-division-trello-open]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const card = divisionCards[button.dataset.divisionTrelloOpen.toLowerCase()] || {};
+      if (card.url) pywebview.api.open_url(card.url);
+    }));
+  w.querySelectorAll("[data-division-trello-use]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const division = button.dataset.divisionTrelloUse;
+      if (window.confirm(`Pin the currently open Trello card to ${division}?`))
+        pinDivisionCard(division, data.card_id || "");
+    }));
+  w.querySelectorAll("[data-division-trello-pin]").forEach((button) =>
+    button.addEventListener("click", () => {
+      const division = button.dataset.divisionTrelloPin;
+      const current = (divisionCards[division.toLowerCase()] || {}).url || "";
+      const value = window.prompt(`Paste the ${division} Trello card link or card ID:`, current);
+      if (value !== null && value.trim()) pinDivisionCard(division, value);
+    }));
+  w.querySelectorAll("[data-division-trello-remove]").forEach((button) =>
+    button.addEventListener("click", async () => {
+      const division = button.dataset.divisionTrelloRemove;
+      if (!window.confirm(`Remove the pinned ${division} Trello card?`)) return;
+      const result = await pywebview.api.unpin_crm_division_trello(
+        data.client || res.client || "", division);
+      if (!result?.ok) { setStatus(result?.error || "Could not remove card", "error"); return; }
+      close(); await onAuditCard(data.client || res.client || "", data.card_id || "");
+      setStatus(`${division} Trello card removed`, "ok");
     }));
   w.querySelector("[data-open-docusign]")?.addEventListener("click", () => pywebview.api.open_docusign());
   w.querySelector("[data-open-docs-folder]")?.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || ""));

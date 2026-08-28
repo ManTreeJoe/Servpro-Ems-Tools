@@ -519,6 +519,10 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().save_crm_job_workspace(client, patch)
     def save_crm_work_environment(self, *a, **k):
         return self._aw().save_crm_work_environment(*a, **k)
+    def pin_crm_division_trello(self, *a, **k):
+        return self._aw().pin_crm_division_trello(*a, **k)
+    def unpin_crm_division_trello(self, *a, **k):
+        return self._aw().unpin_crm_division_trello(*a, **k)
     def reconcile_crm_trello_pin(self, *a, **k):
         return self._aw().reconcile_crm_trello_pin(*a, **k)
     def job_info_copy_data(self, *a, **k):

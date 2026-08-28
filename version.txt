@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.25",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.25",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.25/Linguar-Hub-Trial-Setup-1.6.0-trial.25.exe",
-  "notes": "Adds a compact Documents & Signatures workflow to each Pipeline job. It shows DocuSign request state, uses the customer email from Job Information, indexes signed/final forms from the official X: OD job folder without storing the files in the database, and opens documents directly. Run activity and miscellaneous attachments are collapsed to keep the job card clean."
+  "version": "1.6.0-trial.26",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.26",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.26/Linguar-Hub-Trial-Setup-1.6.0-trial.26.exe",
+  "notes": "Each job can now pin a separate Trello card for EMS, Contents, and Recon. The correct card controls live inside each work-type tile in Pipeline, Audit, and Snapshot, with Open, Pin/Change, and Remove actions. Pipeline can explicitly assign the currently open card to a division; the app never guesses across divisions. Existing single-card jobs remain linked as EMS for compatibility."
 }

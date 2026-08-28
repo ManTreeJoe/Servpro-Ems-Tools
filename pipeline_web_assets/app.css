@@ -517,6 +517,11 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .work-type strong { font-size: 12px; }
 .work-type small { color: var(--text-dim);font-size:9px;text-transform:uppercase;letter-spacing:.06em; }
 .work-type select,.work-type input { width:100%;min-width:0;padding:7px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--text);font:inherit;font-size:11px; }
+.division-trello { padding-top:7px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:5px; }
+.division-trello>span { color:var(--text-dim);font-size:10px;text-transform:none;letter-spacing:0; }
+.division-trello.is-pinned>span { color:var(--success); }
+.division-trello>div { display:flex;gap:8px;align-items:center;flex-wrap:wrap; }
+.division-trello .text-btn { padding:0;font-size:10px; }
 .signatures-section .section-title-row > div { display: flex; flex-direction: column; gap: 3px; }
 .signatures-section .section-title-row small { color: var(--text-dim); font-size: 10px; }
 .signature-state { padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font-size: 10px; font-weight: 700; }

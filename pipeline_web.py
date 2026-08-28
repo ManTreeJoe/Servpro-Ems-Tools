@@ -355,6 +355,7 @@ class Api:
             return summary
         audit_api = self._audit_api()
         crm = audit_api.crm_job_workspace(client, summary)
+        division_trello_cards = audit_api.crm_division_trello_cards(client)
         info_sections, checklists, comments, attachments, members = [], [], [], [], []
         try:
             import ems_db
@@ -434,6 +435,7 @@ class Api:
             client, cid, summary.get("path") or "")
         return {"ok": True, "client": client, "card_id": cid,
                 "audit": summary, "crm": crm, "info_sections": info_sections,
+                "division_trello_cards": division_trello_cards.get("cards", []),
                 "checklists": checklists, "comments": comments,
                 "attachments": attachments, "members": members,
                 "documents": documents}
@@ -524,6 +526,17 @@ class Api:
                                   stage: str, owner: str = "") -> dict:
         return self._audit_api().save_crm_work_environment(
             client, work_environment, stage, owner)
+
+    def crm_division_trello_cards(self, client: str) -> dict:
+        return self._audit_api().crm_division_trello_cards(client)
+
+    def pin_crm_division_trello(self, client: str, division: str,
+                                card_id_or_url: str) -> dict:
+        return self._audit_api().pin_crm_division_trello(
+            client, division, card_id_or_url)
+
+    def unpin_crm_division_trello(self, client: str, division: str) -> dict:
+        return self._audit_api().unpin_crm_division_trello(client, division)
 
     def set_job_check_item(self, card_id: str, item_id: str,
                            complete: bool) -> dict:

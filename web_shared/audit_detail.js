@@ -413,6 +413,8 @@
     ];
     const byEnv = Object.fromEntries((data.work_environments || []).map(
       (x) => [x.work_environment, x]));
+    const divisionCards = Object.fromEntries((data.division_trello_cards || []).map(
+      (x) => [String(x.division || "").toLowerCase(), x]));
     const folderShells = new Set(((r.shells || {}).own || []).map((x) => String(x).toLowerCase()));
     const envStageOptions = [
       ["not_applicable", "Not part of this job"], ["planned", "Planned"],
@@ -422,6 +424,7 @@
     ];
     const envCards = envs.map(([name, icon, description]) => {
       const state = byEnv[name] || {};
+      const trello = divisionCards[name.toLowerCase()] || {};
       const detected = folderShells.has(name.toLowerCase());
       const current = state.stage || (detected ? "planned" : "not_applicable");
       const active = current !== "not_applicable";
@@ -432,6 +435,11 @@
           ${envStageOptions.map(([value, label]) => `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`).join("")}
         </select>
         <input data-crm-env-owner="${escA(ctx, name)}" value="${escA(ctx, state.owner || "")}" placeholder="Owner / crew" aria-label="${escA(ctx, name)} owner or crew">
+        <div class="crm-env-trello ${trello.pinned ? "linked" : ""}"><span>${trello.pinned ? "📌 Trello card" : "○ No Trello card"}</span><div>
+          ${trello.pinned ? `<button class="action-btn" type="button" data-crm-env-trello-open="${escA(ctx, name)}">Open</button>` : ""}
+          <button class="action-btn" type="button" data-crm-env-trello-pin="${escA(ctx, name)}">${trello.pinned ? "Change" : "Pin"}</button>
+          ${trello.pinned ? `<button class="action-btn danger" type="button" data-crm-env-trello-remove="${escA(ctx, name)}">Remove</button>` : ""}
+        </div></div>
       </div>`;
     }).join("");
     const relationCount = (data.relationships || []).length;
@@ -703,6 +711,40 @@
         loadCrmWorkspace(container, r, ctx, true);
       });
     });
+    box.querySelectorAll("[data-crm-env-trello-open]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const card = divisionCards[String(button.dataset.crmEnvTrelloOpen || "").toLowerCase()] || {};
+        if (card.url) pywebview.api.open_url(card.url);
+      });
+    });
+    box.querySelectorAll("[data-crm-env-trello-pin]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const division = button.dataset.crmEnvTrelloPin || "";
+        const current = (divisionCards[division.toLowerCase()] || {}).url || "";
+        const value = window.prompt(`Paste the ${division} Trello card link or card ID:`, current);
+        if (value === null || !value.trim()) return;
+        button.disabled = true;
+        let result;
+        try { result = await pywebview.api.pin_crm_division_trello(r.client, division, value); }
+        catch (ex) { result = {ok:false, error:String(ex)}; }
+        if (!result?.ok) { button.disabled = false; setStatus(ctx, result?.error || "Could not pin Trello card", "error"); return; }
+        setStatus(ctx, `${division} Trello card pinned`, "ok");
+        loadCrmWorkspace(container, r, ctx, true);
+      });
+    });
+    box.querySelectorAll("[data-crm-env-trello-remove]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const division = button.dataset.crmEnvTrelloRemove || "";
+        if (!window.confirm(`Remove the pinned ${division} Trello card?`)) return;
+        button.disabled = true;
+        let result;
+        try { result = await pywebview.api.unpin_crm_division_trello(r.client, division); }
+        catch (ex) { result = {ok:false, error:String(ex)}; }
+        if (!result?.ok) { button.disabled = false; setStatus(ctx, result?.error || "Could not remove Trello card", "error"); return; }
+        setStatus(ctx, `${division} Trello card removed`, "ok");
+        loadCrmWorkspace(container, r, ctx, true);
+      });
+    });
   }
 
   async function loadOdSummary(container, r, ctx) {
@@ -851,6 +893,7 @@
         ".crm-env{padding:9px;border:1px solid var(--border);border-radius:9px;display:flex;flex-direction:column;gap:7px;background:var(--bg);opacity:.62}" +
         ".crm-env.has-stage{opacity:1}.crm-env-title{display:flex;align-items:center;gap:8px}.crm-env-title>div{display:flex;flex-direction:column}.crm-env-icon{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--surface-2);font-size:16px}.crm-env strong{font-size:12px}.crm-env small{font-size:9px;color:var(--text-muted)}" +
         ".crm-env select,.crm-env input{width:100%;box-sizing:border-box;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 6px;font:inherit;font-size:10px}.crm-env-ems.has-stage{border-color:#4aa8e8}.crm-env-contents.has-stage{border-color:#d7a72e}.crm-env-recon.has-stage{border-color:#c67b47}" +
+        ".crm-env-trello{padding-top:6px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:5px}.crm-env-trello>span{font-size:9px;color:var(--text-muted)}.crm-env-trello.linked>span{color:#72cf9a}.crm-env-trello>div{display:flex;gap:5px;flex-wrap:wrap}.crm-env-trello .action-btn{font-size:9px;padding:3px 6px}" +
         ".crm-relations{margin-top:7px;font-size:11px;}" +
         "@media(prefers-reduced-motion:reduce){.crm-workspace-chevron{transition:none}}" +
         "@media(max-width:700px){.crm-controls,.crm-env-row,.crm-log-form,.crm-progress-detail,.crm-history-grid{grid-template-columns:1fr}.crm-workspace{padding:9px}.crm-workspace-title>.muted{display:none}.crm-summary-latest{flex-basis:100%}.crm-progress-history{grid-column:1}.crm-log-row{grid-template-columns:68px minmax(0,1fr)}.crm-log-row>button{grid-column:2}.crm-log-head{align-items:flex-start;flex-direction:column}}";
