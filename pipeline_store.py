@@ -311,3 +311,43 @@ def list_activity(external_card_id: str, *, limit: int = 100) -> list:
                      order="happened_at.desc", limit=str(limit))
     except Exception:
         return []
+
+
+def update_activity(activity_key: str, body: str) -> dict:
+    """Edit a Linguar-owned activity without rewriting imported history."""
+    key, clean = str(activity_key or "").strip(), str(body or "").strip()
+    if not key or not clean:
+        return {"ok": False, "error": "comment and activity id are required"}
+    try:
+        rows = _rows("crm_pipeline_activity", activity_key=f"eq.{key}",
+                     select="activity_key,source,external_id", limit="1")
+        if not rows:
+            return {"ok": False, "error": "comment was not found"}
+        if rows[0].get("source") != "linguar":
+            return {"ok": False, "error": "imported comments must be edited at their source"}
+        _sb.rest("PATCH", "crm_pipeline_activity",
+                 params={"activity_key": f"eq.{key}"}, body={"body": clean})
+        return {"ok": True, "activity_key": key, "body": clean,
+                "external_id": rows[0].get("external_id") or ""}
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+
+
+def delete_activity(activity_key: str) -> dict:
+    """Delete one Linguar-owned activity; imported Trello rows are protected."""
+    key = str(activity_key or "").strip()
+    if not key:
+        return {"ok": False, "error": "comment was not identified"}
+    try:
+        rows = _rows("crm_pipeline_activity", activity_key=f"eq.{key}",
+                     select="activity_key,source,external_id", limit="1")
+        if not rows:
+            return {"ok": False, "error": "comment was not found"}
+        if rows[0].get("source") != "linguar":
+            return {"ok": False, "error": "imported comments must be deleted at their source"}
+        _sb.rest("DELETE", "crm_pipeline_activity",
+                 params={"activity_key": f"eq.{key}"})
+        return {"ok": True, "deleted": True,
+                "external_id": rows[0].get("external_id") or ""}
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}

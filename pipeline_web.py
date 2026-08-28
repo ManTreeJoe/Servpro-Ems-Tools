@@ -610,23 +610,62 @@ class Api:
             actor = supabase_client.actor_name(actor)
         except Exception:
             pass
-        local = pipeline_store.add_activity(card_id, "comment", text, actor)
-        posted = False
+        posted_action = None
         error = ""
         if card_id:
             try:
                 import trello_client as tc
-                posted = bool(tc.post_comment(card_id, text))
-                if not posted:
+                posted_action = tc.post_comment(card_id, text)
+                if not posted_action:
                     error = "Trello did not accept the comment"
             except Exception as ex:
                 error = str(ex)
+        external_id = str(posted_action.get("id") or "") if isinstance(
+            posted_action, dict) else ""
+        local = pipeline_store.add_activity(
+            card_id, "comment", text, actor, external_id=external_id)
+        posted = bool(posted_action)
         return {"ok": bool(local) or posted, "posted_trello": posted,
                 "warning": error if local and not posted else "",
                 "comment": {"id": local.get("activity_key") or "",
+                            "external_id": external_id,
                             "text": text, "actor": actor,
                             "at": local.get("happened_at") or _dt.datetime.now().isoformat(),
                             "source": "linguar"}}
+
+    def edit_job_comment(self, client: str, comment_id: str,
+                         source: str, text: str,
+                         external_id: str = "") -> dict:
+        clean = (text or "").strip()
+        if not clean:
+            return {"ok": False, "error": "a comment cannot be empty"}
+        if source == "trello":
+            return self._audit_api().update_card_comment(client, comment_id, clean)
+        result = pipeline_store.update_activity(comment_id, clean)
+        if not result.get("ok"):
+            return result
+        trello_id = external_id or result.get("external_id") or ""
+        if trello_id:
+            synced = self._audit_api().update_card_comment(client, trello_id, clean)
+            if not synced.get("ok"):
+                return {**result, "text": clean, "warning":
+                        "Saved in Linguar Hub, but Trello did not update"}
+        return {**result, "text": clean, "synced_trello": bool(trello_id)}
+
+    def delete_job_comment(self, client: str, comment_id: str,
+                           source: str, external_id: str = "") -> dict:
+        if source == "trello":
+            return self._audit_api().delete_card_comment(client, comment_id)
+        result = pipeline_store.delete_activity(comment_id)
+        if not result.get("ok"):
+            return result
+        trello_id = external_id or result.get("external_id") or ""
+        if trello_id:
+            synced = self._audit_api().delete_card_comment(client, trello_id)
+            if not synced.get("ok"):
+                return {**result, "warning":
+                        "Deleted in Linguar Hub, but Trello did not delete"}
+        return {**result, "synced_trello": bool(trello_id)}
 
     def save_job_log_update(self, client: str, entry: dict) -> dict:
         return self._audit_api().save_crm_job_log(client, entry)

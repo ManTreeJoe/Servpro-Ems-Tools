@@ -487,6 +487,9 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .job-comment header time { color: var(--text-dim); font-size: 10px; }
 .job-comment p { margin: 5px 0 0; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2); color: var(--text); font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .job-comment small { display: inline-block; margin-top: 3px; color: var(--text-dim); font-size: 9px; text-transform: uppercase; }
+.job-comment footer { display:flex;align-items:center;justify-content:space-between;gap:8px; }
+.job-comment footer>span { display:flex;gap:3px;opacity:.35;transition:opacity .12s ease; }
+.job-comment:hover footer>span,.job-comment:focus-within footer>span { opacity:1; }
 .comment-compose { flex: 0 0 auto; padding: 12px 14px 14px; border-top: 1px solid var(--border); background: var(--surface); }
 .comment-compose textarea { width: 100%; resize: vertical; min-height: 66px; max-height: 150px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; outline: 0; background: var(--bg); color: var(--text); font: inherit; }
 .comment-compose textarea:focus { border-color: var(--green); box-shadow: 0 0 0 2px rgba(46,139,87,.18); }

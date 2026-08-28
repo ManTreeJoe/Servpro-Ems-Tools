@@ -880,6 +880,35 @@ function openAuditModal(data, trelloUrl = "") {
     input.value = "";
     stateEl.textContent = result.posted_trello ? "Saved · Trello synced" : (result.warning || "Saved in Linguar Hub");
   });
+  w.querySelector("[data-comment-stream]")?.addEventListener("click", async (event) => {
+    const edit = event.target.closest("[data-comment-edit]");
+    const remove = event.target.closest("[data-comment-delete]");
+    const button = edit || remove;
+    if (!button) return;
+    const article = button.closest("[data-comment-id]");
+    const id = article?.dataset.commentId || "";
+    const source = article?.dataset.commentSource || "linguar";
+    const externalId = article?.dataset.commentExternalId || "";
+    const current = article?.querySelector("p")?.textContent || "";
+    if (edit) {
+      const value = window.prompt(`Edit this ${source === "trello" ? "Trello" : "Linguar Hub"} comment:`, current);
+      if (value === null || !value.trim() || value.trim() === current.trim()) return;
+      button.disabled = true;
+      const result = await pywebview.api.edit_job_comment(data.client || "", id, source, value, externalId);
+      if (!result?.ok) { button.disabled = false; setStatus(result?.error || "Comment could not be edited", "error"); return; }
+      article.querySelector("p").textContent = result.text || value.trim();
+      button.disabled = false;
+      setStatus(result.warning || (source === "trello" || result.synced_trello ? "Comment updated in Linguar Hub and Trello" : "Linguar Hub comment updated"), result.warning ? "warn" : "ok");
+    } else {
+      const warning = source === "trello" || externalId ? "This permanently deletes the comment from Trello and Linguar Hub." : "This deletes the Linguar Hub comment only.";
+      if (!window.confirm(`${warning}\n\nContinue?`)) return;
+      button.disabled = true;
+      const result = await pywebview.api.delete_job_comment(data.client || "", id, source, externalId);
+      if (!result?.ok) { button.disabled = false; setStatus(result?.error || "Comment could not be deleted", "error"); return; }
+      article.remove();
+      setStatus(result.warning || (source === "trello" || result.synced_trello ? "Comment deleted from Linguar Hub and Trello" : "Linguar Hub comment deleted"), result.warning ? "warn" : "ok");
+    }
+  });
   w.querySelector("[data-open-audit]").addEventListener("click", () => {
     if (window.emsNavigateTo) window.emsNavigateTo("audit", res.client || "");
     close();
@@ -946,9 +975,11 @@ async function openXaStageModal(client) {
 function renderJobComment(comment) {
   const actor = comment?.actor || "Linguar Hub";
   const initial = actor.trim().charAt(0).toUpperCase() || "L";
-  return `<article class="job-comment"><div class="comment-avatar">${escapeHtml(initial)}</div>
+  const source = comment?.source === "trello" ? "trello" : "linguar";
+  return `<article class="job-comment" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar">${escapeHtml(initial)}</div>
     <div><header><strong>${escapeHtml(actor)}</strong><time>${escapeHtml(formatCommentDate(comment?.at || ""))}</time></header>
-    <p>${escapeHtml(comment?.text || "")}</p>${comment?.source === "trello" ? `<small>Trello</small>` : ""}</div></article>`;
+    <p>${escapeHtml(comment?.text || "")}</p><footer><small>${source === "trello" ? "Trello" : "Linguar Hub"}</small>
+    ${comment?.id ? `<span><button class="text-btn" data-comment-edit>Edit</button><button class="text-btn danger" data-comment-delete>Delete</button></span>` : ""}</footer></div></article>`;
 }
 
 function formatCommentDate(value) {

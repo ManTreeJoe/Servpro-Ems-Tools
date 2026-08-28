@@ -38,6 +38,10 @@ class FakeSupabase:
             for row in rows:
                 row.update(body)
             return rows
+        if method == "DELETE":
+            for row in rows:
+                self.rows[table].pop(row[pk], None)
+            return rows
         return rows[:int(params["limit"])] if params.get("limit") else rows
 
 
@@ -69,6 +73,21 @@ def test_full_checklists_are_owned_and_updated_by_linguar(monkeypatch):
     loaded = pipeline_store.load_boards((('wip', 'WORK IN PROGRESS'),))
     assert loaded["boards"][0]["lanes"][0]["cards"][0]["checklist"] == {
         "done": 2, "total": 2}
+
+
+def test_linguar_comments_can_be_edited_and_deleted_but_imports_are_protected(monkeypatch):
+    fake = FakeSupabase()
+    monkeypatch.setattr(pipeline_store, "_sb", fake)
+    pipeline_store.mirror_boards(_payload())
+    local = pipeline_store.add_activity("c1", "comment", "First", "Nathan")
+    imported = pipeline_store.add_activity(
+        "c1", "comment", "From Trello", "Sam", source="trello",
+        external_id="action-1")
+    assert pipeline_store.update_activity(local["activity_key"], "Updated")["ok"]
+    assert pipeline_store.update_activity(imported["activity_key"], "No")["ok"] is False
+    assert pipeline_store.delete_activity(imported["activity_key"])["ok"] is False
+    assert pipeline_store.delete_activity(local["activity_key"])["deleted"] is True
+    assert [row["body"] for row in pipeline_store.list_activity("c1")] == ["From Trello"]
 
 
 def test_pipeline_reads_shared_before_trello(monkeypatch):
@@ -148,6 +167,11 @@ def test_pipeline_card_is_the_full_job_workspace():
     assert 'class="aud-section compact-section"' in js
     assert ".job-card-layout" in css
     assert ".job-card-activity" in css
+    for marker in ("edit_job_comment", "delete_job_comment"):
+        assert marker in py
+    for marker in ("data-comment-edit", "data-comment-delete",
+                   "This permanently deletes the comment from Trello and Linguar Hub"):
+        assert marker in js
 
 
 def test_pipeline_opens_card_before_slow_workspace_lookup():
