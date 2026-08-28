@@ -15,7 +15,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Pipeline — Linguar Hub</title>
-<link rel="stylesheet" href="app.css?v=20260827h" />
+<link rel="stylesheet" href="app.css?v=20260828a" />
 </head>
 <body>
 <header class="topbar">
@@ -32,9 +32,11 @@
       autocomplete="off"
     />
     <button id="refresh-btn" class="btn btn-primary view-board-only" title="Re-pull both boards live from Trello">↻ Refresh</button>
-    <button id="thresholds-btn" class="btn view-stages-only hidden" title="Edit per-stage day thresholds">⏱ Thresholds</button>
-    <button id="export-btn" class="btn view-stages-only hidden" title="Export the current pipeline to an Excel workbook, one sheet per stage">📊 Export</button>
-    <button id="sync-btn" class="btn btn-primary view-stages-only hidden">↻ Sync</button>
+    <details class="toolbar-more view-stages-only hidden"><summary class="btn">More ▾</summary><div>
+      <button id="thresholds-btn" class="btn" title="Edit per-stage day thresholds">⏱ Thresholds</button>
+      <button id="export-btn" class="btn" title="Export the current pipeline to an Excel workbook, one sheet per stage">📊 Export</button>
+      <button id="sync-btn" class="btn">↻ Sync lifecycle</button>
+    </div></details>
   </div>
 </header>
 
@@ -87,6 +89,6 @@
   <button data-action="copy-id">📋 Copy card ID</button>
 </div>
 
-<script src="app.js?v=20260827h"></script>
+<script src="app.js?v=20260828a"></script>
 </body>
 </html>

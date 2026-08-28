@@ -121,7 +121,7 @@ function rowHtml(section, row, index) {
   return `<div class="run-row ${row.struck ? "struck" : ""}" data-section="${section}" data-index="${index}">
     <button class="row-tab" draggable="true" title="Drag this row" aria-label="Drag row ${index + 1}"><span class="grip-lines" aria-hidden="true">☰</span><span>${index + 1}</span></button>
     <div class="row-main"><textarea class="row-text" rows="1" spellcheck="true" aria-label="${section} row ${index + 1}">${escapeHtml(row.text || "")}</textarea></div>
-    <div class="row-tools"><button class="row-tool format" title="Format item" aria-label="Format item">▤</button><button class="row-tool done ${row.struck ? "active" : ""}" title="Mark complete" aria-label="Mark complete">✓</button><button class="row-tool up" title="Move up" aria-label="Move up">↑</button><button class="row-tool down" title="Move down" aria-label="Move down">↓</button><button class="row-tool delete" title="Remove row" aria-label="Remove row">×</button></div>
+    <div class="row-tools"><button class="row-tool format" title="Format item" aria-label="Format item">▤</button><button class="row-tool done ${row.struck ? "active" : ""}" title="Mark complete" aria-label="Mark complete">✓</button><button class="row-tool delete" title="Remove row" aria-label="Remove row">×</button></div>
   </div>`;
 }
 
@@ -145,8 +145,6 @@ function bindRows() {
       state.model.sections[at.section][at.index].struck = !state.model.sections[at.section][at.index].struck;
       markDirty(); renderRows();
     });
-    element.querySelector(".up").addEventListener("click", () => moveWithin(ref(), -1));
-    element.querySelector(".down").addEventListener("click", () => moveWithin(ref(), 1));
     element.querySelector(".delete").addEventListener("click", () => removeRow(ref()));
     const grip = element.querySelector(".row-tab");
     grip.addEventListener("dragstart", (event) => {

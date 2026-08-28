@@ -170,3 +170,15 @@ def test_pipeline_cards_click_to_open_and_hold_to_drag():
     assert 'data-act="audit"' not in js
     assert ".kcard.drag-ready" in css
     assert ".kcard:hover .kcard-actions" in css
+
+
+def test_daily_copy_and_xa_actions_stay_visible_on_job_card():
+    root = Path(__file__).parents[1]
+    py = (root / "pipeline_web.py").read_text(encoding="utf-8")
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert 'class="visible-job-actions"' in js
+    assert "visibleCopyOptions.map" in js
+    assert "data-stage-xa" in js
+    assert "openXaStageModal" in js
+    assert "def list_pics_stages" in py
+    assert "def copy_pics_to_clipboard" in py

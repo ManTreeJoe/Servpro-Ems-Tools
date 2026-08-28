@@ -307,6 +307,13 @@
   .queue-filter label { color:var(--text-muted); font-size:9px; font-weight:750; letter-spacing:.07em; text-transform:uppercase; }
   .queue-filter .search { width:100%; }
   #queue-count { align-self:center; white-space:nowrap; font-size:11px; color:var(--text-muted); }
+  .toolbar-overflow { position:relative; }
+  .toolbar-overflow summary { list-style:none; }
+  .toolbar-overflow summary::-webkit-details-marker { display:none; }
+  .toolbar-overflow > div { position:absolute;z-index:80;right:0;top:calc(100% + 6px);display:grid;gap:5px;min-width:190px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 12px 30px rgba(0,0,0,.42); }
+  .toolbar-overflow > div .btn { width:100%;text-align:left;white-space:nowrap; }
+  .toolbar-check { display:flex;gap:7px;align-items:center;padding:7px 9px;color:var(--text-muted);font-size:11px;cursor:pointer; }
+  #tab-tracked .col { overflow:visible !important; }
   @media (max-width:900px) {
     .queue-filters { grid-template-columns:1fr 1fr; }
     .queue-filter:first-child { grid-column:1 / -1; }
@@ -334,8 +341,10 @@
     </div>
     <button id="view-list-btn" class="btn">📸 Queue</button>
     <button id="view-gen-btn" class="btn">＋ Manual snapshot</button>
-    <button id="refresh-btn" class="btn">↻</button>
-    <button id="open-folder-btn" class="btn">📁 Folder</button>
+    <details class="toolbar-overflow"><summary class="btn">More ▾</summary><div>
+      <button id="refresh-btn" class="btn">↻ Refresh</button>
+      <button id="open-folder-btn" class="btn">📁 Snapshot folder</button>
+    </div></details>
   </div>
 </header>
 
@@ -405,13 +414,13 @@
           <option value="Incomplete">Incomplete</option>
           <option value="Needs Attention">Needs Attention</option>
         </select>
-        <button class="btn" id="tracked-refresh">↻</button>
-        <button class="btn" id="tracked-reconcile" title="Move closed jobs off NEW LOSS — checks every row's Trello card (AR board / LOGS board / archived / closed lane) and re-sheets it. Rows with no matching card go to Needs Attention. Network-heavy.">🔄 Reconcile</button>
-        <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);cursor:pointer;" title="Automatically reconcile with Trello whenever the Tracked tab opens">
-          <input type="checkbox" id="tracked-auto-recon" /> Auto
-        </label>
-        <button class="btn" id="tracked-open-xlsx">📊 Open Excel</button>
-        <button class="btn" id="tracked-change-dir" title="Change the folder where the Snapshots tracking workbooks are stored">📁 Folder</button>
+        <details class="toolbar-overflow"><summary class="btn">Tracking tools ▾</summary><div>
+          <button class="btn" id="tracked-refresh">↻ Refresh</button>
+          <button class="btn" id="tracked-reconcile" title="Move closed jobs off NEW LOSS and flag unmatched rows">🔄 Reconcile</button>
+          <label class="toolbar-check" title="Automatically reconcile whenever the Tracked tab opens"><input type="checkbox" id="tracked-auto-recon" /> Auto reconcile</label>
+          <button class="btn" id="tracked-open-xlsx">📊 Open Excel</button>
+          <button class="btn" id="tracked-change-dir" title="Change where tracking workbooks are stored">📁 Tracking folder</button>
+        </div></details>
       </div>
       <div id="tracked-loc" class="muted" style="font-size:11px;padding:6px 16px;border-bottom:1px solid var(--border);opacity:.7;"></div>
       <div style="overflow:auto;max-height:calc(100vh - 220px);">
@@ -536,10 +545,12 @@
     </div>
 
     <div class="gen-foot">
-      <button class="btn" id="gen-find">🔍 Find Trello card</button>
-      <button class="btn" id="gen-audit">🔎 Audit this job</button>
       <button class="btn" id="gen-scope">📋 Scope</button>
       <button class="btn" id="gen-docusign-email" title="Copy the closeout DocuSign request email (property city auto-filled) to paste into DocuSign / Outlook">📝 Copy DS email</button>
+      <details class="toolbar-overflow"><summary class="btn">More ▾</summary><div>
+        <button class="btn" id="gen-find">🔍 Find Trello card</button>
+        <button class="btn" id="gen-audit">🔎 Open full Audit</button>
+      </div></details>
       <span style="flex:1;"></span>
       <button class="btn" id="gen-cancel">Cancel</button>
       <button class="btn btn-primary" id="gen-go">📸 Generate PDF</button>
@@ -593,7 +604,7 @@
   <span id="status-msg" class="status-msg"></span>
 </footer>
 
-<script src="../web_shared/audit_detail.js?v=20260827e"></script>
+<script src="../web_shared/audit_detail.js?v=20260828a"></script>
 <script src="app.js?v=20260826a"></script>
 </body>
 </html>

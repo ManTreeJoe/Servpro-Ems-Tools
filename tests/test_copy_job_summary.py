@@ -27,8 +27,9 @@ def test_summary_preview_keeps_individual_copy_actions():
     for action in ("copy-client", "copy-phone", "copy-claim", "copy-email", "copy-address",
                    "copy-path", "copy-job-summary"):
         assert f'data-action="{action}"' in js
-    assert 'class="copy-action-menu"' in js
-    assert "📋 Copy…" in js
+    assert 'class="copy-action-menu"' not in js
+    assert js.count('data-action="copy-') >= 8
+    assert "📋 Job summary" in js
 
 
 def test_copy_data_uses_saved_job_info_customer_name(monkeypatch):

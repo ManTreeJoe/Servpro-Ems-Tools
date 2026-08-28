@@ -368,6 +368,11 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
   border-left: 3px solid transparent; border-radius: 6px;
   padding: 8px 9px; cursor: grab; transition: border-color 100ms ease, background 100ms ease;
 }
+.toolbar-more { position: relative; }
+.toolbar-more summary { list-style: none; }
+.toolbar-more summary::-webkit-details-marker { display: none; }
+.toolbar-more > div { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; display: grid; gap: 5px; min-width: 180px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 12px 30px rgba(0,0,0,.4); }
+.toolbar-more > div .btn { width: 100%; text-align: left; }
 .kcard:hover { background: #343434; }
 .kcard { cursor: pointer; user-select: none; }
 .kcard.drag-ready { cursor: grab; box-shadow: 0 0 0 2px rgba(74,158,255,.32); }
@@ -408,6 +413,18 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .modal-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .modal-body { padding: 16px 20px; overflow-y: auto; }
 .modal-foot { padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
+.audit-card .modal-foot { gap: 10px; }
+.visible-job-actions { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 6px; }
+.modal-more-menu { position: relative; flex: 0 0 auto; }
+.modal-more-menu summary { list-style: none; }
+.modal-more-menu summary::-webkit-details-marker { display: none; }
+.modal-more-menu > div { position: absolute; z-index: 20; right: 0; bottom: calc(100% + 7px); display: grid; min-width: 190px; padding: 7px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+.modal-more-menu button { padding: 9px 10px; border: 0; border-radius: 5px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.modal-more-menu button:hover { background: var(--chip-bg); }
+.xa-picker { width: min(520px, 95vw); }
+.xa-stage-list { display: grid; gap: 8px; padding: 16px 20px !important; overflow-y: auto !important; }
+.xa-stage-choice { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 12px 14px; text-align: left; }
+.xa-stage-choice small { color: var(--text-muted); }
 .aud-ok { color: var(--green); font-weight: 600; }
 .aud-bad { color: var(--amber); font-weight: 600; }
 .aud-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

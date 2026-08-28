@@ -102,14 +102,15 @@ async function renderDetail() {
       <div class="detail-meta">${esc(state.selected.year)} · ${esc(note?.mtime || "")}</div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-primary" id="edit-btn">✏ Edit</button>
-        <button class="btn" id="post-btn" title="Post the ENTIRE note text as a Trello comment">💬 Post note</button>
-        <button class="btn" id="compose-btn-detail" title="Type and post a one-off Trello comment to this client's card">💬 New comment</button>
-        <button class="btn" id="refresh-trello-btn" title="Re-pull live activity from Trello (auto-refreshes every 60s)">↻ Refresh Trello</button>
-        <button class="btn" id="trello-btn">
-          <img src="../web_shared/trello.png" alt="" style="width:13px;height:13px;vertical-align:middle;margin-right:4px;" />Open Trello</button>
-        <button class="btn" id="pin-btn" title="Pin a Trello card to this client (or change which card is pinned)">📌 Pin Trello…</button>
-        <button class="btn" id="notepad-btn">📝 Open in Notepad</button>
-        <button class="btn" id="aliases-btn">🏷 Aliases…</button>
+        <button class="btn" id="compose-btn-detail" title="Add a job comment">💬 Add comment</button>
+        <details class="note-more"><summary class="btn">More ▾</summary><div>
+          <button class="btn" id="post-btn" title="Post the entire note as a temporary Trello comment">💬 Post entire note</button>
+          <button class="btn" id="trello-btn"><img src="../web_shared/trello.png" alt="" style="width:13px;height:13px;vertical-align:middle;margin-right:4px;" />Open Trello</button>
+          <button class="btn" id="pin-btn" title="Change the temporary Trello card link">📌 Change Trello link…</button>
+          <button class="btn" id="refresh-trello-btn" title="Re-pull live activity from Trello">↻ Refresh Trello</button>
+          <button class="btn" id="aliases-btn">🏷 Job aliases…</button>
+          <button class="btn" id="notepad-btn">📝 Open in Notepad</button>
+        </div></details>
       </div>
       <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
         <input id="find-box" class="search" type="search"

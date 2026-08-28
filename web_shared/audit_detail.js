@@ -263,6 +263,9 @@
           <button class="action-btn" data-action="cc-pull"
                   ${hasPath ? "" : "disabled"}
                   title="Pull this job's NEW CompanyCam photos into its PICS folder&#10;Right-click: change which CompanyCam project this job pulls from"><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Pull CompanyCam</button>
+          <button class="action-btn secondary-action" data-action="copy-pics"
+                  title="Stage every image in a PICS subfolder into a temporary folder for XactAnalysis"
+                  ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
           <button class="action-btn" data-action="attachments"
                   ${hasPin ? "" : "disabled"}
                   title="Browse + download the Trello card's photos/files"><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello Attachments</button>
@@ -273,18 +276,13 @@
           <div class="action-buttons">
           <button class="action-btn primary" data-action="job-info"
                   title="Carrier, claim number, adjuster, date of loss — edit here and it syncs with the Trello card">⚙ Job info</button>
-          <details class="copy-action-menu"><summary class="action-btn">📋 Copy…</summary><div class="copy-action-popover">
-            <button class="action-btn" data-action="copy-client">Customer name</button>
-            <button class="action-btn" data-action="copy-phone">Customer phone</button>
-            <button class="action-btn" data-action="copy-email" id="copy-email-btn">📧 Choose email</button>
-            <button class="action-btn" data-action="copy-address">Loss address</button>
-            <button class="action-btn" data-action="copy-claim">Claim number</button>
-            <button class="action-btn" data-action="copy-path" ${hasPath ? "" : "disabled"}>Job folder path</button>
-            <button class="action-btn" data-action="copy-job-summary" data-track="copy_job_summary">Formatted job summary…</button>
-          </div></details>
-          <button class="action-btn secondary-action" data-action="copy-pics"
-                  title="Stage every image in a PICS subfolder into a TEMP folder + open it in Explorer — drag into XactAnalysis from there. Auto-deletes after 1 min."
-                  ${hasPath ? "" : "disabled"}>📂 Stage for XA…</button>
+          <button class="action-btn" data-action="copy-client">📋 Name</button>
+          <button class="action-btn" data-action="copy-phone">📋 Phone</button>
+          <button class="action-btn" data-action="copy-email" id="copy-email-btn">📧 Choose email</button>
+          <button class="action-btn" data-action="copy-address">📋 Address</button>
+          <button class="action-btn" data-action="copy-claim">📋 Claim #</button>
+          <button class="action-btn" data-action="copy-path" ${hasPath ? "" : "disabled"}>📋 Folder path</button>
+          <button class="action-btn" data-action="copy-job-summary" data-track="copy_job_summary">📋 Job summary</button>
           </div>
         </div>
         <div class="action-row" data-group="update">

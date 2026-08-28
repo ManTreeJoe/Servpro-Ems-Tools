@@ -174,7 +174,6 @@ function renderBoard() {
     <div class="board-tabs">
       ${tabs}
       <span class="board-tabs-spacer"></span>
-      <button class="board-refresh" data-refresh-board="${escapeAttr(active.key)}" title="Refresh this board from Trello">↻ Refresh</button>
     </div>
     ${lanesHtml}`;
 
@@ -185,10 +184,6 @@ function renderBoard() {
       PanelState.set({ activeBoardKey: state.activeBoardKey });
       renderBoard();
     }));
-  // Per-board ↻ refresh.
-  root.querySelectorAll("[data-refresh-board]").forEach((b) =>
-    b.addEventListener("click", () => refreshOneBoard(b.dataset.refreshBoard)));
-
   // Wire drag + drop + per-card actions.
   root.querySelectorAll(".lane").forEach((laneEl) => {
     laneEl.addEventListener("dragover", onLaneDragOver);
@@ -200,9 +195,6 @@ function renderBoard() {
     cardEl.addEventListener("dragstart", onCardDragStart);
     cardEl.addEventListener("dragend", onCardDragEnd);
     cardEl.addEventListener("contextmenu", onCardContext);
-    cardEl.querySelector('[data-act="flag"]')?.addEventListener("click", (e) => {
-      e.stopPropagation(); onFlagCard(cardEl);
-    });
     cardEl.querySelector('[data-act="more"]')?.addEventListener("click", (e) => {
       e.stopPropagation(); openCardMenu(e, cardEl);
     });
@@ -259,8 +251,7 @@ function renderCard(c) {
     <div class="kcard-title">${escapeHtml(c.client || "(no name)")}</div>
     ${chips ? `<div class="kcard-chips">${chips}</div>` : ""}
     <div class="kcard-actions">
-      <button class="kbtn" data-act="flag" title="Flag a missing item + comment Trello">🚩</button>
-      <button class="kbtn" data-act="more" title="Open in… / Trello / folder / XA">⋯</button>
+      <button class="kbtn" data-act="more" title="More job actions">⋯</button>
     </div>
   </div>`;
 }
@@ -523,6 +514,7 @@ function openAuditModal(data, trelloUrl = "") {
     ["Job folder path", res.path || ""],
     ["Trello link", trelloUrl],
   ].filter((item) => item[1]);
+  const visibleCopyOptions = copyOptions.filter(([label]) => label !== "Trello link");
   const activity = (res.activity || []).length
     ? `<div class="aud-chips">${res.activity.map((a) => `<span>${escapeHtml(a)}</span>`).join("")}</div>`
     : `<div class="aud-empty">No activity recorded for this run.</div>`;
@@ -605,12 +597,16 @@ function openAuditModal(data, trelloUrl = "") {
       </header>
       <div class="modal-body">${body}</div>
       <footer class="modal-foot">
-        <details class="job-copy-menu"><summary class="btn">📋 Copy…</summary><div>
-          ${copyOptions.map(([label, value]) => `<button data-copy-value="${escapeAttr(value)}">${escapeHtml(label)}</button>`).join("")}
-          <button data-copy-summary>Formatted job summary</button>
+        <div class="visible-job-actions">
+          ${visibleCopyOptions.map(([label, value]) => `<button class="btn compact" data-copy-value="${escapeAttr(value)}">📋 ${escapeHtml(label.replace("Customer ", ""))}</button>`).join("")}
+          <button class="btn compact" data-copy-summary>📋 Job summary</button>
+          <button class="btn btn-primary compact" data-stage-xa ${res.path ? "" : "disabled"}>📂 Stage for XA</button>
+        </div>
+        <details class="modal-more-menu"><summary class="btn">More ▾</summary><div>
+          <button data-flag-job>🚩 Flag missing item</button>
+          <button data-open-trello>Open in Trello ↗</button>
+          <button data-open-audit>Open full Audit ▸</button>
         </div></details>
-        <button class="btn" data-open-trello>Open in Trello ↗</button>
-        <button class="btn btn-primary" data-open-audit>Full job audit ▸</button>
       </footer>
     </div>`;
   document.body.appendChild(w);
@@ -621,6 +617,12 @@ function openAuditModal(data, trelloUrl = "") {
   document.addEventListener("keydown", keyClose);
   w.querySelector("[data-open-trello]").addEventListener("click", () => {
     if (trelloUrl) pywebview.api.open_url(trelloUrl);
+  });
+  w.querySelector("[data-flag-job]")?.addEventListener("click", () => {
+    onFlagCard({dataset: {client: data.client || res.client || "", cardId: data.card_id || ""}});
+  });
+  w.querySelector("[data-stage-xa]")?.addEventListener("click", () => {
+    openXaStageModal(data.client || res.client || "");
   });
   w.querySelectorAll("[data-copy-value]").forEach((button) => button.addEventListener("click", async () => {
     await pywebview.api.copy_to_clipboard(button.dataset.copyValue || "");
@@ -714,6 +716,40 @@ function openAuditModal(data, trelloUrl = "") {
     if (window.emsNavigateTo) window.emsNavigateTo("audit", res.client || "");
     close();
   });
+}
+
+async function openXaStageModal(client) {
+  setStatus(`Loading photo stages for ${client}…`);
+  const info = await pywebview.api.list_pics_stages(client);
+  if (!info?.ok || !(info.stages || []).length) {
+    setStatus(info?.error || `No PICS folders with images found for ${client}`, "warn");
+    return;
+  }
+  const w = document.createElement("div");
+  w.className = "modal-scrim audit-overlay xa-picker-overlay";
+  w.innerHTML = `<div class="modal-box xa-picker" role="dialog" aria-modal="true" aria-label="Stage photos for XA">
+    <header class="modal-head"><div><div class="modal-title">Stage for XA</div><div class="modal-sub">${escapeHtml(client)} · choose a PICS folder</div></div><button class="audit-close" data-close>×</button></header>
+    <div class="modal-body xa-stage-list">${info.stages.map((stage) => `<button class="btn xa-stage-choice" data-stage="${escapeAttr(stage.name || "")}"><span>📁 ${escapeHtml(stage.name || "")}</span><small>${Number(stage.count || 0)} images</small></button>`).join("")}</div>
+    <footer class="modal-foot"><button class="btn" data-close>Cancel</button></footer></div>`;
+  document.body.appendChild(w);
+  const close = () => w.remove();
+  w.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
+  w.addEventListener("click", (event) => { if (event.target === w) close(); });
+  w.querySelectorAll("[data-stage]").forEach((button) => button.addEventListener("click", async () => {
+    button.disabled = true;
+    const original = button.innerHTML;
+    button.textContent = "Staging photos…";
+    const result = await pywebview.api.copy_pics_to_clipboard(client, button.dataset.stage || "");
+    if (!result?.ok) {
+      button.disabled = false;
+      button.innerHTML = original;
+      setStatus(result?.error || "Could not stage the photos", "error");
+      return;
+    }
+    close();
+    setStatus(`Staged ${result.count || 0} photos for XA · temporary folder opened`, "ok");
+  }));
+  setStatus("");
 }
 
 function renderJobComment(comment) {

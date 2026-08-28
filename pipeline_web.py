@@ -514,6 +514,12 @@ class Api:
         except OSError as ex:
             return {"ok": False, "error": str(ex)}
 
+    def list_pics_stages(self, client: str) -> dict:
+        return self._audit_api().list_pics_stages(client)
+
+    def copy_pics_to_clipboard(self, client: str, stage: str = "") -> dict:
+        return self._audit_api().copy_pics_to_clipboard(client, stage)
+
     def set_job_check_item(self, card_id: str, item_id: str,
                            complete: bool) -> dict:
         local = pipeline_store.set_check_item(card_id, item_id, complete)

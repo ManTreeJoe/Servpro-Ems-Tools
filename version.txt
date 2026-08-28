@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.23",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.23",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.23/Linguar-Hub-Trial-Setup-1.6.0-trial.23.exe",
+  "version": "1.6.0-trial.24",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.24",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.24/Linguar-Hub-Trial-Setup-1.6.0-trial.24.exe",
   "notes": "Adds a compact Documents & Signatures workflow to each Pipeline job. It shows DocuSign request state, uses the customer email from Job Information, indexes signed/final forms from the official X: OD job folder without storing the files in the database, and opens documents directly. Run activity and miscellaneous attachments are collapsed to keep the job card clean."
 }
