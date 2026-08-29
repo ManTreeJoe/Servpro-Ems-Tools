@@ -395,7 +395,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .toolbar-more > div .btn { width: 100%; text-align: left; }
 .kcard:hover { background: #343434; }
 .kcard:focus-visible { border-color: var(--green); background: #343434; }
-.kcard { cursor: pointer; user-select: none; }
+.kcard { cursor: pointer; user-select: none; touch-action: manipulation; -webkit-tap-highlight-color: rgba(143,209,168,.18); }
 .kcard.drag-ready { cursor: grab; box-shadow: 0 0 0 2px rgba(74,158,255,.32); }
 .kcard.dragging { opacity: .45; cursor: grabbing; }
 .kcard.stall-border-warn { border-left-color: var(--amber); }

@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.43",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.43",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.43/Linguar-Hub-Trial-Setup-1.6.0-trial.43.exe",
-  "notes": "Separates Pipeline card clicks from horizontal grab-scrolling. Cards now open directly on pointer release, while only empty board space starts horizontal scrolling; click-and-hold still arms card movement. Includes the Trial 41 performance and sign-in refinements."
+  "version": "1.6.0-trial.44",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.44",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.44/Linguar-Hub-Trial-Setup-1.6.0-trial.44.exe",
+  "notes": "Hardens the Pipeline workspace after the card-click repair. A failed fast shared lookup no longer blocks Trello/local details, workspace rendering failures show a visible diagnostic, unchanged background refreshes avoid rebuilding the board, and real refreshes preserve horizontal position. Also improves touch and control accessibility."
 }

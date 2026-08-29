@@ -136,13 +136,32 @@ async function refreshSavedBoardInBackground() {
   try {
     const fresh = await pywebview.api.board_view_shared_refresh();
     if (!fresh?.ok || !(fresh.boards || []).length) return;
+    const changed = boardFingerprint(state.board) !== boardFingerprint(fresh);
+    const priorScroll = $(".lanes-row")?.scrollLeft || 0;
     state.board = fresh;
-    renderBoard();
-    setStatus(`✓ ${boardCardTotal()} jobs · shared Pipeline is current`, "ok");
+    if (changed) {
+      renderBoard();
+      requestAnimationFrame(() => {
+        const row = $(".lanes-row");
+        if (row) row.scrollLeft = priorScroll;
+      });
+    }
+    const source = fresh.source === "shared" ? "shared Pipeline" : "Trello";
+    setStatus(`✓ ${boardCardTotal()} jobs · ${source} is current`, "ok");
   } catch (_) {
     // The saved board remains fully usable. Explicit Sync Jobs surfaces
     // network errors when the user wants to troubleshoot them.
   }
+}
+
+function boardFingerprint(payload) {
+  return (payload?.boards || []).map((board) => [
+    board.key,
+    ...(board.lanes || []).map((lane) => [
+      lane.list_id,
+      ...(lane.cards || []).map((card) => card.card_id),
+    ]),
+  ]).flat(4).join("|");
 }
 
 async function refreshOneBoard(key) {
@@ -485,28 +504,44 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   const resolvedUrl = isCard ? (cardOrClient.dataset.url || "") : trelloUrl;
   const requestId = ++workspaceRequestId;
   const instant = instantWorkspaceData(cardOrClient, client, resolvedCardId, division);
-  let modal = openAuditModal(instant, resolvedUrl);
+  let modal;
+  try {
+    modal = openAuditModal(instant, resolvedUrl);
+  } catch (error) {
+    // Never let a job-specific data shape turn a click into apparent silence.
+    modal = openAuditLoadingModal(client);
+    modal.showError(`The card opened, but its workspace could not render: ${error?.message || error}`);
+    setStatus(`Card opened · workspace layout needs review`, "error");
+    return;
+  }
   setStatus(`Opened "${client}" · loading shared job details…`);
   try {
     // Start deep hydration immediately. It used to begin only after the fast
     // shared-data request completed, stacking two independent waits every
     // time a card opened.
-    const fullPromise = pywebview.api.job_card_workspace(
-      client, resolvedCardId, division);
+    const fullPromise = Promise.resolve(pywebview.api.job_card_workspace(
+      client, resolvedCardId, division)).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
     const fast = await pywebview.api.job_card_workspace_fast(client, resolvedCardId, division);
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (!fast?.ok) {
       modal.setDeferredError(fast?.error || "Shared job details unavailable");
-      setStatus(`Basic card opened · shared details unavailable`, "warn");
-      return;
-    }
-    if (!modal.hasUserInput()) {
+      setStatus(`Basic card opened · loading Trello and local details…`, "warn");
+    } else if (!modal.hasUserInput()) {
       modal.close();
       modal = openAuditModal(fast, fast.selected_trello_url || resolvedUrl);
+      setStatus(`Job opened in ${fast.load_ms || 0} ms · loading audit, Trello, and documents…`);
     }
-    setStatus(`Job opened in ${fast.load_ms || 0} ms · loading audit, Trello, and documents…`);
-    const full = await fullPromise;
+    const fullOutcome = await fullPromise;
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
+    if (fullOutcome.error) {
+      modal.setDeferredError(fullOutcome.error?.message || String(fullOutcome.error));
+      setStatus(`Job opened · live details could not refresh`, "warn");
+      return;
+    }
+    const full = fullOutcome.value;
     if (!full?.ok) {
       modal.setDeferredError(full?.error || "Deep refresh unavailable");
       setStatus(`Job opened · some live details could not refresh`, "warn");
@@ -785,7 +820,7 @@ function openAuditModal(data, trelloUrl = "") {
     <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>${escapeHtml(selectedDivision)} Trello card</small></div>
       <span>${(data.comments || []).length}</span></div>
       <div class="comment-stream" data-comment-stream>${comments}</div>
-      <div class="comment-compose"><textarea data-comment-input rows="3" placeholder="Write an update for this job…"></textarea>
+      <div class="comment-compose"><textarea data-comment-input name="job-comment" rows="3" aria-label="Job comment" autocomplete="off" placeholder="Write an update for this job…"></textarea>
         <div><span data-comment-state></span><button class="btn btn-primary" data-post-comment>Add comment</button></div></div>
     </aside></div>`;
   const w = document.createElement("div");
@@ -1107,7 +1142,7 @@ async function openXaStageModal(client) {
   const w = document.createElement("div");
   w.className = "modal-scrim audit-overlay xa-picker-overlay";
   w.innerHTML = `<div class="modal-box xa-picker" role="dialog" aria-modal="true" aria-label="Stage photos for XA">
-    <header class="modal-head"><div><div class="modal-title">Stage for XA</div><div class="modal-sub">${escapeHtml(client)} · choose a PICS folder</div></div><button class="audit-close" data-close>×</button></header>
+    <header class="modal-head"><div><div class="modal-title">Stage for XA</div><div class="modal-sub">${escapeHtml(client)} · choose a PICS folder</div></div><button class="audit-close" data-close aria-label="Close Stage for XA">×</button></header>
     <div class="modal-body xa-stage-list">${info.stages.map((stage) => `<button class="btn xa-stage-choice" data-stage="${escapeAttr(stage.name || "")}"><span>📁 ${escapeHtml(stage.name || "")}</span><small>${Number(stage.count || 0)} images</small></button>`).join("")}</div>
     <footer class="modal-foot"><button class="btn" data-close>Cancel</button></footer></div>`;
   document.body.appendChild(w);
@@ -1387,7 +1422,7 @@ async function openThresholdsModal() {
           <div style="font-size:13px;">${escapeHtml(s.label)}</div>
           <input type="number" min="0" data-stage="${escapeAttr(s.key)}" value="${s.days}"
                  style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:5px 8px;width:80px;font:inherit;" />
-          <button class="btn" data-reset="${escapeAttr(s.key)}" style="font-size:10px;padding:3px 6px;" title="Reset to default (${s.default})">↻</button>
+          <button class="btn" data-reset="${escapeAttr(s.key)}" style="font-size:10px;padding:3px 6px;" title="Reset to default (${s.default})" aria-label="Reset ${escapeAttr(s.label)} to default">↻</button>
         `).join("")}
       </div>
       <footer style="padding:12px 20px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;">

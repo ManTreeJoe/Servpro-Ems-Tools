@@ -26,7 +26,15 @@ def test_pipeline_starts_fast_and_deep_workspace_reads_concurrently():
     js = (ROOT / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     handler = js[js.index("async function onAuditCard"):js.index(
         "function instantWorkspaceData")]
-    deep = handler.index("const fullPromise = pywebview.api.job_card_workspace")
+    deep = handler.index("const fullPromise = Promise.resolve(pywebview.api.job_card_workspace")
     fast = handler.index("await pywebview.api.job_card_workspace_fast")
     consume = handler.index("await fullPromise")
     assert deep < fast < consume
+
+
+def test_background_board_refresh_avoids_unchanged_dom_rebuilds():
+    js = (ROOT / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert "function boardFingerprint(payload)" in js
+    assert "const changed = boardFingerprint(state.board) !== boardFingerprint(fresh)" in js
+    assert "if (changed)" in js
+    assert "row.scrollLeft = priorScroll" in js

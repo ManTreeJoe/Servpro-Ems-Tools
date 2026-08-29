@@ -28,6 +28,24 @@ def test_card_open_is_not_swallowed_by_horizontal_grab_scroll():
     assert "Open on pointerup" in js
 
 
+def test_workspace_deep_load_survives_fast_lookup_failure():
+    js = _asset("app.js")
+    start = js.index("async function onAuditCard")
+    end = js.index("function instantWorkspaceData", start)
+    block = js[start:end]
+    assert "const fullOutcome = await fullPromise" in block
+    assert "workspace could not render" in block
+    fast_failure = block[block.index("if (!fast?.ok)"):block.index("} else if", block.index("if (!fast?.ok)"))]
+    assert "return;" not in fast_failure
+
+
+def test_pipeline_comment_and_icon_controls_are_named():
+    js = _asset("app.js")
+    assert 'aria-label="Job comment"' in js
+    assert 'aria-label="Close Stage for XA"' in js
+    assert 'aria-label="Reset ${escapeAttr(s.label)} to default"' in js
+
+
 def test_pipeline_authors_visible_focus_and_reduced_motion():
     css = _asset("app.css")
     assert ":focus-visible" in css
