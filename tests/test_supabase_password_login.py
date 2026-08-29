@@ -43,6 +43,24 @@ def test_sign_in_controls_bind_before_unrelated_settings_loads():
     assert 'getElementById("sb-password-signin")?.addEventListener' in html
 
 
+def test_auth_status_renders_before_unrelated_async_setup():
+    html = (ROOT / "settings_web_assets" / "index.html").read_text(encoding="utf-8")
+    start = html.index('window.addEventListener("pywebviewready"')
+    auth = html.index("await refreshSupabase();", start)
+    assert auth < html.index("await pywebview.api.settings_access()", start)
+    assert auth < html.index("await renderFirstRunWizard();", start)
+
+
+def test_setup_signin_button_can_reveal_form_directly():
+    html = (ROOT / "settings_web_assets" / "index.html").read_text(encoding="utf-8")
+    start = html.index("function wireSetupGuide()")
+    handler = html.index('data-setup="signin"', start)
+    end = html.index("data-scope-tab-jump", handler)
+    block = html[handler:end]
+    assert 'getElementById("sb-signin")' in block
+    assert 'signin.style.display = ""' in block
+
+
 def test_missing_password_has_plain_error():
     assert settings_web.Api().supabase_sign_in_password("person@example.com", "") == {
         "ok": False, "error": "Enter your email and password."}

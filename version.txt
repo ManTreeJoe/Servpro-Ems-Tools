@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.38",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.38",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.38/Linguar-Hub-Trial-Setup-1.6.0-trial.38.exe",
-  "notes": "Makes Pipeline card opening feel like Trello: clicking a card now opens an immediate workspace using the name, lane, due date, loss type, checklist count, aging, and sync state already rendered on the board. It makes no database, Trello, audit, or folder request before showing the card. Shared CRM data and live audit/Trello/X-drive details then hydrate behind it without replacing anything the user has started editing."
+  "version": "1.6.0-trial.39",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.39",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.39/Linguar-Hub-Trial-Setup-1.6.0-trial.39.exe",
+  "notes": "Repairs employee sign-in in Settings. Authentication now loads before folders, franchises, property managers, or other setup sections, and the setup button can reveal the form even if an unrelated section fails. Also corrects false stale state.json and config.json backup warnings."
 }

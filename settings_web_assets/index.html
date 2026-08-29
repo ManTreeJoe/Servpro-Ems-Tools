@@ -536,6 +536,10 @@ window.addEventListener("pywebviewready", async () => {
   // after the property-manager and franchise requests completed, leaving
   // visible sign-in buttons inert whenever either request threw.
   bindSupabaseControls();
+  // Authentication is setup step one, so render it before loading any
+  // unrelated settings. A missing folder, franchise RPC, or property-manager
+  // table must never prevent a new employee from signing in.
+  await refreshSupabase();
   try { SETTINGS_ACCESS = await pywebview.api.settings_access() || SETTINGS_ACCESS; } catch (_) {}
   const adminTab = document.querySelector('[data-scope-tab="admin"]');
   if (adminTab) adminTab.style.display = SETTINGS_ACCESS.is_admin ? "" : "none";
@@ -649,8 +653,7 @@ async function showOriginHelp(origin) {
       el.style.color = "var(--red)";
     }
   });
-  // Shared job database (Supabase).
-  await refreshSupabase();
+  // Shared job database (Supabase) was initialized first above.
   await renderPropertyManagers();
   document.getElementById("pm-add").addEventListener("click", () => openPropertyManager({active:true}));
 
@@ -1385,8 +1388,14 @@ function wireSetupGuide() {
   };
   card.querySelector('[data-setup="signin"]')?.addEventListener("click", () => {
     showSettingsScope("personal");
-    document.getElementById("sb-email")?.scrollIntoView({behavior:"smooth", block:"center"});
-    setTimeout(() => document.getElementById("sb-email")?.focus(), 250);
+    // Reveal the form directly as a safety net. refreshSupabase normally
+    // controls this display, but setup must remain usable even when another
+    // Settings request failed during initialization.
+    const signin = document.getElementById("sb-signin");
+    if (signin) signin.style.display = "";
+    const email = document.getElementById("sb-email");
+    email?.scrollIntoView({behavior:"smooth", block:"center"});
+    setTimeout(() => email?.focus(), 250);
     guideStatus("Sign-in fields opened below. Enter your work email and password.");
   });
   card.querySelector('[data-scope-tab-jump="admin"]')?.addEventListener("click", () => {
