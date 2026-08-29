@@ -15,6 +15,12 @@ def test_pipeline_cards_support_keyboard_and_named_actions():
     assert 'aria-label="More actions for' in js
 
 
+def test_card_role_does_not_suppress_its_own_click():
+    js = _asset("app.js")
+    assert "control && control !== cardEl" in js
+    assert "onAuditCard(cardEl);" in js
+
+
 def test_pipeline_authors_visible_focus_and_reduced_motion():
     css = _asset("app.css")
     assert ":focus-visible" in css

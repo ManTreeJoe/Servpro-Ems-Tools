@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.41",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.41",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.41/Linguar-Hub-Trial-Setup-1.6.0-trial.41.exe",
-  "notes": "Makes the Pipeline and navigation feel immediate. The last board view paints from a safe local projection, Trello refreshes behind it, board and workspace requests run concurrently, recently used tools stay warm, and counts avoid repeated database reads. Cache invalidation keeps moves, comments, checklists, logs, and division changes current."
+  "version": "1.6.0-trial.42",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.42",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.42/Linguar-Hub-Trial-Setup-1.6.0-trial.42.exe",
+  "notes": "Fixes the Trial 41 Pipeline card-click regression. A normal single click opens the job workspace again, while nested action buttons and click-and-hold card moving remain separate. Includes the Trial 41 Pipeline performance and sign-in refinements."
 }

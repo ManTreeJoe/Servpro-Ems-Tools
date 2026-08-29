@@ -332,7 +332,12 @@ function wireCardClickAndHold(cardEl) {
   let startY = 0;
   let dragArmed = false;
   let suppressClick = false;
-  const interactive = (target) => Boolean(target.closest("button, a, input, textarea, select, [role='button']"));
+  // The card itself has role="button" for keyboard accessibility. Only
+  // controls nested inside it should suppress the card-open action.
+  const interactive = (target) => {
+    const control = target.closest("button, a, input, textarea, select, [role='button']");
+    return Boolean(control && control !== cardEl);
+  };
   const clearHold = () => {
     if (holdTimer) window.clearTimeout(holdTimer);
     holdTimer = null;
