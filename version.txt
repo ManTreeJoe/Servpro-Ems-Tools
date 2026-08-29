@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.42",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.42",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.42/Linguar-Hub-Trial-Setup-1.6.0-trial.42.exe",
-  "notes": "Fixes the Trial 41 Pipeline card-click regression. A normal single click opens the job workspace again, while nested action buttons and click-and-hold card moving remain separate. Includes the Trial 41 Pipeline performance and sign-in refinements."
+  "version": "1.6.0-trial.43",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.43",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.43/Linguar-Hub-Trial-Setup-1.6.0-trial.43.exe",
+  "notes": "Separates Pipeline card clicks from horizontal grab-scrolling. Cards now open directly on pointer release, while only empty board space starts horizontal scrolling; click-and-hold still arms card movement. Includes the Trial 41 performance and sign-in refinements."
 }

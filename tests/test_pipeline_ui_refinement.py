@@ -21,6 +21,13 @@ def test_card_role_does_not_suppress_its_own_click():
     assert "onAuditCard(cardEl);" in js
 
 
+def test_card_open_is_not_swallowed_by_horizontal_grab_scroll():
+    js = _asset("app.js")
+    assert 'draggable="false" data-no-drag' in js
+    assert "openedOnPointerUp = true" in js
+    assert "Open on pointerup" in js
+
+
 def test_pipeline_authors_visible_focus_and_reduced_motion():
     css = _asset("app.css")
     assert ":focus-visible" in css

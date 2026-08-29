@@ -305,7 +305,7 @@ function renderCard(c) {
     : c.sync_status === "pending"
       ? `<span class="chip-mini sync-pending" title="Saved in Linguar Hub; waiting for Trello">↻ Sync</span>` : "";
   const chips = [loss, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
-  return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false"
+  return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false" data-no-drag
                role="button" tabindex="0" aria-label="Open ${escapeAttr(c.client || "job")}"
                data-card-id="${escapeAttr(c.card_id)}"
                data-list-id="${escapeAttr(c.list_id)}"
@@ -332,6 +332,7 @@ function wireCardClickAndHold(cardEl) {
   let startY = 0;
   let dragArmed = false;
   let suppressClick = false;
+  let openedOnPointerUp = false;
   // The card itself has role="button" for keyboard accessibility. Only
   // controls nested inside it should suppress the card-open action.
   const interactive = (target) => {
@@ -363,16 +364,29 @@ function wireCardClickAndHold(cardEl) {
       clearHold();
     }
   });
-  const release = () => {
+  const release = (event, allowOpen = true) => {
+    const shouldOpen = allowOpen && event.button === 0 && !interactive(event.target)
+      && Boolean(holdTimer) && !dragArmed && !suppressClick
+      && cardEl.dataset.didDrag !== "true";
     clearHold();
     dragArmed = false;
     cardEl.classList.remove("drag-ready");
     window.setTimeout(() => { cardEl.draggable = false; }, 0);
+    if (shouldOpen) {
+      // Open on pointerup so the ancestor grab-scroll helper cannot swallow
+      // the later synthetic click during its capture phase.
+      openedOnPointerUp = true;
+      onAuditCard(cardEl);
+    }
   };
   cardEl.addEventListener("pointerup", release);
-  cardEl.addEventListener("pointercancel", release);
+  cardEl.addEventListener("pointercancel", (event) => release(event, false));
   cardEl.addEventListener("click", (event) => {
     if (interactive(event.target)) return;
+    if (openedOnPointerUp) {
+      openedOnPointerUp = false;
+      return;
+    }
     if (suppressClick || cardEl.dataset.didDrag === "true") {
       suppressClick = false;
       cardEl.dataset.didDrag = "false";
