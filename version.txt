@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.44",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.44",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.44/Linguar-Hub-Trial-Setup-1.6.0-trial.44.exe",
-  "notes": "Hardens the Pipeline workspace after the card-click repair. A failed fast shared lookup no longer blocks Trello/local details, workspace rendering failures show a visible diagnostic, unchanged background refreshes avoid rebuilding the board, and real refreshes preserve horizontal position. Also improves touch and control accessibility."
+  "version": "1.6.0-trial.45",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.45",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.45/Linguar-Hub-Trial-Setup-1.6.0-trial.45.exe",
+  "notes": "Speeds up uncached job workspaces. Trello, documents, checklists, and stored activity now load concurrently; Trello comments import in one batch instead of up to 50 writes; division-card lookups are reused; and conflict reconciliation overlaps the folder and CRM reads. Measured full cold load dropped from about 22.7 to 11.1 seconds while warm opens remain instant."
 }

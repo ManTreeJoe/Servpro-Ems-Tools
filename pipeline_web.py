@@ -446,25 +446,42 @@ class Api:
         if cached_workspace and time.monotonic() - cached_workspace[0] < 45:
             return {**cached_workspace[1], "cached": True,
                     "load_ms": round((time.monotonic() - started) * 1000)}
-        summary = self.audit_card(client)
-        if not summary.get("ok"):
-            return summary
         audit_api = self._audit_api()
-        crm = audit_api.crm_job_workspace(client, summary)
         reconcile_divisions = getattr(
             audit_api, "reconcile_crm_division_trello_cards", None)
         reconcile_key = client.strip().casefold()
-        cached_reconcile = self._division_reconcile_cache.get(reconcile_key)
-        if cached_reconcile and time.monotonic() - cached_reconcile[0] < 300:
-            division_reconciliation = cached_reconcile[1]
-        else:
-            division_reconciliation = (reconcile_divisions(client)
-                                       if reconcile_divisions else
-                                       {"ok": True, "divisions": [],
-                                        "has_conflict": False})
+
+        def load_division_reconciliation():
+            cached = self._division_reconcile_cache.get(reconcile_key)
+            if cached and time.monotonic() - cached[0] < 300:
+                return cached[1]
+            result = (reconcile_divisions(client) if reconcile_divisions else
+                      {"ok": True, "divisions": [], "has_conflict": False})
             self._division_reconcile_cache[reconcile_key] = (
-                time.monotonic(), division_reconciliation)
-        division_trello_cards = audit_api.crm_division_trello_cards(client)
+                time.monotonic(), result)
+            return result
+
+        # Card reconciliation searches Trello and is independent of the
+        # folder audit. Start it first so its network time overlaps the audit
+        # and CRM reads instead of adding ~5 seconds after them.
+        reconcile_pool = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="division-reconcile")
+        reconcile_future = reconcile_pool.submit(load_division_reconciliation)
+        summary = self.audit_card(client)
+        if not summary.get("ok"):
+            reconcile_pool.shutdown(wait=False, cancel_futures=True)
+            return summary
+        crm = audit_api.crm_job_workspace(client, summary)
+        try:
+            division_reconciliation = reconcile_future.result()
+        finally:
+            reconcile_pool.shutdown(wait=False)
+        # crm_job_workspace already fetched these pins. Re-reading them here
+        # used to add another shared-database round trip to every open.
+        division_trello_cards = {
+            "ok": True, "cards": list(crm.get("division_trello_cards") or [])}
+        if not division_trello_cards["cards"]:
+            division_trello_cards = audit_api.crm_division_trello_cards(client)
         division_cards = division_trello_cards.get("cards", [])
         info_sections, checklists, comments, attachments, members = [], [], [], [], []
         try:
@@ -504,18 +521,38 @@ class Api:
             cid = opened_id or (summary.get("trello_card_id") or "").strip()
         # Linguar Hub is the durable source. Trello below is now an import/
         # compatibility adapter and refreshes this local copy when available.
-        checklists = pipeline_store.list_checklists(cid)
+        # Trello, shared activity, shared checklists, and the document-folder
+        # walk are independent. Running them together removes three stacked
+        # network/disk waits from every uncached card open.
+        trello_card, local_activity = {}, []
+        with ThreadPoolExecutor(max_workers=4,
+                                thread_name_prefix="workspace") as pool:
+            checklist_future = pool.submit(pipeline_store.list_checklists, cid)
+            activity_future = pool.submit(pipeline_store.list_activity, cid)
+            document_future = pool.submit(
+                self._document_signature_workspace,
+                client, cid, summary.get("path") or "")
+            if cid:
+                import trello_client as tc
+                trello_future = pool.submit(tc.get_card, cid)
+            else:
+                trello_future = pool.submit(lambda: {})
+            checklists = checklist_future.result()
+            local_activity = activity_future.result()
+            documents = document_future.result()
+            try:
+                trello_card = trello_future.result() or {}
+            except Exception as ex:
+                summary["trello_error"] = str(ex)
         if cid:
             try:
-                import trello_client as tc
-                card = tc.get_card(cid) or {}
                 imported_checklists = [{
                     "id": cl.get("id") or "", "name": cl.get("name") or "Checklist",
                     "items": [{"id": item.get("id") or "",
                                "name": item.get("name") or "",
                                "complete": item.get("state") == "complete"}
                               for item in (cl.get("checkItems") or [])],
-                } for cl in (card.get("checklists") or [])]
+                } for cl in (trello_card.get("checklists") or [])]
                 if imported_checklists:
                     saved = pipeline_store.save_checklists(
                         cid, imported_checklists, source="trello")
@@ -524,15 +561,16 @@ class Api:
                 attachments = [{"name": a.get("name") or "Attachment",
                                 "url": a.get("url") or "",
                                 "date": a.get("date") or ""}
-                               for a in (card.get("attachments") or [])]
+                               for a in (trello_card.get("attachments") or [])]
                 members = [m.get("fullName") or m.get("username") or ""
-                           for m in (card.get("members") or [])]
+                           for m in (trello_card.get("members") or [])]
                 # get_card already includes the latest 50 activity actions.
                 # Re-fetching every historical comment here used as many as
                 # 20 additional network calls each time a card opened. Older
                 # comments remain in the shared activity table once imported.
-                trello_comments = [action for action in (card.get("actions") or [])
+                trello_comments = [action for action in (trello_card.get("actions") or [])
                                    if action.get("type") == "commentCard"]
+                activity_import = []
                 for action in trello_comments:
                     text = str((action.get("data") or {}).get("text") or "").strip()
                     if not text:
@@ -542,15 +580,19 @@ class Api:
                                "actor": actor, "at": action.get("date") or "",
                                "source": "trello"}
                     comments.append(comment)
-                    pipeline_store.add_activity(cid, "comment", text, actor,
-                                                source="trello",
-                                                external_id=comment["id"])
+                    activity_import.append({
+                        "action_type": "comment", "body": text,
+                        "actor_name": actor, "source": "trello",
+                        "external_id": comment["id"],
+                        "happened_at": comment["at"],
+                    })
+                pipeline_store.add_activities(cid, activity_import)
             except Exception as ex:
                 summary["trello_error"] = str(ex)
         # Preserve Linguar-only comments when Trello was unavailable. Avoid
         # duplicates for comments already mirrored by external action id.
         seen = {c.get("id") for c in comments if c.get("id")}
-        for activity in pipeline_store.list_activity(cid):
+        for activity in local_activity:
             ext = activity.get("external_id") or ""
             if ext and ext in seen:
                 continue
@@ -561,8 +603,6 @@ class Api:
                                  "at": activity.get("happened_at") or "",
                                  "source": activity.get("source") or "linguar"})
         comments.sort(key=lambda c: c.get("at") or "", reverse=True)
-        documents = self._document_signature_workspace(
-            client, cid, summary.get("path") or "")
         result = {"ok": True, "client": client, "card_id": cid,
                 "selected_division": selected_division,
                 "selected_trello_url": (f"https://trello.com/c/{cid}"

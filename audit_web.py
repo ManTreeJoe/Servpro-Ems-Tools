@@ -28,6 +28,7 @@ import datetime as _dt
 import os
 import sys
 import threading
+import time
 import webbrowser
 import dept_browser
 
@@ -836,6 +837,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         # the same row instead of creating duplicates.
         self._oneoff_rows = []
         self._cache_loaded = False
+        self._division_cards_cache = {}
+        self._division_cards_lock = threading.RLock()
 
     def attach(self, window):
         self._window = window
@@ -1887,27 +1890,37 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         meaning lets every existing job continue to work while Contents and
         Recon use their own link types.
         """
-        try:
-            import ems_db
-            from ems_db_common import DIVISIONS, LINK_TRELLO, division_link_type
-            job = ems_db.find_job_by_name(client)
-            if not job:
-                return {"ok": False, "error": "job not found", "cards": []}
-            cards = []
-            for division in DIVISIONS:
-                link_type = division_link_type(LINK_TRELLO, division)
-                links = ems_db.get_links(job["canon_key"], link_type) or []
-                card_id = str((links[0] if links else {}).get("link_value") or "")
-                cards.append({
-                    "division": division,
-                    "card_id": card_id,
-                    "url": f"https://trello.com/c/{card_id}" if card_id else "",
-                    "pinned": bool(card_id),
-                })
-            return {"ok": True, "cards": cards}
-        except Exception as ex:
-            return {"ok": False, "error": f"{type(ex).__name__}: {ex}",
-                    "cards": []}
+        cache_key = (client or "").strip().casefold()
+        with self._division_cards_lock:
+            cached = self._division_cards_cache.get(cache_key)
+            if cached and time.monotonic() - cached[0] < 30:
+                return cached[1]
+            # Keep the lock through the shared lookup. Concurrent fast/full
+            # workspace calls otherwise perform the same three-query read.
+            try:
+                import ems_db
+                from ems_db_common import DIVISIONS, LINK_TRELLO, division_link_type
+                job = ems_db.find_job_by_name(client)
+                if not job:
+                    result = {"ok": False, "error": "job not found", "cards": []}
+                else:
+                    cards = []
+                    for division in DIVISIONS:
+                        link_type = division_link_type(LINK_TRELLO, division)
+                        links = ems_db.get_links(job["canon_key"], link_type) or []
+                        card_id = str((links[0] if links else {}).get("link_value") or "")
+                        cards.append({
+                            "division": division,
+                            "card_id": card_id,
+                            "url": f"https://trello.com/c/{card_id}" if card_id else "",
+                            "pinned": bool(card_id),
+                        })
+                    result = {"ok": True, "cards": cards}
+            except Exception as ex:
+                result = {"ok": False, "error": f"{type(ex).__name__}: {ex}",
+                          "cards": []}
+            self._division_cards_cache[cache_key] = (time.monotonic(), result)
+            return result
 
     def open_url(self, url: str) -> bool:
         """Open a validated web link from shared job-card controls."""
@@ -1952,6 +1965,9 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                     for row in rows:
                         if row.get("client") == client:
                             row["trello_card_id"] = card_id
+            with self._division_cards_lock:
+                self._division_cards_cache.pop(
+                    (client or "").strip().casefold(), None)
             return {"ok": True, "division": normalized, "card_id": card_id,
                     "url": f"https://trello.com/c/{card_id}"}
         except Exception as ex:
@@ -1976,6 +1992,9 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                     for row in rows:
                         if row.get("client") == client:
                             row["trello_card_id"] = ""
+            with self._division_cards_lock:
+                self._division_cards_cache.pop(
+                    (client or "").strip().casefold(), None)
             return {"ok": True, "division": normalized}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}

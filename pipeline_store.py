@@ -368,6 +368,42 @@ def add_activity(external_card_id: str, action_type: str, body: str,
         return {}
 
 
+def add_activities(external_card_id: str, activities: list[dict]) -> int:
+    """Import activity rows with one card lookup and one upsert request."""
+    clean = [item for item in (activities or [])
+             if str(item.get("body") or "").strip()]
+    if not external_card_id or not clean:
+        return 0
+    try:
+        cards = _rows("crm_pipeline_cards",
+                      external_id=f"eq.{external_card_id}",
+                      select="card_key", limit="1")
+        if not cards:
+            return 0
+        now = _now()
+        rows = []
+        for item in clean:
+            source = str(item.get("source") or "trello")
+            external_id = str(item.get("external_id") or "")
+            rows.append({
+                "activity_key": (f"{source}:{external_id}" if external_id
+                                 else f"linguar:{uuid.uuid4()}"),
+                "card_key": cards[0]["card_key"],
+                "action_type": str(item.get("action_type") or "comment"),
+                "body": str(item.get("body") or "").strip(),
+                "actor_name": str(item.get("actor_name") or ""),
+                "happened_at": item.get("happened_at") or now,
+                "source": source,
+                "external_id": external_id or None,
+                "metadata_json": item.get("metadata_json") or {},
+                "created_at": now,
+            })
+        _upsert("crm_pipeline_activity", rows)
+        return len(rows)
+    except Exception:
+        return 0
+
+
 def list_activity(external_card_id: str, *, limit: int = 100) -> list:
     try:
         cards = _rows("crm_pipeline_cards",

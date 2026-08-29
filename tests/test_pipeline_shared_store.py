@@ -33,8 +33,11 @@ class FakeSupabase:
               "crm_pipeline_cards": "card_key",
               "crm_pipeline_activity": "activity_key"}[table]
         if method == "POST":
-            self.rows[table][body[pk]] = {**self.rows[table].get(body[pk], {}), **body}
-            return [body]
+            posted = body if isinstance(body, list) else [body]
+            for item in posted:
+                self.rows[table][item[pk]] = {
+                    **self.rows[table].get(item[pk], {}), **item}
+            return posted
         rows = list(self.rows[table].values())
         for key, value in params.items():
             if key in {"select", "order", "limit"}:
@@ -95,6 +98,23 @@ def test_linguar_comments_can_be_edited_and_deleted_but_imports_are_protected(mo
     assert pipeline_store.delete_activity(imported["activity_key"])["ok"] is False
     assert pipeline_store.delete_activity(local["activity_key"])["deleted"] is True
     assert [row["body"] for row in pipeline_store.list_activity("c1")] == ["From Trello"]
+
+
+def test_trello_comment_import_batches_rows_and_preserves_dates(monkeypatch):
+    fake = FakeSupabase()
+    monkeypatch.setattr(pipeline_store, "_sb", fake)
+    pipeline_store.mirror_boards(_payload())
+    count = pipeline_store.add_activities("c1", [
+        {"body": "First", "actor_name": "Tech", "source": "trello",
+         "external_id": "a1", "happened_at": "2026-08-28T10:00:00Z"},
+        {"body": "Second", "actor_name": "Tech", "source": "trello",
+         "external_id": "a2", "happened_at": "2026-08-28T11:00:00Z"},
+    ])
+    rows = pipeline_store.list_activity("c1")
+    assert count == 2
+    assert {row["activity_key"] for row in rows} == {"trello:a1", "trello:a2"}
+    assert {row["happened_at"] for row in rows} == {
+        "2026-08-28T10:00:00Z", "2026-08-28T11:00:00Z"}
 
 
 def test_pipeline_reads_shared_before_trello(monkeypatch):
