@@ -64,6 +64,9 @@ build_release/
 /dist_trial*/
 /build_trial*/
 /installer_trial*/
+/dist_main*/
+/build_main*/
+/installer_main*/
 /work/
 
 # Inno Setup compiler output — installers are release artifacts, not source
