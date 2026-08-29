@@ -94,6 +94,8 @@ function setView(v) {
   PanelState.set({ view: v });
   $("#view-board-btn").classList.toggle("active", v === "board");
   $("#view-stages-btn").classList.toggle("active", v === "stages");
+  $("#view-board-btn").setAttribute("aria-selected", String(v === "board"));
+  $("#view-stages-btn").setAttribute("aria-selected", String(v === "stages"));
   $("#board-view").classList.toggle("hidden", v !== "board");
   $("#table-view").classList.toggle("hidden", v !== "stages");
   $$(".view-board-only").forEach((el) => el.classList.toggle("hidden", v !== "board"));
@@ -125,7 +127,7 @@ async function loadBoard(isRefresh) {
   } catch (ex) {
     setStatus(`Board error: ${ex}`, "error");
   } finally {
-    if (isRefresh) { btn.disabled = false; btn.textContent = "↻ Sync"; }
+    if (isRefresh) { btn.disabled = false; btn.textContent = "↻ Sync Jobs"; }
   }
 }
 
@@ -290,6 +292,7 @@ function renderCard(c) {
       ? `<span class="chip-mini sync-pending" title="Saved in Linguar Hub; waiting for Trello">↻ Sync</span>` : "";
   const chips = [loss, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
   return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false"
+               role="button" tabindex="0" aria-label="Open ${escapeAttr(c.client || "job")}"
                data-card-id="${escapeAttr(c.card_id)}"
                data-list-id="${escapeAttr(c.list_id)}"
                data-url="${escapeAttr(c.url)}"
@@ -303,7 +306,7 @@ function renderCard(c) {
     <div class="kcard-title">${escapeHtml(c.client || "(no name)")}</div>
     ${chips ? `<div class="kcard-chips">${chips}</div>` : ""}
     <div class="kcard-actions">
-      <button class="kbtn" data-act="more" title="More job actions">⋯</button>
+      <button class="kbtn" data-act="more" aria-label="More actions for ${escapeAttr(c.client || "job")}" title="More job actions">⋯</button>
     </div>
   </div>`;
 }
@@ -356,6 +359,11 @@ function wireCardClickAndHold(cardEl) {
       cardEl.dataset.didDrag = "false";
       return;
     }
+    onAuditCard(cardEl);
+  });
+  cardEl.addEventListener("keydown", (event) => {
+    if (interactive(event.target) || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
     onAuditCard(cardEl);
   });
 }
@@ -745,7 +753,7 @@ function openAuditModal(data, trelloUrl = "") {
   const w = document.createElement("div");
   w.className = "modal-scrim audit-overlay";
   w.innerHTML = `
-    <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job audit">
+    <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job audit" tabindex="-1">
       <header class="modal-head">
         <div class="audit-head-copy"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div>
         <div class="modal-sub">${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}${(data.members || []).length ? " · " + escapeHtml(data.members.join(", ")) : ""}</div></div>
@@ -767,17 +775,25 @@ function openAuditModal(data, trelloUrl = "") {
       </footer>
     </div>`;
   document.body.appendChild(w);
+  const previousFocus = document.activeElement;
   let userDirty = false;
   w.addEventListener("input", () => { userDirty = true; });
   w.addEventListener("change", () => { userDirty = true; });
-  const close = () => w.remove();
-  w.querySelector("[data-close]").addEventListener("click", close);
+  const close = (force = false) => {
+    if (!force && userDirty && !window.confirm("Discard unsaved changes to this job?")) return false;
+    document.removeEventListener("keydown", keyClose);
+    w.remove();
+    previousFocus?.focus?.();
+    return true;
+  };
+  w.querySelector("[data-close]").addEventListener("click", () => close());
   w.addEventListener("click", (e) => { if (e.target === w) close(); });
-  const keyClose = (e) => { if (e.key === "Escape") { document.removeEventListener("keydown", keyClose); close(); } };
+  const keyClose = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", keyClose);
+  w.querySelector(".audit-card")?.focus();
   w.querySelectorAll("[data-division-data]").forEach((button) => button.addEventListener("click", async () => {
     if (button.dataset.divisionData === selectedDivision) return;
-    close();
+    if (!close()) return;
     await onAuditCard(data.client || res.client || "", "", "", button.dataset.divisionData || "EMS");
   }));
   w.querySelector("[data-open-trello]").addEventListener("click", () => {

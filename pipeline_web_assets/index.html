@@ -20,12 +20,13 @@
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
 </head>
 <body class="responsive-ui">
+<a class="skip-link" href="#board-view">Skip to Jobs</a>
 <header class="topbar">
   <div class="pipeline-heading">
     <div class="pipeline-title">Jobs</div>
-    <div class="view-toggle" aria-label="Choose jobs view">
-      <button id="view-board-btn" class="vtab active" title="Move and open jobs by lane">Board</button>
-      <button id="view-stages-btn" class="vtab" title="Review cycle time and stalled jobs">Stages</button>
+    <div class="view-toggle" role="tablist" aria-label="Choose Jobs View">
+      <button id="view-board-btn" class="vtab active" role="tab" aria-selected="true" title="Move and open jobs by lane">Board</button>
+      <button id="view-stages-btn" class="vtab" role="tab" aria-selected="false" title="Review cycle time and stalled jobs">Stages</button>
     </div>
   </div>
   <div class="topbar-actions">
@@ -33,10 +34,12 @@
       id="search-box"
       class="search"
       type="search"
+      aria-label="Search Jobs"
+      name="pipeline-search"
       placeholder="Search jobs…"
       autocomplete="off"
     />
-    <button id="refresh-btn" class="btn btn-primary view-board-only" title="Refresh shared jobs and Trello">↻ Sync</button>
+    <button id="refresh-btn" class="btn btn-primary view-board-only" title="Refresh shared jobs and Trello">↻ Sync Jobs</button>
     <details class="toolbar-more"><summary class="btn icon-btn" aria-label="More Pipeline actions" title="More Pipeline actions">•••</summary><div>
       <button id="thresholds-btn" class="btn" title="Edit per-stage day thresholds">⏱ Thresholds</button>
       <button id="export-btn" class="btn" title="Export the current pipeline to an Excel workbook, one sheet per stage">📊 Export</button>
@@ -83,7 +86,7 @@
 
 <footer class="statusbar">
   <span id="status-counts">— jobs</span>
-  <span id="status-msg" class="status-msg"></span>
+  <span id="status-msg" class="status-msg" aria-live="polite"></span>
 </footer>
 
 <!-- Context menu (right-click on a Stages-table row) -->

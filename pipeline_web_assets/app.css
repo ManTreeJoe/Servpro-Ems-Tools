@@ -39,6 +39,7 @@ html, body {
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
   overflow: hidden;
+  color-scheme: dark;
 }
 
 body {
@@ -92,11 +93,26 @@ body {
   border-radius: var(--radius);
   font-size: 13px;
   width: min(360px, 38vw);
-  outline: none;
   transition: border-color 120ms ease;
 }
-.search:focus {
+.search:focus-visible {
   border-color: var(--green);
+  outline: 2px solid color-mix(in srgb, var(--green) 65%, white);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed; left: 12px; top: 8px; z-index: 500;
+  transform: translateY(-160%); padding: 8px 12px;
+  border-radius: 6px; background: var(--green); color: #fff;
+  font-weight: 700; text-decoration: none;
+}
+.skip-link:focus { transform: translateY(0); }
+
+button:focus-visible, summary:focus-visible, [role="button"]:focus-visible,
+a:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--green) 65%, white);
+  outline-offset: 2px;
 }
 
 .btn {
@@ -347,7 +363,9 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
   display: flex; gap: 10px; align-items: stretch;
   overflow-x: auto; overflow-y: hidden;
   padding-bottom: 6px; scrollbar-width: thin;
+  cursor: grab;
 }
+.lanes-row.is-panning { cursor: grabbing; user-select: none; }
 .lane {
   flex: 0 0 240px; width: 240px;
   background: var(--surface); border: 1px solid var(--border);
@@ -376,6 +394,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .toolbar-more > div { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; display: grid; gap: 5px; min-width: 180px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 12px 30px rgba(0,0,0,.4); }
 .toolbar-more > div .btn { width: 100%; text-align: left; }
 .kcard:hover { background: #343434; }
+.kcard:focus-visible { border-color: var(--green); background: #343434; }
 .kcard { cursor: pointer; user-select: none; }
 .kcard.drag-ready { cursor: grab; box-shadow: 0 0 0 2px rgba(74,158,255,.32); }
 .kcard.dragging { opacity: .45; cursor: grabbing; }
@@ -408,7 +427,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .kbtn:hover { background: var(--border); color: var(--text); border-color: var(--green); }
 
 /* ── Shared modal (board audit) ────────────────────────────────── */
-.modal-scrim { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
+.modal-scrim { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; overscroll-behavior: contain; }
 .modal-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; width: min(520px,92vw); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
 .modal-head { padding: 16px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
 .modal-title { font-size: 15px; font-weight: 600; }
@@ -461,7 +480,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .density-compact .kcard { padding:8px 9px; }
 .density-compact .aud-section { padding:10px; }
 .density-compact .job-card-main { gap:8px; }
-.aud-section { padding: 20px 0; border-bottom: 1px solid var(--border); }
+.aud-section { padding: 20px 0; border-bottom: 1px solid var(--border); content-visibility: auto; contain-intrinsic-size: auto 180px; }
 .aud-section:last-child { border-bottom: 0; }
 .aud-section h3 { margin: 0 0 12px; color: var(--text); font-size: 13px; letter-spacing: .02em; }
 .aud-facts { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 20px; margin: 0; }
@@ -494,7 +513,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .workspace-load-state:empty { display:none; }
 .aud-loading-inline { padding:12px;border:1px dashed var(--border);border-radius:7px;color:var(--text-dim);background:var(--surface-2); }
 .comment-compose { flex: 0 0 auto; padding: 12px 14px 14px; border-top: 1px solid var(--border); background: var(--surface); }
-.comment-compose textarea { width: 100%; resize: vertical; min-height: 66px; max-height: 150px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; outline: 0; background: var(--bg); color: var(--text); font: inherit; }
+.comment-compose textarea { width: 100%; resize: vertical; min-height: 66px; max-height: 150px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); font: inherit; }
 .comment-compose textarea:focus { border-color: var(--green); box-shadow: 0 0 0 2px rgba(46,139,87,.18); }
 .comment-compose > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .comment-compose [data-comment-state] { color: var(--text-dim); font-size: 10px; }
@@ -593,7 +612,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .job-log-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
 .job-log-form label { display: flex; flex-direction: column; gap: 5px; color: var(--text-muted); font-size: 10px; font-weight: 700; }
 .job-log-form label.wide, .job-log-form-actions { grid-column: 1 / -1; }
-.job-log-form input, .job-log-form select, .job-log-form textarea { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 6px; outline: 0; background: var(--bg); color: var(--text); font: inherit; font-weight: 400; }
+.job-log-form input, .job-log-form select, .job-log-form textarea { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-weight: 400; }
 .job-log-form textarea { resize: vertical; }
 .job-log-form input:focus, .job-log-form select:focus, .job-log-form textarea:focus { border-color: var(--green); }
 .job-log-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
@@ -621,6 +640,11 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
   .audit-overlay { padding: 8px; }
   .audit-card { width: 100%; max-height: calc(100vh - 16px); }
   .aud-facts { grid-template-columns: 1fr; }
+  .audit-card .modal-head { padding: 12px 14px; }
+  .job-card-main { padding-inline: 14px; }
+  .modal-foot { padding: 9px 10px; overflow-x: auto; flex-wrap: nowrap; }
+  .visible-job-actions { flex-wrap: nowrap; }
+  .visible-job-actions .btn { white-space: nowrap; }
 }
 @media (max-width: 900px) {
   .job-card-loading-grid { grid-template-columns: 1fr; }

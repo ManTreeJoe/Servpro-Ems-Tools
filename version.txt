@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.39",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.39",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.39/Linguar-Hub-Trial-Setup-1.6.0-trial.39.exe",
-  "notes": "Repairs employee sign-in in Settings. Authentication now loads before folders, franchises, property managers, or other setup sections, and the setup button can reveal the form even if an unrelated section fails. Also corrects false stale state.json and config.json backup warnings."
+  "version": "1.6.0-trial.40",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.40",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.40/Linguar-Hub-Trial-Setup-1.6.0-trial.40.exe",
+  "notes": "Refines the Pipeline-first interface after the sign-in recovery. Job cards now open by keyboard, narrow windows preserve the Copy and Stage for XA actions in a horizontal action rail, long workspaces render progressively, focus returns to the selected card after closing, and unsaved job edits are protected. Includes the Trial 39 sign-in and backup-warning fixes."
 }
