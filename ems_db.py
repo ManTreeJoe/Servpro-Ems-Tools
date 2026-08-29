@@ -54,6 +54,16 @@ def _resolve_name():
         name = (config.load().get("ems_db_backend") or "").strip().lower()
     except Exception:
         return _DEFAULT
+    # A signed-in employee always uses the office's shared job index. Older
+    # Main installs persisted "sqlite", so honoring that stale value after
+    # upgrade left an apparently working but empty local job list.
+    try:
+        import supabase_client
+        if (supabase_client.is_configured()
+                and supabase_client.is_signed_in()):
+            return "supabase"
+    except Exception:
+        pass
     if not name:
         # New employee installs should join the shared job index as soon as
         # their Supabase session exists. SQLite remains the offline/unsigned

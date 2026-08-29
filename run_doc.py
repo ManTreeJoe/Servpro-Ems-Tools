@@ -14,6 +14,7 @@ import calendar as _calendar
 from datetime import datetime
 
 import config
+import paths
 import persistence
 from audit_logic import detect_activity, audit_jobs as _audit_jobs_core
 
@@ -23,7 +24,27 @@ from audit_logic import detect_activity, audit_jobs as _audit_jobs_core
 # still work via the module __getattr__ below; in-module code uses the
 # _runs_dir() / _audit_base() getters.
 def _runs_dir():
-    return config.load().get("runs_dir") or ""
+    configured = os.path.normpath(str(config.load().get("runs_dir") or "").strip())
+    # A folder explicitly selected by an employee is authoritative.  The only
+    # exception is the old shared X-drive archive, which can be reachable (and
+    # therefore appear healthy) while containing no current Run Docs.
+    stale_archives = {
+        os.path.normcase(os.path.normpath(r"X:\IE_Public\Daily Run")),
+        os.path.normcase(os.path.normpath(r"X:\IE Public\Daily Run")),
+    }
+    if (configured and os.path.isdir(configured)
+            and os.path.normcase(configured) not in stale_archives):
+        return configured
+
+    # If nothing usable was selected, locate the employee's synced
+    # SharePoint/OneDrive Daily Run library on that computer.
+    try:
+        detected = paths.auto_detect().get("runs_dir") or ""
+        if detected and os.path.isdir(detected):
+            return os.path.normpath(detected)
+    except Exception:
+        pass
+    return configured
 
 
 def _audit_base():
@@ -62,7 +83,19 @@ def _month_search_dirs(runs_dir, year, month):
     """Existing folders that may hold one month's run documents."""
     probe = datetime(year, month, 1)
     found = []
-    for root in (runs_dir, os.path.join(runs_dir, str(year))):
+    year_root = os.path.join(runs_dir, str(year))
+    roots = [runs_dir, year_root]
+    # IE stores daily runs under <Daily Run>/<year>/EMS/<month>. Other
+    # departments use the same extra division layer for Contents/Recon/Fire.
+    # A connected parent folder is therefore not proof the old two-level
+    # finder could see a single document.
+    for parent in (runs_dir, year_root):
+        for division in ("EMS", "FIRE", "Contents", "CONTENT",
+                         "Recon", "RECONSTRUCTION"):
+            candidate = os.path.join(parent, division)
+            if os.path.isdir(candidate):
+                roots.append(candidate)
+    for root in roots:
         for month_name in (probe.strftime("%B"), probe.strftime("%b")):
             candidate = os.path.join(root, month_name)
             if os.path.isdir(candidate):
@@ -175,17 +208,7 @@ def _find_run_doc_for_date(d):
     # (<root>\2026\<Month>\...). Checking both means the run folder can be
     # pointed at either the year folder or its parent and still resolve,
     # and it survives the year rollover without a settings change.
-    search_dirs = []
-    for root in (runs_dir, os.path.join(runs_dir, str(d.year))):
-        for mname in (month_full, month_abbr):
-            mdir = os.path.join(root, mname)
-            if os.path.isdir(mdir):
-                search_dirs.append(mdir)
-        # Also peek at the root directly — some techs save without the
-        # month subfolder. Cheap because os.listdir on a folder we already
-        # confirmed exists doesn't add a network round-trip per call.
-        if os.path.isdir(root):
-            search_dirs.append(root)
+    search_dirs = _month_search_dirs(runs_dir, d.year, d.month)
 
     for sd in search_dirs:
         try:

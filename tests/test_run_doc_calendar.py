@@ -30,6 +30,17 @@ def test_month_index_handles_year_nested_run_root(tmp_path, monkeypatch):
     assert run_doc.run_doc_dates_for_month(2026, 8) == ["2026-08-24"]
 
 
+def test_month_index_handles_ie_year_ems_month_layout(tmp_path, monkeypatch):
+    month = tmp_path / "2026" / "EMS" / "Aug"
+    month.mkdir(parents=True)
+    expected = month / "Thursday 8272026.msg"
+    expected.write_bytes(b"test")
+    monkeypatch.setattr(run_doc, "_runs_dir", lambda: str(tmp_path))
+    assert run_doc.run_doc_dates_for_month(2026, 8) == ["2026-08-27"]
+    assert run_doc._find_run_doc_for_date(
+        __import__("datetime").date(2026, 8, 27)) == str(expected)
+
+
 def test_calendar_api_returns_iso_dates(monkeypatch):
     monkeypatch.setattr(audit_web, "run_doc_dates_for_month",
                         lambda year, month: ["2026-08-21", "2026-08-24"])
