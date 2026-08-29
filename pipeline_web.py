@@ -13,6 +13,7 @@ Launch:
 from __future__ import annotations
 
 import datetime as _dt
+from concurrent.futures import ThreadPoolExecutor
 import os
 import sys
 import time
@@ -137,16 +138,39 @@ def _build_board(tc, ps, key, bname, board_obj):
                          params={"fields": "name", "filter": "open"}) or []
     except Exception:
         lists = []
+    # One board-level card request replaces one request per lane. Large WIP
+    # boards previously needed dozens of serial round trips before the first
+    # paint. Trello can inline every checklist in the same response.
+    cards_by_list = None
+    try:
+        raw_cards = tc._call(f"/boards/{bid}/cards", params={
+            "fields": _CARD_FIELDS, "filter": "open", "checklists": "all",
+            "checklist_fields": "name,pos",
+        }) or []
+        cards_by_list = {}
+        for card in raw_cards:
+            if card.get("closed"):
+                continue
+            try:
+                card = tc.order_checklists(card)
+            except Exception:
+                pass
+            cards_by_list.setdefault(card.get("idList"), []).append(card)
+    except Exception:
+        cards_by_list = None
     lanes = []
     for l in lists:
         lname = (l.get("name") or "").strip()
         if _is_noise_lane(lname):
             continue
-        try:
-            cards = tc.cards_in_list_with_checklists(
-                l.get("id"), fields=_CARD_FIELDS)
-        except Exception:
-            cards = []
+        if cards_by_list is not None:
+            cards = cards_by_list.get(l.get("id"), [])
+        else:
+            try:
+                cards = tc.cards_in_list_with_checklists(
+                    l.get("id"), fields=_CARD_FIELDS)
+            except Exception:
+                cards = []
         shaped = []
         for c in cards:
             try:
@@ -214,9 +238,12 @@ def _trello_board_payload():
             for b in (tc.list_boards() or [])}
     except Exception as ex:
         return {"ok": False, "error": str(ex), "boards": []}
-    out = [_build_board(tc, ps, key, bname,
-                        boards_by_name.get(bname.strip().upper()))
-           for key, bname in BOARD_SPECS]
+    with ThreadPoolExecutor(max_workers=len(BOARD_SPECS),
+                            thread_name_prefix="trello-board") as pool:
+        futures = [pool.submit(_build_board, tc, ps, key, bname,
+                               boards_by_name.get(bname.strip().upper()))
+                   for key, bname in BOARD_SPECS]
+        out = [future.result() for future in futures]
     return {"ok": True, "boards": out, "source": "trello"}
 
 
@@ -237,6 +264,23 @@ class Api:
         self._audit_card_cache = {}
         self._division_reconcile_cache = {}
         self._document_cache = {}
+        self._board_view_cache = None
+        self._workspace_cache = {}
+
+    def _workspace_cache_key(self, client: str, card_id: str = "",
+                             division: str = ""):
+        return ((client or "").strip().casefold(),
+                (card_id or "").strip().casefold(),
+                (division or "EMS").strip().upper())
+
+    def _invalidate_workspace(self, client: str = "", card_id: str = ""):
+        client_key = (client or "").strip().casefold()
+        card_key = (card_id or "").strip().casefold()
+        for key in list(self._workspace_cache):
+            if ((client_key and key[0] == client_key) or
+                    (card_key and key[1] == card_key) or
+                    (not client_key and not card_key)):
+                self._workspace_cache.pop(key, None)
 
     def personal_preferences(self) -> dict:
         """Safe presentation-only choices for this Windows user."""
@@ -256,22 +300,45 @@ class Api:
         only when requested.  Missing migration 011 fails soft to the legacy
         live-Trello behaviour so an employee is never locked out by rollout.
         """
+        if not force_trello and self._board_view_cache:
+            cached_at, cached_payload = self._board_view_cache
+            if time.monotonic() - cached_at < 30:
+                return {**cached_payload, "cached": True}
         if not force_trello:
+            saved = pipeline_store.load_board_cache()
+            if saved.get("ok") and saved.get("boards"):
+                self._board_view_cache = (time.monotonic(), saved)
+                return saved
             shared = pipeline_store.load_boards(BOARD_SPECS)
             if shared.get("ok") and shared.get("boards"):
+                self._board_view_cache = (time.monotonic(), shared)
                 return shared
         live = _trello_board_payload()
         if not live.get("ok"):
             shared = pipeline_store.load_boards(BOARD_SPECS)
             if shared.get("ok"):
                 shared["warning"] = "Trello unavailable; showing shared Pipeline"
+                self._board_view_cache = (time.monotonic(), shared)
                 return shared
             return live
         live.setdefault("source", "trello")
         mirrored = pipeline_store.mirror_boards(live)
         live["mirrored"] = bool(mirrored.get("ok"))
         live["schema_missing"] = bool(mirrored.get("schema_missing"))
+        pipeline_store.save_board_cache(live)
+        self._board_view_cache = (time.monotonic(), live)
         return live
+
+    def board_view_shared_refresh(self) -> dict:
+        """Refresh the saved projection after the UI has already painted."""
+        shared = pipeline_store.load_boards(BOARD_SPECS)
+        if shared.get("ok") and shared.get("boards"):
+            self._board_view_cache = (time.monotonic(), shared)
+            return shared
+        # Until the shared Pipeline migration is installed, keep the instant
+        # disk-cache paint but refresh that projection from Trello in the
+        # background.  This avoids leaving users on a stale board indefinitely.
+        return self.board_view(force_trello=True)
 
     def board_view_one(self, key: str) -> dict:
         """Re-pull a SINGLE board (the per-board ↻ refresh) so the user
@@ -301,6 +368,8 @@ class Api:
         if not card_id or not list_id:
             return {"ok": False, "error": "card_id + list_id required"}
         shared = pipeline_store.move_card(card_id, list_id)
+        self._board_view_cache = None
+        self._invalidate_workspace(card_id=card_id)
         try:
             import trello_client as tc
             ok = tc.move_card(card_id, list_id)
@@ -372,6 +441,11 @@ class Api:
                            division: str = "") -> dict:
         """Full Pipeline card: audit + CRM + Trello transition material."""
         started = time.monotonic()
+        workspace_key = self._workspace_cache_key(client, card_id, division)
+        cached_workspace = self._workspace_cache.get(workspace_key)
+        if cached_workspace and time.monotonic() - cached_workspace[0] < 45:
+            return {**cached_workspace[1], "cached": True,
+                    "load_ms": round((time.monotonic() - started) * 1000)}
         summary = self.audit_card(client)
         if not summary.get("ok"):
             return summary
@@ -489,7 +563,7 @@ class Api:
         comments.sort(key=lambda c: c.get("at") or "", reverse=True)
         documents = self._document_signature_workspace(
             client, cid, summary.get("path") or "")
-        return {"ok": True, "client": client, "card_id": cid,
+        result = {"ok": True, "client": client, "card_id": cid,
                 "selected_division": selected_division,
                 "selected_trello_url": (f"https://trello.com/c/{cid}"
                                         if cid else ""),
@@ -500,11 +574,18 @@ class Api:
                 "attachments": attachments, "members": members,
                 "documents": documents,
                 "load_ms": round((time.monotonic() - started) * 1000)}
+        if len(self._workspace_cache) >= 80:
+            oldest = min(self._workspace_cache,
+                         key=lambda key: self._workspace_cache[key][0])
+            self._workspace_cache.pop(oldest, None)
+        self._workspace_cache[workspace_key] = (time.monotonic(), result)
+        return result
 
     def refresh_job_card_workspace(self, client: str, card_id: str = "",
                                    division: str = "") -> dict:
         """Explicit deep refresh; normal opens remain cache-friendly."""
         key = (client or "").strip().casefold()
+        self._invalidate_workspace(client, card_id)
         self._audit_card_cache.pop(key, None)
         self._division_reconcile_cache.pop(key, None)
         for cache_key in list(self._document_cache):
@@ -521,6 +602,11 @@ class Api:
         workspace request while the user can already read or edit CRM data.
         """
         started = time.monotonic()
+        workspace_key = self._workspace_cache_key(client, card_id, division)
+        cached_workspace = self._workspace_cache.get(workspace_key)
+        if cached_workspace and time.monotonic() - cached_workspace[0] < 45:
+            return {**cached_workspace[1], "cached": True,
+                    "load_ms": round((time.monotonic() - started) * 1000)}
         if not (client or "").strip():
             return {"ok": False, "error": "client required"}
         audit_api = self._audit_api()
@@ -668,19 +754,28 @@ class Api:
 
     def save_crm_work_environment(self, client: str, work_environment: str,
                                   stage: str, owner: str = "") -> dict:
-        return self._audit_api().save_crm_work_environment(
+        result = self._audit_api().save_crm_work_environment(
             client, work_environment, stage, owner)
+        if result.get("ok"):
+            self._invalidate_workspace(client=client)
+        return result
 
     def crm_division_trello_cards(self, client: str) -> dict:
         return self._audit_api().crm_division_trello_cards(client)
 
     def pin_crm_division_trello(self, client: str, division: str,
                                 card_id_or_url: str) -> dict:
-        return self._audit_api().pin_crm_division_trello(
+        result = self._audit_api().pin_crm_division_trello(
             client, division, card_id_or_url)
+        if result.get("ok"):
+            self._invalidate_workspace(client=client)
+        return result
 
     def unpin_crm_division_trello(self, client: str, division: str) -> dict:
-        return self._audit_api().unpin_crm_division_trello(client, division)
+        result = self._audit_api().unpin_crm_division_trello(client, division)
+        if result.get("ok"):
+            self._invalidate_workspace(client=client)
+        return result
 
     def set_job_check_item(self, card_id: str, item_id: str,
                            complete: bool) -> dict:
@@ -699,9 +794,13 @@ class Api:
             pipeline_store.mark_card_sync(card_id, ok=True)
         elif local.get("ok"):
             pipeline_store.mark_card_sync(card_id, ok=False, error=error)
-        return {"ok": bool(local.get("ok")) or synced, "saved_local": bool(local.get("ok")),
+        result = {"ok": bool(local.get("ok")) or synced, "saved_local": bool(local.get("ok")),
                 "synced": synced, "warning": error if local.get("ok") and not synced else "",
                 "error": "" if local.get("ok") or synced else (local.get("error") or error)}
+        if result.get("ok"):
+            self._invalidate_workspace(card_id=card_id)
+            self._board_view_cache = None
+        return result
 
     def post_job_comment(self, client: str, card_id: str, text: str) -> dict:
         text = (text or "").strip()
@@ -732,13 +831,16 @@ class Api:
         local = pipeline_store.add_activity(
             card_id, "comment", text, actor, external_id=external_id)
         posted = bool(posted_action)
-        return {"ok": bool(local) or posted, "posted_trello": posted,
+        result = {"ok": bool(local) or posted, "posted_trello": posted,
                 "warning": error if local and not posted else "",
                 "comment": {"id": local.get("activity_key") or "",
                             "external_id": external_id,
                             "text": text, "actor": actor,
                             "at": local.get("happened_at") or _dt.datetime.now().isoformat(),
                             "source": "linguar"}}
+        if result.get("ok"):
+            self._invalidate_workspace(client, card_id)
+        return result
 
     def edit_job_comment(self, client: str, comment_id: str,
                          source: str, text: str,
@@ -747,7 +849,10 @@ class Api:
         if not clean:
             return {"ok": False, "error": "a comment cannot be empty"}
         if source == "trello":
-            return self._audit_api().update_card_comment(client, comment_id, clean)
+            result = self._audit_api().update_card_comment(client, comment_id, clean)
+            if result.get("ok"):
+                self._invalidate_workspace(client=client)
+            return result
         result = pipeline_store.update_activity(comment_id, clean)
         if not result.get("ok"):
             return result
@@ -755,14 +860,19 @@ class Api:
         if trello_id:
             synced = self._audit_api().update_card_comment(client, trello_id, clean)
             if not synced.get("ok"):
+                self._invalidate_workspace(client=client)
                 return {**result, "text": clean, "warning":
                         "Saved in Linguar Hub, but Trello did not update"}
+        self._invalidate_workspace(client=client)
         return {**result, "text": clean, "synced_trello": bool(trello_id)}
 
     def delete_job_comment(self, client: str, comment_id: str,
                            source: str, external_id: str = "") -> dict:
         if source == "trello":
-            return self._audit_api().delete_card_comment(client, comment_id)
+            result = self._audit_api().delete_card_comment(client, comment_id)
+            if result.get("ok"):
+                self._invalidate_workspace(client=client)
+            return result
         result = pipeline_store.delete_activity(comment_id)
         if not result.get("ok"):
             return result
@@ -770,19 +880,30 @@ class Api:
         if trello_id:
             synced = self._audit_api().delete_card_comment(client, trello_id)
             if not synced.get("ok"):
+                self._invalidate_workspace(client=client)
                 return {**result, "warning":
                         "Deleted in Linguar Hub, but Trello did not delete"}
+        self._invalidate_workspace(client=client)
         return {**result, "synced_trello": bool(trello_id)}
 
     def save_job_log_update(self, client: str, entry: dict) -> dict:
-        return self._audit_api().save_crm_job_log(client, entry)
+        result = self._audit_api().save_crm_job_log(client, entry)
+        if result.get("ok"):
+            self._invalidate_workspace(client=client)
+        return result
 
     def import_job_log_from_trello(self, client: str, card_id: str) -> dict:
         """Import recognized work events from the selected division card."""
-        return self._audit_api().import_crm_job_log_from_trello(client, card_id)
+        result = self._audit_api().import_crm_job_log_from_trello(client, card_id)
+        if result.get("ok"):
+            self._invalidate_workspace(client, card_id)
+        return result
 
     def delete_job_log_update(self, client: str, entry_id: str) -> dict:
-        return self._audit_api().delete_crm_job_log(client, entry_id)
+        result = self._audit_api().delete_crm_job_log(client, entry_id)
+        if result.get("ok"):
+            self._invalidate_workspace(client=client)
+        return result
 
     def job_log_update_history(self, entry_id: str) -> dict:
         return self._audit_api().crm_job_log_history(entry_id)
@@ -814,6 +935,7 @@ class Api:
                     posted = True
                 except Exception:
                     posted = False
+            self._invalidate_workspace(client, card_id)
             return {"ok": True, "posted_trello": posted}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}

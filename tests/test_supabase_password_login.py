@@ -51,14 +51,26 @@ def test_auth_status_renders_before_unrelated_async_setup():
     assert auth < html.index("await renderFirstRunWizard();", start)
 
 
-def test_setup_signin_button_can_reveal_form_directly():
+def test_setup_signin_button_opens_modal_directly():
     html = (ROOT / "settings_web_assets" / "index.html").read_text(encoding="utf-8")
     start = html.index("function wireSetupGuide()")
     handler = html.index('data-setup="signin"', start)
     end = html.index("data-scope-tab-jump", handler)
     block = html[handler:end]
-    assert 'getElementById("sb-signin")' in block
-    assert 'signin.style.display = ""' in block
+    assert "openSupabaseSignIn();" in block
+
+
+def test_failed_signin_can_be_retried_without_refresh_hiding_modal():
+    html = (ROOT / "settings_web_assets" / "index.html").read_text(encoding="utf-8")
+    assert 'class="signin-modal"' in html
+    assert 'role="dialog"' in html
+    start = html.index("async function sbPasswordSignIn()")
+    end = html.index("async function sbVerify()", start)
+    block = html[start:end]
+    assert "finally {" in block
+    assert 'button.disabled = false;' in block
+    assert 'document.getElementById("sb-password").select();' in block
+    assert block.count("await refreshSupabase();") == 1
 
 
 def test_missing_password_has_plain_error():

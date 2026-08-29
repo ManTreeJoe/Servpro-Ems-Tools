@@ -17,7 +17,7 @@ This file replaces the Tk launcher as the default entry point.
 """
 from __future__ import annotations
 import datetime as _dt
-import os, sys
+import os, sys, time
 from pathlib import Path as _Path
 import webview
 
@@ -231,6 +231,7 @@ class HomeApi:
         self._subs = {}
         self._sidebar_active = None
         self._hotkey = None
+        self._counts_cache = None
         # Instantiate every sub-Api at startup so state caches
         # survive across iframe navigations (e.g. audit's last-run
         # results aren't wiped when the user clicks APA Monitor then
@@ -768,8 +769,13 @@ class HomeApi:
                 self.open_url(page)
             return {"ok": False, "error": str(ex), "opened_page": bool(page)}
 
-    def counts(self):
+    def counts(self, force=False):
         """Live counts per sidebar item — best-effort, cheap reads."""
+        now = time.monotonic()
+        if not force and self._counts_cache:
+            cached_at, cached = self._counts_cache
+            if now - cached_at < 60:
+                return dict(cached)
         out = {}
         try:
             import run_doc as _rag
@@ -824,6 +830,7 @@ class HomeApi:
             out["job_notes"] = len(_jn.list_saved_notes() or [])
         except Exception:
             out["job_notes"] = None
+        self._counts_cache = (time.monotonic(), dict(out))
         return out
 
     # ── ⭐ Bookmarked clients (cross-panel) ──────────────────────────

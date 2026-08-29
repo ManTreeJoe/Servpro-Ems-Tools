@@ -2,6 +2,13 @@ from pathlib import Path
 
 import pipeline_store
 import pipeline_web
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolated_pipeline_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline_store, "_BOARD_CACHE_PATH",
+                        str(tmp_path / "pipeline_boards_cache.json"))
 
 
 def _payload():
@@ -97,6 +104,15 @@ def test_pipeline_reads_shared_before_trello(monkeypatch):
     monkeypatch.setattr(pipeline_web, "_trello_board_payload",
                         lambda: (_ for _ in ()).throw(AssertionError("Trello should not load")))
     assert pipeline_web.Api().board_view() is shared
+
+
+def test_saved_pipeline_projection_gives_instant_cold_paint():
+    payload = _payload()
+    pipeline_store.save_board_cache(payload)
+    saved = pipeline_store.load_board_cache()
+    assert saved["ok"] is True
+    assert saved["stale_cache"] is True
+    assert saved["boards"][0]["lanes"][0]["cards"][0]["client"] == "Smith, Jane"
 
 
 def test_manual_refresh_reimports_trello(monkeypatch):
@@ -197,11 +213,35 @@ def test_pipeline_workspace_progressively_loads_shared_then_live_data():
         assert marker in py
     handler = js[js.index("async function onAuditCard"):js.index(
         "function openAuditLoadingModal")]
-    assert handler.index("job_card_workspace_fast") < handler.index(
-        "job_card_workspace(client")
+    assert handler.index("const fullPromise = pywebview.api.job_card_workspace") < handler.index(
+        "await pywebview.api.job_card_workspace_fast")
+    assert handler.index("await pywebview.api.job_card_workspace_fast") < handler.index(
+        "await fullPromise")
     for marker in ("workspaceRequestId", "hasUserInput", "setDeferredReady",
                    "data-refresh-workspace", "refresh_job_card_workspace"):
         assert marker in js
+
+
+def test_pipeline_board_revisit_uses_short_memory_cache(monkeypatch):
+    calls = []
+    shared = {"ok": True, "source": "shared", "boards": [{"key": "wip"}]}
+    monkeypatch.setattr(pipeline_web.pipeline_store, "load_boards",
+                        lambda specs: calls.append(specs) or shared)
+    api = pipeline_web.Api()
+    first = api.board_view()
+    second = api.board_view()
+    assert first["source"] == "shared"
+    assert second["cached"] is True
+    assert len(calls) == 1
+
+
+def test_pipeline_workspace_cache_is_bounded_and_invalidatable():
+    api = pipeline_web.Api()
+    api._workspace_cache[("smith", "c1", "EMS")] = (1.0, {"ok": True})
+    api._workspace_cache[("jones", "c2", "EMS")] = (1.0, {"ok": True})
+    api._invalidate_workspace(client="Smith")
+    assert ("smith", "c1", "EMS") not in api._workspace_cache
+    assert ("jones", "c2", "EMS") in api._workspace_cache
 
 
 def test_pipeline_cards_click_to_open_and_hold_to_drag():
@@ -289,6 +329,29 @@ def test_pipeline_summary_filters_are_actionable_and_persisted():
                    "cardMatchesBoardFilter", "PanelState.set({ boardFilter"):
         assert marker in js
     assert ".summary-item.active" in css
+
+
+def test_background_refresh_falls_back_to_trello_until_shared_schema_exists(monkeypatch):
+    api = pipeline_web.Api()
+    monkeypatch.setattr(
+        pipeline_web.pipeline_store,
+        "load_boards",
+        lambda _specs: {"ok": False, "schema_missing": True, "boards": []},
+    )
+    calls = []
+    monkeypatch.setattr(
+        api,
+        "board_view",
+        lambda force_trello=False: calls.append(force_trello) or {
+            "ok": True, "source": "trello", "boards": []
+        },
+    )
+
+    result = api.board_view_shared_refresh()
+
+    assert result["ok"] is True
+    assert result["source"] == "trello"
+    assert calls == [True]
 
 
 def test_pipeline_workspace_routes_trello_data_to_selected_division(monkeypatch):

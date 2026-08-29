@@ -12,7 +12,11 @@ const state = {
   active: null,
   counts: {},
   header: {},
+  frames: new Map(),
+  frameOrder: [],
+  activeFrame: null,
 };
+const MAX_WARM_PANELS = 6;
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -279,16 +283,44 @@ function navigate(key, src, focus, isRestore) {
   $$(".sb-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.key === key);
   });
-  // Hide welcome, show iframe (no crumb header anymore — iframe takes the full pane)
+  // Hide welcome, show the selected warm iframe. Keeping a small working set
+  // means switching Jobs → Run Doc → Jobs does not rebuild either panel or
+  // repeat its initial database/network reads.
   $("#welcome").classList.add("hidden");
-  $("#content-frame").classList.remove("hidden");
   // Deep-link focus (from a cross-tool "Open in…") rides along as a
   // ?focus= query the target panel reads on boot via emsDeepLinkFocus().
   let url = src || item.src;
   const params = new URLSearchParams();
   if (focus) params.set("focus", focus);
   if (params.size) url += (url.indexOf("?") >= 0 ? "&" : "?") + params.toString();
-  $("#content-frame").src = url;
+  let frame = state.frames.get(key);
+  if (!frame) {
+    const seed = $("#content-frame");
+    if (seed && !seed.dataset.panelKey && seed.src.endsWith("about:blank")) {
+      frame = seed;
+    } else {
+      frame = document.createElement("iframe");
+      frame.className = "tool-frame hidden";
+      frame.title = `${item.name} workspace`;
+      $(".pane-content").insertBefore(frame, $("#welcome"));
+    }
+    frame.dataset.panelKey = key;
+    state.frames.set(key, frame);
+  }
+  state.frames.forEach((candidate) => candidate.classList.toggle("hidden", candidate !== frame));
+  const current = frame.getAttribute("src") || "about:blank";
+  if (current === "about:blank" || focus) frame.src = url;
+  frame.classList.remove("hidden");
+  state.activeFrame = frame;
+  state.frameOrder = state.frameOrder.filter((saved) => saved !== key);
+  state.frameOrder.push(key);
+  while (state.frameOrder.length > MAX_WARM_PANELS) {
+    const evictedKey = state.frameOrder.shift();
+    const evicted = state.frames.get(evictedKey);
+    if (!evicted || evicted === frame) continue;
+    evicted.remove();
+    state.frames.delete(evictedKey);
+  }
   // Remember where we are for next launch. Fire-and-forget: a failure here
   // costs a restore, never the navigation the user just asked for. The
   // deep-link `focus` is deliberately NOT stored — reopening tomorrow on a
@@ -400,23 +432,23 @@ async function reloadEverything() {
     // wants when they hit "reload": refresh the tool they're staring
     // at. The simple `.src = .src` re-assignment forces a navigation
     // even when the URL hasn't changed.
-    const frame = document.getElementById("content-frame");
+    const frame = state.activeFrame || document.getElementById("content-frame");
     if (frame && frame.src && frame.src !== "about:blank") {
       // Cache-bust query string so iframe_shim + tool JS re-run
       const url = new URL(frame.src);
       url.searchParams.set("_r", String(Date.now()));
       frame.src = url.toString();
     }
-    await refreshCounts();
+    await refreshCounts(true);
   } finally {
     setTimeout(() => btn?.classList.remove("spinning"), 600);
   }
 }
 
-async function refreshCounts() {
+async function refreshCounts(force = false) {
   // Mark all badges loading
   $$(".sb-badge").forEach((b) => { b.textContent = "…"; b.className = "sb-badge loading"; });
-  const counts = await pywebview.api.counts();
+  const counts = await pywebview.api.counts(Boolean(force));
   state.counts = counts || {};
   for (const [key, val] of Object.entries(state.counts)) {
     const b = document.getElementById(`badge-${key}`);

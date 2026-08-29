@@ -80,6 +80,16 @@
   .admin-advanced summary::-webkit-details-marker { display:none; }
   .admin-advanced > div { position:absolute;z-index:30;top:calc(100% + 6px);left:0;display:grid;gap:5px;min-width:220px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);box-shadow:0 12px 30px rgba(0,0,0,.42); }
   .admin-advanced > div .btn { width:100%;text-align:left; }
+  .signin-modal { position:fixed;inset:0;z-index:220;display:flex;align-items:center;
+    justify-content:center;padding:20px;background:rgba(0,0,0,.68);backdrop-filter:blur(3px); }
+  .signin-dialog { width:min(440px,100%);max-height:calc(100vh - 40px);overflow:auto;
+    padding:20px;background:var(--surface);border:1px solid var(--border);
+    border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.55); }
+  .signin-head { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+    margin-bottom:16px; }
+  .signin-fields { display:grid;gap:10px; }
+  .signin-fields input { width:100%; }
+  .signin-close { min-width:36px;padding:7px 9px;font-size:18px;line-height:1; }
   @media (max-width:620px) {
     .pm-grid { grid-template-columns:1fr auto; }
     .pm-template { grid-column:1 / -1; }
@@ -164,6 +174,8 @@
          style="font-size:12px;margin-bottom:12px;padding:8px 10px;
                 border-left:3px solid var(--border);background:var(--surface-2);
                 border-radius:0 6px 6px 0;">checking…</div>
+    <button class="btn btn-primary" id="sb-open-signin" type="button"
+            data-settings-scope="personal" style="display:none;margin-bottom:12px;">Sign in</button>
 
     <div id="sb-profile-name" data-settings-scope="personal"
          style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);">
@@ -177,14 +189,21 @@
       <div id="sb-profile-name-msg" class="muted" style="font-size:11px;margin-top:7px;"></div>
     </div>
 
-    <div id="sb-signin" data-settings-scope="personal" style="display:none;margin-bottom:12px;">
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+    <div id="sb-signin" class="signin-modal" data-settings-scope="personal"
+         role="dialog" aria-modal="true" aria-labelledby="sb-signin-title" style="display:none;">
+      <div class="signin-dialog">
+        <div class="signin-head">
+          <div>
+            <div id="sb-signin-title" style="font-size:17px;font-weight:800;">Sign in</div>
+            <div class="muted" style="font-size:11.5px;margin-top:4px;">Use your SERVPRO work account.</div>
+          </div>
+          <button class="btn signin-close" id="sb-signin-close" type="button" aria-label="Close sign in">×</button>
+        </div>
+      <div class="signin-fields">
         <input id="sb-email" name="email" type="email" aria-label="Email address"
-               placeholder="Work email…" autocomplete="email" spellcheck="false"
-               style="flex:1 1 240px;min-width:200px;" />
+               placeholder="Work email…" autocomplete="email" spellcheck="false" />
         <input id="sb-password" name="password" type="password" aria-label="Password"
-               placeholder="Password…" autocomplete="current-password"
-               style="flex:1 1 200px;min-width:180px;" />
+               placeholder="Password…" autocomplete="current-password" />
         <button class="btn btn-primary" id="sb-password-signin">Sign in</button>
       </div>
       <button class="btn" id="sb-code-toggle" type="button"
@@ -202,6 +221,9 @@
         <div id="sb-link-help" class="muted" style="display:none;margin-top:7px;font-size:11px;line-height:1.4;">
           If the email contains a link, paste the complete email link or final browser address into the code field.
         </div>
+      </div>
+      <div id="sb-signin-msg" class="muted" role="status" aria-live="polite"
+           style="min-height:18px;margin-top:10px;font-size:11.5px;"></div>
       </div>
     </div>
 
@@ -813,12 +835,36 @@ async function savePropertyManager() {
 // pasted in, stored in config, or shipped.
 
 function sbMsg(text, isError) {
-  const el = document.getElementById("sb-msg");
-  el.textContent = text || "";
-  el.style.color = isError ? "var(--red)" : "";
+  [document.getElementById("sb-msg"), document.getElementById("sb-signin-msg")]
+    .filter(Boolean).forEach((el) => {
+      el.textContent = text || "";
+      el.style.color = isError ? "var(--red)" : "";
+    });
+}
+
+function openSupabaseSignIn() {
+  const modal = document.getElementById("sb-signin");
+  modal.style.display = "flex";
+  sbMsg("");
+  setTimeout(() => document.getElementById("sb-email")?.focus(), 0);
+}
+
+function closeSupabaseSignIn() {
+  document.getElementById("sb-signin").style.display = "none";
+  document.getElementById("sb-password").value = "";
+  sbMsg("");
 }
 
 function bindSupabaseControls() {
+  document.getElementById("sb-open-signin")?.addEventListener("click", openSupabaseSignIn);
+  document.getElementById("sb-signin-close")?.addEventListener("click", closeSupabaseSignIn);
+  document.getElementById("sb-signin")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeSupabaseSignIn();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.getElementById("sb-signin")?.style.display !== "none")
+      closeSupabaseSignIn();
+  });
   document.getElementById("sb-send-code")?.addEventListener("click", sbSendCode);
   document.getElementById("sb-password-signin")?.addEventListener("click", sbPasswordSignIn);
   document.getElementById("sb-password")?.addEventListener("keydown", (e) => {
@@ -875,6 +921,7 @@ async function refreshSupabase() {
   const box = document.getElementById("sb-status");
   const signin = document.getElementById("sb-signin");
   const profile = document.getElementById("sb-profile-name");
+  const openSignin = document.getElementById("sb-open-signin");
   let s = null;
   try { s = await pywebview.api.supabase_status(); } catch (_) {}
   if (!s || !s.ok) {
@@ -888,11 +935,12 @@ async function refreshSupabase() {
       + "<b>anon / publishable key</b> above, save, then come back.";
     box.style.borderLeftColor = "var(--amber)";
     signin.style.display = "none";
+    openSignin.style.display = "none";
     profile.style.display = "none";
   } else if (!s.signed_in) {
     box.textContent = "Set up, but you're not signed in yet.";
     box.style.borderLeftColor = "var(--amber)";
-    signin.style.display = "";
+    openSignin.style.display = "";
     profile.style.display = "none";
   } else {
     const who = (s.user && s.user.email) || "you";
@@ -902,6 +950,7 @@ async function refreshSupabase() {
          + "right now.</span>");
     box.style.borderLeftColor = cloud ? "var(--green)" : "var(--border)";
     signin.style.display = "none";
+    openSignin.style.display = "none";
     profile.style.display = "";
     const nameInput = document.getElementById("sb-display-name");
     if (document.activeElement !== nameInput)
@@ -990,20 +1039,30 @@ async function sbPasswordSignIn() {
   const email = document.getElementById("sb-email").value;
   const password = document.getElementById("sb-password").value;
   const button = document.getElementById("sb-password-signin");
+  if (!email.trim() || !password) {
+    sbMsg("Enter your work email and password.", true);
+    (email.trim() ? document.getElementById("sb-password") : document.getElementById("sb-email")).focus();
+    return;
+  }
   button.disabled = true;
   button.textContent = "Signing in…";
   sbMsg("Checking your account…");
   let r;
   try { r = await pywebview.api.supabase_sign_in_password(email, password); }
   catch (e) { r = {ok:false, error:`Sign-in could not start: ${e}`}; }
-  button.disabled = false;
-  button.textContent = "Sign in";
+  finally {
+    button.disabled = false;
+    button.textContent = "Sign in";
+  }
   sbMsg(r?.ok ? r.message : (r?.error || "Sign-in failed"), !r?.ok);
   if (r?.ok) {
     document.getElementById("sb-password").value = "";
     try { window.parent?.postMessage({type: "health-refresh"}, "*"); } catch (_) {}
+    closeSupabaseSignIn();
+    await refreshSupabase();
+  } else {
+    document.getElementById("sb-password").select();
   }
-  await refreshSupabase();
 }
 
 async function sbVerify() {
@@ -1388,15 +1447,8 @@ function wireSetupGuide() {
   };
   card.querySelector('[data-setup="signin"]')?.addEventListener("click", () => {
     showSettingsScope("personal");
-    // Reveal the form directly as a safety net. refreshSupabase normally
-    // controls this display, but setup must remain usable even when another
-    // Settings request failed during initialization.
-    const signin = document.getElementById("sb-signin");
-    if (signin) signin.style.display = "";
-    const email = document.getElementById("sb-email");
-    email?.scrollIntoView({behavior:"smooth", block:"center"});
-    setTimeout(() => email?.focus(), 250);
-    guideStatus("Sign-in fields opened below. Enter your work email and password.");
+    openSupabaseSignIn();
+    guideStatus("Sign-in window opened. Enter your work email and password.");
   });
   card.querySelector('[data-scope-tab-jump="admin"]')?.addEventListener("click", () => {
     showSettingsScope("admin");

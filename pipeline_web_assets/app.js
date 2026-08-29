@@ -124,10 +124,24 @@ async function loadBoard(isRefresh) {
     const source = res.source === "shared" ? "shared Pipeline" :
       (res.mirrored ? "Trello · saved to Pipeline" : "Trello");
     setStatus(`✓ ${total} cards across ${res.boards.length} boards · ${source}`, "ok");
+    if (res.stale_cache && !isRefresh) refreshSavedBoardInBackground();
   } catch (ex) {
     setStatus(`Board error: ${ex}`, "error");
   } finally {
     if (isRefresh) { btn.disabled = false; btn.textContent = "↻ Sync Jobs"; }
+  }
+}
+
+async function refreshSavedBoardInBackground() {
+  try {
+    const fresh = await pywebview.api.board_view_shared_refresh();
+    if (!fresh?.ok || !(fresh.boards || []).length) return;
+    state.board = fresh;
+    renderBoard();
+    setStatus(`✓ ${boardCardTotal()} jobs · shared Pipeline is current`, "ok");
+  } catch (_) {
+    // The saved board remains fully usable. Explicit Sync Jobs surfaces
+    // network errors when the user wants to troubleshoot them.
   }
 }
 
@@ -455,6 +469,11 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   let modal = openAuditModal(instant, resolvedUrl);
   setStatus(`Opened "${client}" · loading shared job details…`);
   try {
+    // Start deep hydration immediately. It used to begin only after the fast
+    // shared-data request completed, stacking two independent waits every
+    // time a card opened.
+    const fullPromise = pywebview.api.job_card_workspace(
+      client, resolvedCardId, division);
     const fast = await pywebview.api.job_card_workspace_fast(client, resolvedCardId, division);
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (!fast?.ok) {
@@ -467,7 +486,7 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
       modal = openAuditModal(fast, fast.selected_trello_url || resolvedUrl);
     }
     setStatus(`Job opened in ${fast.load_ms || 0} ms · loading audit, Trello, and documents…`);
-    const full = await pywebview.api.job_card_workspace(client, resolvedCardId, division);
+    const full = await fullPromise;
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (!full?.ok) {
       modal.setDeferredError(full?.error || "Deep refresh unavailable");

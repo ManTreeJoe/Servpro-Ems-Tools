@@ -8,13 +8,19 @@ Every public function fails soft when migration 011 has not been installed.
 from __future__ import annotations
 
 import datetime as _dt
+from concurrent.futures import ThreadPoolExecutor
 import json
+import os
+import threading
 import uuid
 
 import supabase_client as _sb
+import paths as _paths
 
 _TABLES = ("crm_pipeline_boards", "crm_pipeline_lanes",
            "crm_pipeline_cards", "crm_pipeline_activity")
+_BOARD_CACHE_PATH = _paths.data("pipeline_boards_cache.json")
+_BOARD_CACHE_LOCK = threading.RLock()
 
 
 def _now():
@@ -193,11 +199,20 @@ def mirror_boards(payload: dict) -> dict:
 def load_boards(board_specs) -> dict:
     """Return the same JSON shape as ``pipeline_web.Api.board_view``."""
     try:
-        boards = _rows("crm_pipeline_boards", select="*", order="position.asc")
-        lanes = _rows("crm_pipeline_lanes", select="*", archived="eq.false",
-                      order="position.asc")
-        cards = _rows("crm_pipeline_cards", select="*", archived="eq.false",
-                      order="position.asc")
+        # These tables are independent projections. Running the HTTPS reads
+        # serially made a cold board wait for all three network round trips.
+        with ThreadPoolExecutor(max_workers=3,
+                                thread_name_prefix="pipeline-read") as pool:
+            board_future = pool.submit(
+                _rows, "crm_pipeline_boards", select="*", order="position.asc")
+            lane_future = pool.submit(
+                _rows, "crm_pipeline_lanes", select="*", archived="eq.false",
+                order="position.asc")
+            card_future = pool.submit(
+                _rows, "crm_pipeline_cards", select="*", archived="eq.false",
+                order="position.asc")
+            boards, lanes, cards = (board_future.result(), lane_future.result(),
+                                     card_future.result())
     except Exception as ex:
         return {"ok": False, "schema_missing": _missing_schema(ex),
                 "error": str(ex), "boards": []}
@@ -242,8 +257,62 @@ def load_boards(board_specs) -> dict:
         out.append({"key": key, "name": b.get("name") or expected_name,
                     "board_id": b.get("external_id") or "",
                     "lanes": shaped_lanes, "sync_status": b.get("sync_status") or "local"})
-    return {"ok": bool(out), "boards": out, "source": "shared",
-            "error": "" if out else "shared Pipeline is empty"}
+    result = {"ok": bool(out), "boards": out, "source": "shared",
+              "error": "" if out else "shared Pipeline is empty"}
+    if result["ok"]:
+        save_board_cache(result)
+    return result
+
+
+def _cache_scope() -> str:
+    try:
+        import config
+        return (config.active_department() or "default").strip().upper()
+    except Exception:
+        return "DEFAULT"
+
+
+def save_board_cache(payload: dict) -> None:
+    """Keep the last text-only board projection for an instant cold paint."""
+    if not payload.get("ok") or not payload.get("boards"):
+        return
+    with _BOARD_CACHE_LOCK:
+        saved = {}
+        try:
+            with open(_BOARD_CACHE_PATH, encoding="utf-8") as handle:
+                saved = json.load(handle)
+        except (OSError, ValueError):
+            pass
+        saved[_cache_scope()] = {
+            "saved_at": _now(),
+            "payload": {**payload, "source": "saved"},
+        }
+        tmp = _BOARD_CACHE_PATH + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(saved, handle, separators=(",", ":"))
+            os.replace(tmp, _BOARD_CACHE_PATH)
+        except OSError:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def load_board_cache() -> dict:
+    """Return the last successful board projection without network access."""
+    with _BOARD_CACHE_LOCK:
+        try:
+            with open(_BOARD_CACHE_PATH, encoding="utf-8") as handle:
+                saved = json.load(handle)
+            entry = saved.get(_cache_scope()) or {}
+            payload = entry.get("payload") or {}
+            if payload.get("ok") and payload.get("boards"):
+                return {**payload, "saved_at": entry.get("saved_at") or "",
+                        "stale_cache": True}
+        except (OSError, ValueError, AttributeError):
+            pass
+    return {"ok": False, "boards": []}
 
 
 def move_card(external_card_id: str, external_lane_id: str) -> dict:
