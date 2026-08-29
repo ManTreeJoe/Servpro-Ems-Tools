@@ -146,7 +146,7 @@ def test_pipeline_card_is_the_full_job_workspace():
     py = (root / "pipeline_web.py").read_text(encoding="utf-8")
     js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     css = (root / "pipeline_web_assets" / "app.css").read_text(encoding="utf-8")
-    for marker in ("job_card_workspace", "crm_job_workspace", "get_all_comments",
+    for marker in ("job_card_workspace", "crm_job_workspace", "card.get(\"actions\")",
                    "set_job_check_item", "post_job_comment",
                    "import_job_log_from_trello"):
         assert marker in py
@@ -182,6 +182,23 @@ def test_pipeline_opens_card_before_slow_workspace_lookup():
         "await pywebview.api.job_card_workspace")
     for marker in ("Loading job workspace", "aria-busy", "element.isConnected",
                    "showError"):
+        assert marker in js
+
+
+def test_pipeline_workspace_progressively_loads_shared_then_live_data():
+    root = Path(__file__).parents[1]
+    py = (root / "pipeline_web.py").read_text(encoding="utf-8")
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    for marker in ("def job_card_workspace_fast", "deferred_loading",
+                   "def refresh_job_card_workspace", "_audit_card_cache",
+                   "_division_reconcile_cache", "_document_cache"):
+        assert marker in py
+    handler = js[js.index("async function onAuditCard"):js.index(
+        "function openAuditLoadingModal")]
+    assert handler.index("job_card_workspace_fast") < handler.index(
+        "job_card_workspace(client")
+    for marker in ("workspaceRequestId", "hasUserInput", "setDeferredReady",
+                   "data-refresh-workspace", "refresh_job_card_workspace"):
         assert marker in js
 
 
@@ -294,11 +311,12 @@ def test_pipeline_workspace_routes_trello_data_to_selected_division(monkeypatch)
                         lambda *_a, **_k: {})
     monkeypatch.setattr(pipeline_web.pipeline_store, "list_activity", lambda _cid: [])
     monkeypatch.setattr("trello_client.get_card", lambda cid: {
-        "checklists": [], "attachments": [], "members": [], "name": cid})
-    monkeypatch.setattr("trello_client.get_all_comments", lambda cid: [{
-        "id": "comment", "date": "2026-08-28", "memberCreator": {"fullName": "Tech"},
-        "data": {"text": f"comment from {cid}"},
-    }])
+        "checklists": [], "attachments": [], "members": [], "name": cid,
+        "actions": [{
+            "type": "commentCard",
+            "id": "comment", "date": "2026-08-28", "memberCreator": {"fullName": "Tech"},
+            "data": {"text": f"comment from {cid}"},
+        }]})
     monkeypatch.setattr("ems_db.find_job_by_name", lambda _name: {})
 
     result = api.job_card_workspace("Three Card Job", "ems12345", "RECON")

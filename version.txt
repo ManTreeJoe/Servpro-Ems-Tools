@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.36",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.36",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.36/Linguar-Hub-Trial-Setup-1.6.0-trial.36.exe",
-  "notes": "Makes Pipeline comments manageable throughout the job. Users can now edit or delete comments directly in the job card. New comments keep the Trello action ID in the shared activity record, so edits and deletions stay synchronized with Trello while Linguar Hub is still transitioning away from it. Imported Trello comments remain editable at their source, and the UI clearly warns when an action is permanent or when Trello could not sync."
+  "version": "1.6.0-trial.37",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.37",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.37/Linguar-Hub-Trial-Setup-1.6.0-trial.37.exe",
+  "notes": "Makes Pipeline job cards open progressively instead of waiting for every external system. Shared CRM, job-log, checklist, and saved-comment data appears first while the deep audit, live Trello data, and X-drive documents load in the background. Short audit, division-card, and document caches remove repeat work; duplicate historical-comment downloads are gone. Typed input is protected during hydration, stale requests are ignored, load timing is displayed, and Refresh live provides an intentional uncached refresh."
 }

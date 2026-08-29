@@ -29,6 +29,7 @@ const state = {
   sort_dir: "desc",
   selected_card_id: null,
 };
+let workspaceRequestId = 0;
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -435,20 +436,41 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   const client = isCard ? cardOrClient.dataset.client : String(cardOrClient || "");
   const resolvedCardId = isCard ? (cardOrClient.dataset.cardId || "") : cardId;
   const resolvedUrl = isCard ? (cardOrClient.dataset.url || "") : trelloUrl;
+  const requestId = ++workspaceRequestId;
   const loading = openAuditLoadingModal(client);
   setStatus(`Opening "${client}"…`);
   try {
-    const res = await pywebview.api.job_card_workspace(client, resolvedCardId, division);
-    if (!loading.element.isConnected) return;
-    if (!res?.ok) {
-      loading.showError(res?.error || "The job workspace could not be loaded.");
-      setStatus(`Job workspace failed: ${res?.error || "?"}`, "error");
+    const fast = await pywebview.api.job_card_workspace_fast(client, resolvedCardId, division);
+    if (requestId !== workspaceRequestId || !loading.element.isConnected) return;
+    if (!fast?.ok) {
+      loading.showError(fast?.error || "The job workspace could not be loaded.");
+      setStatus(`Job workspace failed: ${fast?.error || "?"}`, "error");
       return;
     }
     loading.close();
-    setStatus("");
-    openAuditModal(res, res.selected_trello_url || resolvedUrl);
+    const modal = openAuditModal(fast, fast.selected_trello_url || resolvedUrl);
+    setStatus(`Job opened in ${fast.load_ms || 0} ms · loading audit, Trello, and documents…`);
+    const full = await pywebview.api.job_card_workspace(client, resolvedCardId, division);
+    if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
+    if (!full?.ok) {
+      modal.setDeferredError(full?.error || "Deep refresh unavailable");
+      setStatus(`Job opened · some live details could not refresh`, "warn");
+      return;
+    }
+    const replace = () => {
+      if (!modal.element.isConnected) return;
+      modal.close();
+      openAuditModal(full, full.selected_trello_url || resolvedUrl);
+      setStatus("");
+    };
+    if (modal.hasUserInput()) {
+      modal.setDeferredReady(replace);
+      setStatus("Live details are ready · finish editing or click Load live details", "ok");
+    } else {
+      replace();
+    }
   } catch (error) {
+    if (requestId !== workspaceRequestId) return;
     if (!loading.element.isConnected) return;
     loading.showError(error?.message || String(error));
     setStatus(`Job workspace failed: ${error?.message || error}`, "error");
@@ -535,7 +557,9 @@ function openAuditModal(data, trelloUrl = "") {
   (res.photo_issues || []).forEach((p) => issues.push({ kind: "Photos", text: p }));
   (res.requirements || []).forEach((r) => issues.push({ kind: "Photos", text: r }));
   const clean = res.found && !issues.length;
-  const missing = !res.found
+  const missing = data.deferred_loading
+    ? `<div class="aud-loading-inline">Checking job folders and current requirements…</div>`
+    : !res.found
     ? `<div class="aud-bad">📁 No job folder found for this client.</div>`
     : clean
       ? `<div class="aud-ok">✓ All required forms &amp; photos present.</div>`
@@ -631,7 +655,9 @@ function openAuditModal(data, trelloUrl = "") {
       <button class="text-btn danger" data-delete-job-log="${escapeAttr(entry.entry_id || "")}">Delete</button></div></article>`).join("") || `<div class="aud-empty">No Job Log updates yet.</div>`;
   const docs = data.documents || {};
   const dsRequest = docs.request || {};
-  const documentRows = (docs.files || []).map((file) => `<button class="signature-file" data-document-path="${escapeAttr(file.path || "")}">
+  const documentRows = data.deferred_loading
+    ? `<div class="aud-loading-inline">Reading document index…</div>`
+    : (docs.files || []).map((file) => `<button class="signature-file" data-document-path="${escapeAttr(file.path || "")}">
     <span class="signature-file-mark">${file.signed ? "✓" : "□"}</span><span><strong>${escapeHtml(file.name || "Document")}</strong>
     <small>${file.signed ? "Signed/final paperwork" : "Job document"}${file.modified_at ? " · " + escapeHtml(formatCommentDate(file.modified_at)) : ""}</small></span></button>`).join("") || `<div class="aud-empty">No PDFs or Word documents found in this job’s DOCS folders.</div>`;
   const signatureState = dsRequest.state === "pending_signature" ? "Signature pending"
@@ -681,6 +707,7 @@ function openAuditModal(data, trelloUrl = "") {
       <header class="modal-head">
         <div class="audit-head-copy"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div>
         <div class="modal-sub">${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}${(data.members || []).length ? " · " + escapeHtml(data.members.join(", ")) : ""}</div></div>
+        <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Loading live details…" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh live</button>`}</div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button>
       </header>
       <div class="modal-body">${body}</div>
@@ -710,6 +737,22 @@ function openAuditModal(data, trelloUrl = "") {
   }));
   w.querySelector("[data-open-trello]").addEventListener("click", () => {
     if (trelloUrl) pywebview.api.open_url(trelloUrl);
+  });
+  w.querySelector("[data-refresh-workspace]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Refreshing…";
+    const refreshed = await pywebview.api.refresh_job_card_workspace(
+      data.client || res.client || "", data.card_id || "", data.selected_division || "EMS");
+    if (!refreshed?.ok) {
+      button.disabled = false;
+      button.textContent = "Refresh live";
+      setStatus(refreshed?.error || "Live refresh failed", "error");
+      return;
+    }
+    close();
+    openAuditModal(refreshed, refreshed.selected_trello_url || trelloUrl);
+    setStatus(`Live details refreshed in ${refreshed.load_ms || 0} ms`, "ok");
   });
   w.querySelector("[data-flag-job]")?.addEventListener("click", () => {
     onFlagCard({dataset: {client: data.client || res.client || "", cardId: data.card_id || ""}});
@@ -913,6 +956,26 @@ function openAuditModal(data, trelloUrl = "") {
     if (window.emsNavigateTo) window.emsNavigateTo("audit", res.client || "");
     close();
   });
+  return {
+    element: w,
+    close,
+    hasUserInput() {
+      const active = document.activeElement;
+      if (active && w.contains(active) && active.matches("input, textarea, select")) return true;
+      return [...w.querySelectorAll("textarea, input:not([type=checkbox])")]
+        .some((field) => String(field.value || "").trim());
+    },
+    setDeferredReady(load) {
+      const host = w.querySelector("[data-workspace-load-state]");
+      if (!host) return;
+      host.innerHTML = `<button class="btn compact" type="button">Load live details</button>`;
+      host.querySelector("button").addEventListener("click", load);
+    },
+    setDeferredError(message) {
+      const host = w.querySelector("[data-workspace-load-state]");
+      if (host) host.textContent = message;
+    },
+  };
 }
 
 function openJobLogHistoryModal(history) {

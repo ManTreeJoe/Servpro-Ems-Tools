@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import sys
+import time
 import webbrowser
 from typing import Any
 
@@ -233,6 +234,9 @@ class Api:
         self._last_rows = []
         self._sync_running = False
         self._audit = None  # lazily-built audit_web.Api for card audits
+        self._audit_card_cache = {}
+        self._division_reconcile_cache = {}
+        self._document_cache = {}
 
     def personal_preferences(self) -> dict:
         """Safe presentation-only choices for this Windows user."""
@@ -329,6 +333,10 @@ class Api:
         audit_web — same engine the Audit panel uses."""
         if not client:
             return {"ok": False, "error": "client required"}
+        cache_key = client.strip().casefold()
+        cached = self._audit_card_cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < 90:
+            return dict(cached[1])
         try:
             res = self._audit_api().audit_one_job(client)
         except Exception as ex:
@@ -337,7 +345,7 @@ class Api:
             return {"ok": False,
                     "error": (res or {}).get("error") or "audit failed"}
         row = res.get("row") or {}
-        return {
+        shaped = {
             "ok":            True,
             "client":        res.get("canonical") or client,
             "found":         bool(row.get("found")),
@@ -357,10 +365,13 @@ class Api:
             "misplaced_photos": list(row.get("misplaced_photos") or []),
             "trello_card_id": row.get("trello_card_id") or "",
         }
+        self._audit_card_cache[cache_key] = (time.monotonic(), shaped)
+        return shaped
 
     def job_card_workspace(self, client: str, card_id: str = "",
                            division: str = "") -> dict:
         """Full Pipeline card: audit + CRM + Trello transition material."""
+        started = time.monotonic()
         summary = self.audit_card(client)
         if not summary.get("ok"):
             return summary
@@ -368,10 +379,17 @@ class Api:
         crm = audit_api.crm_job_workspace(client, summary)
         reconcile_divisions = getattr(
             audit_api, "reconcile_crm_division_trello_cards", None)
-        division_reconciliation = (reconcile_divisions(client)
-                                   if reconcile_divisions else
-                                   {"ok": True, "divisions": [],
-                                    "has_conflict": False})
+        reconcile_key = client.strip().casefold()
+        cached_reconcile = self._division_reconcile_cache.get(reconcile_key)
+        if cached_reconcile and time.monotonic() - cached_reconcile[0] < 300:
+            division_reconciliation = cached_reconcile[1]
+        else:
+            division_reconciliation = (reconcile_divisions(client)
+                                       if reconcile_divisions else
+                                       {"ok": True, "divisions": [],
+                                        "has_conflict": False})
+            self._division_reconcile_cache[reconcile_key] = (
+                time.monotonic(), division_reconciliation)
         division_trello_cards = audit_api.crm_division_trello_cards(client)
         division_cards = division_trello_cards.get("cards", [])
         info_sections, checklists, comments, attachments, members = [], [], [], [], []
@@ -435,7 +453,12 @@ class Api:
                                for a in (card.get("attachments") or [])]
                 members = [m.get("fullName") or m.get("username") or ""
                            for m in (card.get("members") or [])]
-                trello_comments = tc.get_all_comments(cid) or []
+                # get_card already includes the latest 50 activity actions.
+                # Re-fetching every historical comment here used as many as
+                # 20 additional network calls each time a card opened. Older
+                # comments remain in the shared activity table once imported.
+                trello_comments = [action for action in (card.get("actions") or [])
+                                   if action.get("type") == "commentCard"]
                 for action in trello_comments:
                     text = str((action.get("data") or {}).get("text") or "").strip()
                     if not text:
@@ -475,11 +498,93 @@ class Api:
                 "division_card_reconciliation": division_reconciliation,
                 "checklists": checklists, "comments": comments,
                 "attachments": attachments, "members": members,
-                "documents": documents}
+                "documents": documents,
+                "load_ms": round((time.monotonic() - started) * 1000)}
+
+    def refresh_job_card_workspace(self, client: str, card_id: str = "",
+                                   division: str = "") -> dict:
+        """Explicit deep refresh; normal opens remain cache-friendly."""
+        key = (client or "").strip().casefold()
+        self._audit_card_cache.pop(key, None)
+        self._division_reconcile_cache.pop(key, None)
+        for cache_key in list(self._document_cache):
+            if not card_id or cache_key[0] == card_id:
+                self._document_cache.pop(cache_key, None)
+        return self.job_card_workspace(client, card_id, division)
+
+    def job_card_workspace_fast(self, client: str, card_id: str = "",
+                                division: str = "") -> dict:
+        """Shared-data-first workspace used for an immediate card open.
+
+        This deliberately avoids the live folder audit, Trello search/card
+        calls, and network-drive walk. The frontend follows it with the full
+        workspace request while the user can already read or edit CRM data.
+        """
+        started = time.monotonic()
+        if not (client or "").strip():
+            return {"ok": False, "error": "client required"}
+        audit_api = self._audit_api()
+        summary = {"ok": True, "client": client, "found": True,
+                   "form_issues": [], "photo_issues": [], "requirements": [],
+                   "activity": [], "path": "", "trello_card_id": card_id or ""}
+        crm = audit_api.crm_job_workspace(client, summary)
+        division_result = audit_api.crm_division_trello_cards(client)
+        division_cards = division_result.get("cards", [])
+        from ems_db_common import normalize_division
+        selected_division = normalize_division(division) if division else "EMS"
+        selected = next((item for item in division_cards
+                         if item.get("division") == selected_division), {})
+        cid = str(selected.get("card_id") or "").strip()
+        if not cid and selected_division == "EMS":
+            cid = (card_id or "").strip()
+        info_sections = []
+        try:
+            import job_settings
+            job = ems_db.find_job_by_name(client) or {}
+            values, grouped, order = job_settings.stored_values(job), {}, []
+            for fid, section, _key, label, _core in job_settings.FIELDS:
+                value = str(values.get(fid) or "").strip()
+                if not value:
+                    continue
+                if section not in grouped:
+                    grouped[section] = []
+                    order.append(section)
+                grouped[section].append({"id": fid, "label": label, "value": value})
+            info_sections = [{"name": section.title(), "fields": grouped[section]}
+                             for section in order]
+        except Exception:
+            pass
+        comments = []
+        for activity in pipeline_store.list_activity(cid):
+            if activity.get("action_type") != "comment":
+                continue
+            comments.append({"id": activity.get("external_id") or
+                             activity.get("activity_key") or "",
+                             "external_id": activity.get("external_id") or "",
+                             "text": activity.get("body") or "",
+                             "actor": activity.get("actor_name") or "Linguar Hub",
+                             "at": activity.get("happened_at") or "",
+                             "source": activity.get("source") or "linguar"})
+        return {"ok": True, "client": client, "card_id": cid,
+                "selected_division": selected_division,
+                "selected_trello_url": (f"https://trello.com/c/{cid}" if cid else ""),
+                "audit": summary, "crm": crm, "info_sections": info_sections,
+                "division_trello_cards": division_cards,
+                "division_card_reconciliation": {"ok": True, "divisions": []},
+                "checklists": pipeline_store.list_checklists(cid),
+                "comments": comments, "attachments": [], "members": [],
+                "documents": {"provider": "DocuSign", "request": {}, "files": [],
+                              "connected": False},
+                "deferred_loading": True,
+                "load_ms": round((time.monotonic() - started) * 1000)}
 
     def _document_signature_workspace(self, client: str, card_id: str,
                                       job_path: str) -> dict:
         """Text-only view of signature state and files already on disk."""
+        cache_key = (str(card_id or ""), os.path.abspath(job_path) if job_path else "")
+        cached = self._document_cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < 120:
+            return cached[1]
         pending = None
         try:
             import docusign_requests as dsr
@@ -516,10 +621,12 @@ class Api:
                 if len(files) >= 100:
                     break
         files.sort(key=lambda item: item.get("modified_at") or "", reverse=True)
-        return {"provider": "DocuSign", "connected": False,
-                "connection_note": "Direct DocuSign connection is not configured yet",
-                "request": pending or {}, "files": files[:20],
-                "storage": "Official signed file stays in the X: OD job folder; only status and path are indexed"}
+        result = {"provider": "DocuSign", "connected": False,
+                  "connection_note": "Direct DocuSign connection is not configured yet",
+                  "request": pending or {}, "files": files[:20],
+                  "storage": "Official signed file stays in the X: OD job folder; only status and path are indexed"}
+        self._document_cache[cache_key] = (time.monotonic(), result)
+        return result
 
     def mark_docusign_sent(self, client: str, card_id: str = "",
                            customer_email: str = "") -> dict:
