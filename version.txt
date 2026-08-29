@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.38",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.38",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.38/Linguar-Hub-Trial-Setup-1.6.0-trial.38.exe",
-  "notes": "Makes Pipeline card opening feel like Trello: clicking a card now opens an immediate workspace using the name, lane, due date, loss type, checklist count, aging, and sync state already rendered on the board. It makes no database, Trello, audit, or folder request before showing the card. Shared CRM data and live audit/Trello/X-drive details then hydrate behind it without replacing anything the user has started editing."
+  "version": "1.7.0",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.7.0",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.7.0/Linguar-Hub-Setup-1.7.0.exe",
+  "notes": "Promotes the verified CRM and Pipeline overhaul to Main. Pipeline is the primary Trello-style job workspace with instant card opening, per-job EMS/Contents/Recon tracking and Trello pins, cumulative stage requirements, editable Job Log history, synchronized comments, responsive layouts, shared Supabase-backed job data, improved employee setup and folder handling, and faster cached audit/document loading."
 }
