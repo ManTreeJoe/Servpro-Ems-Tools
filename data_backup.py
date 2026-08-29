@@ -56,6 +56,15 @@ def _stamp():
     return _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
+def _stamp_time(value):
+    """Epoch for our filename timestamp, or zero for an unknown name."""
+    import datetime as _dt
+    try:
+        return _dt.datetime.strptime(str(value), "%Y%m%d-%H%M%S").timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _prune(dest, base):
     """Keep the newest KEEP copies of one file."""
     try:
@@ -80,10 +89,9 @@ def _recent_copy_exists(dest, base, hours=None):
     """
     import time
     try:
-        newest = max(
-            (os.path.getmtime(os.path.join(dest, f))
-             for f in os.listdir(dest) if f.startswith(base + ".")),
-            default=0)
+        newest = max((_stamp_time(f.rpartition(".")[2])
+                      for f in os.listdir(dest)
+                      if f.startswith(base + ".")), default=0)
     except OSError:
         return False
     window = _MIN_INTERVAL_H if hours is None else hours
@@ -278,7 +286,13 @@ def health() -> dict:
                            "last_success": "", "age_hours": None})
             continue
         try:
-            age_h = max(0.0, (now - os.path.getmtime(row["path"])) / 3600)
+            # copy2 intentionally preserves the source file mtime, so the
+            # backup file's mtime says when config/state last changed—not
+            # when the backup succeeded. The dated filename is authoritative.
+            backed_up_at = _stamp_time(row.get("stamp"))
+            if not backed_up_at:
+                backed_up_at = os.path.getmtime(row["path"])
+            age_h = max(0.0, (now - backed_up_at) / 3600)
         except OSError:
             age_h = max_age_h + 1
         checks.append({

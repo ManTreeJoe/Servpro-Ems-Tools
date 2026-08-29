@@ -144,6 +144,16 @@ def test_backup_health_reports_recent_local_copies(data):
     assert all(c["last_success"] for c in status["checks"])
 
 
+def test_unchanged_old_source_does_not_make_fresh_backup_look_stale(data):
+    old = time.time() - 10 * 24 * 3600
+    for name in db.FILES:
+        os.utime(data / name, (old, old))
+    db.run_once(force=True)
+
+    assert db.health()["ok"] is True
+    assert db.run_once()["state.json"] == "recent"
+
+
 def test_backup_health_reports_missing_rotation(data):
     status = db.health()
     assert status["ok"] is False
