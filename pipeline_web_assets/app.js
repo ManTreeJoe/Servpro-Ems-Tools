@@ -293,7 +293,13 @@ function renderCard(c) {
                data-card-id="${escapeAttr(c.card_id)}"
                data-list-id="${escapeAttr(c.list_id)}"
                data-url="${escapeAttr(c.url)}"
-               data-client="${escapeAttr(c.client)}">
+               data-client="${escapeAttr(c.client)}"
+               data-card-summary="${escapeAttr(JSON.stringify({
+                 due: c.due || "", overdue: Boolean(c.overdue),
+                 days_in_lane: Number(c.days_in_lane || 0),
+                 loss_types: c.loss_types || [], checklist: ck,
+                 sync_status: c.sync_status || "",
+               }))}">
     <div class="kcard-title">${escapeHtml(c.client || "(no name)")}</div>
     ${chips ? `<div class="kcard-chips">${chips}</div>` : ""}
     <div class="kcard-actions">
@@ -437,18 +443,21 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   const resolvedCardId = isCard ? (cardOrClient.dataset.cardId || "") : cardId;
   const resolvedUrl = isCard ? (cardOrClient.dataset.url || "") : trelloUrl;
   const requestId = ++workspaceRequestId;
-  const loading = openAuditLoadingModal(client);
-  setStatus(`Opening "${client}"…`);
+  const instant = instantWorkspaceData(cardOrClient, client, resolvedCardId, division);
+  let modal = openAuditModal(instant, resolvedUrl);
+  setStatus(`Opened "${client}" · loading shared job details…`);
   try {
     const fast = await pywebview.api.job_card_workspace_fast(client, resolvedCardId, division);
-    if (requestId !== workspaceRequestId || !loading.element.isConnected) return;
+    if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (!fast?.ok) {
-      loading.showError(fast?.error || "The job workspace could not be loaded.");
-      setStatus(`Job workspace failed: ${fast?.error || "?"}`, "error");
+      modal.setDeferredError(fast?.error || "Shared job details unavailable");
+      setStatus(`Basic card opened · shared details unavailable`, "warn");
       return;
     }
-    loading.close();
-    const modal = openAuditModal(fast, fast.selected_trello_url || resolvedUrl);
+    if (!modal.hasUserInput()) {
+      modal.close();
+      modal = openAuditModal(fast, fast.selected_trello_url || resolvedUrl);
+    }
     setStatus(`Job opened in ${fast.load_ms || 0} ms · loading audit, Trello, and documents…`);
     const full = await pywebview.api.job_card_workspace(client, resolvedCardId, division);
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
@@ -471,10 +480,43 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
     }
   } catch (error) {
     if (requestId !== workspaceRequestId) return;
-    if (!loading.element.isConnected) return;
-    loading.showError(error?.message || String(error));
-    setStatus(`Job workspace failed: ${error?.message || error}`, "error");
+    if (!modal.element.isConnected) return;
+    modal.setDeferredError(error?.message || String(error));
+    setStatus(`Basic card opened · live details failed`, "warn");
   }
+}
+
+function instantWorkspaceData(cardOrClient, client, cardId, division) {
+  let summary = {};
+  if (cardOrClient?.dataset?.cardSummary) {
+    try { summary = JSON.parse(cardOrClient.dataset.cardSummary); } catch (_) {}
+  }
+  const lane = cardOrClient?.closest?.(".lane")?.dataset?.laneName || "Pipeline";
+  const selected = division || "EMS";
+  const chips = [
+    ...(summary.loss_types || []),
+    summary.due ? `${summary.overdue ? "Overdue" : "Due"} ${fmtDue(summary.due)}` : "",
+    summary.days_in_lane ? `${summary.days_in_lane} days in lane` : "",
+  ].filter(Boolean);
+  return {
+    ok: true, client, card_id: cardId, selected_division: selected,
+    selected_trello_url: cardOrClient?.dataset?.url || "",
+    deferred_loading: true, load_ms: 0,
+    audit: {ok: true, client, found: true, form_issues: [], photo_issues: [],
+      requirements: [], activity: chips, path: "", aging: summary.days_in_lane || 0},
+    crm: {ok: true, lifecycle_stage: lane.toLowerCase().replaceAll(" ", "_"),
+      job_log: [], progress: {items: [], percent_complete: 0}, work_environments: []},
+    info_sections: [{name: "Pipeline", fields: [
+      {id: "pipeline_lane", label: "Current lane", value: lane},
+      ...(summary.loss_types?.length ? [{id: "loss_type", label: "Loss type", value: summary.loss_types.join(", ")}] : []),
+      ...(summary.due ? [{id: "due", label: "Due", value: fmtDue(summary.due)}] : []),
+    ]}],
+    division_trello_cards: [{division: selected, card_id: cardId,
+      url: cardOrClient?.dataset?.url || "", pinned: Boolean(cardId)}],
+    division_card_reconciliation: {ok: true, divisions: []},
+    checklists: [], comments: [], attachments: [], members: [],
+    documents: {provider: "DocuSign", request: {}, files: [], connected: false},
+  };
 }
 
 function openAuditLoadingModal(client) {
@@ -725,6 +767,9 @@ function openAuditModal(data, trelloUrl = "") {
       </footer>
     </div>`;
   document.body.appendChild(w);
+  let userDirty = false;
+  w.addEventListener("input", () => { userDirty = true; });
+  w.addEventListener("change", () => { userDirty = true; });
   const close = () => w.remove();
   w.querySelector("[data-close]").addEventListener("click", close);
   w.addEventListener("click", (e) => { if (e.target === w) close(); });
@@ -960,10 +1005,7 @@ function openAuditModal(data, trelloUrl = "") {
     element: w,
     close,
     hasUserInput() {
-      const active = document.activeElement;
-      if (active && w.contains(active) && active.matches("input, textarea, select")) return true;
-      return [...w.querySelectorAll("textarea, input:not([type=checkbox])")]
-        .some((field) => String(field.value || "").trim());
+      return userDirty;
     },
     setDeferredReady(load) {
       const host = w.querySelector("[data-workspace-load-state]");

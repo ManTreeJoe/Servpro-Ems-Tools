@@ -178,10 +178,12 @@ def test_pipeline_opens_card_before_slow_workspace_lookup():
     root = Path(__file__).parents[1]
     js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     handler = js[js.index("async function onAuditCard"):js.index("async function onFlagCard")]
-    assert handler.index("openAuditLoadingModal(client)") < handler.index(
-        "await pywebview.api.job_card_workspace")
-    for marker in ("Loading job workspace", "aria-busy", "element.isConnected",
-                   "showError"):
+    assert handler.index("instantWorkspaceData") < handler.index(
+        "await pywebview.api.job_card_workspace_fast")
+    assert handler.index("openAuditModal(instant") < handler.index(
+        "await pywebview.api.job_card_workspace_fast")
+    for marker in ("data-card-summary", "element.isConnected",
+                   "Basic card opened"):
         assert marker in js
 
 
