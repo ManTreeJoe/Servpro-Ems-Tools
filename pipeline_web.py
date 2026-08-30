@@ -266,6 +266,7 @@ class Api:
         self._document_cache = {}
         self._board_view_cache = None
         self._workspace_cache = {}
+        self._crm_workspace_cache = {}
 
     def _workspace_cache_key(self, client: str, card_id: str = "",
                              division: str = ""):
@@ -281,6 +282,20 @@ class Api:
                     (card_key and key[1] == card_key) or
                     (not client_key and not card_key)):
                 self._workspace_cache.pop(key, None)
+        if client_key:
+            self._crm_workspace_cache.pop(client_key, None)
+        elif not card_key:
+            self._crm_workspace_cache.clear()
+
+    def _crm_workspace(self, client: str, summary: dict) -> dict:
+        """Reuse the shared CRM hydration between fast and full opens."""
+        key = (client or "").strip().casefold()
+        cached = self._crm_workspace_cache.get(key)
+        if cached and time.monotonic() - cached[0] < 45:
+            return cached[1]
+        result = self._audit_api().crm_job_workspace(client, summary)
+        self._crm_workspace_cache[key] = (time.monotonic(), result)
+        return result
 
     def personal_preferences(self) -> dict:
         """Safe presentation-only choices for this Windows user."""
@@ -471,7 +486,7 @@ class Api:
         if not summary.get("ok"):
             reconcile_pool.shutdown(wait=False, cancel_futures=True)
             return summary
-        crm = audit_api.crm_job_workspace(client, summary)
+        crm = self._crm_workspace(client, summary)
         try:
             division_reconciliation = reconcile_future.result()
         finally:
@@ -653,7 +668,7 @@ class Api:
         summary = {"ok": True, "client": client, "found": True,
                    "form_issues": [], "photo_issues": [], "requirements": [],
                    "activity": [], "path": "", "trello_card_id": card_id or ""}
-        crm = audit_api.crm_job_workspace(client, summary)
+        crm = self._crm_workspace(client, summary)
         division_result = audit_api.crm_division_trello_cards(client)
         division_cards = division_result.get("cards", [])
         from ems_db_common import normalize_division

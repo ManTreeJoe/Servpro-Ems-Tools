@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.45",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.45",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.45/Linguar-Hub-Trial-Setup-1.6.0-trial.45.exe",
-  "notes": "Speeds up uncached job workspaces. Trello, documents, checklists, and stored activity now load concurrently; Trello comments import in one batch instead of up to 50 writes; division-card lookups are reused; and conflict reconciliation overlaps the folder and CRM reads. Measured full cold load dropped from about 22.7 to 11.1 seconds while warm opens remain instant."
+  "version": "1.6.0-trial.46",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.46",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.46/Linguar-Hub-Trial-Setup-1.6.0-trial.46.exe",
+  "notes": "Makes Pipeline card opening more predictable. Basic shared job details now appear first, CRM sections load in parallel, and the deeper audit reuses that CRM result instead of racing a duplicate Supabase request. A measured cold card displayed its basic workspace in about 5.3 seconds; warm opens remain instant."
 }

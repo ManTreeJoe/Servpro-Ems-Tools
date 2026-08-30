@@ -516,14 +516,6 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   }
   setStatus(`Opened "${client}" · loading shared job details…`);
   try {
-    // Start deep hydration immediately. It used to begin only after the fast
-    // shared-data request completed, stacking two independent waits every
-    // time a card opened.
-    const fullPromise = Promise.resolve(pywebview.api.job_card_workspace(
-      client, resolvedCardId, division)).then(
-        (value) => ({ value }),
-        (error) => ({ error }),
-      );
     const fast = await pywebview.api.job_card_workspace_fast(client, resolvedCardId, division);
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (!fast?.ok) {
@@ -534,6 +526,14 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
       modal = openAuditModal(fast, fast.selected_trello_url || resolvedUrl);
       setStatus(`Job opened in ${fast.load_ms || 0} ms · loading audit, Trello, and documents…`);
     }
+    // The full request starts after the shared CRM payload is cached. Running
+    // both at once duplicated the same Supabase hydration and could more than
+    // double load time on slower office connections.
+    const fullPromise = Promise.resolve(pywebview.api.job_card_workspace(
+      client, resolvedCardId, division)).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
     const fullOutcome = await fullPromise;
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (fullOutcome.error) {

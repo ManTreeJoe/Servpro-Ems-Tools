@@ -22,14 +22,17 @@ def test_shell_keeps_bounded_warm_panel_working_set():
     assert "state.activeFrame" in js
 
 
-def test_pipeline_starts_fast_and_deep_workspace_reads_concurrently():
+def test_pipeline_reuses_fast_crm_before_starting_deep_workspace_read():
     js = (ROOT / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     handler = js[js.index("async function onAuditCard"):js.index(
         "function instantWorkspaceData")]
     deep = handler.index("const fullPromise = Promise.resolve(pywebview.api.job_card_workspace")
     fast = handler.index("await pywebview.api.job_card_workspace_fast")
     consume = handler.index("await fullPromise")
-    assert deep < fast < consume
+    assert fast < deep < consume
+    py = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
+    assert "def _crm_workspace(" in py
+    assert "self._crm_workspace_cache" in py
 
 
 def test_background_board_refresh_avoids_unchanged_dom_rebuilds():

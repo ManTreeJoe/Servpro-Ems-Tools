@@ -233,9 +233,9 @@ def test_pipeline_workspace_progressively_loads_shared_then_live_data():
         assert marker in py
     handler = js[js.index("async function onAuditCard"):js.index(
         "function openAuditLoadingModal")]
-    assert handler.index("const fullPromise = Promise.resolve(pywebview.api.job_card_workspace") < handler.index(
-        "await pywebview.api.job_card_workspace_fast")
     assert handler.index("await pywebview.api.job_card_workspace_fast") < handler.index(
+        "const fullPromise = Promise.resolve(pywebview.api.job_card_workspace")
+    assert handler.index("const fullPromise = Promise.resolve(pywebview.api.job_card_workspace") < handler.index(
         "await fullPromise")
     for marker in ("workspaceRequestId", "hasUserInput", "setDeferredReady",
                    "data-refresh-workspace", "refresh_job_card_workspace"):

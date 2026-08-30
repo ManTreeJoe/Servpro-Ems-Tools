@@ -25,6 +25,7 @@ Launch:
 from __future__ import annotations
 
 import datetime as _dt
+from concurrent.futures import ThreadPoolExecutor
 import os
 import sys
 import threading
@@ -1779,13 +1780,42 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                     return {"ok": False, "missing": True,
                             "error": "job could not be added to the shared index"}
             master = ems_db.get_master_job(job.get("canon_key") or "") or job
-            log_entries, log_error = [], ""
-            try:
-                log_entries = ems_db.list_job_log_entries(
-                    master.get("canon_key") or job.get("canon_key") or "")
-            except Exception as ex:
-                log_error = ("Shared Job Log needs database setup: "
-                             f"{type(ex).__name__}: {ex}")
+            master_key = master.get("canon_key") or job.get("canon_key") or ""
+
+            def load_log():
+                try:
+                    return (ems_db.list_job_log_entries(master_key), "")
+                except Exception as ex:
+                    return ([], "Shared Job Log needs database setup: "
+                            f"{type(ex).__name__}: {ex}")
+
+            def load_timeline():
+                try:
+                    return ems_db.list_events(master_key)[:50]
+                except Exception:
+                    return []
+
+            def load_audit_history():
+                try:
+                    import audit_export
+                    return audit_export.job_audit_history(client)[-30:]
+                except Exception:
+                    return []
+
+            # These hydrate separate sections of the workspace and share no
+            # mutable state. Serial reads made the first useful card wait on
+            # every section even though most users start with the summary.
+            with ThreadPoolExecutor(max_workers=4,
+                                    thread_name_prefix="crm-workspace") as pool:
+                log_future = pool.submit(load_log)
+                timeline_future = pool.submit(load_timeline)
+                history_future = pool.submit(load_audit_history)
+                division_future = pool.submit(
+                    self.crm_division_trello_cards, client)
+                log_entries, log_error = log_future.result()
+                timeline = timeline_future.result()
+                audit_history = history_future.result()
+                division_cards = division_future.result().get("cards", [])
             log_notice = ""
             try:
                 import ems_db_offline
@@ -1796,27 +1826,17 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 pass
             from job_progress import evaluate as evaluate_job_progress
             progress = evaluate_job_progress(master, audit_state, log_entries)
-            timeline = []
-            try:
-                timeline = ems_db.list_events(
-                    master.get("canon_key") or job.get("canon_key") or "")[:50]
-            except Exception:
-                pass
-            try:
-                import audit_export
-                for audit_event in audit_export.job_audit_history(client)[-30:]:
-                    issue_count = sum(len(audit_event.get(key) or []) for key in
-                                      ("form_issues", "photo_issues", "note_issues", "missing"))
-                    timeline.append({
-                        "event_type": "crm_audit_state",
-                        "event_at": audit_event.get("audited_at") or "",
-                        "payload_json": {"status": audit_event.get("status") or "",
-                                         "issue_count": issue_count},
-                    })
-                timeline.sort(key=lambda event: event.get("event_at") or "", reverse=True)
-                timeline = timeline[:50]
-            except Exception:
-                pass
+            for audit_event in audit_history:
+                issue_count = sum(len(audit_event.get(key) or []) for key in
+                                  ("form_issues", "photo_issues", "note_issues", "missing"))
+                timeline.append({
+                    "event_type": "crm_audit_state",
+                    "event_at": audit_event.get("audited_at") or "",
+                    "payload_json": {"status": audit_event.get("status") or "",
+                                     "issue_count": issue_count},
+                })
+            timeline.sort(key=lambda event: event.get("event_at") or "", reverse=True)
+            timeline = timeline[:50]
             return {
                 "ok": True,
                 "job_id": master.get("job_id") or "",
@@ -1828,8 +1848,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "job_type": master.get("job_type") or "",
                 "priority": master.get("priority") or "normal",
                 "work_environments": master.get("work_environments") or [],
-                "division_trello_cards": self.crm_division_trello_cards(
-                    client).get("cards", []),
+                "division_trello_cards": division_cards,
                 "relationships": master.get("relationships") or [],
                 "job_log": log_entries,
                 "job_log_error": log_error,
