@@ -56,6 +56,10 @@ WizardStyle=modern
 SetupIconFile={#SetupIcon}
 ; Close a running copy automatically, then reopen it after install.
 CloseApplications=yes
+; Restrict Restart Manager to this channel's executable. Main and Trial ship
+; many identical DLL names; the default broad filter can otherwise close Main
+; while a Trial-only update is installed.
+CloseApplicationsFilter={#MyAppExe}
 RestartApplications=yes
 SetupLogging=yes
 

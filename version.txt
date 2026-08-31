@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.48",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.48",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.48/Linguar-Hub-Trial-Setup-1.6.0-trial.48.exe",
-  "notes": "Modern Jobs board overhaul. Pipeline now uses a full-width Trello-style restoration board with wider glass lanes, job-jacket cards, clearer counts, tighter responsive controls, six per-board restoration backgrounds, and custom local photo backgrounds. Background choices are saved per board and per PC without storing image data in Supabase."
+  "version": "1.6.0-trial.49",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.49",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.49/Linguar-Hub-Trial-Setup-1.6.0-trial.49.exe",
+  "notes": "Modern Jobs board overhaul plus isolated Trial updating. Pipeline now uses a full-width Trello-style restoration board with glass lanes, job-jacket cards, responsive controls, six per-board background presets, and custom local photo backgrounds. Trial updates now close only Trial—not the running Main app."
 }
