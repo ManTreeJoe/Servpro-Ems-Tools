@@ -798,24 +798,37 @@ class Api:
                     "load_ms": round((time.monotonic() - started) * 1000)}
         if not (client or "").strip():
             return {"ok": False, "error": "client required"}
-        audit_api = self._audit_api()
         summary = {"ok": True, "client": client, "found": True,
                    "form_issues": [], "photo_issues": [], "requirements": [],
                    "activity": [], "path": "", "trello_card_id": card_id or ""}
-        crm = self._crm_workspace(client, summary)
-        division_result = audit_api.crm_division_trello_cards(client)
-        division_cards = division_result.get("cards", [])
+        # First paint must stay one cheap identity read. The previous "fast"
+        # path called crm_job_workspace, which waited on master-job joins,
+        # logs, events, audit history and division-card queries (~3 seconds
+        # on the office connection) before showing basic facts. The full
+        # request that follows still hydrates all of that in the background.
+        job = ems_db.find_job_by_name(client) or {}
         from ems_db_common import normalize_division
         selected_division = normalize_division(division) if division else "EMS"
-        selected = next((item for item in division_cards
-                         if item.get("division") == selected_division), {})
-        cid = str(selected.get("card_id") or "").strip()
-        if not cid and selected_division == "EMS":
-            cid = (card_id or "").strip()
+        cid = (card_id or "").strip()
+        division_cards = [{"division": selected_division, "card_id": cid,
+                           "url": f"https://trello.com/c/{cid}" if cid else "",
+                           "pinned": bool(cid)}]
+        from job_progress import evaluate as evaluate_job_progress
+        crm = {
+            "ok": True,
+            "job_id": job.get("job_id") or "",
+            "canon_key": job.get("canon_key") or "",
+            "lifecycle_stage": job.get("lifecycle_stage") or "intake",
+            "job_type": job.get("job_type") or "",
+            "priority": job.get("priority") or "normal",
+            "work_environments": [], "division_trello_cards": division_cards,
+            "relationships": [], "job_log": [], "timeline": [],
+            "progress": evaluate_job_progress(job, summary, []),
+        }
+        crm["progress"]["review_mode"] = True
         info_sections = []
         try:
             import job_settings
-            job = ems_db.find_job_by_name(client) or {}
             values, grouped, order = job_settings.stored_values(job), {}, []
             for fid, section, _key, label, _core in job_settings.FIELDS:
                 value = str(values.get(fid) or "").strip()
@@ -829,25 +842,13 @@ class Api:
                              for section in order]
         except Exception:
             pass
-        comments = []
-        for activity in pipeline_store.list_activity(cid):
-            if activity.get("action_type") != "comment":
-                continue
-            comments.append({"id": activity.get("external_id") or
-                             activity.get("activity_key") or "",
-                             "external_id": activity.get("external_id") or "",
-                             "text": activity.get("body") or "",
-                             "actor": activity.get("actor_name") or "Linguar Hub",
-                             "at": activity.get("happened_at") or "",
-                             "source": activity.get("source") or "linguar"})
         return {"ok": True, "client": client, "card_id": cid,
                 "selected_division": selected_division,
                 "selected_trello_url": (f"https://trello.com/c/{cid}" if cid else ""),
                 "audit": summary, "crm": crm, "info_sections": info_sections,
                 "division_trello_cards": division_cards,
                 "division_card_reconciliation": {"ok": True, "divisions": []},
-                "checklists": pipeline_store.list_checklists(cid),
-                "comments": comments, "attachments": [], "members": [],
+                "checklists": [], "comments": [], "attachments": [], "members": [],
                 "documents": {"provider": "DocuSign", "request": {}, "files": [],
                               "connected": False},
                 "deferred_loading": True,
