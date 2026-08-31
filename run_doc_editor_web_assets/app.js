@@ -14,7 +14,6 @@ window.addEventListener("pywebviewready", async () => {
   $("#open-word").addEventListener("click", () => pywebview.api.open_word(state.dayOffset));
   $("#save-btn").addEventListener("click", save);
   $("#undo-btn").addEventListener("click", undo);
-  $("#add-row").addEventListener("click", () => openComposer(state.activeSection, null));
   $("#composer-close").addEventListener("click", closeComposer);
   $("#composer-cancel").addEventListener("click", closeComposer);
   $("#composer-apply").addEventListener("click", applyComposer);
@@ -91,6 +90,7 @@ async function loadDay() {
 
 function renderRows() {
   if (!state.model?.sections) return;
+  const priorScroll = $("#document-pages")?.scrollTop || 0;
   const order = state.model.section_order || Object.keys(state.model.sections);
   if (!order.includes(state.activeSection)) state.activeSection = order[0] || "work";
   const labels = state.model.section_labels || {};
@@ -102,21 +102,48 @@ function renderRows() {
       <span class="section-nav-count">${count}</span>
     </button>`;
   }).join("");
-  document.querySelectorAll(".section-nav").forEach(button =>
-    button.addEventListener("click", () => {
-      state.activeSection = button.dataset.section;
-      PanelState.set({ activeSection: state.activeSection });
-      renderRows();
-    }));
-  const section = state.activeSection;
-  const rows = state.model.sections[section] || [];
-  $("#section-title").textContent = labels[section] || section;
-  $("#section-kicker").textContent = section === "work" ? "Today’s field plan" : section === "monitor" ? "Keep eyes on" : "Queue and follow-up";
-  $("#section-count").textContent = `${rows.length} row${rows.length === 1 ? "" : "s"}`;
-  $("#section-rows").innerHTML = rows.map((row, index) => rowHtml(section, row, index)).join("");
-  $("#add-row").textContent = `＋ Add row to ${labels[section] || section}`;
+  $("#document-pages").innerHTML = order.map((section) => {
+    const rows = state.model.sections[section] || [];
+    const kicker = section === "work" ? "Today’s field plan" : section === "monitor" ? "Keep eyes on" : "Queue and follow-up";
+    return `<article class="document-section" id="${sectionDomId(section)}" data-doc-section="${escapeHtml(section)}">
+      <header class="section-head"><div><span class="section-kicker">${escapeHtml(kicker)}</span><h2>${escapeHtml(labels[section] || section)}</h2></div><span class="section-count">${rows.length} row${rows.length === 1 ? "" : "s"}</span></header>
+      <div class="rows">${rows.map((row, index) => rowHtml(section, row, index)).join("")}</div>
+      <button class="add-row" data-add-row="${escapeHtml(section)}">＋ Add row to ${escapeHtml(labels[section] || section)}</button>
+    </article>`;
+  }).join("");
+  document.querySelectorAll(".section-nav").forEach(button => button.addEventListener("click", () => {
+    state.activeSection = button.dataset.section;
+    PanelState.set({ activeSection: state.activeSection });
+    setActiveToc(state.activeSection);
+    document.getElementById(sectionDomId(state.activeSection))?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+  document.querySelectorAll("[data-add-row]").forEach(button =>
+    button.addEventListener("click", () => openComposer(button.dataset.addRow, null)));
   bindRows();
+  requestAnimationFrame(() => {
+    const scroller = $("#document-pages");
+    if (scroller) scroller.scrollTop = priorScroll;
+    setActiveToc(state.activeSection);
+  });
 }
+function sectionDomId(section) { return `run-section-${String(section).replace(/[^a-z0-9_-]/gi, "-")}`; }
+function setActiveToc(section) {
+  document.querySelectorAll(".section-nav").forEach(button => button.classList.toggle("active", button.dataset.section === section));
+  document.querySelector(`.section-nav[data-section="${CSS.escape(section)}"]`)?.scrollIntoView({ block: "nearest" });
+}
+function trackDocumentSection() {
+  const scroller = $("#document-pages");
+  if (!scroller) return;
+  const top = scroller.getBoundingClientRect().top + 28;
+  let current = document.querySelector("[data-doc-section]")?.dataset.docSection;
+  document.querySelectorAll("[data-doc-section]").forEach(section => {
+    if (section.getBoundingClientRect().top <= top) current = section.dataset.docSection;
+  });
+  if (current && current !== state.activeSection) {
+    state.activeSection = current; PanelState.set({ activeSection: current }); setActiveToc(current);
+  }
+}
+document.addEventListener("scroll", (event) => { if (event.target?.id === "document-pages") trackDocumentSection(); }, true);
 function rowHtml(section, row, index) {
   return `<div class="run-row ${row.struck ? "struck" : ""}" data-section="${section}" data-index="${index}">
     <button class="row-tab" draggable="true" title="Drag this row" aria-label="Drag row ${index + 1}"><span class="grip-lines" aria-hidden="true">☰</span><span>${index + 1}</span></button>
@@ -246,7 +273,7 @@ function addRow(section) {
   pushUndo();
   state.model.sections[section].push({ id: `new:${Date.now()}`, text: "", struck: false });
   markDirty(); renderRows();
-  $("#section-rows .run-row:last-child .row-text")?.focus();
+  document.querySelector(`#${sectionDomId(section)} .run-row:last-child .row-text`)?.focus();
 }
 function removeRow(ref) {
   pushUndo(); state.model.sections[ref.section].splice(ref.index, 1);

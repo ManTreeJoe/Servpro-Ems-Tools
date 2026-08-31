@@ -244,7 +244,7 @@ function renderBoard() {
     lanesHtml = `<div class="board-warn" style="padding:24px;">"${escapeHtml(active.name)}" not found on Trello.</div>`;
   } else {
     const lanes = (active.lanes || []).map((l) => renderLane(active, l, q)).join("");
-    lanesHtml = `<div class="lanes-row" data-hdrag data-hdrag-horizontal-wheel>${lanes || `<div class="lane-empty">No lanes.</div>`}<div class="lane-add" data-no-drag><button class="lane-add-button" type="button" data-add-lane>＋ Add another lane</button></div></div>`;
+    lanesHtml = `<div class="lanes-row" data-hdrag data-hdrag-nowheel>${lanes || `<div class="lane-empty">No lanes.</div>`}<div class="lane-add" data-no-drag><button class="lane-add-button" type="button" data-add-lane>＋ Add another lane</button></div></div>`;
   }
 
   root.innerHTML = `
