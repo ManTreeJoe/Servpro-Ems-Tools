@@ -17,6 +17,7 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 import io
 import os
+import re
 import sys
 import time
 import webbrowser
@@ -86,6 +87,34 @@ BOARD_SPECS = (
     ("est", "ESTIMATING"),
     ("contents", "CONTENTS"),
 )
+
+
+def _board_name_key(value: str) -> str:
+    """Normalize harmless Trello naming differences without guessing boards."""
+    return re.sub(r"[^A-Z0-9]+", " ", str(value or "").upper()).strip()
+
+
+def _resolve_board(boards: list[dict], expected_name: str):
+    expected = _board_name_key(expected_name)
+    exact = next((b for b in boards
+                  if _board_name_key(b.get("name")) == expected), None)
+    if exact:
+        return exact
+    # Permit a year/franchise suffix, e.g. "WORK IN PROGRESS - 2026", while
+    # avoiding broad substring matching that could select an unrelated board.
+    candidates = [b for b in boards
+                  if _board_name_key(b.get("name")).startswith(expected + " ")]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _complete_board_payload(payload: dict) -> bool:
+    """A partial/missing projection is not a successful Pipeline cache."""
+    boards = payload.get("boards") or []
+    by_key = {b.get("key"): b for b in boards}
+    return bool(payload.get("ok")) and all(
+        key in by_key and not by_key[key].get("missing")
+        for key, _name in BOARD_SPECS
+    )
 
 # Lanes never shown on the board — spacers + admin/template columns that
 # aren't real jobs. (Per-CARD noise is handled by pipeline_stages.
@@ -235,15 +264,13 @@ def _trello_board_payload():
     """Pull all configured transition boards from the Trello adapter."""
     import trello_client as tc
     try:
-        boards_by_name = {
-            (b.get("name") or "").strip().upper(): b
-            for b in (tc.list_boards() or [])}
+        available_boards = tc.list_boards() or []
     except Exception as ex:
         return {"ok": False, "error": str(ex), "boards": []}
     with ThreadPoolExecutor(max_workers=len(BOARD_SPECS),
                             thread_name_prefix="trello-board") as pool:
         futures = [pool.submit(_build_board, tc, ps, key, bname,
-                               boards_by_name.get(bname.strip().upper()))
+                               _resolve_board(available_boards, bname))
                    for key, bname in BOARD_SPECS]
         out = [future.result() for future in futures]
     return {"ok": True, "boards": out, "source": "trello"}
@@ -361,11 +388,11 @@ class Api:
                 return {**cached_payload, "cached": True}
         if not force_trello:
             saved = pipeline_store.load_board_cache()
-            if saved.get("ok") and saved.get("boards"):
+            if _complete_board_payload(saved):
                 self._board_view_cache = (time.monotonic(), saved)
                 return saved
             shared = pipeline_store.load_boards(BOARD_SPECS)
-            if shared.get("ok") and shared.get("boards"):
+            if _complete_board_payload(shared):
                 self._board_view_cache = (time.monotonic(), shared)
                 return shared
         live = _trello_board_payload()
@@ -387,7 +414,7 @@ class Api:
     def board_view_shared_refresh(self) -> dict:
         """Refresh the saved projection after the UI has already painted."""
         shared = pipeline_store.load_boards(BOARD_SPECS)
-        if shared.get("ok") and shared.get("boards"):
+        if _complete_board_payload(shared):
             self._board_view_cache = (time.monotonic(), shared)
             return shared
         # Until the shared Pipeline migration is installed, keep the instant
@@ -404,14 +431,12 @@ class Api:
         import trello_client as tc
         import pipeline_stages as ps
         try:
-            boards_by_name = {
-                (b.get("name") or "").strip().upper(): b
-                for b in (tc.list_boards() or [])}
+            available_boards = tc.list_boards() or []
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
         bname = spec[1]
         board = _build_board(tc, ps, key, bname,
-                             boards_by_name.get(bname.strip().upper()))
+                             _resolve_board(available_boards, bname))
         mirrored = pipeline_store.mirror_boards({"boards": [board]})
         return {"ok": True, "board": board, "source": "trello",
                 "mirrored": bool(mirrored.get("ok"))}

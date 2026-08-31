@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.50",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.50",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.50/Linguar-Hub-Trial-Setup-1.6.0-trial.50.exe",
-  "notes": "Reliable Trello-style horizontal board scrolling. The Jobs board now supports wheel panning on board space, Shift+wheel, stable click-and-drag with pointer capture, and smart lane scrolling that moves vertically until the lane boundary before panning horizontally."
+  "version": "1.6.0-trial.51",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.51",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.51/Linguar-Hub-Trial-Setup-1.6.0-trial.51.exe",
+  "notes": "Repairs missing Trello boards caused by stale partial Pipeline caches. Required boards now validate before cached data is accepted, incomplete caches recover from live Trello automatically, and harmless board-name suffixes are supported. Includes the improved horizontal board scrolling from Trial .50."
 }
