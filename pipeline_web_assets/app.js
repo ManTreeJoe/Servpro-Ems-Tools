@@ -290,6 +290,15 @@ function renderBoard() {
       e.stopPropagation(); openCardMenu(e, cardEl);
     });
   });
+  root.querySelectorAll(".lane-head").forEach((head) => {
+    head.addEventListener("dragstart", onLaneDragStart);
+    head.addEventListener("dragend", onLaneDragEnd);
+  });
+  root.querySelectorAll("[data-lane-menu]").forEach((button) =>
+    button.addEventListener("click", (event) => {
+      event.stopPropagation(); openLaneMenu(event, button.closest(".lane"));
+    }));
+  root.querySelector("[data-add-lane]")?.addEventListener("click", openAddLaneComposer);
 }
 
 function activeBoardLook() {
@@ -339,15 +348,6 @@ async function hydrateCustomBoardLooks() {
       state.boardLooks[key] = { preset: "asphalt" };
     }
   });
-  root.querySelectorAll(".lane-head").forEach((head) => {
-    head.addEventListener("dragstart", onLaneDragStart);
-    head.addEventListener("dragend", onLaneDragEnd);
-  });
-  root.querySelectorAll("[data-lane-menu]").forEach((button) =>
-    button.addEventListener("click", (event) => {
-      event.stopPropagation(); openLaneMenu(event, button.closest(".lane"));
-    }));
-  root.querySelector("[data-add-lane]")?.addEventListener("click", openAddLaneComposer);
   await Promise.all(jobs);
 }
 
