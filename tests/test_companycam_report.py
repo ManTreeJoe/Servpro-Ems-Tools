@@ -22,6 +22,25 @@ def test_report_plan_filters_dates_and_tag(monkeypatch):
     assert [photo["id"] for photo in result["photos"]] == ["1"]
 
 
+def test_report_plan_pages_contact_sheet_and_uses_thumbnail(monkeypatch):
+    monkeypatch.setattr(companycam_api, "list_project_photos", lambda _pid: [
+        {"id": str(index), "captured_at": 1767268800 + index,
+         "uris": [
+             {"type": "original", "uri": f"https://example/{index}.jpg"},
+             {"type": "thumbnail", "uri": f"https://example/thumb-{index}.jpg"},
+         ]}
+        for index in range(5)
+    ])
+
+    result = companycam_report.plan("project", offset=2, limit=2)
+
+    assert result["total"] == 5
+    assert result["count"] == 2
+    assert result["has_more"] is True
+    assert [photo["id"] for photo in result["photos"]] == ["2", "3"]
+    assert result["photos"][0]["preview_url"] == "https://example/thumb-2.jpg"
+
+
 def test_job_docs_folder_prefers_requested_division(tmp_path):
     ems_docs = tmp_path / "EMS" / "DOCS"
     recon_docs = tmp_path / "RECON" / "DOCS"

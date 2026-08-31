@@ -30,8 +30,18 @@ def _description(raw: dict) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def _preview_uri(raw: dict) -> str:
+    """Prefer a lightweight CompanyCam rendition for the contact sheet."""
+    by_type = {}
+    for item in raw.get("uris") or []:
+        if isinstance(item, dict):
+            by_type[str(item.get("type") or "").casefold()] = item.get("uri") or item.get("url") or ""
+    return (by_type.get("thumbnail") or by_type.get("web") or
+            by_type.get("original") or "")
+
+
 def plan(project_id: str, *, start_date: str = "", end_date: str = "",
-         tag: str = "", limit: int = 80) -> dict:
+         tag: str = "", offset: int = 0, limit: int = 120) -> dict:
     import companycam_api as cc
     try:
         after, before = _epoch(start_date), _epoch(end_date, end=True)
@@ -61,14 +71,17 @@ def plan(project_id: str, *, start_date: str = "", end_date: str = "",
         stamp = dt.datetime.fromtimestamp(captured) if captured else None
         rows.append({
             "id": str(raw.get("id") or ""), "url": url,
+            "preview_url": _preview_uri(raw) or url,
             "date": stamp.strftime("%m/%d/%Y %I:%M %p") if stamp else "",
             "captured_at": captured, "creator": raw.get("creator_name") or "",
             "description": _description(raw), "tags": tags,
         })
-        if len(rows) >= max(1, min(int(limit or 80), 150)):
-            break
-    return {"ok": True, "project_id": str(project_id), "photos": rows,
-            "count": len(rows)}
+    start = max(0, int(offset or 0))
+    page_size = max(1, min(int(limit or 120), 5000))
+    page = rows[start:start + page_size]
+    return {"ok": True, "project_id": str(project_id), "photos": page,
+            "count": len(page), "total": len(rows), "offset": start,
+            "has_more": start + len(page) < len(rows)}
 
 
 def generate(project_id: str, client: str, docs_folder: str, report_type: str,
@@ -76,7 +89,7 @@ def generate(project_id: str, client: str, docs_folder: str, report_type: str,
              tag: str = "") -> dict:
     chosen = {str(value) for value in (photo_ids or []) if str(value)}
     result = plan(project_id, start_date=start_date, end_date=end_date,
-                  tag=tag, limit=150)
+                  tag=tag, offset=0, limit=5000)
     if not result.get("ok"):
         return result
     photos = [row for row in result["photos"] if not chosen or row["id"] in chosen]

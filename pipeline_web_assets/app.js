@@ -1543,7 +1543,9 @@ function openQuickPhotoReportModal(client, jobPath, division) {
         <button class="btn btn-primary" type="button" data-preview-report>Find photos</button>
       </div>
       <div class="quick-report-message" data-report-message>Select dates and find the CompanyCam photos for this report.</div>
+      <div class="quick-report-gallery-tools" data-gallery-tools hidden><button class="text-btn" data-select-loaded>Select loaded</button><button class="text-btn" data-clear-selection>Clear selection</button><span data-gallery-count></span></div>
       <div class="quick-report-photos" data-report-photos></div>
+      <button class="btn quick-report-more" data-load-more hidden>Load more photos</button>
     </div>
     <footer class="modal-foot"><span data-report-selection>0 selected</span><button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-generate-report disabled>Generate PDF</button></footer>
   </div>`;
@@ -1556,34 +1558,65 @@ function openQuickPhotoReportModal(client, jobPath, division) {
   const generate = modal.querySelector("[data-generate-report]");
   const selection = modal.querySelector("[data-report-selection]");
   let generatedPath = "";
+  let loadedPhotos = [];
+  let selectedIds = new Set();
+  let totalPhotos = 0;
   const filters = () => ({
     start: modal.querySelector("[data-report-start]").value,
     end: modal.querySelector("[data-report-end]").value,
     tag: modal.querySelector("[data-report-tag]").value.trim(),
   });
   const updateSelection = () => {
-    const count = photosHost.querySelectorAll("input:checked").length;
+    const count = selectedIds.size;
     selection.textContent = `${count} selected`;
     generate.disabled = count === 0;
   };
-  modal.querySelector("[data-preview-report]").addEventListener("click", async (event) => {
-    const button = event.currentTarget; const f = filters();
+  const renderLoadedPhotos = () => {
+    photosHost.innerHTML = loadedPhotos.map((photo) => `<article class="quick-report-photo ${selectedIds.has(photo.id) ? "is-selected" : ""}" data-photo-id="${escapeAttr(photo.id)}"><label><input type="checkbox" value="${escapeAttr(photo.id)}" ${selectedIds.has(photo.id) ? "checked" : ""}><span class="sr-only">Include photo</span></label><button type="button" class="quick-report-preview" data-preview-photo="${escapeAttr(photo.id)}"><img src="${escapeAttr(photo.preview_url || photo.url)}" alt="View full-size jobsite photo"></button><span><strong>${escapeHtml(photo.description || "Jobsite photo")}</strong><small>${escapeHtml([photo.date, photo.creator, (photo.tags || []).join(", ")].filter(Boolean).join(" · "))}</small></span></article>`).join("");
+    photosHost.querySelectorAll("input").forEach((input) => input.addEventListener("change", () => {
+      if (input.checked) selectedIds.add(input.value); else selectedIds.delete(input.value);
+      input.closest(".quick-report-photo")?.classList.toggle("is-selected", input.checked);
+      updateSelection();
+    }));
+    photosHost.querySelectorAll("[data-preview-photo]").forEach((button) => button.addEventListener("click", () => {
+      const photo = loadedPhotos.find((item) => item.id === button.dataset.previewPhoto);
+      if (!photo) return;
+      const viewer = document.createElement("div");
+      viewer.className = "photo-lightbox";
+      viewer.innerHTML = `<button type="button" aria-label="Close photo">×</button><img src="${escapeAttr(photo.url)}" alt=""><div><strong>${escapeHtml(photo.description || "Jobsite photo")}</strong><small>${escapeHtml([photo.date, photo.creator, (photo.tags || []).join(", ")].filter(Boolean).join(" · "))}</small></div>`;
+      modal.appendChild(viewer);
+      viewer.addEventListener("click", (event) => { if (event.target === viewer || event.target.closest("button")) viewer.remove(); });
+    }));
+    modal.querySelector("[data-gallery-count]").textContent = `${loadedPhotos.length} of ${totalPhotos} shown`;
+    modal.querySelector("[data-gallery-tools]").hidden = loadedPhotos.length === 0;
+    updateSelection();
+  };
+  const loadPhotos = async (reset = false) => {
+    const button = reset ? modal.querySelector("[data-preview-report]") : modal.querySelector("[data-load-more]");
+    const f = filters();
+    if (reset) { loadedPhotos = []; selectedIds = new Set(); totalPhotos = 0; photosHost.innerHTML = ""; }
     button.disabled = true; button.textContent = "Reading CompanyCam…";
-    message.textContent = "Loading project photos and tags…"; photosHost.innerHTML = "";
-    const result = await pywebview.api.companycam_quick_report_plan(client, jobPath, division, f.start, f.end, f.tag);
-    button.disabled = false; button.textContent = "Find photos";
+    message.textContent = "Loading project photos and tags…";
+    const result = await pywebview.api.companycam_quick_report_plan(client, jobPath, division, f.start, f.end, f.tag, loadedPhotos.length, 120);
+    button.disabled = false; button.textContent = reset ? "Find photos" : "Load more photos";
     if (!result?.ok) { message.textContent = result?.error || "Photos could not be loaded."; message.className = "quick-report-message error"; return; }
     const photos = result.photos || [];
-    message.textContent = photos.length ? `${photos.length} matching photos · clear any you do not want in the PDF` : "No photos match these dates and tag.";
+    loadedPhotos.push(...photos);
+    photos.forEach((photo) => selectedIds.add(photo.id));
+    totalPhotos = Number(result.total || loadedPhotos.length);
+    message.textContent = loadedPhotos.length ? `${totalPhotos} matching photos · open any photo to inspect it, then check exactly what belongs in the PDF` : "No photos match these dates and tag.";
     message.className = "quick-report-message";
-    photosHost.innerHTML = photos.map((photo) => `<label class="quick-report-photo"><input type="checkbox" value="${escapeAttr(photo.id)}" checked><img src="${escapeAttr(photo.url)}" alt=""><span><strong>${escapeHtml(photo.description || "Jobsite photo")}</strong><small>${escapeHtml([photo.date, photo.creator, (photo.tags || []).join(", ")].filter(Boolean).join(" · "))}</small></span></label>`).join("");
-    photosHost.querySelectorAll("input").forEach((input) => input.addEventListener("change", updateSelection));
-    updateSelection();
-  });
+    modal.querySelector("[data-load-more]").hidden = !result.has_more;
+    renderLoadedPhotos();
+  };
+  modal.querySelector("[data-preview-report]").addEventListener("click", () => loadPhotos(true));
+  modal.querySelector("[data-load-more]").addEventListener("click", () => loadPhotos(false));
+  modal.querySelector("[data-select-loaded]").addEventListener("click", () => { loadedPhotos.forEach((photo) => selectedIds.add(photo.id)); renderLoadedPhotos(); });
+  modal.querySelector("[data-clear-selection]").addEventListener("click", () => { selectedIds.clear(); renderLoadedPhotos(); });
   generate.addEventListener("click", async () => {
     if (generatedPath) { pywebview.api.open_document(generatedPath); return; }
     const f = filters();
-    const ids = Array.from(photosHost.querySelectorAll("input:checked")).map((input) => input.value);
+    const ids = Array.from(selectedIds);
     generate.disabled = true; generate.textContent = "Building PDF…";
     message.textContent = `Downloading and formatting ${ids.length} photos…`;
     const result = await pywebview.api.generate_companycam_quick_report(

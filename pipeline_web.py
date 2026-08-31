@@ -1002,14 +1002,16 @@ class Api:
     def companycam_quick_report_plan(self, client: str, job_path: str = "",
                                      division: str = "EMS",
                                      start_date: str = "", end_date: str = "",
-                                     tag: str = "") -> dict:
+                                     tag: str = "", offset: int = 0,
+                                     limit: int = 120) -> dict:
         context = self.companycam_report_context(client, job_path, division)
         if not context.get("ok"):
             return context
         import companycam_report
         result = companycam_report.plan(context["project_id"],
                                         start_date=start_date,
-                                        end_date=end_date, tag=tag)
+                                        end_date=end_date, tag=tag,
+                                        offset=offset, limit=limit)
         return {**context, **result}
 
     def generate_companycam_quick_report(self, client: str, job_path: str,
