@@ -716,6 +716,34 @@ def delete_comment(action_id):
         return False
 
 
+def create_list(board_id, name, *, pos="bottom"):
+    """Create a Trello list (Pipeline lane) and return its raw payload."""
+    name = (name or "").strip()
+    if not board_id or not name:
+        return None
+    return _call("/lists", method="POST",
+                 data={"idBoard": board_id, "name": name, "pos": pos})
+
+
+def update_list(list_id, *, name=None, pos=None, closed=None):
+    """Update one Trello list without overwriting unspecified fields."""
+    if not list_id:
+        return None
+    params = {}
+    if name is not None:
+        clean = str(name).strip()
+        if not clean:
+            return None
+        params["name"] = clean
+    if pos is not None:
+        params["pos"] = pos
+    if closed is not None:
+        params["closed"] = "true" if closed else "false"
+    if not params:
+        return None
+    return _call(f"/lists/{list_id}", method="PUT", params=params)
+
+
 def update_comment(action_id, text):
     """Replace an existing Trello comment in place.
 

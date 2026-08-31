@@ -20,6 +20,7 @@ const state = {
   boardFilter: "all",       // all | attention | due | sync
   boardLooks: {},            // board key -> {preset, customPath, customData}
   drag: null,               // {cardId, name, fromListId, fromLane, boardKey}
+  laneDrag: null,           // {listId, name, targetId, side}
   // Stages table view
   rows: [],
   stages: [],               // [{key, label}]
@@ -243,7 +244,7 @@ function renderBoard() {
     lanesHtml = `<div class="board-warn" style="padding:24px;">"${escapeHtml(active.name)}" not found on Trello.</div>`;
   } else {
     const lanes = (active.lanes || []).map((l) => renderLane(active, l, q)).join("");
-    lanesHtml = `<div class="lanes-row" data-hdrag data-hdrag-horizontal-wheel>${lanes || `<div class="lane-empty">No lanes.</div>`}</div>`;
+    lanesHtml = `<div class="lanes-row" data-hdrag data-hdrag-horizontal-wheel>${lanes || `<div class="lane-empty">No lanes.</div>`}<div class="lane-add" data-no-drag><button class="lane-add-button" type="button" data-add-lane>＋ Add another lane</button></div></div>`;
   }
 
   root.innerHTML = `
@@ -338,6 +339,15 @@ async function hydrateCustomBoardLooks() {
       state.boardLooks[key] = { preset: "asphalt" };
     }
   });
+  root.querySelectorAll(".lane-head").forEach((head) => {
+    head.addEventListener("dragstart", onLaneDragStart);
+    head.addEventListener("dragend", onLaneDragEnd);
+  });
+  root.querySelectorAll("[data-lane-menu]").forEach((button) =>
+    button.addEventListener("click", (event) => {
+      event.stopPropagation(); openLaneMenu(event, button.closest(".lane"));
+    }));
+  root.querySelector("[data-add-lane]")?.addEventListener("click", openAddLaneComposer);
   await Promise.all(jobs);
 }
 
@@ -378,12 +388,102 @@ function renderLane(board, lane, q) {
   return `<div class="lane" data-list-id="${escapeAttr(lane.list_id)}"
                data-lane-name="${escapeAttr(lane.name)}"
                data-board-key="${escapeAttr(board.key)}">
-    <div class="lane-head">
+    <div class="lane-head" draggable="true" title="Drag to reorder lane">
+      <span class="lane-grip" aria-hidden="true">⠿</span>
       <span class="lane-name">${escapeHtml(lane.name)}</span>
       <span class="lane-count">${cards.length}</span>
+      <button class="lane-menu-button" type="button" data-lane-menu data-no-drag aria-label="Lane actions for ${escapeAttr(lane.name)}">⋯</button>
     </div>
     <div class="lane-cards">${cardsHtml}</div>
   </div>`;
+}
+
+function activeBoard() {
+  return (state.board.boards || []).find((board) => board.key === state.activeBoardKey);
+}
+
+function openAddLaneComposer() {
+  const host = $(".lane-add");
+  if (!host || host.querySelector("form")) return;
+  host.innerHTML = `<form class="lane-add-form"><input maxlength="80" aria-label="Lane name" placeholder="Lane name…"><div><button class="btn btn-primary compact" type="submit">Add lane</button><button class="lane-compose-cancel" type="button" aria-label="Cancel">×</button></div></form>`;
+  const input = host.querySelector("input");
+  input.focus();
+  host.querySelector(".lane-compose-cancel").addEventListener("click", renderBoard);
+  host.querySelector("form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    const submit = host.querySelector("[type='submit']");
+    submit.disabled = true; submit.textContent = "Adding…";
+    const result = await pywebview.api.create_lane(state.activeBoardKey, name);
+    if (!result?.ok) { setStatus(`Could not add lane: ${result?.error || "?"}`, "error"); submit.disabled = false; submit.textContent = "Add lane"; return; }
+    activeBoard()?.lanes.push(result.lane);
+    renderBoard();
+    requestAnimationFrame(() => { const row = $(".lanes-row"); if (row) row.scrollLeft = row.scrollWidth; });
+    setStatus(`✓ Added lane “${name}” to Trello`, "ok");
+  });
+}
+
+function openLaneMenu(event, laneEl) {
+  $(".lane-popover")?.remove();
+  const menu = document.createElement("div");
+  menu.className = "lane-popover";
+  menu.innerHTML = `<button type="button" data-rename-lane>Rename lane</button><button type="button" class="danger" data-archive-lane>Archive lane</button>`;
+  document.body.appendChild(menu);
+  const rect = event.currentTarget.getBoundingClientRect();
+  menu.style.left = `${Math.min(rect.right - 180, window.innerWidth - 190)}px`;
+  menu.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 110)}px`;
+  const close = () => menu.remove();
+  setTimeout(() => document.addEventListener("click", close, { once: true }), 0);
+  menu.addEventListener("click", (e) => e.stopPropagation());
+  menu.querySelector("[data-rename-lane]").addEventListener("click", () => { close(); startLaneRename(laneEl); });
+  menu.querySelector("[data-archive-lane]").addEventListener("click", async () => {
+    close();
+    const name = laneEl.dataset.laneName;
+    const count = laneEl.querySelectorAll(".kcard").length;
+    if (!confirm(`Archive “${name}” on Trello?${count ? `\n\nThis lane contains ${count} job${count === 1 ? "" : "s"}.` : ""}`)) return;
+    const result = await pywebview.api.archive_lane(laneEl.dataset.listId);
+    if (!result?.ok) { setStatus(`Could not archive lane: ${result?.error || "?"}`, "error"); return; }
+    const board = activeBoard();
+    board.lanes = board.lanes.filter((lane) => lane.list_id !== laneEl.dataset.listId);
+    renderBoard(); setStatus(`✓ Archived “${name}” on Trello`, "ok");
+  });
+}
+
+function startLaneRename(laneEl) {
+  const label = laneEl.querySelector(".lane-name");
+  const oldName = laneEl.dataset.laneName;
+  label.innerHTML = `<input class="lane-name-input" maxlength="80" value="${escapeAttr(oldName)}" aria-label="Lane name">`;
+  const input = label.querySelector("input");
+  input.focus(); input.select();
+  let finished = false;
+  const finish = async (save) => {
+    if (finished) return;
+    finished = true;
+    const name = input.value.trim();
+    if (!save || !name || name === oldName) { label.textContent = oldName; return; }
+    input.disabled = true;
+    const result = await pywebview.api.rename_lane(laneEl.dataset.listId, name);
+    if (!result?.ok) { label.textContent = oldName; setStatus(`Could not rename lane: ${result?.error || "?"}`, "error"); return; }
+    const lane = activeBoard()?.lanes.find((item) => item.list_id === laneEl.dataset.listId);
+    if (lane) lane.name = result.name || name;
+    renderBoard(); setStatus(`✓ Renamed lane to “${name}”`, "ok");
+  };
+  input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); finish(true); } if (event.key === "Escape") finish(false); });
+  input.addEventListener("blur", () => finish(true), { once: true });
+}
+
+function onLaneDragStart(event) {
+  if (event.target.closest("button, input")) { event.preventDefault(); return; }
+  const lane = event.currentTarget.closest(".lane");
+  state.laneDrag = { listId: lane.dataset.listId, name: lane.dataset.laneName };
+  lane.classList.add("lane-dragging");
+  try { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", `lane:${lane.dataset.listId}`); } catch (_) {}
+}
+
+function onLaneDragEnd() {
+  state.laneDrag = null;
+  $$(".lane").forEach((lane) => lane.classList.remove("lane-dragging", "lane-drop-before", "lane-drop-after"));
 }
 
 function renderCard(c) {
@@ -520,6 +620,16 @@ function onCardDragEnd(ev) {
 }
 
 function onLaneDragOver(ev) {
+  if (state.laneDrag) {
+    const lane = ev.currentTarget;
+    if (lane.dataset.listId === state.laneDrag.listId) return;
+    ev.preventDefault();
+    const side = ev.clientX < lane.getBoundingClientRect().left + lane.offsetWidth / 2 ? "before" : "after";
+    lane.classList.toggle("lane-drop-before", side === "before");
+    lane.classList.toggle("lane-drop-after", side === "after");
+    state.laneDrag.targetId = lane.dataset.listId; state.laneDrag.side = side;
+    return;
+  }
   if (!state.drag) return;
   ev.preventDefault();
   try { ev.dataTransfer.dropEffect = "move"; } catch (_) {}
@@ -527,12 +637,31 @@ function onLaneDragOver(ev) {
 }
 
 function onLaneDragLeave(ev) {
-  ev.currentTarget.classList.remove("drop-target");
+  ev.currentTarget.classList.remove("drop-target", "lane-drop-before", "lane-drop-after");
 }
 
 async function onLaneDrop(ev) {
   ev.preventDefault();
   const laneEl = ev.currentTarget;
+  if (state.laneDrag) {
+    const moving = state.laneDrag;
+    const board = activeBoard();
+    const lanes = board?.lanes || [];
+    const from = lanes.findIndex((lane) => lane.list_id === moving.listId);
+    let to = lanes.findIndex((lane) => lane.list_id === laneEl.dataset.listId);
+    if (from < 0 || to < 0 || from === to) { onLaneDragEnd(); return; }
+    const [item] = lanes.splice(from, 1);
+    if (from < to) to -= 1;
+    if (moving.side === "after") to += 1;
+    lanes.splice(to, 0, item);
+    const previousId = lanes[to - 1]?.list_id || "";
+    const nextId = lanes[to + 1]?.list_id || "";
+    onLaneDragEnd(); renderBoard();
+    const result = await pywebview.api.reorder_lane(item.list_id, previousId, nextId);
+    if (!result?.ok) { setStatus(`Could not move lane: ${result?.error || "?"}`, "error"); await loadBoard(true); return; }
+    setStatus(`✓ Moved “${item.name}” on Trello`, "ok");
+    return;
+  }
   laneEl.classList.remove("drop-target");
   const drag = state.drag;
   state.drag = null;

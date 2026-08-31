@@ -166,7 +166,7 @@ def _build_board(tc, ps, key, bname, board_obj):
     bid = board_obj.get("id")
     try:
         lists = tc._call(f"/boards/{bid}/lists",
-                         params={"fields": "name", "filter": "open"}) or []
+                         params={"fields": "name,pos", "filter": "open"}) or []
     except Exception:
         lists = []
     # One board-level card request replaces one request per lane. Large WIP
@@ -211,6 +211,7 @@ def _build_board(tc, ps, key, bname, board_obj):
                 pass
             shaped.append(_card_to_board_dict(c, lname))
         lanes.append({"list_id": l.get("id"), "name": lname,
+                      "pos": l.get("pos") or 0,
                       "count": len(shaped), "cards": shaped})
     return {"key": key, "name": board_obj.get("name") or bname,
             "board_id": bid, "lanes": lanes}
@@ -468,6 +469,74 @@ class Api:
             if shared.get("ok"):
                 return {"ok": True, "synced": False,
                         "warning": "Saved in Linguar Hub; Trello is unavailable"}
+            return {"ok": False, "error": str(ex)}
+
+    def create_lane(self, board_key: str, name: str) -> dict:
+        name = (name or "").strip()
+        if not name:
+            return {"ok": False, "error": "Enter a lane name."}
+        board = next((b for b in (self.board_view(force_trello=True).get("boards") or [])
+                      if b.get("key") == board_key), None)
+        if not board or not board.get("board_id"):
+            return {"ok": False, "error": "That Trello board is not available."}
+        try:
+            import trello_client as tc
+            created = tc.create_list(board["board_id"], name)
+            if not created:
+                return {"ok": False, "error": "Trello did not create the lane."}
+            self._board_view_cache = None
+            return {"ok": True, "lane": {"list_id": created.get("id"),
+                    "name": created.get("name") or name, "pos": created.get("pos") or 0,
+                    "count": 0, "cards": []}}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def rename_lane(self, list_id: str, name: str) -> dict:
+        name = (name or "").strip()
+        if not list_id or not name:
+            return {"ok": False, "error": "Enter a lane name."}
+        try:
+            import trello_client as tc
+            updated = tc.update_list(list_id, name=name)
+            self._board_view_cache = None
+            return {"ok": bool(updated), "name": (updated or {}).get("name") or name,
+                    "error": "Trello did not rename the lane." if not updated else ""}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def archive_lane(self, list_id: str) -> dict:
+        if not list_id:
+            return {"ok": False, "error": "Lane ID is missing."}
+        try:
+            import trello_client as tc
+            updated = tc.update_list(list_id, closed=True)
+            self._board_view_cache = None
+            return {"ok": bool(updated),
+                    "error": "Trello did not archive the lane." if not updated else ""}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def reorder_lane(self, list_id: str, previous_id: str = "",
+                     next_id: str = "") -> dict:
+        """Place a lane between its new neighbours using Trello positions."""
+        if not list_id:
+            return {"ok": False, "error": "Lane ID is missing."}
+        try:
+            import trello_client as tc
+            if previous_id and next_id:
+                prev = tc.get_list(previous_id, fields="id,pos") or {}
+                nxt = tc.get_list(next_id, fields="id,pos") or {}
+                a, b = float(prev.get("pos") or 0), float(nxt.get("pos") or 0)
+                pos = (a + b) / 2 if a < b else "bottom"
+            elif next_id:
+                pos = "top"
+            else:
+                pos = "bottom"
+            updated = tc.update_list(list_id, pos=pos)
+            self._board_view_cache = None
+            return {"ok": bool(updated),
+                    "error": "Trello did not move the lane." if not updated else ""}
+        except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
     def _audit_api(self):
