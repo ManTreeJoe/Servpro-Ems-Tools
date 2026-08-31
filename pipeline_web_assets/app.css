@@ -827,7 +827,18 @@ button,input,select,textarea { font-family:var(--font-body); }
 }
 .board-tab.active { background:#f4f1e8; border-color:#f4f1e8; color:#19211c; box-shadow:0 4px 16px rgba(0,0,0,.18); }
 .board-tab.active .board-tab-count { color:#68766d; }
-.lanes-row { gap: 12px; padding: 0 2px 10px; scroll-snap-type:x proximity; }
+.lanes-row {
+  gap: 12px;
+  padding: 0 2px 14px;
+  scroll-snap-type:x proximity;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  scrollbar-color: rgba(244,241,232,.42) rgba(10,14,11,.28);
+}
+.lanes-row::-webkit-scrollbar { height: 12px; }
+.lanes-row::-webkit-scrollbar-track { background:rgba(10,14,11,.28); border-radius:999px; }
+.lanes-row::-webkit-scrollbar-thumb { background:rgba(244,241,232,.42); border:3px solid transparent; border-radius:999px; background-clip:padding-box; }
+.lanes-row::-webkit-scrollbar-thumb:hover { background-color:rgba(244,241,232,.62); }
 .lane {
   flex-basis: 286px;
   width: 286px;

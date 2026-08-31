@@ -24,33 +24,40 @@
     el.dataset.hdragInit = "1";
 
     let isDown = false;
+    let pointerId = null;
     let startX = 0;
     let scrollLeft = 0;
     let moved = false;
 
-    el.addEventListener("mousedown", (e) => {
-      if (e.button !== 0) return;            // left button only
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || e.pointerType === "touch") return;
       if (isInteractive(e.target)) return;
       isDown = true;
+      pointerId = e.pointerId;
       moved = false;
       el.classList.add("hdrag-active");
-      startX = e.pageX - el.offsetLeft;
+      startX = e.clientX;
       scrollLeft = el.scrollLeft;
+      try { el.setPointerCapture(pointerId); } catch (_) { /* optional */ }
     });
 
-    function endDrag() {
+    function endDrag(e) {
+      if (e && pointerId !== null && e.pointerId !== pointerId) return;
       isDown = false;
+      if (pointerId !== null) {
+        try { el.releasePointerCapture(pointerId); } catch (_) { /* already released */ }
+      }
+      pointerId = null;
       el.classList.remove("hdrag-active");
     }
-    el.addEventListener("mouseleave", endDrag);
-    el.addEventListener("mouseup", endDrag);
-    window.addEventListener("mouseup", endDrag);
+    el.addEventListener("pointerup", endDrag);
+    el.addEventListener("pointercancel", endDrag);
+    el.addEventListener("lostpointercapture", endDrag);
 
-    el.addEventListener("mousemove", (e) => {
-      if (!isDown) return;
+    el.addEventListener("pointermove", (e) => {
+      if (!isDown || e.pointerId !== pointerId) return;
       e.preventDefault();
-      const x = e.pageX - el.offsetLeft;
-      const walk = x - startX;
+      const walk = e.clientX - startX;
       if (Math.abs(walk) > 4) moved = true;
       el.scrollLeft = scrollLeft - walk;
     });
@@ -72,17 +79,26 @@
     //     scrolling primarily vertically (no native trackpad
     //     horizontal-scroll signal)
     // Opt out of the auto vertical→horizontal conversion with
-    // [data-hdrag-nowheel] (e.g. the Pipeline board, where a vertical
-    // wheel should scroll the cards inside a lane, not pan the row).
+    // [data-hdrag-nowheel]. With [data-hdrag-smartwheel], a lane keeps
+    // the wheel while it can scroll in that direction; at its boundary
+    // the same wheel gesture pans the board.
     // Shift+wheel still pans horizontally since it's an explicit gesture.
     el.addEventListener("wheel", (e) => {
       const hasHScroll = el.scrollWidth > el.clientWidth + 1;
       if (!hasHScroll) return;
       const noAuto = el.hasAttribute("data-hdrag-nowheel");
       const vertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
+      const smartWheel = el.hasAttribute("data-hdrag-smartwheel");
+      const verticalPane = smartWheel ? e.target.closest(".lane-cards") : null;
+      const canScrollPane = verticalPane && verticalPane.scrollHeight > verticalPane.clientHeight + 1 && (
+        (e.deltaY < 0 && verticalPane.scrollTop > 0) ||
+        (e.deltaY > 0 && verticalPane.scrollTop + verticalPane.clientHeight < verticalPane.scrollHeight - 1)
+      );
+      if (!e.shiftKey && canScrollPane) return;
       if (e.shiftKey || (!noAuto && vertical && Math.abs(e.deltaX) < 5)) {
         e.preventDefault();
-        el.scrollLeft += e.deltaY;
+        el.scrollLeft += e.shiftKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)
+          ? e.deltaX : e.deltaY;
       }
     }, { passive: false });
   }
