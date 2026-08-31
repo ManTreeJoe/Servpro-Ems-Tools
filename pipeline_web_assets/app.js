@@ -253,7 +253,7 @@ function renderBoard() {
       <button class="summary-item ${summary.attention ? "needs-attention" : ""} ${state.boardFilter === "attention" ? "active" : ""}" data-board-filter="attention"><strong>${summary.attention}</strong><span>Need attention</span></button>
       <button class="summary-item ${state.boardFilter === "due" ? "active" : ""}" data-board-filter="due"><strong>${summary.due}</strong><span>Due soon</span></button>
       ${summary.waiting ? `<button class="summary-item ${state.boardFilter === "sync" ? "active" : ""}" data-board-filter="sync"><strong>${summary.waiting}</strong><span>Waiting to sync</span></button>` : ""}
-      <div class="summary-help">Click to open · hold to move</div>
+      <div class="summary-help">Click to open · drag to move</div>
     </section>
     <div class="board-tabs">
       ${tabs}
@@ -526,10 +526,9 @@ function renderCard(c) {
 
 // ── Drag to move (write-back with confirm) ───────────────────────
 function wireCardClickAndHold(cardEl) {
-  let holdTimer = null;
   let startX = 0;
   let startY = 0;
-  let dragArmed = false;
+  let pressActive = false;
   let suppressClick = false;
   let openedOnPointerUp = false;
   // The card itself has role="button" for keyboard accessibility. Only
@@ -538,37 +537,28 @@ function wireCardClickAndHold(cardEl) {
     const control = target.closest("button, a, input, textarea, select, [role='button']");
     return Boolean(control && control !== cardEl);
   };
-  const clearHold = () => {
-    if (holdTimer) window.clearTimeout(holdTimer);
-    holdTimer = null;
-  };
   cardEl.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || interactive(event.target)) return;
     startX = event.clientX;
     startY = event.clientY;
-    dragArmed = false;
+    pressActive = true;
     suppressClick = false;
-    clearHold();
-    holdTimer = window.setTimeout(() => {
-      dragArmed = true;
-      suppressClick = true;
-      cardEl.draggable = true;
-      cardEl.classList.add("drag-ready");
-    }, 180);
+    // Arm native drag immediately. The browser waits for pointer movement,
+    // so a stationary press remains a normal click with no artificial delay.
+    cardEl.draggable = true;
   });
   cardEl.addEventListener("pointermove", (event) => {
-    if (dragArmed || !holdTimer) return;
+    if (!pressActive) return;
     if (Math.hypot(event.clientX - startX, event.clientY - startY) > 5) {
       suppressClick = true;
-      clearHold();
+      cardEl.classList.add("drag-ready");
     }
   });
   const release = (event, allowOpen = true) => {
     const shouldOpen = allowOpen && event.button === 0 && !interactive(event.target)
-      && Boolean(holdTimer) && !dragArmed && !suppressClick
+      && pressActive && !suppressClick
       && cardEl.dataset.didDrag !== "true";
-    clearHold();
-    dragArmed = false;
+    pressActive = false;
     cardEl.classList.remove("drag-ready");
     window.setTimeout(() => { cardEl.draggable = false; }, 0);
     if (shouldOpen) {
