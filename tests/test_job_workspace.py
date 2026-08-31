@@ -69,8 +69,20 @@ def test_requirement_decisions_save_history_and_can_reopen(workspace, monkeypatc
         "Requirement Test", "customer_contact", "reopen", "Needs another call")
     assert reopened["ok"]
     metadata = db.get_job(key)["metadata"]
-    assert "customer_contact" not in metadata["requirement_overrides"]
-    assert metadata["requirement_history"][-1]["state"] == "reopen"
+    assert metadata["requirement_overrides"]["customer_contact"]["state"] == "todo"
+    assert metadata["requirement_history"][-1]["state"] == "todo"
+
+
+def test_blocked_requirement_requires_owner_reason_and_follow_up(workspace):
+    db, api = workspace
+    db.upsert_job(display_name="Blocked Test")
+    missing = api.set_job_requirement("Blocked Test", "scope", "blocked", "", {})
+    assert not missing["ok"]
+    saved = api.set_job_requirement(
+        "Blocked Test", "scope", "blocked", "Waiting for carrier",
+        {"assignee": "Estimator", "blocked_reason": "Carrier approval",
+         "follow_up_at": "2026-09-02T09:00"})
+    assert saved["ok"]
 
 
 def test_each_work_type_can_be_changed_for_one_job(workspace):

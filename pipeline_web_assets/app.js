@@ -916,18 +916,23 @@ function openAuditModal(data, trelloUrl = "") {
   const progress = crm.progress || {};
   const requirementRows = (items) => items.map((item) => `
     <div class="requirement-row req-${escapeAttr(item.status || "required_now")}">
-      <button type="button" class="requirement-mark" data-requirement-key="${escapeAttr(item.key || "")}" aria-label="Update ${escapeAttr(item.label || "requirement")}">${item.status === "completed" ? "✓" : item.status === "not_applicable" ? "—" : item.status === "overdue" ? "!" : "○"}</button>
+      <button type="button" class="requirement-mark" data-requirement-complete="${escapeAttr(item.key || "")}" aria-label="${item.status === "todo" || item.status === "in_progress" ? "Complete" : "Update"} ${escapeAttr(item.label || "requirement")}">${item.status === "completed" ? "✓" : item.status === "not_applicable" ? "—" : item.status === "blocked" ? "×" : item.status === "in_progress" ? "◐" : "○"}</button>
       <span class="requirement-copy"><strong>${escapeHtml(item.label || "")}</strong>
-      <small>${escapeHtml(item.introduced_stage_label || "")} · ${escapeHtml(item.owner || "")}${item.status === "not_applicable" ? " · Not applicable" : item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small>
+      <small>${escapeHtml((item.status || "todo").replaceAll("_", " "))} · ${escapeHtml(item.assignee || item.owner || "Unassigned")}${item.due_at ? " · Due " + escapeHtml(formatCommentDate(item.due_at)) : ""}${item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small>
+      <span class="requirement-flags">${item.importance === "mandatory" ? `<b class="req-flag mandatory">Mandatory</b>` : item.importance === "recommended" ? `<b class="req-flag recommended">Recommended</b>` : ""}${item.overdue ? `<b class="req-flag overdue">Overdue</b>` : ""}${item.carried_forward ? `<b class="req-flag carried">Carried forward</b>` : ""}${item.status === "blocked" && item.follow_up_at ? `<b class="req-flag blocked">Follow up ${escapeHtml(formatCommentDate(item.follow_up_at))}</b>` : ""}</span>
       ${item.manual_actor ? `<small class="requirement-manual">Updated by ${escapeHtml(item.manual_actor)}${item.manual_at ? " · " + escapeHtml(formatCommentDate(item.manual_at)) : ""}${item.manual_note ? " · " + escapeHtml(item.manual_note) : ""}</small>` : ""}</span>
       <button type="button" class="requirement-edit" data-requirement-key="${escapeAttr(item.key || "")}">Update</button>
     </div>`).join("");
-  const requirementGroups = {overdue: [], required_now: [], completed: [], not_applicable: []};
-  (progress.items || []).forEach((item) =>
-    (requirementGroups[item.status] || requirementGroups.required_now).push(item));
+  const requirementGroups = {attention: [], completed: [], not_applicable: [], recommended: []};
+  (progress.items || []).forEach((item) => {
+    if (item.status === "completed" || item.status === "not_applicable") requirementGroups[item.status].push(item);
+    else if (item.importance === "recommended") requirementGroups.recommended.push(item);
+    else requirementGroups.attention.push(item);
+  });
   const required = (progress.items || []).length ? `
-    ${requirementGroups.overdue.length ? `<div class="requirement-group overdue"><h4>Overdue from earlier stages</h4>${requirementRows(requirementGroups.overdue)}</div>` : ""}
-    <div class="requirement-group"><h4>Required at ${escapeHtml(progress.stage_label || "this stage")}</h4>${requirementRows(requirementGroups.required_now) || `<div class="aud-empty">Nothing new is required at this stage.</div>`}</div>
+    ${progress.review_mode ? `<div class="requirement-review-note"><strong>Review mode</strong><span>Requirements are visible for testing but do not enforce stage movement yet.</span></div>` : ""}
+    <div class="requirement-group ${progress.counts?.overdue ? "overdue" : ""}"><h4>Needs attention</h4>${requirementRows(requirementGroups.attention) || `<div class="aud-empty">No required work needs attention.</div>`}</div>
+    ${requirementGroups.recommended.length ? `<details class="requirement-history"><summary>Recommended <span>${requirementGroups.recommended.length}</span></summary>${requirementRows(requirementGroups.recommended)}</details>` : ""}
     <details class="requirement-history"><summary>Completed &amp; previous requirements <span>${requirementGroups.completed.length + requirementGroups.not_applicable.length}</span></summary>${requirementRows([...requirementGroups.completed, ...requirementGroups.not_applicable]) || `<div class="aud-empty">No verified requirements yet.</div>`}</details>`
     : `<div class="aud-empty">No stage requirements are active yet.</div>`;
   const workTypeState = Object.fromEntries((crm.work_environments || []).map((env) =>
@@ -1001,7 +1006,7 @@ function openAuditModal(data, trelloUrl = "") {
       ${divisionConflictBanner}
       <section class="aud-section audit-summary"><h3>Current audit</h3>${missing}${misplacedHtml}</section>
       <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
-        <span class="progress-label">${progress.percent_complete || 0}% complete</span></div>
+        <span class="progress-label">${progress.counts?.overdue || 0} overdue · ${progress.counts?.blocked || 0} blocked · ${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div></div><div class="work-types">${workTypes}</div></section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} card · stored in Linguar Hub · Trello sync is temporary</small></div>${divisionDataTabs}</div>${checklistGroups}</section>
@@ -1122,51 +1127,118 @@ function openAuditModal(data, trelloUrl = "") {
       setStatus("Checklist saved · Trello synced", "ok");
     }
   }));
+  const refreshAfterRequirement = async () => {
+    const refreshed = await pywebview.api.refresh_job_card_workspace(
+      data.client || res.client || "", data.card_id || "", data.selected_division || "EMS");
+    if (refreshed?.ok) {
+      close(true);
+      openAuditModal(refreshed, refreshed.selected_trello_url || trelloUrl);
+    }
+    return refreshed;
+  };
+  const showRequirementUndo = (item, previousState) => {
+    document.querySelector(".requirement-undo")?.remove();
+    const undo = document.createElement("div");
+    undo.className = "requirement-undo";
+    undo.innerHTML = `<span><strong>Requirement completed</strong><small>${escapeHtml(item.label || "")}</small></span><button type="button">Undo</button>`;
+    document.body.appendChild(undo);
+    const timer = window.setTimeout(() => undo.remove(), 7000);
+    undo.querySelector("button").addEventListener("click", async () => {
+      window.clearTimeout(timer);
+      undo.querySelector("button").disabled = true;
+      const result = await pywebview.api.set_job_requirement(
+        data.client || res.client || "", item.key, previousState || "todo", "Undo completion", {});
+      undo.remove();
+      if (result?.ok) {
+        document.querySelector(".audit-overlay [data-close]")?.click();
+        await onAuditCard(data.client || res.client || "", data.card_id || "", "",
+          data.selected_division || "EMS");
+      }
+      else setStatus(`Undo failed: ${result?.error || "unknown error"}`, "error");
+    });
+  };
   const editRequirement = (key) => {
     const item = (progress.items || []).find((entry) => entry.key === key);
     if (!item) return;
-    const currentSatisfied = item.status === "completed" || item.status === "not_applicable";
+    const dateValue = (value) => value ? String(value).slice(0, 16) : "";
     const editor = document.createElement("div");
     editor.className = "requirement-editor-scrim";
     editor.innerHTML = `<form class="requirement-editor" aria-label="Update job requirement">
-      <div><span class="requirement-mark req-preview">${item.status === "completed" ? "✓" : item.status === "not_applicable" ? "—" : "○"}</span>
-      <div><h4>${escapeHtml(item.label || "Requirement")}</h4><small>${escapeHtml(item.introduced_stage_label || "")} · ${escapeHtml(item.owner || "")}</small></div></div>
-      <label>Optional note<textarea name="note" rows="3" placeholder="Add context for the next person…">${escapeHtml(item.manual_note || "")}</textarea></label>
+      <div><span class="requirement-mark req-preview">${item.status === "completed" ? "✓" : item.status === "not_applicable" ? "—" : item.status === "blocked" ? "×" : "○"}</span>
+      <div><h4>${escapeHtml(item.label || "Requirement")}</h4><small>${escapeHtml(item.introduced_stage_label || "")} · ${escapeHtml(item.importance || "required")}</small></div></div>
+      <div class="requirement-editor-grid">
+        <label>Status<select name="state">
+          ${[["todo","To do"],["in_progress","In progress"],["blocked","Blocked"],["completed","Complete"],["not_applicable","Not applicable"]].map(([value,label]) => `<option value="${value}" ${item.status === value ? "selected" : ""}>${label}</option>`).join("")}
+        </select></label>
+        <label>Assigned to<input name="assignee" value="${escapeAttr(item.assignee || "")}" placeholder="Person or role"></label>
+        <label>Due date<input type="datetime-local" name="due_at" value="${escapeAttr(dateValue(item.due_at))}"></label>
+        <label data-blocked-field>Follow-up date<input type="datetime-local" name="follow_up_at" value="${escapeAttr(dateValue(item.follow_up_at))}"></label>
+      </div>
+      <label data-blocked-field>Blocked reason<input name="blocked_reason" value="${escapeAttr(item.blocked_reason || "")}" placeholder="What are we waiting for?"></label>
+      <label>Note<textarea name="note" rows="3" placeholder="Required for N/A; optional otherwise">${escapeHtml(item.manual_note || "")}</textarea></label>
+      ${(item.history || []).length ? `<details class="requirement-change-history"><summary>Change history <span>${item.history.length}</span></summary>
+        <div>${[...(item.history || [])].reverse().map((entry) => `<p><strong>${escapeHtml((entry.state || "todo").replaceAll("_", " "))}</strong><span>${escapeHtml(entry.actor || "User")} · ${escapeHtml(formatCommentDate(entry.at || ""))}</span>${entry.note ? `<small>${escapeHtml(entry.note)}</small>` : ""}</p>`).join("")}</div></details>` : ""}
       <div class="requirement-editor-actions">
         <button type="button" class="btn" data-requirement-cancel>Cancel</button>
-        ${currentSatisfied ? `<button type="submit" class="btn" name="state" value="reopen">Reopen</button>` : `<button type="submit" class="btn" name="state" value="not_applicable">Not applicable</button><button type="submit" class="btn btn-primary" name="state" value="completed">Complete</button>`}
+        <button type="submit" class="btn btn-primary">Save changes</button>
       </div></form>`;
     w.querySelector(".audit-card")?.appendChild(editor);
     const dismiss = () => editor.remove();
     editor.addEventListener("click", (event) => { if (event.target === editor) dismiss(); });
     editor.querySelector("[data-requirement-cancel]").addEventListener("click", dismiss);
-    editor.querySelector("textarea")?.focus();
+    const stateSelect = editor.querySelector('[name="state"]');
+    const updateBlockedFields = () => editor.querySelectorAll("[data-blocked-field]").forEach((field) =>
+      field.classList.toggle("field-muted", stateSelect.value !== "blocked"));
+    stateSelect.addEventListener("change", updateBlockedFields);
+    updateBlockedFields();
+    stateSelect.focus();
     editor.querySelector("form").addEventListener("submit", async (event) => {
       event.preventDefault();
-      const submitter = event.submitter;
-      if (!submitter?.value) return;
       editor.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+      const details = {
+        assignee: editor.querySelector('[name="assignee"]').value,
+        due_at: editor.querySelector('[name="due_at"]').value,
+        follow_up_at: editor.querySelector('[name="follow_up_at"]').value,
+        blocked_reason: editor.querySelector('[name="blocked_reason"]').value,
+        importance: item.importance || "required",
+      };
       const result = await pywebview.api.set_job_requirement(
-        data.client || res.client || "", item.key, submitter.value,
-        editor.querySelector("textarea")?.value || "");
+        data.client || res.client || "", item.key, stateSelect.value,
+        editor.querySelector("textarea")?.value || "", details);
       if (!result?.ok) {
         editor.querySelectorAll("button").forEach((button) => { button.disabled = false; });
         setStatus(`Requirement update failed: ${result?.error || "unknown error"}`, "error");
         return;
       }
       dismiss();
-      setStatus(submitter.value === "reopen" ? "Requirement reopened" :
-        submitter.value === "not_applicable" ? "Requirement marked not applicable" : "Requirement completed", "ok");
-      const refreshed = await pywebview.api.refresh_job_card_workspace(
-        data.client || res.client || "", data.card_id || "", data.selected_division || "EMS");
-      if (refreshed?.ok) {
-        close(true);
-        openAuditModal(refreshed, refreshed.selected_trello_url || trelloUrl);
-      }
+      setStatus("Requirement updated", "ok");
+      await refreshAfterRequirement();
     });
   };
   w.querySelectorAll("[data-requirement-key]").forEach((button) =>
     button.addEventListener("click", () => editRequirement(button.dataset.requirementKey || "")));
+  w.querySelectorAll("[data-requirement-complete]").forEach((button) =>
+    button.addEventListener("click", async () => {
+      const item = (progress.items || []).find((entry) => entry.key === button.dataset.requirementComplete);
+      if (!item) return;
+      if (!(["todo", "in_progress"].includes(item.status))) {
+        editRequirement(item.key);
+        return;
+      }
+      button.disabled = true;
+      button.textContent = "✓";
+      const result = await pywebview.api.set_job_requirement(
+        data.client || res.client || "", item.key, "completed", "", {});
+      if (!result?.ok) {
+        button.disabled = false;
+        button.textContent = item.status === "in_progress" ? "◐" : "○";
+        setStatus(`Requirement update failed: ${result?.error || "unknown error"}`, "error");
+        return;
+      }
+      const previousState = result.previous_state || item.status;
+      await refreshAfterRequirement();
+      showRequirementUndo(item, previousState);
+    }));
   const saveWorkType = async (select) => {
     const name = select.dataset.workEnv;
     const tile = select.closest("[data-work-type-card]");

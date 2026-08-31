@@ -992,9 +992,10 @@ class Api:
         return result
 
     def set_job_requirement(self, client: str, requirement_key: str,
-                            state: str, note: str = "") -> dict:
+                            state: str, note: str = "",
+                            details: dict | None = None) -> dict:
         result = self._audit_api().set_job_requirement(
-            client, requirement_key, state, note)
+            client, requirement_key, state, note, details)
         if result.get("ok"):
             self._invalidate_workspace(client=client)
         return result

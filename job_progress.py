@@ -112,6 +112,26 @@ def _log_text(entries: list[dict]) -> str:
                     for e in entries).lower()
 
 
+def _parse_time(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_past(value, now):
+    parsed = _parse_time(value)
+    if not parsed:
+        return False
+    if parsed.tzinfo and not now.tzinfo:
+        now = now.astimezone()
+    elif now.tzinfo and not parsed.tzinfo:
+        parsed = parsed.astimezone()
+    return parsed < now
+
+
 def evaluate(master: dict, audit: dict | None = None,
              log_entries: list[dict] | None = None) -> dict:
     audit = audit or {}
@@ -131,6 +151,9 @@ def evaluate(master: dict, audit: dict | None = None,
     overrides = metadata.get("requirement_overrides") or {}
     if not isinstance(overrides, dict):
         overrides = {}
+    history = metadata.get("requirement_history") or []
+    if not isinstance(history, list):
+        history = []
 
     rules = []
     for introduced, entries in BASE.items():
@@ -142,6 +165,7 @@ def evaluate(master: dict, audit: dict | None = None,
         rules.extend(ENVIRONMENT.get(env.get("work_environment"), ()))
     rules.extend(JOB_TYPE.get(master.get("job_type") or "", ()))
 
+    now = datetime.now().astimezone()
     items = []
     for key, label, introduced, owner in rules:
         introduced_i = _stage_index(introduced)
@@ -172,6 +196,8 @@ def evaluate(master: dict, audit: dict | None = None,
 
         manual = overrides.get(key) if isinstance(overrides.get(key), dict) else {}
         manual_state = manual.get("state") or ""
+        if manual_state == "reopen":
+            manual_state = "todo"
         # Real evidence has precedence over a manual N/A. The manual record
         # remains in metadata/history, but the requirement reads as verified
         # as soon as the app can prove the work happened.
@@ -181,26 +207,51 @@ def evaluate(master: dict, audit: dict | None = None,
             evidence = "manual"
         elif completed:
             status = "completed"
-        elif introduced_i < current_i:
-            status = "overdue"
         else:
-            status = "required_now"
+            status = manual_state if manual_state in ("in_progress", "blocked", "todo") else "todo"
+        carried_forward = not completed and status != "not_applicable" and introduced_i < current_i
+        deadline = manual.get("due_at") or ""
+        follow_up = manual.get("follow_up_at") or ""
+        overdue = (status not in ("completed", "not_applicable") and
+                   (_is_past(deadline, now) or
+                    (status == "blocked" and _is_past(follow_up, now))))
+        importance = manual.get("importance") or "required"
         items.append({"key": key, "label": label, "introduced_stage": introduced,
                       "introduced_stage_label": STAGE_LABELS.get(introduced, introduced),
-                      "owner": owner, "status": status, "evidence": evidence,
+                      "owner": owner, "assignee": manual.get("assignee") or "",
+                      "status": status, "evidence": evidence,
+                      "importance": importance,
+                      "overdue": overdue, "carried_forward": carried_forward,
+                      "due_at": deadline, "follow_up_at": follow_up,
+                      "blocked_reason": manual.get("blocked_reason") or "",
                       "manual_state": manual_state,
                       "manual_actor": manual.get("actor") or "",
                       "manual_at": manual.get("at") or "",
-                      "manual_note": manual.get("note") or ""})
+                      "manual_note": manual.get("note") or "",
+                      "history": [entry for entry in history
+                                  if isinstance(entry, dict) and
+                                  entry.get("key") == key][-20:]})
 
-    rank = {"overdue": 0, "required_now": 1, "completed": 2,
-            "not_applicable": 3}
-    items.sort(key=lambda x: (rank[x["status"]], _stage_index(x["introduced_stage"]), x["label"]))
+    importance_rank = {"mandatory": 0, "required": 1, "recommended": 2}
+    status_rank = {"blocked": 1, "in_progress": 2, "todo": 3,
+                   "completed": 4, "not_applicable": 5}
+    items.sort(key=lambda x: (
+        0 if x["importance"] == "mandatory" and x["status"] not in
+        ("completed", "not_applicable") else 1,
+        0 if x["overdue"] else 1,
+        status_rank.get(x["status"], 3),
+        importance_rank.get(x["importance"], 1),
+        x.get("follow_up_at") or x.get("due_at") or "9999",
+        x["label"]))
     counts = {name: sum(1 for item in items if item["status"] == name)
-              for name in rank}
+              for name in status_rank}
+    counts["overdue"] = sum(1 for item in items if item["overdue"])
+    counts["carried_forward"] = sum(1 for item in items if item["carried_forward"])
+    scored = [item for item in items if item["importance"] in
+              ("mandatory", "required")]
+    satisfied = sum(1 for item in scored if item["status"] in
+                    ("completed", "not_applicable"))
     return {"stage": stage, "stage_label": STAGE_LABELS.get(stage, stage),
             "items": items, "counts": counts,
-            "percent_complete": round(100 * (counts["completed"] +
-                                               counts["not_applicable"]) /
-                                      len(items)) if items else 0,
+            "percent_complete": round(100 * satisfied / len(scored)) if scored else 100,
             "generated_at": datetime.now().isoformat(timespec="seconds")}

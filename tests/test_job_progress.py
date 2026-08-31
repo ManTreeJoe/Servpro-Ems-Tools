@@ -7,15 +7,17 @@ def _master(stage="active", envs=None, job_type="insurance"):
                 {"work_environment": "EMS", "stage": "active"}]}
 
 
-def test_previous_requirements_carry_forward_as_overdue():
+def test_previous_requirements_carry_forward_without_inventing_a_deadline():
     result = evaluate(_master("active"), {
         "form_issues": ["Auth to Perform"], "photo_issues": ["Initial pics"],
         "requirements": [], "found": True, "folder": "X:/job",
         "trello_card_id": "card-1",
     }, [])
     by_key = {item["key"]: item for item in result["items"]}
-    assert by_key["ems_atp"]["status"] == "overdue"
-    assert by_key["initial_photos"]["status"] == "required_now"
+    assert by_key["ems_atp"]["status"] == "todo"
+    assert by_key["ems_atp"]["carried_forward"] is True
+    assert by_key["ems_atp"]["overdue"] is False
+    assert by_key["initial_photos"]["status"] == "todo"
     assert by_key["trello_card"]["status"] == "completed"
 
 
@@ -68,6 +70,19 @@ def test_automatic_evidence_wins_over_manual_not_applicable():
     item = next(item for item in result["items"] if item["key"] == "initial_photos")
     assert item["status"] == "completed"
     assert item["evidence"] == "latest audit"
+
+
+def test_blocked_follow_up_date_drives_overdue_label():
+    master = _master("active")
+    master["metadata"] = {"requirement_overrides": {
+        "scope": {"state": "blocked", "assignee": "Office",
+                  "blocked_reason": "Waiting for approval",
+                  "follow_up_at": "2020-01-01T08:00:00-08:00"},
+    }}
+    item = next(item for item in evaluate(master, {}, [])["items"]
+                if item["key"] == "scope")
+    assert item["status"] == "blocked"
+    assert item["overdue"] is True
 
 
 def test_clean_compact_ui_markers_exist():

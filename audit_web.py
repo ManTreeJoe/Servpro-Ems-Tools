@@ -1826,6 +1826,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 pass
             from job_progress import evaluate as evaluate_job_progress
             progress = evaluate_job_progress(master, audit_state, log_entries)
+            progress["review_mode"] = not bool(
+                (_config.load() or {}).get("requirement_enforcement", False))
             for audit_event in audit_history:
                 issue_count = sum(len(audit_event.get(key) or []) for key in
                                   ("form_issues", "photo_issues", "note_issues", "missing"))
@@ -1864,10 +1866,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                     "error": f"CRM setup is not ready: {ex}"}
 
     def set_job_requirement(self, client: str, requirement_key: str,
-                            state: str, note: str = "") -> dict:
+                            state: str, note: str = "",
+                            details: dict | None = None) -> dict:
         """Record a human decision without replacing automatic evidence."""
         state = (state or "").strip().lower()
-        if state not in ("completed", "not_applicable", "reopen"):
+        if state == "reopen":
+            state = "todo"
+        if state not in ("todo", "in_progress", "blocked", "completed",
+                         "not_applicable"):
             return {"ok": False, "error": "invalid requirement state"}
         requirement_key = (requirement_key or "").strip()
         if not requirement_key:
@@ -1878,6 +1884,17 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             if not job:
                 return {"ok": False, "error": "job not found"}
             master = ems_db.get_master_job(job.get("canon_key") or "") or job
+            details = details if isinstance(details, dict) else {}
+            note = (note or "").strip()
+            if state == "not_applicable" and not note:
+                return {"ok": False, "error": "Not applicable requires a reason"}
+            if state == "blocked":
+                if not (details.get("blocked_reason") or note):
+                    return {"ok": False, "error": "Blocked requires a reason"}
+                if not details.get("assignee"):
+                    return {"ok": False, "error": "Blocked requires an owner"}
+                if not details.get("follow_up_at"):
+                    return {"ok": False, "error": "Blocked requires a follow-up date"}
             metadata = dict(master.get("metadata") or {})
             overrides = dict(metadata.get("requirement_overrides") or {})
             history = list(metadata.get("requirement_history") or [])
@@ -1888,13 +1905,22 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             except Exception:
                 pass
             at = _dt.datetime.now().astimezone().isoformat(timespec="seconds")
+            previous = dict(overrides.get(requirement_key) or {})
             record = {"key": requirement_key, "state": state,
-                      "actor": actor, "at": at, "note": (note or "").strip()}
-            if state == "reopen":
-                overrides.pop(requirement_key, None)
-            else:
-                overrides[requirement_key] = {k: record[k] for k in
-                                              ("state", "actor", "at", "note")}
+                      "previous_state": previous.get("state") or "todo",
+                      "actor": actor, "at": at, "note": note}
+            saved = dict(previous)
+            saved.update({"state": state, "actor": actor, "at": at,
+                          "note": note})
+            for field in ("assignee", "due_at", "follow_up_at",
+                          "blocked_reason", "importance"):
+                if field in details:
+                    saved[field] = str(details.get(field) or "").strip()
+                    record[field] = saved[field]
+            if state != "blocked":
+                saved["blocked_reason"] = ""
+                saved["follow_up_at"] = ""
+            overrides[requirement_key] = saved
             history.append(record)
             metadata["requirement_overrides"] = overrides
             metadata["requirement_history"] = history[-200:]
@@ -1902,7 +1928,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 display_name=master.get("display_name") or client,
                 department=master.get("department") or "",
                 metadata=metadata)
-            return {"ok": True, "state": state, "actor": actor, "at": at}
+            return {"ok": True, "state": state, "actor": actor, "at": at,
+                    "previous_state": record["previous_state"]}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
