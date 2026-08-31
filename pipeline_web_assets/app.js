@@ -52,7 +52,6 @@ async function bootPipeline() {
   state.activeBoardKey = PanelState.get("activeBoardKey", null);
   state.boardFilter    = PanelState.get("boardFilter", "all");
   state.boardLooks     = PanelState.get("boardLooks", {});
-  await hydrateCustomBoardLooks();
   state.active_stage   = PanelState.get("active_stage", state.active_stage);
   state.search         = PanelState.get("search", "");
 
@@ -95,6 +94,10 @@ async function bootPipeline() {
   state.view = "";
   setView(initialView);
   await loadBoard();
+  // A custom board photo is decoration, not job data. Load it only after
+  // the lanes are usable so a slow OneDrive path or missing image can never
+  // hold the Jobs board on its skeleton.
+  hydrateCustomBoardLooks().then(() => applyBoardLook(state.activeBoardKey)).catch(() => {});
   if (state.view === "stages" && !state.stages.length) await loadStages();
 }
 
@@ -143,8 +146,17 @@ async function loadBoard(isRefresh) {
   if (!isRefresh) $("#board-loading")?.classList.remove("hidden");
   setStatus(isRefresh ? "Refreshing from Trello…" : "Loading shared Pipeline…");
   try {
-    const res = await pywebview.api.board_view(Boolean(isRefresh));
-    if (!res?.ok) { setStatus(`Board load failed: ${res?.error || "?"}`, "error"); return; }
+    const res = await withTimeout(
+      pywebview.api.board_view(Boolean(isRefresh)),
+      isRefresh ? 45000 : 12000,
+      isRefresh ? "Job sync timed out" : "Jobs took too long to respond"
+    );
+    if (!res?.ok) {
+      const message = res?.error || "The board returned no data";
+      setStatus(`Board load failed: ${message}`, "error");
+      if (!isRefresh) showBoardLoadError(message);
+      return;
+    }
     state.board = res;
     renderBoard();
     const total = boardCardTotal();
@@ -154,6 +166,7 @@ async function loadBoard(isRefresh) {
     if (res.stale_cache && !isRefresh) refreshSavedBoardInBackground();
   } catch (ex) {
     setStatus(`Board error: ${ex}`, "error");
+    if (!isRefresh) showBoardLoadError(ex?.message || ex);
   } finally {
     if (isRefresh) { btn.disabled = false; btn.textContent = "↻ Sync Jobs"; }
   }
@@ -179,6 +192,26 @@ async function refreshSavedBoardInBackground() {
     // The saved board remains fully usable. Explicit Sync Jobs surfaces
     // network errors when the user wants to troubleshoot them.
   }
+}
+
+function withTimeout(promise, milliseconds, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), milliseconds);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function showBoardLoadError(error) {
+  const root = $("#board-view");
+  if (!root) return;
+  root.innerHTML = `<div class="empty-state startup-error">
+    <div class="empty-emoji">⚠️</div>
+    <strong>Jobs could not be loaded</strong>
+    <div>${escapeHtml(String(error || "Unknown board error"))}</div>
+    <button class="btn btn-primary" type="button" data-retry-board>Retry Jobs</button>
+  </div>`;
+  root.querySelector("[data-retry-board]")?.addEventListener("click", () => loadBoard(false));
 }
 
 function boardFingerprint(payload) {
