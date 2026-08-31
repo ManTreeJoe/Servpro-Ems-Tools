@@ -830,7 +830,7 @@ button,input,select,textarea { font-family:var(--font-body); }
 .lanes-row {
   gap: 12px;
   padding: 0 2px 14px;
-  scroll-snap-type:x proximity;
+  scroll-snap-type:none;
   overscroll-behavior-x: contain;
   touch-action: pan-x pan-y;
   scrollbar-color: rgba(244,241,232,.42) rgba(10,14,11,.28);
@@ -842,7 +842,6 @@ button,input,select,textarea { font-family:var(--font-body); }
 .lane {
   flex-basis: 286px;
   width: 286px;
-  scroll-snap-align:start;
   border-color: rgba(255,255,255,.14);
   border-radius: 12px;
   background: rgba(17,22,19,.76);

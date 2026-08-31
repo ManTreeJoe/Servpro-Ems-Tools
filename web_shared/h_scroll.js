@@ -38,6 +38,7 @@
       el.classList.add("hdrag-active");
       startX = e.clientX;
       scrollLeft = el.scrollLeft;
+      e.preventDefault();
       try { el.setPointerCapture(pointerId); } catch (_) { /* optional */ }
     });
 
@@ -86,6 +87,18 @@
     el.addEventListener("wheel", (e) => {
       const hasHScroll = el.scrollWidth > el.clientWidth + 1;
       if (!hasHScroll) return;
+      // Pipeline boards intentionally use one stable wheel axis. Switching
+      // between a lane's vertical scroll and the board mid-gesture felt as
+      // though the wheel had stopped responding. Native lane scrollbars
+      // remain available for vertical movement.
+      if (el.hasAttribute("data-hdrag-horizontal-wheel")) {
+        if (e.ctrlKey) return;
+        e.preventDefault();
+        const raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        const scale = e.deltaMode === 1 ? 18 : (e.deltaMode === 2 ? el.clientWidth : 1);
+        el.scrollLeft += raw * scale;
+        return;
+      }
       const noAuto = el.hasAttribute("data-hdrag-nowheel");
       const vertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
       const smartWheel = el.hasAttribute("data-hdrag-smartwheel");
