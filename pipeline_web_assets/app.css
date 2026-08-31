@@ -470,6 +470,32 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .job-card-skeleton.skeleton-medium { min-height: 180px; }
 .job-card-skeleton.skeleton-tall { min-height: 235px; }
 .job-card-skeleton.skeleton-side { min-height: 100%; }
+
+.photo-report-section { border-left: 3px solid #d39a2c; }
+.photo-report-route { display:grid; grid-template-columns:42px minmax(0,1fr) auto; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--border); }
+.photo-report-route:first-of-type { border-top:0; }
+.report-route-mark { width:38px; height:38px; border-radius:10px; display:grid; place-items:center; background:#173f2b; border:1px solid #2e8b57; color:#a8e1bd; font:700 11px/1 "Segoe UI Variable",sans-serif; letter-spacing:.06em; }
+.photo-report-route.is-quick .report-route-mark { background:#4b3512; border-color:#9c6b1b; color:#ffd98d; }
+.photo-report-route strong,.photo-report-route small { display:block; }
+.photo-report-route small { margin-top:3px; color:var(--text-muted); line-height:1.35; }
+.report-division { padding:3px 8px; border-radius:999px; background:#3d6549; color:#e6f6eb; font-size:10px; font-weight:700; text-transform:uppercase; }
+.photo-report-status { min-height:18px; color:var(--text-muted); font-size:11px; }
+.photo-report-status.ok { color:#7bd69c; }
+.photo-report-status.error { color:#ff8e83; }
+@media (max-width:760px) { .photo-report-route { grid-template-columns:38px 1fr; } .photo-report-route .btn { grid-column:1/-1; justify-self:stretch; } }
+.quick-report-modal { width:min(1040px,94vw); height:min(820px,92vh); }
+.quick-report-controls { display:grid; grid-template-columns:1.3fr .8fr .8fr 1.4fr auto; gap:10px; align-items:end; padding:12px; border:1px solid var(--border); border-radius:12px; background:rgba(255,255,255,.025); }
+.quick-report-controls label span { display:block; margin:0 0 5px; color:var(--text-muted); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+.quick-report-controls input,.quick-report-controls select { width:100%; min-height:34px; }
+.quick-report-message { padding:11px 2px; color:var(--text-muted); }
+.quick-report-message.ok { color:#7bd69c; }.quick-report-message.error { color:#ff8e83; }
+.quick-report-photos { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.quick-report-photo { position:relative; display:grid; grid-template-rows:140px auto; min-width:0; overflow:hidden; border:1px solid var(--border); border-radius:11px; background:var(--surface); cursor:pointer; }
+.quick-report-photo:has(input:checked) { border-color:#3ca96a; box-shadow:0 0 0 1px #3ca96a inset; }
+.quick-report-photo input { position:absolute; top:8px; left:8px; z-index:2; width:19px; height:19px; accent-color:#2e8b57; }
+.quick-report-photo img { width:100%; height:140px; object-fit:cover; background:#101612; }
+.quick-report-photo span { padding:9px; min-width:0; }.quick-report-photo strong,.quick-report-photo small { display:block; overflow:hidden; text-overflow:ellipsis; }.quick-report-photo strong { white-space:nowrap; }.quick-report-photo small { margin-top:4px; color:var(--text-muted); line-height:1.25; }
+@media (max-width:900px) { .quick-report-controls { grid-template-columns:1fr 1fr; }.quick-report-controls .btn { grid-column:1/-1; }.quick-report-photos { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .job-card-load-error { width: min(520px, calc(100% - 40px)); margin: 70px auto; padding: 28px; text-align: center; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .job-card-load-error strong { display: block; margin-bottom: 8px; font-size: 18px; }
 .job-card-load-error p { margin: 0 0 20px; color: var(--text-muted); overflow-wrap: anywhere; }

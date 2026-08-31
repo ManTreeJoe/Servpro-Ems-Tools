@@ -297,6 +297,7 @@ class Api:
         self._board_view_cache = None
         self._workspace_cache = {}
         self._crm_workspace_cache = {}
+        self._companycam_report_window = None
 
     def _workspace_cache_key(self, client: str, card_id: str = "",
                              division: str = ""):
@@ -922,6 +923,112 @@ class Api:
 
     def open_docusign(self) -> bool:
         return self.open_url("https://app.docusign.com/")
+
+    @staticmethod
+    def _job_docs_folder(job_path: str, division: str = "EMS") -> str:
+        """Best existing DOCS folder for one division, without creating it."""
+        root = os.path.abspath(str(job_path or "").strip()) if job_path else ""
+        if not root or not os.path.isdir(root):
+            return ""
+        wanted = str(division or "EMS").strip().casefold()
+        candidates = []
+        for dirname, dirs, _names in os.walk(root):
+            depth = os.path.relpath(dirname, root).count(os.sep)
+            if depth > 4:
+                dirs[:] = []
+                continue
+            if os.path.basename(dirname).casefold() not in ("docs", "documents", "paperwork"):
+                continue
+            parts = [part.casefold() for part in os.path.relpath(dirname, root).split(os.sep)]
+            division_match = any(wanted == part or wanted in part for part in parts)
+            candidates.append((0 if division_match else 1, len(parts), dirname))
+        return min(candidates)[2] if candidates else ""
+
+    def companycam_report_context(self, client: str, job_path: str = "",
+                                  division: str = "EMS") -> dict:
+        """Resolve the CompanyCam project used by the report workspace."""
+        try:
+            import companycam_api as cc
+            if not cc.is_configured():
+                return {"ok": False, "error": "CompanyCam is not connected in Settings."}
+            job = ems_db.find_job_by_name(client) or {}
+            address = str(job.get("address") or job.get("loss_address") or "")
+            project_id = cc.find_project_id(
+                client, address_hint=address, folder_path=job_path or "")
+            if not project_id:
+                found = cc.find_project(client, address_hint=address)
+                return {"ok": False,
+                        "error": found.get("reason") or "No matching CompanyCam project was found.",
+                        "candidates": found.get("candidates") or []}
+            project = cc.get_project(project_id) or {"id": project_id, "name": client}
+            project_url = str(project.get("photo_url") or "").strip()
+            if not project_url:
+                project_url = f"https://app.companycam.com/projects/{project_id}"
+            return {"ok": True, "client": client, "division": division or "EMS",
+                    "project_id": str(project_id), "project_name": project.get("name") or client,
+                    "project_url": project_url,
+                    "docs_folder": self._job_docs_folder(job_path, division)}
+        except Exception as ex:
+            return {"ok": False, "error": f"CompanyCam lookup failed: {ex}"}
+
+    def open_companycam_report_editor(self, client: str, job_path: str = "",
+                                      division: str = "EMS",
+                                      project_id: str = "") -> dict:
+        """Open CompanyCam as a dedicated in-app report editing window."""
+        context = self.companycam_report_context(client, job_path, division)
+        if not context.get("ok"):
+            return context
+        if project_id:
+            context["project_id"] = str(project_id)
+            context["project_url"] = f"https://app.companycam.com/projects/{project_id}"
+        try:
+            title = f"CompanyCam Report — {client}"
+            win = self._companycam_report_window
+            if win is not None:
+                try:
+                    win.load_url(context["project_url"])
+                    win.show()
+                    return {**context, "opened": True, "reused": True}
+                except Exception:
+                    self._companycam_report_window = None
+            self._companycam_report_window = webview.create_window(
+                title=title, url=context["project_url"], width=1280, height=840,
+                min_size=(760, 560))
+            return {**context, "opened": True, "reused": False}
+        except Exception as ex:
+            return {**context, "ok": False,
+                    "error": f"Could not open the CompanyCam report window: {ex}"}
+
+    def companycam_quick_report_plan(self, client: str, job_path: str = "",
+                                     division: str = "EMS",
+                                     start_date: str = "", end_date: str = "",
+                                     tag: str = "") -> dict:
+        context = self.companycam_report_context(client, job_path, division)
+        if not context.get("ok"):
+            return context
+        import companycam_report
+        result = companycam_report.plan(context["project_id"],
+                                        start_date=start_date,
+                                        end_date=end_date, tag=tag)
+        return {**context, **result}
+
+    def generate_companycam_quick_report(self, client: str, job_path: str,
+                                         division: str, report_type: str,
+                                         photo_ids: list, start_date: str = "",
+                                         end_date: str = "", tag: str = "") -> dict:
+        context = self.companycam_report_context(client, job_path, division)
+        if not context.get("ok"):
+            return context
+        if not context.get("docs_folder"):
+            return {**context, "ok": False,
+                    "error": f"No {division} DOCS folder is available for this job."}
+        import companycam_report
+        result = companycam_report.generate(
+            context["project_id"], client, context["docs_folder"], report_type,
+            photo_ids or [], start_date=start_date, end_date=end_date, tag=tag)
+        if result.get("ok"):
+            self._document_cache.clear()
+        return {**context, **result}
 
     def open_job_folder(self, client: str, path: str = "") -> dict:
         return self._audit_api().open_od_for_client(client, path)

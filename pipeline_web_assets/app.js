@@ -1068,6 +1068,12 @@ function openAuditModal(data, trelloUrl = "") {
         ${!docs.connected ? `<div class="signature-connection"><span><strong>Direct DocuSign connection is next</strong><small>For now, open DocuSign and mark the request sent after the envelope is actually sent.</small></span></div>` : ""}
         <div class="signature-actions"><button class="btn btn-primary" data-open-docusign>Open DocuSign ↗</button><button class="btn" data-mark-docusign-sent ${dsRequest.state ? "disabled" : ""}>Mark envelope sent</button><button class="btn" data-open-docs-folder ${res.path ? "" : "disabled"}>Open job folder</button></div>
         <div class="signature-files">${documentRows}</div></section>
+      <section class="aud-section photo-report-section"><div class="section-title-row"><div><h3>Photo reports</h3><small>Build in CompanyCam or generate a standardized report from job photos</small></div><span class="report-division">${escapeHtml(selectedDivision)}</span></div>
+        <div class="photo-report-route"><div class="report-route-mark">CC</div><div><strong>CompanyCam editor</strong><small>Opens the matched project in a Linguar Hub window. In CompanyCam, choose Documents → Reports.</small></div>
+          <button class="btn btn-primary" data-companycam-report>Create in CompanyCam</button></div>
+        <div class="photo-report-route is-quick"><div class="report-route-mark">PDF</div><div><strong>Quick Photo Report</strong><small>Choose stage, dates, and photos; the finished PDF files into this job’s DOCS folder.</small></div>
+          <button class="btn" data-quick-photo-report>Build quick report</button></div>
+        <div class="photo-report-status" data-photo-report-status></div></section>
       <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
         <div class="section-actions">${data.card_id ? `<button class="btn compact" data-import-job-log>Refresh from ${escapeHtml(selectedDivision)} Trello</button>` : ""}<button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div></div>
         <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div></section>
@@ -1352,6 +1358,26 @@ function openAuditModal(data, trelloUrl = "") {
       setStatus(`${division} Trello card removed`, "ok");
     }));
   w.querySelector("[data-open-docusign]")?.addEventListener("click", () => pywebview.api.open_docusign());
+  w.querySelector("[data-companycam-report]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const status = w.querySelector("[data-photo-report-status]");
+    button.disabled = true; button.textContent = "Finding project…";
+    status.textContent = "Matching this job to CompanyCam…";
+    const result = await pywebview.api.open_companycam_report_editor(
+      data.client || res.client || "", res.path || "", selectedDivision);
+    button.disabled = false; button.textContent = "Create in CompanyCam";
+    if (!result?.ok) {
+      status.textContent = result?.error || "CompanyCam could not be opened.";
+      status.className = "photo-report-status error";
+      return;
+    }
+    status.textContent = result.docs_folder
+      ? `CompanyCam opened · finished PDF belongs in ${result.docs_folder}`
+      : "CompanyCam opened · choose Documents → Reports to build the report.";
+    status.className = "photo-report-status ok";
+  });
+  w.querySelector("[data-quick-photo-report]")?.addEventListener("click", () =>
+    openQuickPhotoReportModal(data.client || res.client || "", res.path || "", selectedDivision));
   w.querySelector("[data-open-docs-folder]")?.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || ""));
   w.querySelectorAll("[data-document-path]").forEach((button) => button.addEventListener("click", () => {
     pywebview.api.open_document(button.dataset.documentPath || "");
@@ -1499,6 +1525,77 @@ function openJobLogHistoryModal(history) {
   const close = () => modal.remove();
   modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
   modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+}
+
+function openQuickPhotoReportModal(client, jobPath, division) {
+  const today = new Date().toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay quick-report-overlay";
+  modal.innerHTML = `<div class="modal-box quick-report-modal" role="dialog" aria-modal="true" aria-label="Quick Photo Report">
+    <header class="modal-head"><div><div class="modal-title">Quick Photo Report</div><div class="modal-sub">${escapeHtml(client)} · ${escapeHtml(division)} · CompanyCam photos</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
+    <div class="modal-body">
+      <div class="quick-report-controls">
+        <label><span>Report</span><select data-report-type><option>Initial Photo Report</option><option>Daily Monitoring Report</option><option>Progress Photo Report</option><option>Final Photo Report</option><option>Contents Photo Report</option><option>Reconstruction Photo Report</option></select></label>
+        <label><span>From</span><input type="date" data-report-start value="${monthAgo}"></label>
+        <label><span>Through</span><input type="date" data-report-end value="${today}"></label>
+        <label><span>CompanyCam tag</span><input data-report-tag placeholder="Optional: Initial, Demo, Kitchen…"></label>
+        <button class="btn btn-primary" type="button" data-preview-report>Find photos</button>
+      </div>
+      <div class="quick-report-message" data-report-message>Select dates and find the CompanyCam photos for this report.</div>
+      <div class="quick-report-photos" data-report-photos></div>
+    </div>
+    <footer class="modal-foot"><span data-report-selection>0 selected</span><button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-generate-report disabled>Generate PDF</button></footer>
+  </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
+  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+  const photosHost = modal.querySelector("[data-report-photos]");
+  const message = modal.querySelector("[data-report-message]");
+  const generate = modal.querySelector("[data-generate-report]");
+  const selection = modal.querySelector("[data-report-selection]");
+  let generatedPath = "";
+  const filters = () => ({
+    start: modal.querySelector("[data-report-start]").value,
+    end: modal.querySelector("[data-report-end]").value,
+    tag: modal.querySelector("[data-report-tag]").value.trim(),
+  });
+  const updateSelection = () => {
+    const count = photosHost.querySelectorAll("input:checked").length;
+    selection.textContent = `${count} selected`;
+    generate.disabled = count === 0;
+  };
+  modal.querySelector("[data-preview-report]").addEventListener("click", async (event) => {
+    const button = event.currentTarget; const f = filters();
+    button.disabled = true; button.textContent = "Reading CompanyCam…";
+    message.textContent = "Loading project photos and tags…"; photosHost.innerHTML = "";
+    const result = await pywebview.api.companycam_quick_report_plan(client, jobPath, division, f.start, f.end, f.tag);
+    button.disabled = false; button.textContent = "Find photos";
+    if (!result?.ok) { message.textContent = result?.error || "Photos could not be loaded."; message.className = "quick-report-message error"; return; }
+    const photos = result.photos || [];
+    message.textContent = photos.length ? `${photos.length} matching photos · clear any you do not want in the PDF` : "No photos match these dates and tag.";
+    message.className = "quick-report-message";
+    photosHost.innerHTML = photos.map((photo) => `<label class="quick-report-photo"><input type="checkbox" value="${escapeAttr(photo.id)}" checked><img src="${escapeAttr(photo.url)}" alt=""><span><strong>${escapeHtml(photo.description || "Jobsite photo")}</strong><small>${escapeHtml([photo.date, photo.creator, (photo.tags || []).join(", ")].filter(Boolean).join(" · "))}</small></span></label>`).join("");
+    photosHost.querySelectorAll("input").forEach((input) => input.addEventListener("change", updateSelection));
+    updateSelection();
+  });
+  generate.addEventListener("click", async () => {
+    if (generatedPath) { pywebview.api.open_document(generatedPath); return; }
+    const f = filters();
+    const ids = Array.from(photosHost.querySelectorAll("input:checked")).map((input) => input.value);
+    generate.disabled = true; generate.textContent = "Building PDF…";
+    message.textContent = `Downloading and formatting ${ids.length} photos…`;
+    const result = await pywebview.api.generate_companycam_quick_report(
+      client, jobPath, division, modal.querySelector("[data-report-type]").value,
+      ids, f.start, f.end, f.tag);
+    if (!result?.ok) { generate.disabled = false; generate.textContent = "Generate PDF"; message.textContent = result?.error || "The report could not be generated."; message.className = "quick-report-message error"; return; }
+    message.textContent = `Created ${result.filename} with ${result.photos} photos.`;
+    message.className = "quick-report-message ok";
+    generatedPath = result.path || "";
+    generate.textContent = "Open PDF"; generate.disabled = false;
+    setStatus(`Photo report saved to ${result.docs_folder}`, "ok");
+  });
 }
 
 async function openXaStageModal(client) {
