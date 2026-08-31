@@ -22,17 +22,30 @@ def _restore_paths():
     would leave every later test in the session writing into a tmp dir that
     pytest has already deleted."""
     real_appdata = os.environ.get("APPDATA")
+    real_channel = os.environ.get("LINGUAR_CHANNEL")
     yield
     if real_appdata is None:
         os.environ.pop("APPDATA", None)
     else:
         os.environ["APPDATA"] = real_appdata
+    if real_channel is None:
+        os.environ.pop("LINGUAR_CHANNEL", None)
+    else:
+        os.environ["LINGUAR_CHANNEL"] = real_channel
     import paths
     importlib.reload(paths)
 
 
 def _fresh_paths(appdata, monkeypatch):
     monkeypatch.setenv("APPDATA", str(appdata))
+    monkeypatch.delenv("LINGUAR_CHANNEL", raising=False)
+    import paths
+    return importlib.reload(paths)
+
+
+def _fresh_trial_paths(appdata, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(appdata))
+    monkeypatch.setenv("LINGUAR_CHANNEL", "trial")
     import paths
     return importlib.reload(paths)
 
@@ -117,3 +130,32 @@ def test_empty_legacy_dir_is_not_treated_as_state(tmp_path, monkeypatch):
     (tmp_path / "EMS Automation").mkdir()
     p = _fresh_paths(tmp_path, monkeypatch)
     assert os.path.basename(p.DATA_DIR) == "Linguar Hub"
+
+
+def test_trial_seeds_selected_state_once_without_sharing_main(tmp_path,
+                                                               monkeypatch):
+    main = tmp_path / "Linguar Hub"
+    main.mkdir()
+    (main / "config.json").write_text('{"audit_base":"X:/IE_Public"}',
+                                       encoding="utf-8")
+    (main / "state.json").write_text('{"ui":"main"}', encoding="utf-8")
+    (main / "supabase_session.json").write_text('{"user":{"id":"1"}}',
+                                                 encoding="utf-8")
+    (main / "backups").mkdir()
+    (main / "backups" / "state.json.old").write_text("old",
+                                                       encoding="utf-8")
+
+    p = _fresh_trial_paths(tmp_path, monkeypatch)
+    assert os.path.basename(p.DATA_DIR) == "Linguar Hub Trial"
+    assert json.load(open(p.data("config.json")))["audit_base"] == \
+        "X:/IE_Public"
+    assert not os.path.exists(os.path.join(p.DATA_DIR, "backups"))
+
+    # Trial edits remain isolated and a later launch never reclobbers them.
+    with open(p.data("config.json"), "w", encoding="utf-8") as fh:
+        json.dump({"audit_base": "TRIAL EDIT"}, fh)
+    p = _fresh_trial_paths(tmp_path, monkeypatch)
+    assert json.load(open(p.data("config.json")))["audit_base"] == \
+        "TRIAL EDIT"
+    assert json.load(open(main / "config.json"))["audit_base"] == \
+        "X:/IE_Public"

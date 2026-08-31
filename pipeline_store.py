@@ -50,6 +50,52 @@ def _upsert(table, row):
                     prefer="resolution=merge-duplicates")
 
 
+def _job_identity_index() -> dict:
+    """Load the shared job identity graph once for a whole board refresh.
+
+    This deliberately avoids one hosted-database lookup per Trello card.  A
+    direct job name wins; aliases are accepted only when exactly one job owns
+    them.  Ambiguous aliases are retained as conflicts for human review.
+    """
+    try:
+        from ems_db_sqlite import canon_key
+        jobs = _rows("jobs", select="job_id,canon_key,client_id,claim_id")
+        aliases = _rows("job_aliases", select="alias_canon,canon_key")
+    except Exception:
+        return {"canon": lambda value: str(value or "").strip().lower(),
+                "jobs": {}, "aliases": {}, "conflicts": set()}
+    by_key = {str(row.get("canon_key") or ""): row for row in jobs
+              if row.get("canon_key") and row.get("job_id")}
+    alias_owners = {}
+    for row in aliases:
+        alias = str(row.get("alias_canon") or "")
+        target = str(row.get("canon_key") or "")
+        if alias and target in by_key:
+            alias_owners.setdefault(alias, set()).add(target)
+    conflicts = {key for key, owners in alias_owners.items() if len(owners) != 1}
+    clean_aliases = {key: by_key[next(iter(owners))]
+                     for key, owners in alias_owners.items()
+                     if len(owners) == 1}
+    return {"canon": canon_key, "jobs": by_key, "aliases": clean_aliases,
+            "conflicts": conflicts}
+
+
+def resolve_card_identity(title: str, index: dict) -> dict:
+    """Resolve a Pipeline title to a permanent job/client/claim identity."""
+    key = index["canon"](title or "")
+    if not key:
+        return {"status": "unlinked"}
+    if key in index["conflicts"]:
+        return {"status": "conflict",
+                "error": "Multiple jobs use this card name; choose the job in Review."}
+    job = index["jobs"].get(key) or index["aliases"].get(key)
+    if not job:
+        return {"status": "unlinked"}
+    return {"status": "linked", "job_id": job.get("job_id"),
+            "client_id": job.get("client_id"),
+            "claim_id": job.get("claim_id")}
+
+
 def _card_rows(card_id: str, select: str = "*") -> list:
     """Find mirrored Trello or future native Linguar cards."""
     card_id = str(card_id or "").strip()
@@ -141,7 +187,9 @@ def mirror_boards(payload: dict) -> dict:
     """Upsert a shaped ``pipeline_web`` board payload into shared storage."""
     boards = list((payload or {}).get("boards") or [])
     now = _now()
-    counts = {"boards": 0, "lanes": 0, "cards": 0}
+    counts = {"boards": 0, "lanes": 0, "cards": 0,
+              "linked": 0, "conflicts": 0, "unlinked": 0}
+    identity_index = _job_identity_index()
     try:
         for board_pos, board in enumerate(boards):
             key = str(board.get("key") or "").strip()
@@ -174,10 +222,19 @@ def mirror_boards(payload: dict) -> dict:
                 for card_pos, card in enumerate(lane.get("cards") or []):
                     ext_card = str(card.get("card_id") or "")
                     card_key = f"trello:{ext_card}" if ext_card else f"{lane_key}:{card_pos}"
+                    title = card.get("client") or card.get("name") or "Untitled job"
+                    identity = resolve_card_identity(title, identity_index)
+                    counts[identity["status"] if identity["status"] != "conflict"
+                           else "conflicts"] += 1
+                    sync_status = ("conflict" if identity["status"] == "conflict"
+                                   else "synced")
                     _upsert("crm_pipeline_cards", {
                         "card_key": card_key, "board_key": key,
                         "lane_key": lane_key,
-                        "title": card.get("client") or card.get("name") or "Untitled job",
+                        "title": title,
+                        "job_id": identity.get("job_id"),
+                        "client_id": identity.get("client_id"),
+                        "claim_id": identity.get("claim_id"),
                         "position": card_pos, "source": "trello",
                         "external_id": ext_card or None,
                         "external_url": card.get("url") or None,
@@ -185,7 +242,8 @@ def mirror_boards(payload: dict) -> dict:
                         "due_at": card.get("due") or None,
                         "due_complete": bool(card.get("due_complete")),
                         "last_activity_at": card.get("last_activity_at") or None,
-                        "sync_status": "synced", "sync_error": None,
+                        "sync_status": sync_status,
+                        "sync_error": identity.get("error"),
                         "synced_at": now, "archived": False,
                         "created_at": now, "updated_at": now,
                     })

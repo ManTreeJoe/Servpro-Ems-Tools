@@ -687,3 +687,55 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
   .summary-help, .summary-primary span, .summary-item span { display: none; }
   .lane { flex-basis: 252px; width: 252px; }
 }
+
+/* ── Restoration operations console ───────────────────────────── */
+:root {
+  --bg:#111512; --surface:#181e1a; --surface-2:#202722;
+  --border:#303a33; --text:#edf3ee; --text-muted:#a5b0a8;
+  --text-dim:#718078; --green:#2f9d62; --green-hover:#39b873;
+  --amber:#ee9b32; --red:#d95a4e; --link:#75aef8;
+  --chip-bg:#273029; --chip-active:#244f36;
+  --shadow-1:0 1px 2px rgba(0,0,0,.36),0 10px 30px rgba(0,0,0,.16);
+  --font-display:"Bahnschrift","Arial Narrow","Segoe UI Variable",sans-serif;
+  --font-body:"Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  --font-utility:"Cascadia Mono","Consolas",monospace;
+}
+html,body { font-family:var(--font-body); }
+button,input,select,textarea { font-family:var(--font-body); }
+.pipeline-title,.modal-title { font-family:var(--font-display); letter-spacing:.01em; }
+.topbar { position:relative; min-height:48px; background:#151a17; }
+.topbar::after { content:""; position:absolute; left:0; right:0; bottom:-1px;
+  height:2px; opacity:.75;
+  background:linear-gradient(90deg,var(--green) 0 82%,var(--amber) 82%); }
+.lane { background:#171c19; border-color:#29322c;
+  box-shadow:0 8px 22px rgba(0,0,0,.12); }
+.lane-head { min-height:38px; background:#1b211d; }
+.lane-name { font-family:var(--font-display); letter-spacing:.065em; }
+.kcard { position:relative; padding:10px 10px 9px 12px; background:#222a24;
+  border-color:#344038; box-shadow:0 2px 7px rgba(0,0,0,.16); }
+.kcard::before { content:""; position:absolute; left:0; top:9px; bottom:9px;
+  width:2px; border-radius:2px; background:var(--green); opacity:.55; }
+.kcard:hover { background:#29332c; border-color:#4a5c50;
+  transform:translateY(-1px); box-shadow:0 6px 14px rgba(0,0,0,.2); }
+.kcard-title { font-size:12.5px; font-weight:680; line-height:1.35; }
+.modal-scrim { background:rgba(4,8,5,.72); backdrop-filter:blur(3px); }
+.audit-card { width:min(1240px,97vw);
+  height:min(920px,calc(100vh - clamp(18px,5vh,58px)));
+  border-top:3px solid var(--green); box-shadow:0 28px 80px rgba(0,0,0,.62); }
+.audit-card .modal-title { font-family:var(--font-display); }
+.job-card-activity { background:#151a17; }
+
+/* Lane-shaped skeletons replace the old blank loading pane. */
+#board-loading:not(.hidden) { width:100%; min-height:330px; font-size:0;
+  display:grid; grid-template-columns:repeat(4,minmax(180px,1fr)); gap:12px;
+  padding:0; }
+#board-loading:not(.hidden)::before,
+#board-loading:not(.hidden)::after { content:""; min-height:320px;
+  border:1px solid var(--border); border-radius:9px;
+  background:linear-gradient(110deg,var(--surface) 20%,var(--surface-2) 38%,var(--surface) 55%);
+  background-size:220% 100%; animation:board-skeleton 1.5s linear infinite; }
+#board-loading:not(.hidden)::after { grid-column:span 3; }
+@keyframes board-skeleton { to { background-position-x:-220%; } }
+@media (prefers-reduced-motion:reduce) {
+  #board-loading:not(.hidden)::before,#board-loading:not(.hidden)::after { animation:none; }
+}

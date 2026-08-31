@@ -209,15 +209,15 @@ def state(force: bool = False) -> dict:
             })
 
     backup = _backup_check()
-    if not backup.get("ok"):
+    if not backup.get("ok") and not backup.get("pending"):
         bad = [c for c in backup.get("checks", []) if not c.get("ok")]
         names = ", ".join(c.get("name", "backup") for c in bad)
         problems.append({
             "code": "backup_stale",
             "title": "Backups need attention",
-            "detail": (f"Missing or stale: {names}." if names else
+            "detail": (f"Backup failed or remains stale: {names}." if names else
                        "Backup status could not be verified."),
-            "action": "Settings → Backups → Run backup now",
+            "action": "Data & Sync Health → Retry backup",
         })
 
     off = _offline_state()

@@ -32,9 +32,10 @@ def _detect_channel():
     """'trial' or 'main'. The Trial app is a separate build that installs to
     a "Linguar Hub Trial" folder / exe, so a frozen build detects its channel
     from its own path. In dev (running from source) honor the LINGUAR_CHANNEL env
-    var so the trial code path can be exercised without a build. Data + config
-    are SHARED between channels — only name / install dir / update channel
-    differ."""
+    var so the trial code path can be exercised without a build. Trial has its
+    own writable data directory; its first run seeds a safe snapshot from Main
+    so experiments cannot mutate the live app's config, cache, or UI state.
+    Both channels may still connect to the same shared Supabase database."""
     try:
         if getattr(sys, "frozen", False):
             exe = sys.executable or ""
@@ -114,13 +115,16 @@ VERSION = _bundled_version()
 # ── Writable data dir ───────────────────────────────────────────────────────
 APPDATA = os.environ.get("APPDATA") or os.path.expanduser(r"~\AppData\Roaming")
 
-APP_DIR_NAME = "Linguar Hub"
+MAIN_APP_DIR_NAME = "Linguar Hub"
+TRIAL_APP_DIR_NAME = "Linguar Hub Trial"
+APP_DIR_NAME = TRIAL_APP_DIR_NAME if IS_TRIAL else MAIN_APP_DIR_NAME
 # Pre-rebrand name. Everything lived here through v1.1.3, so a machine
 # upgrading from that build has ~90 MB of real state — config.json, the
 # job index, APA drafts, every backup — sitting under the old name.
 LEGACY_APP_DIR_NAME = "EMS Automation"
 
 DATA_DIR = os.path.join(APPDATA, APP_DIR_NAME)
+MAIN_DATA_DIR = os.path.join(APPDATA, MAIN_APP_DIR_NAME)
 LEGACY_DATA_DIR = os.path.join(APPDATA, LEGACY_APP_DIR_NAME)
 
 
@@ -184,7 +188,47 @@ def _adopt_legacy_data_dir():
     return DATA_DIR
 
 
-DATA_DIR = _adopt_legacy_data_dir()
+_TRIAL_SEED_FILES = (
+    "config.json",
+    "state.json",
+    "ems_jobs.db",
+    "supabase_session.json",
+    ".configured",
+)
+
+
+def _seed_trial_data_dir():
+    """Create Trial's isolated local state from a one-time Main snapshot.
+
+    Only files needed to preserve machine setup, sign-in, preferences and the
+    offline job mirror are copied. Backups, logs and caches deliberately start
+    fresh so Trial health and experiments cannot be confused with Main.
+    """
+    if not IS_TRIAL or _has_state(DATA_DIR):
+        return DATA_DIR
+    staging = DATA_DIR + ".seeding"
+    try:
+        if os.path.isdir(staging):
+            shutil.rmtree(staging, ignore_errors=True)
+        os.makedirs(staging, exist_ok=True)
+        for name in _TRIAL_SEED_FILES:
+            src = os.path.join(MAIN_DATA_DIR, name)
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(staging, name))
+        with open(os.path.join(staging, "SEEDED_FROM_MAIN.txt"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("One-time Trial seed from the local Main profile.\n")
+        if os.path.isdir(DATA_DIR):
+            os.rmdir(DATA_DIR)
+        os.rename(staging, DATA_DIR)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        os.makedirs(DATA_DIR, exist_ok=True)
+    return DATA_DIR
+
+
+DATA_DIR = (_seed_trial_data_dir() if IS_TRIAL else
+            _adopt_legacy_data_dir())
 os.makedirs(DATA_DIR, exist_ok=True)
 
 

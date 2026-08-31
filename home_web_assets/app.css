@@ -314,3 +314,27 @@ body { background: var(--bg); }
   }
   .sb-foot-btn { width: 34px; height: 32px; }
 }
+
+/* ── Restoration operations shell ─────────────────────────────── */
+.sidebar { background:#151a17; }
+.sidebar::before { content:""; height:3px; flex:0 0 3px;
+  background:linear-gradient(90deg,var(--green) 0 72%,var(--amber) 72%); }
+.brand-name { font-family:var(--font-display); font-size:16px; font-weight:750;
+  letter-spacing:.025em; }
+.sb-item:hover { background:var(--surface-2); }
+.pane { background-color:var(--bg);
+  background-image:linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px);
+  background-size:24px 24px; }
+.welcome-mark { background:linear-gradient(135deg,var(--green) 0 68%,
+  var(--amber) 68% 76%,#273029 76%); }
+.welcome-greet { font-family:var(--font-display); font-weight:600; letter-spacing:.01em; }
+.fr-card { border-top:3px solid var(--green)!important; border-radius:10px!important; }
+.fr-title { font-family:var(--font-display); letter-spacing:.01em; }
+.fr-note { padding:9px 10px; border-left:2px solid var(--amber);
+  background:rgba(238,155,50,.07); }
+@media (max-width:1120px) and (min-width:901px) {
+  .shell { grid-template-columns:208px minmax(0,1fr); }
+  .sb-head { padding-inline:14px; }
+  .sb-item { padding-inline:10px; }
+}

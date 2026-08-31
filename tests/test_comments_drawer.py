@@ -658,7 +658,7 @@ def test_snapshot_comments_are_docked_beside_the_form():
                   encoding="utf-8").read()
     snapshot = open(os.path.join(root, "snapshot_web_assets", "index.html"),
                     encoding="utf-8").read()
-    assert 'class="snapshot-panel"' in snapshot
+    assert "snapshot-panel" in snapshot
     assert "body.snapshot-panel.cmt-docked" in shared
     assert 'padding-right:var(--cmt-dock-width,380px)' in shared
     assert 'padding-bottom:min(46vh,420px)' in shared

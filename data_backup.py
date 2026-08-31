@@ -45,6 +45,9 @@ _CLOUD_INTERVAL_H = 24
 _BACKGROUND_CHECK_S = 60 * 60
 _TIMER_LOCK = threading.Lock()
 _NEXT_TIMER = None
+_RUN_LOCK = threading.Lock()
+_IN_PROGRESS = False
+_LAST_REPORT = None
 
 
 def backup_dir():
@@ -204,11 +207,18 @@ def start_background(force=False):
     Normal launch calls schedule another check after the worker finishes.
     """
     def _go():
+        global _IN_PROGRESS, _LAST_REPORT
+        with _RUN_LOCK:
+            if _IN_PROGRESS:
+                return
+            _IN_PROGRESS = True
         try:
-            run_once(force=force)
+            _LAST_REPORT = run_once(force=force)
         except Exception:
-            pass
+            _LAST_REPORT = {"_error": "backup worker failed"}
         finally:
+            with _RUN_LOCK:
+                _IN_PROGRESS = False
             if not force:
                 _schedule_next()
     t = threading.Thread(target=_go, daemon=True, name="data-backup")
@@ -302,8 +312,17 @@ def health() -> dict:
             "last_success": row["stamp"],
             "age_hours": round(age_h, 1),
         })
-    return {"ok": all(c["ok"] for c in checks), "checks": checks,
-            "dir": backup_dir()}
+    healthy = all(c["ok"] for c in checks)
+    with _RUN_LOCK:
+        pending = bool(_IN_PROGRESS)
+        attempted = _LAST_REPORT is not None
+        last_report = dict(_LAST_REPORT or {})
+    # Startup already schedules a backup before health is rendered. Suppress
+    # the stale banner while that real recovery attempt is still running;
+    # after it finishes, any remaining failure becomes actionable.
+    return {"ok": bool(healthy or pending), "checks": checks,
+            "pending": pending, "attempted": attempted,
+            "last_report": last_report, "dir": backup_dir()}
 
 
 if __name__ == "__main__":

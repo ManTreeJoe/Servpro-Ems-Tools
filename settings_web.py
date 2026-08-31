@@ -161,21 +161,11 @@ def _signed_in_email():
 
 
 def _is_admin():
-    """Server decision when available; exact bootstrap email for migration setup."""
-    # The owner is the bootstrap administrator even before (or if) the
-    # app_admins seed row exists. Previously an RPC response of
-    # {is_admin:false} returned early and hid Admin setup from the one
-    # account that needed it to finish configuration.
-    if _signed_in_email() == _INITIAL_ADMIN_EMAIL:
-        return True
     try:
-        import supabase_client
-        result = supabase_client.rpc("my_app_access")
-        if isinstance(result, dict):
-            return bool(result.get("is_admin"))
+        import account_access
+        return bool(account_access.current_access().get("is_admin"))
     except Exception:
-        pass
-    return _signed_in_email() == _INITIAL_ADMIN_EMAIL
+        return _signed_in_email() == _INITIAL_ADMIN_EMAIL
 
 
 def _admin_enforcement_active():
@@ -199,6 +189,12 @@ def _invalidate(reason):
 
 def _local_path(value):
     """Turn a pasted Windows path/file URL into the path this PC can open."""
+    import machine_folders
+    return machine_folders.local_path(value)
+
+
+def _legacy_local_path(value):
+    """Legacy implementation retained temporarily for compatibility tests."""
     raw = str(value or "").strip().strip('"').strip("'")
     if not raw:
         return ""
@@ -217,6 +213,11 @@ def _local_path(value):
 
 def _daily_run_under(job_root):
     """Find the Daily Run directory stored directly under a job root."""
+    import machine_folders
+    return machine_folders.derive_daily_run(job_root)
+
+
+def _legacy_daily_run_under(job_root):
     root = _local_path(job_root)
     if not root or not os.path.isdir(root):
         return ""
@@ -254,19 +255,13 @@ class Api:
                 for f in FIELDS]
 
     def settings_access(self):
-        email = _signed_in_email()
-        is_admin = _is_admin()
-        departments = []
-        try:
-            import supabase_client
-            access = supabase_client.rpc("my_app_access") or {}
-            if isinstance(access, dict):
-                departments = access.get("departments") or []
-                is_admin = is_admin or bool(access.get("is_admin"))
-        except Exception:
-            pass
-        return {"ok": True, "email": email, "is_admin": is_admin,
-                "departments": departments}
+        import account_access
+        access = account_access.current_access()
+        return {"ok": True, "email": access.get("email") or "",
+                "is_admin": bool(access.get("is_admin")),
+                "is_owner": bool(access.get("is_owner")),
+                "departments": list(access.get("departments") or []),
+                "error": access.get("error") or ""}
 
     def _my_folder_departments(self):
         """Franchises whose machine-local roots this user may configure."""
@@ -274,14 +269,12 @@ class Api:
         configured = list((base.get("departments") or {}).keys())
         if _is_admin():
             return configured
-        assigned = []
         try:
-            import supabase_client
-            access = supabase_client.rpc("my_app_access") or {}
-            if isinstance(access, dict):
-                assigned = list(access.get("departments") or [])
+            import account_access
+            assigned = list(account_access.current_access().get(
+                "departments") or [])
         except Exception:
-            pass
+            assigned = []
         allowed = [key for key in configured if key in assigned]
         active = (base.get("active_department") or "").strip()
         if not allowed and active in configured:
@@ -291,24 +284,15 @@ class Api:
     def my_franchise_folders(self):
         """Per-PC job and run-doc roots for the user's franchises."""
         try:
+            import machine_folders
             base = config.load_base() or {}
             profiles = base.get("departments") or {}
             rows = []
             for key in self._my_folder_departments():
                 profile = profiles.get(key) if isinstance(profiles.get(key), dict) else {}
-                job_root = _local_path(profile.get("audit_base"))
-                runs_dir = _local_path(profile.get("runs_dir"))
-                if not runs_dir or not os.path.isdir(runs_dir):
-                    runs_dir = _daily_run_under(job_root) or runs_dir
-                rows.append({
-                    "key": key,
-                    "label": profile.get("label") or key,
-                    "active": key == (base.get("active_department") or "").strip(),
-                    "job_root": job_root,
-                    "runs_dir": runs_dir,
-                    "job_connected": bool(job_root and os.path.isdir(job_root)),
-                    "runs_connected": bool(runs_dir and os.path.isdir(runs_dir)),
-                })
+                row = machine_folders.discover(key, profile)
+                row["active"] = key == (base.get("active_department") or "").strip()
+                rows.append(row)
             return {"ok": True, "departments": rows}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
@@ -318,18 +302,12 @@ class Api:
         key = (key or "").strip()
         if key not in self._my_folder_departments():
             return {"ok": False, "error": "That franchise is not assigned to you."}
-        job_root = _local_path(job_root)
-        runs_dir = _local_path(runs_dir)
-        if not runs_dir or not os.path.isdir(runs_dir):
-            runs_dir = _daily_run_under(job_root) or runs_dir
-        missing = []
-        if not job_root or not os.path.isdir(job_root):
-            missing.append("job folders root")
-        if not runs_dir or not os.path.isdir(runs_dir):
-            missing.append("daily run docs folder")
-        if missing:
-            return {"ok": False,
-                    "error": "Windows cannot open the " + " and ".join(missing) + "."}
+        import machine_folders
+        connected = machine_folders.connect(key, job_root, runs_dir)
+        if not connected.get("ok"):
+            return connected
+        job_root = connected["job_root"]
+        runs_dir = connected["runs_dir"]
         try:
             base = config.load_base() or {}
             profiles = dict(base.get("departments") or {})
@@ -1087,24 +1065,12 @@ class Api:
     def employee_setup_status(self) -> dict:
         """Plain-language first-day checklist for a regular employee."""
         cfg = config.load() or {}
-        access_error = ""
-        try:
-            import supabase_client as sb
-            user = sb.current_user() or {}
-            signed_in = bool(user.get("id"))
-        except Exception as ex:
-            user, signed_in, access = {}, False, {}
-            access_error = f"Sign-in status unavailable: {ex}"
-        else:
-            try:
-                access = sb.rpc("my_app_access") if signed_in else {}
-            except Exception as ex:
-                # A temporary permission/network failure must not turn a
-                # perfectly valid local session into "Not signed in". Keep
-                # identity and franchise access as separate setup checks.
-                access = {}
-                access_error = f"Could not check franchise access: {ex}"
-        departments = list((access or {}).get("departments") or [])
+        import account_access
+        access = account_access.current_access()
+        user = access.get("identity") or {}
+        signed_in = bool(access.get("signed_in"))
+        access_error = access.get("error") or ""
+        departments = list(access.get("departments") or [])
         active = (config.active_department() or "").strip()
         trello_set = bool((cfg.get("trello_api_key") or "").strip()
                           and (cfg.get("trello_token") or "").strip())
@@ -1142,7 +1108,8 @@ class Api:
                 "total": len(steps),
                 "all_done": all(step["done"] for step in steps),
                 "active_franchise": active,
-                "is_admin": bool((access or {}).get("is_admin"))}
+                "is_admin": bool(access.get("is_admin")),
+                "is_owner": bool(access.get("is_owner"))}
 
     def my_trello_token_page(self) -> dict:
         """The current Trello authorization URL using Linguar's API key."""

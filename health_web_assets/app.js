@@ -27,7 +27,8 @@ async function load(force) {
     c.label, c.ok, c.ok ? "Available" : (c.required ? c.action : `Optional · ${c.action}`), !c.required)).join("");
   const backups = st.backup?.checks || [];
   $("#backups").innerHTML = backups.length ? backups.map((b) => row(
-    b.name, b.ok, b.last_success ? `${b.state} · ${b.age_hours} hours old` : "No verified backup yet")).join("")
+    b.name, b.ok || st.backup?.pending, st.backup?.pending ? "Backing up now…" :
+      (b.last_success ? `${b.state} · ${b.age_hours} hours old` : "No verified backup yet"))).join("")
     : row("Backup verification", false, "Run a backup to establish recovery history");
   $("#health-status").textContent = requiredProblems ? "Review the highlighted items" : "All required checks passed";
 }

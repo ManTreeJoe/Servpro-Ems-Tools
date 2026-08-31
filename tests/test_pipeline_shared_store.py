@@ -67,6 +67,26 @@ def test_trello_projection_round_trips_through_shared_store(monkeypatch):
     assert card["sync_status"] == "synced"
 
 
+def test_card_identity_links_to_client_claim_and_job():
+    index = {
+        "canon": lambda value: value.strip().lower(),
+        "jobs": {"smith, jane": {"job_id": "j1", "client_id": "u1",
+                                   "claim_id": "q1"}},
+        "aliases": {}, "conflicts": set(),
+    }
+    assert pipeline_store.resolve_card_identity("Smith, Jane", index) == {
+        "status": "linked", "job_id": "j1", "client_id": "u1",
+        "claim_id": "q1"}
+
+
+def test_ambiguous_card_identity_goes_to_review_instead_of_wrong_job():
+    index = {"canon": lambda value: value.strip().lower(), "jobs": {},
+             "aliases": {}, "conflicts": {"bruce wilson"}}
+    result = pipeline_store.resolve_card_identity("Bruce Wilson", index)
+    assert result["status"] == "conflict"
+    assert "Multiple jobs" in result["error"]
+
+
 def test_full_checklists_are_owned_and_updated_by_linguar(monkeypatch):
     fake = FakeSupabase()
     monkeypatch.setattr(pipeline_store, "_sb", fake)
