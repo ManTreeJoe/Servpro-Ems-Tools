@@ -484,6 +484,12 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .photo-report-status.error { color:#ff8e83; }
 @media (max-width:760px) { .photo-report-route { grid-template-columns:38px 1fr; } .photo-report-route .btn { grid-column:1/-1; justify-self:stretch; } }
 .quick-report-modal { width:min(1040px,94vw); height:min(820px,92vh); }
+.quick-report-step { margin-bottom:14px; padding:14px; border:1px solid var(--border); border-radius:12px; background:rgba(255,255,255,.018); }
+.quick-report-step.gallery-step { min-height:260px; }
+.quick-report-step-head { display:flex; gap:10px; align-items:flex-start; margin-bottom:12px; }
+.quick-report-step-head>span,.quick-report-step-number { flex:0 0 25px; width:25px; height:25px; display:grid; place-items:center; border-radius:50%; background:#286a45; color:#fff; font-size:12px; font-weight:800; }
+.quick-report-step-head strong,.quick-report-step-head small,.quick-report-foot strong,.quick-report-foot small { display:block; }.quick-report-step-head small,.quick-report-foot small { margin-top:2px; color:var(--text-muted); }
+.quick-report-foot { align-items:center; }.quick-report-foot>i { flex:1; }
 .quick-report-controls { display:grid; grid-template-columns:1.3fr .8fr .8fr 1.4fr auto; gap:10px; align-items:end; padding:12px; border:1px solid var(--border); border-radius:12px; background:rgba(255,255,255,.025); }
 .quick-report-controls label span { display:block; margin:0 0 5px; color:var(--text-muted); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
 .quick-report-controls input,.quick-report-controls select { width:100%; min-height:34px; }

@@ -840,6 +840,9 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         self._cache_loaded = False
         self._division_cards_cache = {}
         self._division_cards_lock = threading.RLock()
+        # Job Search and Jobs share one CompanyCam report implementation.
+        # Build its adapter lazily so ordinary searches do not pay for it.
+        self._companycam_reports = None
 
     def attach(self, window):
         self._window = window
@@ -3336,6 +3339,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         has no pinned card or the card carries no CompanyCam link yet."""
         if not client:
             return False
+
         try:
             import trello_client as tc
             card_id = persistence.get_trello_card_id(client) or ""
@@ -3350,6 +3354,40 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception:
             pass
         return False
+
+    def _companycam_report_api(self):
+        if self._companycam_reports is None:
+            from pipeline_web import Api as PipelineApi
+            self._companycam_reports = PipelineApi()
+        return self._companycam_reports
+
+    def open_companycam_report_editor(self, client: str, job_path: str = "",
+                                      division: str = "EMS",
+                                      project_id: str = "") -> dict:
+        """Open the shared CompanyCam report editor from Job Search."""
+        return self._companycam_report_api().open_companycam_report_editor(
+            client, job_path, division, project_id)
+
+    def companycam_quick_report_plan(self, client: str, job_path: str = "",
+                                     division: str = "EMS",
+                                     start_date: str = "", end_date: str = "",
+                                     tag: str = "", offset: int = 0,
+                                     limit: int = 120) -> dict:
+        """Return a paged CompanyCam contact sheet for Job Search."""
+        return self._companycam_report_api().companycam_quick_report_plan(
+            client, job_path, division, start_date, end_date, tag,
+            offset, limit)
+
+    def generate_companycam_quick_report(self, client: str, job_path: str,
+                                         division: str, report_type: str,
+                                         photo_ids: list,
+                                         start_date: str = "",
+                                         end_date: str = "",
+                                         tag: str = "") -> dict:
+        """Generate the same standardized PDF available in Jobs."""
+        return self._companycam_report_api().generate_companycam_quick_report(
+            client, job_path, division, report_type, photo_ids,
+            start_date, end_date, tag)
 
     def get_claim_number(self, client: str) -> dict:
         """Pull the claim number from the client's pinned Trello card desc

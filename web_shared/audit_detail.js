@@ -271,6 +271,13 @@
                   title="Browse + download the Trello card's photos/files"><img class="btn-icon" src="../web_shared/trello.png" alt=""/>Trello Attachments</button>
           </div>
         </div>
+        <div class="action-row" data-group="reports">
+          <span class="action-group-label">Reports</span>
+          <div class="action-buttons">
+          <button class="action-btn primary" data-action="photo-report"
+                  title="Review CompanyCam photos and build a PDF in this job's DOCS folder"><img class="btn-icon" src="../web_shared/companycam.png" alt="" onerror="this.remove()"/>Build photo report</button>
+          </div>
+        </div>
         <div class="action-row" data-group="details">
           <span class="action-group-label">Job details</span>
           <div class="action-buttons">
@@ -1504,6 +1511,96 @@
       }));
   }
 
+  function openCompanyCamReportModal(row, ctx) {
+    const who = _firstLast(row.display_name || tc(ctx, row.client));
+    const wrap = mkModal({
+      title: "📷 CompanyCam photo report",
+      sub: who + " · inspect and choose the exact photos to include",
+      width: 1080,
+      body: `<section class="ccr-step"><div class="ccr-step-head"><span class="ccr-step-number">1</span><div><b>Set up the report</b><small>Choose the job division and narrow the CompanyCam photos only when needed.</small></div></div><div class="cc-report-controls">
+        <label><small>Division</small><select data-ccr-division><option>EMS</option><option>Contents</option><option>Recon</option></select></label>
+        <label><small>Report type</small><select data-ccr-type><option>Photo Report</option><option>Initial Inspection</option><option>Progress Report</option><option>Completion Report</option></select></label>
+        <label><small>From</small><input type="date" data-ccr-start></label>
+        <label><small>Through</small><input type="date" data-ccr-end></label>
+        <label><small>Optional tag</small><input data-ccr-tag placeholder="Initial, Demo…"></label>
+      </div>
+      <div class="ccr-actions">
+        <button class="action-btn primary" data-ccr-find>Find photos</button>
+        <button class="action-btn" data-ccr-editor>Create in CompanyCam</button>
+      </div></section>
+      <section class="ccr-step"><div class="ccr-step-head"><span class="ccr-step-number">2</span><div><b>Review and select photos</b><small>Open photos full-size, then keep only what belongs in the report.</small></div></div>
+      <div class="ccr-gallery-tools"><button class="action-btn" data-ccr-select hidden>Select loaded</button><button class="action-btn" data-ccr-clear hidden>Clear selection</button><span data-ccr-count></span></div>
+      <div data-ccr-message class="ccr-message">Choose a date range or load every photo for this job.</div>
+      <div data-ccr-photos class="ccr-photo-grid"></div>
+      <button class="action-btn" data-ccr-more hidden style="display:block;margin:14px auto 0;">Load more photos</button>
+      </section><footer class="ccr-footer"><span class="ccr-step-number">3</span><div><b>Generate the PDF</b><small class="muted" data-ccr-selection>0 selected</small></div><span class="ccr-footer-spacer"></span>
+        <button class="action-btn modal-close">Close</button><button class="action-btn primary" data-ccr-generate disabled>Generate PDF</button>
+      </footer>`
+    });
+    const host = wrap.querySelector("[data-ccr-photos]");
+    const message = wrap.querySelector("[data-ccr-message]");
+    const generate = wrap.querySelector("[data-ccr-generate]");
+    let photos = [], selected = new Set(), total = 0, generatedPath = "";
+    const values = () => ({
+      division: wrap.querySelector("[data-ccr-division]").value,
+      type: wrap.querySelector("[data-ccr-type]").value,
+      start: wrap.querySelector("[data-ccr-start]").value,
+      end: wrap.querySelector("[data-ccr-end]").value,
+      tag: wrap.querySelector("[data-ccr-tag]").value.trim(),
+    });
+    const update = () => {
+      wrap.querySelector("[data-ccr-selection]").textContent = `${selected.size} selected`;
+      generate.disabled = !selected.size;
+    };
+    const render = () => {
+      host.innerHTML = photos.map((p) => `<article data-ccr-id="${esc(ctx,p.id)}" style="position:relative;overflow:hidden;border:1px solid ${selected.has(p.id) ? "#3ca96a" : "var(--border)"};border-radius:10px;background:var(--surface);">
+        <input type="checkbox" value="${esc(ctx,p.id)}" ${selected.has(p.id) ? "checked" : ""} style="position:absolute;z-index:2;top:8px;left:8px;width:19px;height:19px;accent-color:#2e8b57;">
+        <button data-ccr-preview="${esc(ctx,p.id)}" style="display:block;width:100%;height:140px;padding:0;border:0;background:#111;cursor:zoom-in;"><img src="${esc(ctx,p.preview_url || p.url)}" alt="View full photo" style="width:100%;height:100%;object-fit:cover;"></button>
+        <div style="padding:9px;"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(ctx,p.description || "Jobsite photo")}</b><small class="muted">${esc(ctx,[p.date,p.creator,(p.tags || []).join(", ")].filter(Boolean).join(" · "))}</small></div></article>`).join("");
+      host.querySelectorAll("input").forEach((box) => box.addEventListener("change", () => {
+        box.checked ? selected.add(box.value) : selected.delete(box.value); render(); update();
+      }));
+      host.querySelectorAll("[data-ccr-preview]").forEach((button) => button.addEventListener("click", () => {
+        const p = photos.find((item) => item.id === button.dataset.ccrPreview); if (!p) return;
+        const lightbox = document.createElement("div");
+        lightbox.style.cssText = "position:fixed;inset:0;z-index:260;background:rgba(0,0,0,.94);display:grid;place-items:center;padding:55px;";
+        lightbox.innerHTML = `<button style="position:absolute;right:20px;top:18px;font-size:24px;border-radius:50%;width:40px;height:40px;">×</button><img src="${esc(ctx,p.url)}" alt="" style="max-width:100%;max-height:85vh;object-fit:contain;"><div style="position:absolute;bottom:18px;left:30px;right:30px;text-align:center;">${esc(ctx,p.description || p.date || "Jobsite photo")}</div>`;
+        wrap.appendChild(lightbox); lightbox.addEventListener("click", (e) => { if (e.target === lightbox || e.target.closest("button")) lightbox.remove(); });
+      }));
+      wrap.querySelector("[data-ccr-count]").textContent = photos.length ? `${photos.length} of ${total} shown` : "";
+      update();
+    };
+    const load = async (reset) => {
+      const button = wrap.querySelector(reset ? "[data-ccr-find]" : "[data-ccr-more]");
+      if (reset) { photos = []; selected = new Set(); total = 0; generatedPath = ""; }
+      button.disabled = true; message.textContent = "Reading CompanyCam photos…";
+      const v = values(); let result;
+      try { result = await pywebview.api.companycam_quick_report_plan(row.client, row.path || "", v.division, v.start, v.end, v.tag, photos.length, 120); }
+      catch (e) { result = {ok:false,error:String(e)}; }
+      button.disabled = false;
+      if (!result?.ok) { message.textContent = result?.error || "Photos could not be loaded."; return; }
+      const added = result.photos || []; photos.push(...added); added.forEach((p) => selected.add(p.id)); total = Number(result.total || photos.length);
+      message.textContent = total ? `${total} matching photos · click a photo to enlarge it, then keep only the ones you want.` : "No matching photos were found.";
+      wrap.querySelector("[data-ccr-select]").hidden = !photos.length; wrap.querySelector("[data-ccr-clear]").hidden = !photos.length;
+      const more = wrap.querySelector("[data-ccr-more]"); more.hidden = !result.has_more; more.style.display = result.has_more ? "block" : "none"; render();
+    };
+    wrap.querySelector("[data-ccr-find]").addEventListener("click", () => load(true));
+    wrap.querySelector("[data-ccr-more]").addEventListener("click", () => load(false));
+    wrap.querySelector("[data-ccr-select]").addEventListener("click", () => { photos.forEach((p) => selected.add(p.id)); render(); });
+    wrap.querySelector("[data-ccr-clear]").addEventListener("click", () => { selected.clear(); render(); });
+    wrap.querySelector("[data-ccr-editor]").addEventListener("click", async () => {
+      const v = values(); const result = await pywebview.api.open_companycam_report_editor(row.client, row.path || "", v.division, "");
+      message.textContent = result?.ok ? "CompanyCam opened. Use Documents → Reports." : (result?.error || "CompanyCam could not be opened.");
+    });
+    generate.addEventListener("click", async () => {
+      if (generatedPath) { await pywebview.api.open_file(generatedPath); return; }
+      const v = values(); generate.disabled = true; generate.textContent = "Building PDF…";
+      const result = await pywebview.api.generate_companycam_quick_report(row.client, row.path || "", v.division, v.type, Array.from(selected), v.start, v.end, v.tag);
+      if (!result?.ok) { message.textContent = result?.error || "The report could not be generated."; generate.disabled = false; generate.textContent = "Generate PDF"; return; }
+      generatedPath = result.path; message.textContent = `Saved ${result.count} photos to ${result.path}`; generate.disabled = false; generate.textContent = "Open PDF";
+    });
+  }
+
   async function detailAction(action, row, ctx) {
     const M = (ctx && ctx.modals) || {};
     if (action === "cc-menu") {
@@ -1619,6 +1716,8 @@
     } else if (action === "open-companycam") {
       const ok = await pywebview.api.open_companycam_link(row.client);
       if (!ok) setStatus(ctx, "No CompanyCam link on this card yet — add a 'CompanyCam Link' line to the Trello card's LINKS section.", "warn");
+    } else if (action === "photo-report") {
+      openCompanyCamReportModal(row, ctx);
     } else if (action === "open-workcenter") {
       const res = await pywebview.api.open_workcenter();
       if (!res?.ok) setStatus(ctx, `Couldn't open WorkCenter: ${res?.error || "unknown error"}`, "warn");

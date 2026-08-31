@@ -1535,19 +1535,21 @@ function openQuickPhotoReportModal(client, jobPath, division) {
   modal.innerHTML = `<div class="modal-box quick-report-modal" role="dialog" aria-modal="true" aria-label="Quick Photo Report">
     <header class="modal-head"><div><div class="modal-title">Quick Photo Report</div><div class="modal-sub">${escapeHtml(client)} · ${escapeHtml(division)} · CompanyCam photos</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
     <div class="modal-body">
-      <div class="quick-report-controls">
+      <section class="quick-report-step"><div class="quick-report-step-head"><span>1</span><div><strong>Set up the report</strong><small>Use dates or a CompanyCam tag only when you need to narrow the job photos.</small></div></div><div class="quick-report-controls">
         <label><span>Report</span><select data-report-type><option>Initial Photo Report</option><option>Daily Monitoring Report</option><option>Progress Photo Report</option><option>Final Photo Report</option><option>Contents Photo Report</option><option>Reconstruction Photo Report</option></select></label>
         <label><span>From</span><input type="date" data-report-start value="${monthAgo}"></label>
         <label><span>Through</span><input type="date" data-report-end value="${today}"></label>
         <label><span>CompanyCam tag</span><input data-report-tag placeholder="Optional: Initial, Demo, Kitchen…"></label>
         <button class="btn btn-primary" type="button" data-preview-report>Find photos</button>
-      </div>
+      </div></section>
+      <section class="quick-report-step gallery-step"><div class="quick-report-step-head"><span>2</span><div><strong>Review and select photos</strong><small>Open any photo full-size, then keep exactly what belongs in the PDF.</small></div></div>
       <div class="quick-report-message" data-report-message>Select dates and find the CompanyCam photos for this report.</div>
       <div class="quick-report-gallery-tools" data-gallery-tools hidden><button class="text-btn" data-select-loaded>Select loaded</button><button class="text-btn" data-clear-selection>Clear selection</button><span data-gallery-count></span></div>
       <div class="quick-report-photos" data-report-photos></div>
       <button class="btn quick-report-more" data-load-more hidden>Load more photos</button>
+      </section>
     </div>
-    <footer class="modal-foot"><span data-report-selection>0 selected</span><button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-generate-report disabled>Generate PDF</button></footer>
+    <footer class="modal-foot quick-report-foot"><span class="quick-report-step-number">3</span><div><strong>Generate the PDF</strong><small data-report-selection>0 selected</small></div><i></i><button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-generate-report disabled>Generate PDF</button></footer>
   </div>`;
   document.body.appendChild(modal);
   const close = () => modal.remove();

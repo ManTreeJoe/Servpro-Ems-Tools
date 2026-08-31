@@ -507,6 +507,12 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().open_xa_link(client, card_id)
     def open_companycam_link(self, client):
         return self._aw().open_companycam_link(client)
+    def open_companycam_report_editor(self, *a, **k):
+        return self._aw().open_companycam_report_editor(*a, **k)
+    def companycam_quick_report_plan(self, *a, **k):
+        return self._aw().companycam_quick_report_plan(*a, **k)
+    def generate_companycam_quick_report(self, *a, **k):
+        return self._aw().generate_companycam_quick_report(*a, **k)
     def open_workcenter(self):
         return self._aw().open_workcenter()
     def get_job_email(self, client, card_id=""):
