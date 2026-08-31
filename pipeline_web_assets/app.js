@@ -916,17 +916,19 @@ function openAuditModal(data, trelloUrl = "") {
   const progress = crm.progress || {};
   const requirementRows = (items) => items.map((item) => `
     <div class="requirement-row req-${escapeAttr(item.status || "required_now")}">
-      <span class="requirement-mark">${item.status === "completed" ? "✓" : item.status === "overdue" ? "!" : "○"}</span>
+      <button type="button" class="requirement-mark" data-requirement-key="${escapeAttr(item.key || "")}" aria-label="Update ${escapeAttr(item.label || "requirement")}">${item.status === "completed" ? "✓" : item.status === "not_applicable" ? "—" : item.status === "overdue" ? "!" : "○"}</button>
       <span class="requirement-copy"><strong>${escapeHtml(item.label || "")}</strong>
-      <small>${escapeHtml(item.introduced_stage_label || "")} · ${escapeHtml(item.owner || "")}${item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small></span>
+      <small>${escapeHtml(item.introduced_stage_label || "")} · ${escapeHtml(item.owner || "")}${item.status === "not_applicable" ? " · Not applicable" : item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small>
+      ${item.manual_actor ? `<small class="requirement-manual">Updated by ${escapeHtml(item.manual_actor)}${item.manual_at ? " · " + escapeHtml(formatCommentDate(item.manual_at)) : ""}${item.manual_note ? " · " + escapeHtml(item.manual_note) : ""}</small>` : ""}</span>
+      <button type="button" class="requirement-edit" data-requirement-key="${escapeAttr(item.key || "")}">Update</button>
     </div>`).join("");
-  const requirementGroups = {overdue: [], required_now: [], completed: []};
+  const requirementGroups = {overdue: [], required_now: [], completed: [], not_applicable: []};
   (progress.items || []).forEach((item) =>
     (requirementGroups[item.status] || requirementGroups.required_now).push(item));
   const required = (progress.items || []).length ? `
     ${requirementGroups.overdue.length ? `<div class="requirement-group overdue"><h4>Overdue from earlier stages</h4>${requirementRows(requirementGroups.overdue)}</div>` : ""}
     <div class="requirement-group"><h4>Required at ${escapeHtml(progress.stage_label || "this stage")}</h4>${requirementRows(requirementGroups.required_now) || `<div class="aud-empty">Nothing new is required at this stage.</div>`}</div>
-    <details class="requirement-history"><summary>Completed &amp; previous requirements <span>${requirementGroups.completed.length}</span></summary>${requirementRows(requirementGroups.completed) || `<div class="aud-empty">No verified requirements yet.</div>`}</details>`
+    <details class="requirement-history"><summary>Completed &amp; previous requirements <span>${requirementGroups.completed.length + requirementGroups.not_applicable.length}</span></summary>${requirementRows([...requirementGroups.completed, ...requirementGroups.not_applicable]) || `<div class="aud-empty">No verified requirements yet.</div>`}</details>`
     : `<div class="aud-empty">No stage requirements are active yet.</div>`;
   const workTypeState = Object.fromEntries((crm.work_environments || []).map((env) =>
     [String(env.work_environment || "").toLowerCase(), env]));
@@ -1120,6 +1122,51 @@ function openAuditModal(data, trelloUrl = "") {
       setStatus("Checklist saved · Trello synced", "ok");
     }
   }));
+  const editRequirement = (key) => {
+    const item = (progress.items || []).find((entry) => entry.key === key);
+    if (!item) return;
+    const currentSatisfied = item.status === "completed" || item.status === "not_applicable";
+    const editor = document.createElement("div");
+    editor.className = "requirement-editor-scrim";
+    editor.innerHTML = `<form class="requirement-editor" aria-label="Update job requirement">
+      <div><span class="requirement-mark req-preview">${item.status === "completed" ? "✓" : item.status === "not_applicable" ? "—" : "○"}</span>
+      <div><h4>${escapeHtml(item.label || "Requirement")}</h4><small>${escapeHtml(item.introduced_stage_label || "")} · ${escapeHtml(item.owner || "")}</small></div></div>
+      <label>Optional note<textarea name="note" rows="3" placeholder="Add context for the next person…">${escapeHtml(item.manual_note || "")}</textarea></label>
+      <div class="requirement-editor-actions">
+        <button type="button" class="btn" data-requirement-cancel>Cancel</button>
+        ${currentSatisfied ? `<button type="submit" class="btn" name="state" value="reopen">Reopen</button>` : `<button type="submit" class="btn" name="state" value="not_applicable">Not applicable</button><button type="submit" class="btn btn-primary" name="state" value="completed">Complete</button>`}
+      </div></form>`;
+    w.querySelector(".audit-card")?.appendChild(editor);
+    const dismiss = () => editor.remove();
+    editor.addEventListener("click", (event) => { if (event.target === editor) dismiss(); });
+    editor.querySelector("[data-requirement-cancel]").addEventListener("click", dismiss);
+    editor.querySelector("textarea")?.focus();
+    editor.querySelector("form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      if (!submitter?.value) return;
+      editor.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+      const result = await pywebview.api.set_job_requirement(
+        data.client || res.client || "", item.key, submitter.value,
+        editor.querySelector("textarea")?.value || "");
+      if (!result?.ok) {
+        editor.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+        setStatus(`Requirement update failed: ${result?.error || "unknown error"}`, "error");
+        return;
+      }
+      dismiss();
+      setStatus(submitter.value === "reopen" ? "Requirement reopened" :
+        submitter.value === "not_applicable" ? "Requirement marked not applicable" : "Requirement completed", "ok");
+      const refreshed = await pywebview.api.refresh_job_card_workspace(
+        data.client || res.client || "", data.card_id || "", data.selected_division || "EMS");
+      if (refreshed?.ok) {
+        close(true);
+        openAuditModal(refreshed, refreshed.selected_trello_url || trelloUrl);
+      }
+    });
+  };
+  w.querySelectorAll("[data-requirement-key]").forEach((button) =>
+    button.addEventListener("click", () => editRequirement(button.dataset.requirementKey || "")));
   const saveWorkType = async (select) => {
     const name = select.dataset.workEnv;
     const tile = select.closest("[data-work-type-card]");

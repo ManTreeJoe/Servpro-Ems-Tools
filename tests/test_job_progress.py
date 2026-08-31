@@ -44,6 +44,32 @@ def test_completed_requirements_remain_visible():
                item["key"] == "moisture_readings" for item in result["items"])
 
 
+def test_manual_requirement_states_count_as_satisfied():
+    master = _master("active")
+    master["metadata"] = {"requirement_overrides": {
+        "scope": {"state": "completed", "actor": "Nathan", "at": "2026-08-31T10:00:00-07:00", "note": "Reviewed"},
+        "initial_photos": {"state": "not_applicable", "actor": "Nathan", "at": "2026-08-31T10:01:00-07:00", "note": "Service call"},
+    }}
+    result = evaluate(master, {}, [])
+    by_key = {item["key"]: item for item in result["items"]}
+    assert by_key["scope"]["status"] == "completed"
+    assert by_key["scope"]["manual_actor"] == "Nathan"
+    assert by_key["initial_photos"]["status"] == "not_applicable"
+    assert result["counts"]["not_applicable"] == 1
+
+
+def test_automatic_evidence_wins_over_manual_not_applicable():
+    master = _master("active")
+    master["metadata"] = {"requirement_overrides": {
+        "initial_photos": {"state": "not_applicable", "actor": "Nathan"},
+    }}
+    result = evaluate(master, {"photo_issues": [], "form_issues": [],
+                               "requirements": [], "found": True}, [])
+    item = next(item for item in result["items"] if item["key"] == "initial_photos")
+    assert item["status"] == "completed"
+    assert item["evidence"] == "latest audit"
+
+
 def test_clean_compact_ui_markers_exist():
     from pathlib import Path
     js = (Path(__file__).resolve().parents[1] / "web_shared" /
@@ -51,4 +77,3 @@ def test_clean_compact_ui_markers_exist():
     for marker in ("crm-progress-rail", "Overdue from earlier stages",
                    "Required now", "Completed &amp; history"):
         assert marker in js
-

@@ -991,6 +991,14 @@ class Api:
             self._board_view_cache = None
         return result
 
+    def set_job_requirement(self, client: str, requirement_key: str,
+                            state: str, note: str = "") -> dict:
+        result = self._audit_api().set_job_requirement(
+            client, requirement_key, state, note)
+        if result.get("ok"):
+            self._invalidate_workspace(client=client)
+        return result
+
     def post_job_comment(self, client: str, card_id: str, text: str) -> dict:
         text = (text or "").strip()
         if not text:

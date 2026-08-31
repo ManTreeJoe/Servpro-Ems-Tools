@@ -54,6 +54,25 @@ def test_workspace_edit_is_marked_manual(workspace):
     assert job["lifecycle_source"] == "manual"
 
 
+def test_requirement_decisions_save_history_and_can_reopen(workspace, monkeypatch):
+    db, api = workspace
+    key = db.upsert_job(display_name="Requirement Test")
+    monkeypatch.setattr("supabase_client.actor_name", lambda _fallback: "Nathan Bupte")
+    saved = api.set_job_requirement(
+        "Requirement Test", "customer_contact", "completed", "Called customer")
+    assert saved["ok"]
+    metadata = db.get_job(key)["metadata"]
+    assert metadata["requirement_overrides"]["customer_contact"]["actor"] == "Nathan Bupte"
+    assert metadata["requirement_history"][-1]["note"] == "Called customer"
+
+    reopened = api.set_job_requirement(
+        "Requirement Test", "customer_contact", "reopen", "Needs another call")
+    assert reopened["ok"]
+    metadata = db.get_job(key)["metadata"]
+    assert "customer_contact" not in metadata["requirement_overrides"]
+    assert metadata["requirement_history"][-1]["state"] == "reopen"
+
+
 def test_each_work_type_can_be_changed_for_one_job(workspace):
     db, api = workspace
     key = db.upsert_job(display_name="Riley Stone")

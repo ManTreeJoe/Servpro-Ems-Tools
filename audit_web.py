@@ -1863,6 +1863,49 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "migration_required": True,
                     "error": f"CRM setup is not ready: {ex}"}
 
+    def set_job_requirement(self, client: str, requirement_key: str,
+                            state: str, note: str = "") -> dict:
+        """Record a human decision without replacing automatic evidence."""
+        state = (state or "").strip().lower()
+        if state not in ("completed", "not_applicable", "reopen"):
+            return {"ok": False, "error": "invalid requirement state"}
+        requirement_key = (requirement_key or "").strip()
+        if not requirement_key:
+            return {"ok": False, "error": "requirement is missing"}
+        try:
+            import ems_db
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
+            master = ems_db.get_master_job(job.get("canon_key") or "") or job
+            metadata = dict(master.get("metadata") or {})
+            overrides = dict(metadata.get("requirement_overrides") or {})
+            history = list(metadata.get("requirement_history") or [])
+            actor = "Linguar Hub user"
+            try:
+                import supabase_client
+                actor = supabase_client.actor_name(actor)
+            except Exception:
+                pass
+            at = _dt.datetime.now().astimezone().isoformat(timespec="seconds")
+            record = {"key": requirement_key, "state": state,
+                      "actor": actor, "at": at, "note": (note or "").strip()}
+            if state == "reopen":
+                overrides.pop(requirement_key, None)
+            else:
+                overrides[requirement_key] = {k: record[k] for k in
+                                              ("state", "actor", "at", "note")}
+            history.append(record)
+            metadata["requirement_overrides"] = overrides
+            metadata["requirement_history"] = history[-200:]
+            ems_db.upsert_job(
+                display_name=master.get("display_name") or client,
+                department=master.get("department") or "",
+                metadata=metadata)
+            return {"ok": True, "state": state, "actor": actor, "at": at}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     def save_crm_job_workspace(self, client: str, patch: dict) -> dict:
         """Edit overall CRM controls; a human save always wins over sync."""
         if not isinstance(patch, dict):

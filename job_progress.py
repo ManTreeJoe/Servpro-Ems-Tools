@@ -127,6 +127,10 @@ def evaluate(master: dict, audit: dict | None = None,
     trello_linked = bool(audit.get("trello_card_id"))
     folder_found = audit.get("found") is not False and bool(audit.get("folder") or audit.get("path"))
     audit_ran = any(key in audit for key in ("form_issues", "photo_issues", "requirements"))
+    metadata = master.get("metadata") if isinstance(master.get("metadata"), dict) else {}
+    overrides = metadata.get("requirement_overrides") or {}
+    if not isinstance(overrides, dict):
+        overrides = {}
 
     rules = []
     for introduced, entries in BASE.items():
@@ -166,7 +170,16 @@ def evaluate(master: dict, audit: dict | None = None,
             completed = master.get("lifecycle_stage") == "closed"
             evidence = "lifecycle"
 
-        if completed:
+        manual = overrides.get(key) if isinstance(overrides.get(key), dict) else {}
+        manual_state = manual.get("state") or ""
+        # Real evidence has precedence over a manual N/A. The manual record
+        # remains in metadata/history, but the requirement reads as verified
+        # as soon as the app can prove the work happened.
+        if not completed and manual_state in ("completed", "not_applicable"):
+            completed = manual_state == "completed"
+            status = manual_state
+            evidence = "manual"
+        elif completed:
             status = "completed"
         elif introduced_i < current_i:
             status = "overdue"
@@ -174,14 +187,20 @@ def evaluate(master: dict, audit: dict | None = None,
             status = "required_now"
         items.append({"key": key, "label": label, "introduced_stage": introduced,
                       "introduced_stage_label": STAGE_LABELS.get(introduced, introduced),
-                      "owner": owner, "status": status, "evidence": evidence})
+                      "owner": owner, "status": status, "evidence": evidence,
+                      "manual_state": manual_state,
+                      "manual_actor": manual.get("actor") or "",
+                      "manual_at": manual.get("at") or "",
+                      "manual_note": manual.get("note") or ""})
 
-    rank = {"overdue": 0, "required_now": 1, "completed": 2}
+    rank = {"overdue": 0, "required_now": 1, "completed": 2,
+            "not_applicable": 3}
     items.sort(key=lambda x: (rank[x["status"]], _stage_index(x["introduced_stage"]), x["label"]))
     counts = {name: sum(1 for item in items if item["status"] == name)
               for name in rank}
     return {"stage": stage, "stage_label": STAGE_LABELS.get(stage, stage),
             "items": items, "counts": counts,
-            "percent_complete": round(100 * counts["completed"] / len(items)) if items else 0,
+            "percent_complete": round(100 * (counts["completed"] +
+                                               counts["not_applicable"]) /
+                                      len(items)) if items else 0,
             "generated_at": datetime.now().isoformat(timespec="seconds")}
-
