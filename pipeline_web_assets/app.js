@@ -37,7 +37,9 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 // ── Boot ─────────────────────────────────────────────────────────
-window.addEventListener("pywebviewready", async () => {
+window.addEventListener("pywebviewready", () => bootPipeline().catch(showPipelineStartupError));
+
+async function bootPipeline() {
   // Restore the view you left — board vs stages, which board tab, the
   // stage chip and the search box. The panel is destroyed on navigate,
   // so all four reset on every visit before this.
@@ -94,7 +96,23 @@ window.addEventListener("pywebviewready", async () => {
   setView(initialView);
   await loadBoard();
   if (state.view === "stages" && !state.stages.length) await loadStages();
-});
+}
+
+function showPipelineStartupError(error) {
+  const message = String(error?.message || error || "Unknown startup error");
+  const root = $("#board-view");
+  if (root) {
+    root.innerHTML = `<div class="empty-state startup-error">
+      <div class="empty-emoji">⚠️</div>
+      <strong>Jobs could not finish starting</strong>
+      <div>${escapeHtml(message)}</div>
+      <button class="btn btn-primary" type="button" data-retry-startup>Retry</button>
+    </div>`;
+    root.querySelector("[data-retry-startup]")?.addEventListener("click", () => location.reload());
+  }
+  setStatus(`Jobs startup error: ${message}`, "error");
+  console.error("Pipeline startup failed", error);
+}
 
 // ── View switching ───────────────────────────────────────────────
 function setView(v) {
