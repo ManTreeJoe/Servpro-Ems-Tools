@@ -14,9 +14,9 @@
 <script src="../web_shared/h_scroll.js?v=20260731j"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="theme-color" content="#1A1A1A" />
+<meta name="theme-color" content="#111513" />
 <title>Pipeline — Linguar Hub</title>
-<link rel="stylesheet" href="app.css?v=20260831a" />
+<link rel="stylesheet" href="app.css?v=20260831b" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
 </head>
 <body class="responsive-ui">
@@ -39,6 +39,7 @@
       placeholder="Search jobs…"
       autocomplete="off"
     />
+    <button id="customize-board-btn" class="btn view-board-only" title="Change the active board’s appearance">Customize</button>
     <button id="refresh-btn" class="btn btn-primary view-board-only" title="Refresh shared jobs and Trello">↻ Sync Jobs</button>
     <details class="toolbar-more"><summary class="btn icon-btn" aria-label="More Pipeline actions" title="More Pipeline actions">•••</summary><div>
       <button id="thresholds-btn" class="btn" title="Edit per-stage day thresholds">⏱ Thresholds</button>
@@ -97,6 +98,32 @@
   <button data-action="copy-id">📋 Copy card ID</button>
 </div>
 
-<script src="app.js?v=20260828l"></script>
+<dialog id="board-customize-dialog" class="board-customize-dialog" aria-labelledby="board-customize-title">
+  <form method="dialog" class="board-customize-card">
+    <header>
+      <div>
+        <span class="dialog-eyebrow">Board Appearance</span>
+        <h2 id="board-customize-title">Set the Jobsite</h2>
+        <p>Choose a background for this board. Your choice stays on this PC.</p>
+      </div>
+      <button class="dialog-close" value="cancel" aria-label="Close Board Appearance">×</button>
+    </header>
+    <section class="background-presets" aria-label="Board Background Presets">
+      <button type="button" class="background-preset preset-asphalt" data-board-look="asphalt"><span>Asphalt</span></button>
+      <button type="button" class="background-preset preset-blueprint" data-board-look="blueprint"><span>Blueprint</span></button>
+      <button type="button" class="background-preset preset-water" data-board-look="water"><span>Water</span></button>
+      <button type="button" class="background-preset preset-contents" data-board-look="contents"><span>Contents</span></button>
+      <button type="button" class="background-preset preset-recon" data-board-look="recon"><span>Recon</span></button>
+      <button type="button" class="background-preset preset-clean" data-board-look="clean"><span>Clean</span></button>
+    </section>
+    <footer>
+      <button type="button" id="custom-background-btn" class="btn">Choose a Photo…</button>
+      <button type="button" id="clear-background-btn" class="btn btn-quiet">Reset Board</button>
+    </footer>
+    <div id="background-status" class="background-status" aria-live="polite"></div>
+  </form>
+</dialog>
+
+<script src="app.js?v=20260831b"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0-trial.47",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.47",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.47/Linguar-Hub-Trial-Setup-1.6.0-trial.47.exe",
-  "notes": "Trial setup recovery and first UI polish phase. Trial now keeps its local settings separate from Main while sharing the online job database, recognizes Nathan as the permanent owner, rebases user-profile folders, derives Daily Run from the job root, self-heals backups before warning, and links Pipeline cards to Client/Job records with ambiguous matches flagged for review. The shell and Pipeline use a tighter restoration-operations design with responsive navigation and loading skeletons."
+  "version": "1.6.0-trial.48",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.6.0-trial.48",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.6.0-trial.48/Linguar-Hub-Trial-Setup-1.6.0-trial.48.exe",
+  "notes": "Modern Jobs board overhaul. Pipeline now uses a full-width Trello-style restoration board with wider glass lanes, job-jacket cards, clearer counts, tighter responsive controls, six per-board restoration backgrounds, and custom local photo backgrounds. Background choices are saved per board and per PC without storing image data in Supabase."
 }

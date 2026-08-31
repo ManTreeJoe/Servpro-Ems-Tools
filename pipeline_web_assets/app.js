@@ -18,6 +18,7 @@ const state = {
   board: { boards: [] },
   activeBoardKey: null,     // which board is shown (one at a time)
   boardFilter: "all",       // all | attention | due | sync
+  boardLooks: {},            // board key -> {preset, customPath, customData}
   drag: null,               // {cardId, name, fromListId, fromLane, boardKey}
   // Stages table view
   rows: [],
@@ -47,12 +48,19 @@ window.addEventListener("pywebviewready", async () => {
   state.view           = PanelState.get("view", preferences.default_view || state.view);
   state.activeBoardKey = PanelState.get("activeBoardKey", null);
   state.boardFilter    = PanelState.get("boardFilter", "all");
+  state.boardLooks     = PanelState.get("boardLooks", {});
+  await hydrateCustomBoardLooks();
   state.active_stage   = PanelState.get("active_stage", state.active_stage);
   state.search         = PanelState.get("search", "");
 
   $("#view-board-btn").addEventListener("click", () => setView("board"));
   $("#view-stages-btn").addEventListener("click", () => setView("stages"));
   $("#refresh-btn").addEventListener("click", () => loadBoard(true));
+  $("#customize-board-btn").addEventListener("click", openBoardCustomize);
+  $("#custom-background-btn").addEventListener("click", chooseCustomBackground);
+  $("#clear-background-btn").addEventListener("click", () => setBoardLook({ preset: "asphalt" }));
+  $$("[data-board-look]").forEach((button) => button.addEventListener("click", () =>
+    setBoardLook({ preset: button.dataset.boardLook })));
 
   // Stages-table controls
   $("#sync-btn").addEventListener("click", onSyncClick);
@@ -220,6 +228,7 @@ function renderBoard() {
   const q = state.search.trim().toLowerCase();
   let active = boards.find((b) => b.key === state.activeBoardKey) || boards[0];
   state.activeBoardKey = active.key;
+  applyBoardLook(active.key);
   const countFor = (b) =>
     (b.lanes || []).reduce((s, l) => s + laneMatches(l, q).length, 0);
   const summary = boardSummary(boards);
@@ -256,6 +265,7 @@ function renderBoard() {
     b.addEventListener("click", () => {
       state.activeBoardKey = b.dataset.boardTab;
       PanelState.set({ activeBoardKey: state.activeBoardKey });
+      applyBoardLook(state.activeBoardKey);
       renderBoard();
     }));
   root.querySelectorAll("[data-board-filter]").forEach((button) =>
@@ -279,6 +289,76 @@ function renderBoard() {
       e.stopPropagation(); openCardMenu(e, cardEl);
     });
   });
+}
+
+function activeBoardLook() {
+  return state.boardLooks[state.activeBoardKey] || { preset: "asphalt" };
+}
+
+function applyBoardLook(boardKey) {
+  const root = $("#board-view");
+  if (!root) return;
+  const look = state.boardLooks[boardKey] || { preset: "asphalt" };
+  root.dataset.boardLook = look.preset || "asphalt";
+  root.classList.toggle("has-custom-background", Boolean(look.customData));
+  root.style.setProperty("--board-custom-image",
+    look.customData ? `url("${look.customData}")` : "none");
+}
+
+function openBoardCustomize() {
+  const dialog = $("#board-customize-dialog");
+  if (!dialog) return;
+  const look = activeBoardLook();
+  dialog.querySelectorAll("[data-board-look]").forEach((button) =>
+    button.classList.toggle("selected", button.dataset.boardLook === look.preset && !look.customData));
+  $("#background-status").textContent = look.customPath
+    ? `Using ${look.customPath.split(/[\\/]/).pop()}` : "";
+  if (!dialog.open) dialog.showModal();
+}
+
+function setBoardLook(next) {
+  if (!state.activeBoardKey) return;
+  state.boardLooks[state.activeBoardKey] = { ...next };
+  const savedLooks = Object.fromEntries(Object.entries(state.boardLooks).map(([key, look]) =>
+    [key, { preset: look.preset || "asphalt", customPath: look.customPath || "" }]));
+  PanelState.set({ boardLooks: savedLooks });
+  applyBoardLook(state.activeBoardKey);
+  $("#background-status").textContent = "Board background updated";
+  openBoardCustomize();
+}
+
+async function hydrateCustomBoardLooks() {
+  const jobs = Object.entries(state.boardLooks).map(async ([key, look]) => {
+    if (!look?.customPath) return;
+    try {
+      const result = await pywebview.api.load_board_background(look.customPath);
+      if (result?.ok) state.boardLooks[key] = { ...look, customData: result.data_url };
+      else state.boardLooks[key] = { preset: "asphalt" };
+    } catch (_) {
+      state.boardLooks[key] = { preset: "asphalt" };
+    }
+  });
+  await Promise.all(jobs);
+}
+
+async function chooseCustomBackground() {
+  const button = $("#custom-background-btn");
+  const status = $("#background-status");
+  button.disabled = true;
+  button.textContent = "Choosing…";
+  status.textContent = "";
+  try {
+    const result = await pywebview.api.choose_board_background();
+    if (result?.cancelled) return;
+    if (!result?.ok) { status.textContent = result?.error || "Could not use that image."; return; }
+    setBoardLook({ preset: "custom", customPath: result.path, customData: result.data_url });
+    status.textContent = `Using ${result.name}`;
+  } catch (error) {
+    status.textContent = `Could not choose a background: ${error}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Choose a Photo…";
+  }
 }
 
 function laneMatches(lane, q) {

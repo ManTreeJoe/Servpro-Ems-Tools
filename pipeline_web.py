@@ -13,7 +13,9 @@ Launch:
 from __future__ import annotations
 
 import datetime as _dt
+import base64
 from concurrent.futures import ThreadPoolExecutor
+import io
 import os
 import sys
 import time
@@ -306,6 +308,44 @@ class Api:
             "default_view": (cfg.get("pipeline_default_view") or "board"),
             "reduce_motion": bool(cfg.get("reduce_motion", False)),
         }
+
+    def choose_board_background(self) -> dict:
+        """Choose and prepare one machine-local board background.
+
+        The database stores only the file path in per-user UI state. Image
+        bytes never enter Supabase or the text job records.
+        """
+        if self._window is None:
+            return {"ok": False, "error": "The board window is not ready."}
+        try:
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG, allow_multiple=False,
+                file_types=("Board images (*.jpg;*.jpeg;*.png;*.webp;*.bmp)",))
+            if not result:
+                return {"ok": True, "cancelled": True}
+            path = result[0] if isinstance(result, (list, tuple)) else result
+            return self.load_board_background(str(path))
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def load_board_background(self, path: str) -> dict:
+        """Return a screen-sized JPEG data URL for a previously chosen file."""
+        path = os.path.abspath(os.path.expanduser(str(path or "").strip()))
+        if not os.path.isfile(path):
+            return {"ok": False, "error": "That background image is no longer available."}
+        try:
+            from PIL import Image, ImageOps
+            with Image.open(path) as source:
+                image = ImageOps.exif_transpose(source).convert("RGB")
+                image.thumbnail((2560, 1600), Image.Resampling.LANCZOS)
+                out = io.BytesIO()
+                image.save(out, format="JPEG", quality=82, optimize=True)
+            encoded = base64.b64encode(out.getvalue()).decode("ascii")
+            return {"ok": True, "path": path,
+                    "name": os.path.basename(path),
+                    "data_url": "data:image/jpeg;base64," + encoded}
+        except Exception as ex:
+            return {"ok": False, "error": f"Could not use that image: {ex}"}
 
     # ── 🗂 Board view + drag-move + per-card audit actions ───────────
     def board_view(self, force_trello: bool = False) -> dict:
