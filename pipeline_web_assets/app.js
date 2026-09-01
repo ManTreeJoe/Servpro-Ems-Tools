@@ -1276,7 +1276,7 @@ function openAuditModal(data, trelloUrl = "") {
             <button class="action-btn destination" data-open-companycam ${data.card_id ? "" : "disabled"}><img src="../web_shared/companycam.png" alt="">CompanyCam</button>
           </div>
           <div class="quick-utility-actions">
-            <details class="copy-quick-menu"><summary class="action-btn copy-trigger"><span>▣</span>Copy info<small>⌄</small></summary><div class="copy-menu-panel"><header><strong>Copy job details</strong><small>Uses the saved Job Info record</small></header>${visibleCopyOptions.map(([label, value]) => `<button data-copy-value="${escapeAttr(value)}"><span>${escapeHtml(label.replace("Customer ", ""))}</span><small>${escapeHtml(value)}</small></button>`).join("")}<button class="copy-summary-row" data-copy-summary><span>Job summary</span><small>Copy all available details</small></button></div></details>
+            <details class="copy-quick-menu"><summary class="action-btn copy-trigger">📋 Copy <small>⌄</small></summary><div class="copy-menu-panel"><header><strong>Copy job details</strong><small>Uses the saved Job Info record</small></header>${visibleCopyOptions.map(([label, value]) => `<button data-copy-value="${escapeAttr(value)}"><span>${escapeHtml(label.replace("Customer ", ""))}</span><small>${escapeHtml(value)}</small></button>`).join("")}<button class="copy-summary-row" data-copy-summary><span>Job summary</span><small>Copy all available details</small></button></div></details>
             <button class="action-btn quiet" data-stage-xa ${res.path ? "" : "disabled"}>Stage for XA</button>
             <button class="action-btn quiet" data-open-audit>All actions</button>
           </div>

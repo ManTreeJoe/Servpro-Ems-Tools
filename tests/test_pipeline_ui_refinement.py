@@ -72,6 +72,20 @@ def test_pipeline_keeps_primary_copy_and_xa_actions_visible():
         assert marker in header
 
 
+def test_pipeline_job_actions_match_the_audit_button_language():
+    css = _asset("app.css")
+    js = _asset("app.js")
+    for marker in ("background:var(--surface-2)",
+                   "border:1px solid var(--border)",
+                   "padding:7px 11px", "border-radius:7px",
+                   "font-size:12px", "font-weight:600",
+                   "background:var(--green)",
+                   "background:var(--green-hover)"):
+        assert marker in css
+    assert '>📋 Copy <small>⌄</small>' in js
+    assert "quick-action-group" not in js
+
+
 def test_pipeline_status_and_search_are_accessible():
     html = _asset("index.html")
     assert 'aria-label="Search Jobs"' in html

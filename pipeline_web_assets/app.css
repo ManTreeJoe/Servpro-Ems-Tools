@@ -546,12 +546,14 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .quick-primary-actions,.quick-destination-actions,.quick-utility-actions { flex:0 0 auto; display:flex; align-items:center; gap:4px; }
 .quick-destination-actions { padding-left:8px; border-left:1px solid var(--border); }
 .quick-utility-actions { margin-left:auto; padding-left:8px; border-left:1px solid var(--border); }
-.card-quick-actions .action-btn { min-height:31px; display:inline-flex; align-items:center; gap:6px; padding:6px 9px; border-color:transparent; background:transparent; white-space:nowrap; }
-.card-quick-actions .action-btn:hover { border-color:var(--border-strong); background:rgba(255,255,255,.045); }
-.card-quick-actions .action-btn.primary { padding-inline:13px; background:var(--green); border-color:var(--green); color:#fff; box-shadow:0 5px 14px rgba(31,142,83,.18); }
-.card-quick-actions .action-btn.primary:hover { background:#29965b; }
+.card-quick-actions .action-btn { min-height:32px; display:inline-flex; align-items:center; gap:6px; padding:7px 11px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--text); font:inherit; font-size:12px; font-weight:600; white-space:nowrap; cursor:pointer; transition:background-color 100ms ease,border-color 100ms ease,color 100ms ease; }
+.card-quick-actions .action-btn:hover { background:var(--border); border-color:#55585d; }
+.card-quick-actions .action-btn:focus-visible { outline:2px solid #79b48d; outline-offset:2px; }
+.card-quick-actions .action-btn:disabled { opacity:.4; cursor:not-allowed; }
+.card-quick-actions .action-btn.primary { background:var(--green); border-color:var(--green); color:#fff; }
+.card-quick-actions .action-btn.primary:hover { background:var(--green-hover); }
 .card-quick-actions .action-btn.destination img { width:15px; height:15px; object-fit:contain; }
-.card-quick-actions .action-btn.quiet { color:var(--text-muted); }
+.card-quick-actions .action-btn.quiet { color:var(--text); }
 .quick-action-icon { font-size:16px; line-height:1; }
 .copy-quick-menu { position:relative; flex:0 0 auto; }
 .copy-quick-menu>summary { list-style:none; cursor:pointer; }.copy-quick-menu>summary::-webkit-details-marker{display:none}
