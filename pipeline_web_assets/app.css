@@ -1138,3 +1138,4 @@ button,input,select,textarea { font-family:var(--font-body); }
 .lane-popover button { padding:9px 10px; border:0; border-radius:6px; background:transparent; color:var(--text); text-align:left; font:inherit; cursor:pointer; }
 .lane-popover button:hover { background:rgba(255,255,255,.08); }
 .lane-popover button.danger { color:#ffaaa2; }
+.lane-more{margin:8px;padding:10px;border:1px dashed var(--border);border-radius:8px;color:var(--text-muted);font-size:10px;text-align:center}.archive-tab{border-style:dashed!important}

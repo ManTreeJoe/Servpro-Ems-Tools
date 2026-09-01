@@ -1,39 +1,22 @@
-import trello_client
-
-from pipeline_web import Api
+from pathlib import Path
 
 
-def test_logs_ems_card_becomes_a_separate_old_job(monkeypatch):
-    rows = [
-        {"board": "THE LOGS - EMS", "card_id": "old", "name": "Rose, Jasmin - AAA",
-         "url": "https://trello.com/c/old", "list_name": "AUG 2026 - BILLED"},
-        {"board": "WORK IN PROGRESS", "card_id": "current",
-         "name": "Rose, Jasmin - Self Pay", "url": "https://trello.com/c/current"},
-        {"board": "THE LOGS - EMS", "card_id": "other", "name": "Rose, Gordon",
-         "url": "https://trello.com/c/other"},
-    ]
-    monkeypatch.setattr(trello_client, "find_cards_by_name",
-                        lambda *_a, **_k: rows)
-    monkeypatch.setattr(trello_client, "get_card_lite",
-                        lambda card_id: {"desc": card_id})
-    monkeypatch.setattr(trello_client, "parse_card_desc", lambda desc: {
-        "INSURANCE INFORMATION": {"CLAIM NUMBER": "017962605"},
-        "PROPERTY DETAILS": {"DATE OF LOSS": "7/23/26",
-                             "DATE RECEIVED": "7/24/26"},
-    })
-
-    old = Api()._old_ems_jobs("Rose, Jasmin - Self Pay", "current")
-
-    assert [job["card_id"] for job in old] == ["old"]
-    assert old[0]["claim_number"] == "017962605"
-    assert old[0]["status"] == "Closed"
+ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_opening_the_logs_card_does_not_list_it_as_its_own_old_job(monkeypatch):
-    monkeypatch.setattr(trello_client, "find_cards_by_name", lambda *_a, **_k: [{
-        "board": "THE LOGS - EMS", "card_id": "old",
-        "name": "Rose, Jasmin - AAA", "url": "https://trello.com/c/old"}])
-    monkeypatch.setattr(trello_client, "get_card_lite", lambda _id: {"desc": ""})
-    monkeypatch.setattr(trello_client, "parse_card_desc", lambda _desc: {})
+def test_old_jobs_board_is_lazy_and_not_in_startup_boards():
+    backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
+    frontend = (ROOT / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert 'ARCHIVE_BOARD_SPEC = ("logs", "THE LOGS - EMS")' in backend
+    board_specs = backend[backend.index("BOARD_SPECS ="):backend.index("ARCHIVE_BOARD_SPEC")]
+    assert "THE LOGS - EMS" not in board_specs
+    assert 'pywebview.api.board_view_one("logs")' in frontend
+    assert "loadArchiveBoard" in frontend
+    assert 'board.key === "logs" ? 80' in frontend
 
-    assert Api()._old_ems_jobs("Rose, Jasmin", "old") == []
+
+def test_old_jobs_remain_read_only_on_trello_board():
+    backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
+    frontend = (ROOT / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert '"historical": True, "mirrored": False' in backend
+    assert 'if (active.key === "logs") return;' in frontend

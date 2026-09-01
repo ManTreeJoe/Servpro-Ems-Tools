@@ -56,3 +56,20 @@ def test_management_job_title_resolves_to_real_parent_client(monkeypatch):
     assert result["ok"] is True
     assert [row["name"] for row in result["clients"]] == ["PCM"]
     assert result["clients"][0]["job_count"] == 2
+
+
+def test_client_page_exposes_dates_full_job_info_and_logs():
+    backend = (ROOT / "clients_web.py").read_text(encoding="utf-8")
+    js = (ROOT / "clients_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert '"date_received"' in backend
+    assert '"job_log": client_logs' in backend
+    assert "list_job_log_entries" in backend
+    for label in ("Date received", "Date of loss", "Claim number", "Carrier",
+                  "Cause of loss", "Adjuster", "Job log"):
+        assert label in js
+
+
+def test_management_property_with_nested_claims_uses_claim_tabs():
+    backend = (ROOT / "clients_web.py").read_text(encoding="utf-8")
+    assert 'combined = f"{child_name} — {nested_name}"' in backend
+    assert "nested_path" in backend

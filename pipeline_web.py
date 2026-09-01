@@ -88,6 +88,11 @@ BOARD_SPECS = (
     ("contents", "CONTENTS"),
 )
 
+# Historical EMS cards are deliberately outside BOARD_SPECS. Pulling 1,500+
+# closed cards during normal startup made the active board slow again. The
+# frontend requests this board only when the user opens Old Jobs.
+ARCHIVE_BOARD_SPEC = ("logs", "THE LOGS - EMS")
+
 
 def _board_name_key(value: str) -> str:
     """Normalize harmless Trello naming differences without guessing boards."""
@@ -430,7 +435,8 @@ class Api:
     def board_view_one(self, key: str) -> dict:
         """Re-pull a SINGLE board (the per-board ↻ refresh) so the user
         can refresh one division board without waiting on all three."""
-        spec = next((s for s in BOARD_SPECS if s[0] == key), None)
+        spec = next((s for s in (*BOARD_SPECS, ARCHIVE_BOARD_SPEC)
+                     if s[0] == key), None)
         if not spec:
             return {"ok": False, "error": f"unknown board '{key}'"}
         import trello_client as tc
@@ -442,6 +448,11 @@ class Api:
         bname = spec[1]
         board = _build_board(tc, ps, key, bname,
                              _resolve_board(available_boards, bname))
+        if key == ARCHIVE_BOARD_SPEC[0]:
+            # Read-only historical adapter for now. Do not mirror thousands
+            # of legacy cards into the active shared Pipeline projection.
+            return {"ok": True, "board": board, "source": "trello",
+                    "historical": True, "mirrored": False}
         mirrored = pipeline_store.mirror_boards({"boards": [board]})
         return {"ok": True, "board": board, "source": "trello",
                 "mirrored": bool(mirrored.get("ok"))}

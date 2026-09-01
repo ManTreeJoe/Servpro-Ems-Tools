@@ -7,6 +7,8 @@ used as the client page implementation.
 from __future__ import annotations
 
 import os
+import re
+from datetime import datetime
 
 
 class Api:
@@ -105,6 +107,11 @@ class Api:
             if not folder or not os.path.isdir(folder):
                 folder = job_folders.find_client_folder(client) or folder
 
+            try:
+                client_logs = list(ems_db.list_job_log_entries(canonical) or [])
+            except Exception:
+                client_logs = []
+
             jobs = []
             root_divisions = self._divisions(folder)
             if root_divisions:
@@ -119,12 +126,30 @@ class Api:
                     child_path = os.path.join(folder, child_name)
                     if not job_folders.is_child_job_folder(child_path, child_name):
                         continue
-                    seen.add(child_name.casefold())
-                    kind, _ = ems_db_common.classify_child(child_name)
-                    jobs.append(self._job_payload(
-                        key=f"{canonical}::{child_name}", name=child_name,
-                        path=child_path, divisions=self._divisions(child_path),
-                        record={}, kind=kind or "job"))
+                    # Management-company folders can add one more real level:
+                    # PCM / Kellogg Terrace / Cruz, Sarah / EMS. In that
+                    # shape Kellogg is a property, while Cruz is the claim.
+                    nested = []
+                    for nested_name in job_folders.list_children(child_path):
+                        nested_path = os.path.join(child_path, nested_name)
+                        if job_folders.is_child_job_folder(nested_path, nested_name):
+                            nested.append((nested_name, nested_path))
+                    if nested:
+                        for nested_name, nested_path in nested:
+                            combined = f"{child_name} — {nested_name}"
+                            seen.add(combined.casefold())
+                            jobs.append(self._job_payload(
+                                key=f"{canonical}::{child_name}::{nested_name}",
+                                name=combined, path=nested_path,
+                                divisions=self._divisions(nested_path), record={},
+                                kind="claim", property_name=child_name))
+                    else:
+                        seen.add(child_name.casefold())
+                        kind, _ = ems_db_common.classify_child(child_name)
+                        jobs.append(self._job_payload(
+                            key=f"{canonical}::{child_name}", name=child_name,
+                            path=child_path, divisions=self._divisions(child_path),
+                            record={}, kind=kind or "job"))
 
             try:
                 indexed_children = ems_db.children_of(canonical) or [] if canonical else []
@@ -164,13 +189,18 @@ class Api:
                     "aliases": aliases,
                 },
                 "jobs": jobs,
+                "job_log": client_logs,
                 "job_count": len(jobs),
             }
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     @staticmethod
-    def _job_payload(*, key, name, path, divisions, record, kind):
+    def _job_payload(*, key, name, path, divisions, record, kind,
+                     property_name=""):
+        received = (record.get("date_received") or
+                    record.get("claim_date") or
+                    Api._date_from_name(name))
         return {
             "key": key,
             "name": name,
@@ -181,7 +211,43 @@ class Api:
             "claim_number": record.get("claim_number") or "",
             "carrier": record.get("carrier") or "",
             "status": record.get("status") or "",
+            "date_received": Api._display_date(received),
+            "date_of_loss": Api._display_date(record.get("date_of_loss") or ""),
+            "cause_of_loss": record.get("cause_of_loss") or "",
+            "deductible": record.get("deductible") or "",
+            "adjuster_name": record.get("adjuster_name") or "",
+            "adjuster_email": record.get("adjuster_email") or "",
+            "insured_name": record.get("insured_name") or "",
+            "property": property_name or record.get("property") or "",
         }
+
+    @staticmethod
+    def _date_from_name(value: str) -> str:
+        matches = re.findall(r"(?<!\d)(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?(?!\d)",
+                             value or "")
+        if not matches:
+            return ""
+        month, day, year = matches[-1]
+        year = year or str(datetime.now().year)
+        if len(year) == 2:
+            year = "20" + year
+        try:
+            return datetime(int(year), int(month), int(day)).strftime("%Y-%m-%d")
+        except ValueError:
+            return ""
+
+    @staticmethod
+    def _display_date(value: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%m-%d-%Y",
+                    "%m-%d-%y", "%m.%d.%Y", "%m.%d.%y"):
+            try:
+                return datetime.strptime(raw[:10], fmt).strftime("%m-%d-%y")
+            except ValueError:
+                continue
+        return raw
 
     def open_folder(self, path: str) -> dict:
         path = (path or "").strip()

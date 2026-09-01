@@ -37,6 +37,7 @@ const state = {
 };
 let workspaceRequestId = 0;
 let stagesLoadPromise = null;
+let archiveLoadPromise = null;
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -311,7 +312,7 @@ function boardCardTotal() {
 
 function boardSummary(boards) {
   const cards = [];
-  for (const board of boards || [])
+  for (const board of (boards || []).filter((item) => item.key !== "logs"))
     for (const lane of board.lanes || []) cards.push(...(lane.cards || []));
   return {
     total: cards.length,
@@ -351,14 +352,15 @@ function renderBoard() {
   const tabs = boards.map((b) =>
     `<button class="board-tab ${b.key === active.key ? "active" : ""}" data-board-tab="${escapeAttr(b.key)}">
        ${escapeHtml(b.name)} <span class="board-tab-count">${countFor(b)}</span>
-     </button>`).join("");
+     </button>`).join("") + (boards.some((board) => board.key === "logs") ? "" :
+       `<button class="board-tab archive-tab" data-load-archive>Old Jobs <span class="board-tab-count">↗</span></button>`);
 
   let lanesHtml;
   if (active.missing) {
     lanesHtml = `<div class="board-warn" style="padding:24px;">"${escapeHtml(active.name)}" not found on Trello.</div>`;
   } else {
     const lanes = (active.lanes || []).map((l) => renderLane(active, l, q)).join("");
-    lanesHtml = `<div class="lanes-row" data-hdrag data-hdrag-nowheel>${lanes || `<div class="lane-empty">No lanes.</div>`}<div class="lane-add" data-no-drag><button class="lane-add-button" type="button" data-add-lane>＋ Add another lane</button></div></div>`;
+    lanesHtml = `<div class="lanes-row" data-hdrag data-hdrag-nowheel>${lanes || `<div class="lane-empty">No lanes.</div>`}${active.key === "logs" ? "" : `<div class="lane-add" data-no-drag><button class="lane-add-button" type="button" data-add-lane>＋ Add another lane</button></div>`}</div>`;
   }
 
   root.innerHTML = `
@@ -383,6 +385,7 @@ function renderBoard() {
       applyBoardLook(state.activeBoardKey);
       renderBoard();
     }));
+  root.querySelector("[data-load-archive]")?.addEventListener("click", loadArchiveBoard);
   root.querySelectorAll("[data-board-filter]").forEach((button) =>
     button.addEventListener("click", () => {
       state.boardFilter = button.dataset.boardFilter || "all";
@@ -391,13 +394,14 @@ function renderBoard() {
     }));
   // Wire drag + drop + per-card actions.
   root.querySelectorAll(".lane").forEach((laneEl) => {
+    if (active.key === "logs") return;
     laneEl.addEventListener("dragover", onLaneDragOver);
     laneEl.addEventListener("dragleave", onLaneDragLeave);
     laneEl.addEventListener("drop", onLaneDrop);
   });
   root.querySelectorAll(".kcard").forEach((cardEl) => {
     wireCardClickAndHold(cardEl);
-    cardEl.addEventListener("dragstart", onCardDragStart);
+    if (active.key !== "logs") cardEl.addEventListener("dragstart", onCardDragStart);
     cardEl.addEventListener("dragend", onCardDragEnd);
     cardEl.addEventListener("contextmenu", onCardContext);
     cardEl.querySelector('[data-act="star"]')?.addEventListener("click", (e) => {
@@ -499,11 +503,14 @@ function laneMatches(lane, q) {
 }
 
 function renderLane(board, lane, q) {
-  const cards = laneMatches(lane, q);
+  const matches = laneMatches(lane, q);
+  const limit = board.key === "logs" ? 80 : matches.length;
+  const cards = matches.slice(0, limit);
   // When searching, hide lanes with no matches to cut clutter.
   if (q && !cards.length) return "";
   const cardsHtml = cards.length
-    ? cards.map((c) => renderCard(c)).join("")
+    ? cards.map((c) => renderCard(c)).join("") + (matches.length > cards.length
+      ? `<div class="lane-more">${matches.length - cards.length} more old jobs · search to narrow</div>` : "")
     : `<div class="lane-empty">—</div>`;
   return `<div class="lane" data-list-id="${escapeAttr(lane.list_id)}"
                data-lane-name="${escapeAttr(lane.name)}"
@@ -511,11 +518,34 @@ function renderLane(board, lane, q) {
     <div class="lane-head" draggable="true" title="Drag to reorder lane">
       <span class="lane-grip" aria-hidden="true">⠿</span>
       <span class="lane-name">${escapeHtml(lane.name)}</span>
-      <span class="lane-count">${cards.length}</span>
-      <button class="lane-menu-button" type="button" data-lane-menu data-no-drag aria-label="Lane actions for ${escapeAttr(lane.name)}">⋯</button>
+      <span class="lane-count">${matches.length}</span>
+      ${board.key === "logs" ? "" : `<button class="lane-menu-button" type="button" data-lane-menu data-no-drag aria-label="Lane actions for ${escapeAttr(lane.name)}">⋯</button>`}
     </div>
     <div class="lane-cards">${cardsHtml}</div>
   </div>`;
+}
+
+async function loadArchiveBoard() {
+  if (archiveLoadPromise) return archiveLoadPromise;
+  setStatus("Loading old jobs from Trello…");
+  archiveLoadPromise = (async () => {
+    try {
+      const result = await pywebview.api.board_view_one("logs");
+      if (!result?.ok) { setStatus(`Old jobs could not load: ${result?.error || "?"}`, "error"); return; }
+      const boards = state.board.boards || (state.board.boards = []);
+      const index = boards.findIndex((board) => board.key === "logs");
+      if (index >= 0) boards[index] = result.board; else boards.push(result.board);
+      state.activeBoardKey = "logs";
+      PanelState.set({activeBoardKey: "logs"});
+      renderBoard();
+      setStatus(`✓ ${(result.board.lanes || []).reduce((sum, lane) => sum + (lane.cards || []).length, 0)} old jobs available`, "ok");
+    } catch (error) {
+      setStatus(`Old jobs could not load: ${error}`, "error");
+    } finally {
+      archiveLoadPromise = null;
+    }
+  })();
+  return archiveLoadPromise;
 }
 
 function activeBoard() {

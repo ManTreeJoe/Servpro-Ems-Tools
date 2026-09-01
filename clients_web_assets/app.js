@@ -69,6 +69,7 @@ async function openClient(name) {
 function renderAccount(result) {
   const client = result.client || {};
   const jobs = result.jobs || [];
+  const clientLog = result.job_log || [];
   $("#account").innerHTML = `
     <article class="account-shell">
       <header class="account-head">
@@ -81,7 +82,7 @@ function renderAccount(result) {
       <section class="jobs-section">
         <div class="section-heading"><div><span class="eyebrow">History</span><h3>Jobs & claims</h3></div><span class="section-count">${jobs.length}</span></div>
         <nav class="job-tabs" role="tablist">${jobs.map((job, index) => `<button role="tab" aria-selected="${index === 0}" class="${index === 0 ? "active" : ""}" data-job-tab="${index}"><strong>${escapeHtml(job.name)}</strong><small>${divisionText(job.divisions)}</small></button>`).join("")}</nav>
-        <div class="job-panels">${jobs.map((job, index) => jobPanel(job, index)).join("")}</div>
+        <div class="job-panels">${jobs.map((job, index) => jobPanel(job, index, clientLog)).join("")}</div>
       </section>
     </article>`;
   $("#open-client-folder")?.addEventListener("click", async () => showResult(await pywebview.api.open_folder(client.folder || "")));
@@ -93,13 +94,33 @@ function renderAccount(result) {
   document.querySelectorAll("[data-open-folder]").forEach((button) => button.addEventListener("click", async () => showResult(await pywebview.api.open_folder(jobs[Number(button.dataset.openFolder)]?.path || ""))));
 }
 
-function jobPanel(job, index) {
+function jobPanel(job, index, clientLog = []) {
+  const details = [
+    ["Date received", job.date_received], ["Date of loss", job.date_of_loss],
+    ["Claim number", job.claim_number], ["Carrier", job.carrier],
+    ["Insured", job.insured_name], ["Cause of loss", job.cause_of_loss],
+    ["Deductible", job.deductible], ["Adjuster", job.adjuster_name],
+    ["Adjuster email", job.adjuster_email], ["Status", job.status],
+    ["OD location", job.path],
+  ];
+  const logs = clientLog.slice().reverse().slice(0, 50);
   return `<section class="job-panel ${index ? "hidden" : ""}" data-job-panel="${index}">
     <div class="job-panel-head"><div><span class="job-kind">${escapeHtml(String(job.kind || "job").replaceAll("_", " "))}</span><h4>${escapeHtml(job.name || "Job")}</h4></div><div class="job-actions"><button class="btn" data-open-folder="${index}" ${job.folder_exists ? "" : "disabled"}>Folder</button><button class="btn btn-primary" data-open-job="${index}">Open Job Card</button></div></div>
     <div class="division-cards">${["EMS","CONTENTS","RECON"].map((division) => `<div class="division-card ${job.divisions?.includes(division) ? "present" : "absent"}"><span>${division === "EMS" ? "💧" : division === "CONTENTS" ? "📦" : "🔨"}</span><strong>${division === "CONTENTS" ? "Contents" : division === "RECON" ? "Recon" : "EMS"}</strong><small>${job.divisions?.includes(division) ? "On this job" : "Not linked"}</small></div>`).join("")}</div>
-    <div class="job-facts">${fact("Claim number", job.claim_number, "Not saved")}${fact("Carrier", job.carrier, "Not saved")}${fact("Status", job.status, "Not saved")}${fact("OD location", job.path, "Folder not linked")}</div>
+    <div class="job-facts">${details.map(([label, value]) => fact(label, value, label === "OD location" ? "Folder not linked" : "Not saved")).join("")}</div>
+    <section class="claim-log"><div class="claim-log-head"><div><span class="eyebrow">Activity</span><h5>Job log</h5></div><span>${logs.length} entr${logs.length === 1 ? "y" : "ies"}</span></div>
+      ${logs.length ? `<div class="claim-log-list">${logs.map(logRow).join("")}</div>` : `<div class="claim-log-empty">No saved job-log entries yet. Folder and job information remain available even without a Trello card.</div>`}
+      ${logs.length && jobsNeedLogAssignment(clientLog) ? `<p class="claim-log-note">These entries belong to the client account. Claim-specific assignment will appear as Trello and OD links are reconciled.</p>` : ""}
+    </section>
   </section>`;
 }
+
+function logRow(entry) {
+  const date = displayDate(entry.work_date || entry.created_at || "");
+  return `<article class="claim-log-row"><time>${escapeHtml(date || "No date")}</time><div><strong>${escapeHtml(entry.work_type || "Update")}</strong><span>${escapeHtml(entry.note || entry.equipment || "No additional note")}</span></div><em>${escapeHtml(entry.status || "completed")}</em></article>`;
+}
+function jobsNeedLogAssignment(entries) { return entries.some((entry) => !entry.child_id && !entry.trello_card_id); }
+function displayDate(value) { const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return match ? `${match[2]}-${match[3]}-${match[1].slice(2)}` : String(value || ""); }
 
 function selectJob(index) {
   document.querySelectorAll("[data-job-tab]").forEach((tab) => { const active = Number(tab.dataset.jobTab) === index; tab.classList.toggle("active", active); tab.setAttribute("aria-selected", String(active)); });
