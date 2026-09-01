@@ -15,8 +15,9 @@
   --text:        #E8E8E8;
   --text-muted:  #9A9A9A;
   --text-dim:    #6E6E6E;
-  --green:       #2E8B57;
-  --green-hover: #38A668;
+  --green:       #58B77D;
+  --green-hover: #69C98E;
+  --green-soft:  rgba(88,183,125,.14);
   --amber:       #C58820;
   --red:         #C0392B;
   --highlight:   #FAEB6B;        /* matches WD_COLOR_INDEX.YELLOW */
@@ -80,7 +81,7 @@ body { display: flex; flex-direction: column; }
 }
 .btn:hover { background: var(--border); }
 .btn-primary {
-  background: var(--green); border-color: var(--green); color: #FFFFFF;
+  background: var(--green); border-color: var(--green); color: #101713;
 }
 .btn-primary:hover { background: var(--green-hover); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -291,7 +292,7 @@ body { display: flex; flex-direction: column; }
   cursor: grabbing;
 }
 .section-body.drop-target {
-  background: rgba(46, 139, 87, 0.08);
+  background: var(--green-soft);
   outline: 2px dashed var(--green);
   outline-offset: -4px;
 }
@@ -377,7 +378,7 @@ body { display: flex; flex-direction: column; }
 .add-item-btn:hover {
   border-color: var(--green);
   color: var(--green);
-  background: rgba(46,139,87,0.06);
+  background: var(--green-soft);
 }
 
 .apa-popover-backdrop {

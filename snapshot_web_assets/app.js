@@ -2255,7 +2255,7 @@ async function openCloseoutModal(row) {
       const checkChar = it.complete ? "☑" : "☐";
       const color = it.complete ? "var(--green)" : "var(--text-muted)";
       const weight = it.complete ? "600" : "500";
-      const bg = it.complete ? "rgba(46,139,87,.08)" : "var(--surface-2)";
+      const bg = it.complete ? "var(--green-soft)" : "var(--surface-2)";
       const extraTag = it.extra
         ? `<span style="background:var(--act-monitor);color:#FFF;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em;">extra</span>`
         : "";

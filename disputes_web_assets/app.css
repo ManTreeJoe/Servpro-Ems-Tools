@@ -45,7 +45,7 @@
 .status-pill[data-status*="active" i] { background: #C58820; color: #FFFFFF; }
 .status-pill[data-status*="resolved" i],
 .status-pill[data-status*="closed" i],
-.status-pill[data-status*="won" i]    { background: #2E8B57; color: #FFFFFF; }
+.status-pill[data-status*="won" i]    { background: var(--green); color: #101713; }
 .status-pill[data-status*="lost" i],
 .status-pill[data-status*="rejected" i] { background: #C0392B; color: #FFFFFF; }
 .row-act { color: var(--link); cursor: pointer; font-size: 11px; }

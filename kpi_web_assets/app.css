@@ -12,8 +12,9 @@
   --text:        #E8E8E8;
   --text-muted:  #9A9A9A;
   --text-dim:    #6E6E6E;
-  --green:       #2E8B57;
-  --green-hover: #38A668;
+  --green:       #58B77D;
+  --green-hover: #69C98E;
+  --green-soft:  rgba(88,183,125,.14);
   --amber:       #C58820;
   --red:         #C0392B;
   --link:        #4A9EFF;

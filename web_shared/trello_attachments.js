@@ -116,7 +116,7 @@
         }
         return `
           <label class="ta-row" data-id="${esc(a.id)}"
-                 style="display:grid;grid-template-columns:auto auto 1fr auto auto;gap:12px;align-items:center;padding:8px 12px;background:${isSel ? "rgba(46,139,87,.10)" : "var(--surface)"};border:1px solid ${isSel ? "var(--green)" : "var(--border)"};border-radius:6px;cursor:pointer;">
+                 style="display:grid;grid-template-columns:auto auto 1fr auto auto;gap:12px;align-items:center;padding:8px 12px;background:${isSel ? "var(--green-soft)" : "var(--surface)"};border:1px solid ${isSel ? "var(--green)" : "var(--border)"};border-radius:6px;cursor:pointer;">
             <input type="checkbox" class="ta-cb" data-id="${esc(a.id)}" ${isSel ? "checked" : ""} />
             ${thumb}
             <div style="min-width:0;">

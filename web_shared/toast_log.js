@@ -131,7 +131,7 @@
       el.addEventListener("click", async () => {
         try {
           await navigator.clipboard.writeText(el.dataset.msg);
-          el.style.background = "rgba(46,139,87,.18)";
+          el.style.background = "var(--green-soft)";
           setTimeout(() => { el.style.background = "var(--surface)"; }, 400);
         } catch (_) {}
       }));

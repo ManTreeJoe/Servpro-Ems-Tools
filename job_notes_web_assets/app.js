@@ -436,7 +436,7 @@ async function openTrelloComposeModal(client) {
   w.style.cssText = "position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;";
   w.innerHTML = `
     <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;width:min(560px,92vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
-      <header style="padding:14px 20px;background:var(--green,#2E8B57);color:#FFF;border-bottom:1px solid var(--border);">
+      <header style="padding:14px 20px;background:var(--green,#58B77D);color:#101713;border-bottom:1px solid var(--border);">
         <div style="font-size:14px;font-weight:700;">Add comment to ${esc(client)}</div>
         <div style="font-size:11px;opacity:.85;margin-top:4px;">
           Posting to Trello card ${esc(cardId)} · Ctrl+Enter to post
