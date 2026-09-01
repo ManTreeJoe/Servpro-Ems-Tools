@@ -19,6 +19,7 @@ const state = {
   activeBoardKey: null,     // which board is shown (one at a time)
   boardFilter: "all",       // all | attention | due | sync
   boardLooks: {},            // board key -> {preset, customPath, customData}
+  boardZoom: 1,
   drag: null,               // {cardId, name, fromListId, fromLane, boardKey}
   laneDrag: null,           // {listId, name, targetId, side}
   // Stages table view
@@ -55,12 +56,16 @@ async function bootPipeline() {
   state.activeBoardKey = PanelState.get("activeBoardKey", null);
   state.boardFilter    = PanelState.get("boardFilter", "all");
   state.boardLooks     = PanelState.get("boardLooks", {});
+  state.boardZoom      = Number(PanelState.get("boardZoom", 1)) || 1;
   state.active_stage   = PanelState.get("active_stage", state.active_stage);
   state.search         = PanelState.get("search", "");
 
   $("#view-board-btn").addEventListener("click", () => setView("board"));
   $("#view-stages-btn").addEventListener("click", () => setView("stages"));
   $("#refresh-btn").addEventListener("click", () => loadBoard(true));
+  $("#board-zoom-out").addEventListener("click", () => changeBoardZoom(-0.1));
+  $("#board-zoom-in").addEventListener("click", () => changeBoardZoom(0.1));
+  $("#board-zoom-reset").addEventListener("click", () => setBoardZoom(1));
   $("#customize-board-btn").addEventListener("click", openBoardCustomize);
   $("#custom-background-btn").addEventListener("click", chooseCustomBackground);
   $("#clear-background-btn").addEventListener("click", () => setBoardLook({ preset: "asphalt" }));
@@ -92,6 +97,9 @@ async function bootPipeline() {
 
   window.addEventListener("pipeline:sync-progress", onSyncProgress);
   window.addEventListener("pipeline:sync-done", onSyncDone);
+  window.addEventListener("keydown", onBoardZoomShortcut);
+
+  applyBoardZoom();
 
   const initialView = state.view;
   state.view = "";
@@ -174,6 +182,41 @@ async function loadBoard(isRefresh) {
     if (!isRefresh) showBoardLoadError(ex?.message || ex);
   } finally {
     if (isRefresh) { btn.disabled = false; btn.textContent = "↻ Sync Jobs"; }
+  }
+}
+
+// Board-only zoom keeps the app chrome readable while dispatchers trade
+// detail for lane coverage. Deliberate stops prevent microscopic cards.
+function setBoardZoom(value) {
+  const next = Math.max(0.7, Math.min(1.4, Math.round(Number(value) * 10) / 10));
+  state.boardZoom = next;
+  PanelState.set({ boardZoom: next });
+  applyBoardZoom();
+}
+
+function changeBoardZoom(delta) { setBoardZoom(state.boardZoom + delta); }
+
+function applyBoardZoom() {
+  const board = $("#board-view");
+  if (board) board.style.setProperty("--board-zoom", String(state.boardZoom));
+  const value = $("#board-zoom-reset");
+  if (value) {
+    value.textContent = `${Math.round(state.boardZoom * 100)}%`;
+    value.setAttribute("aria-label", `Jobs board zoom ${value.textContent}; reset to 100%`);
+  }
+  const out = $("#board-zoom-out"), inside = $("#board-zoom-in");
+  if (out) out.disabled = state.boardZoom <= 0.7;
+  if (inside) inside.disabled = state.boardZoom >= 1.4;
+}
+
+function onBoardZoomShortcut(event) {
+  if (state.view !== "board" || !event.ctrlKey || event.altKey) return;
+  if (event.key === "+" || event.key === "=") {
+    event.preventDefault(); changeBoardZoom(0.1);
+  } else if (event.key === "-") {
+    event.preventDefault(); changeBoardZoom(-0.1);
+  } else if (event.key === "0") {
+    event.preventDefault(); setBoardZoom(1);
   }
 }
 

@@ -17,7 +17,7 @@
 <meta name="theme-color" content="#111513" />
 <title>Pipeline — Linguar Hub</title>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260831b" />
-<link rel="stylesheet" href="app.css?v=20260901a" />
+<link rel="stylesheet" href="app.css?v=20260901b" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
 </head>
 <body class="responsive-ui">
@@ -40,6 +40,11 @@
       placeholder="Search jobs…"
       autocomplete="off"
     />
+    <div class="board-zoom view-board-only" role="group" aria-label="Jobs board zoom">
+      <button id="board-zoom-out" class="zoom-step" type="button" aria-label="Zoom jobs board out" title="Show more of the board (Ctrl+-)">−</button>
+      <button id="board-zoom-reset" class="zoom-value" type="button" title="Reset Jobs zoom (Ctrl+0)">100%</button>
+      <button id="board-zoom-in" class="zoom-step" type="button" aria-label="Zoom jobs board in" title="Make the board larger (Ctrl++)">+</button>
+    </div>
     <button id="customize-board-btn" class="btn view-board-only" title="Change the active board’s appearance">Customize</button>
     <button id="refresh-btn" class="btn btn-primary view-board-only" title="Refresh shared jobs and Trello">↻ Sync Jobs</button>
     <details class="toolbar-more"><summary class="btn icon-btn" aria-label="More Pipeline actions" title="More Pipeline actions">•••</summary><div>

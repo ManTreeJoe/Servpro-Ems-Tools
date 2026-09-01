@@ -67,3 +67,15 @@ def test_pipeline_status_and_search_are_accessible():
     assert 'aria-label="Search Jobs"' in html
     assert 'aria-live="polite"' in html
     assert 'class="skip-link"' in html
+def test_jobs_board_zoom_is_visible_persistent_and_board_scoped():
+    html = _asset("index.html")
+    js = _asset("app.js")
+    css = _asset("app.css")
+    for marker in ("board-zoom-out", "board-zoom-reset", "board-zoom-in"):
+        assert marker in html
+    for marker in ('PanelState.get("boardZoom", 1)',
+                   "PanelState.set({ boardZoom: next })",
+                   "function onBoardZoomShortcut", "Math.max(0.7",
+                   "Math.min(1.4"):
+        assert marker in js
+    assert "zoom: var(--board-zoom, 1)" in css
