@@ -526,6 +526,9 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .aud-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .aud-list li { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 6px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
 .aud-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 7px; border-radius: 4px; background: var(--chip-bg); color: var(--text-muted); }
+.audit-missing-summary { display:flex; align-items:center; gap:9px; margin-bottom:8px; padding:9px 10px; border:1px solid rgba(192,57,43,.42); border-radius:7px; background:rgba(192,57,43,.11); }.audit-missing-summary strong{color:#f0aaa3}.audit-missing-summary span{color:var(--text-muted);font-size:11px}
+.audit-missing-count { padding:3px 7px; border-radius:5px; background:#4a2622; color:#f0b0a8; font-size:10px; font-weight:800; }
+.aud-tag.aud-missing { background:#4a2622; color:#f0b0a8; }
 
 /* Trello-like job audit: the board remains visible while one job floats
    above it, with a fixed title/action rail and its own scrolling body. */
@@ -695,6 +698,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .requirement-copy .requirement-manual { color:var(--text-muted);text-transform:none; }
 .requirement-flags { display:flex;flex-wrap:wrap;gap:4px;margin-top:2px; }
 .req-flag { padding:2px 5px;border-radius:4px;background:var(--surface-2);color:var(--text-muted);font-size:9px;font-weight:750;line-height:1.2; }
+.req-status { display:inline-block; margin:3px 0 1px; padding:2px 6px; border-radius:4px; background:#4a2622; color:#f0b0a8; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; }.req-status.status-completed{background:#21442f;color:#9ce1b4}.req-status.status-in-progress{background:#273b4a;color:#acd3ed}.req-status.status-blocked{background:#443616;color:#efd189}.req-status.status-not-applicable{background:#303234;color:#b7b9bc}
 .req-flag.mandatory,.req-flag.overdue { background:#4a2622;color:#f0b0a8; }
 .req-flag.blocked { background:#443616;color:#efd189; }
 .req-flag.carried { background:#27313a;color:#b9cad7; }

@@ -86,6 +86,18 @@ def test_pipeline_job_actions_match_the_audit_button_language():
     assert "quick-action-group" not in js
 
 
+def test_current_audit_labels_missing_and_requirement_states_explicitly():
+    js = _asset("app.js")
+    css = _asset("app.css")
+    for marker in ('missing item${issues.length === 1',
+                   "Missing ${escapeHtml(i.kind.toLowerCase())}",
+                   'item.status === "blocked" ? "Blocked"',
+                   ': "Missing"', "audit-missing-count", "req-status"):
+        assert marker in js
+    assert ".aud-tag.aud-missing" in css
+    assert ".req-status.status-completed" in css
+
+
 def test_pipeline_status_and_search_are_accessible():
     html = _asset("index.html")
     assert 'aria-label="Search Jobs"' in html

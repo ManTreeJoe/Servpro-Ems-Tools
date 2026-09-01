@@ -1090,8 +1090,8 @@ function openAuditModal(data, trelloUrl = "") {
     ? `<div class="aud-bad">📁 No job folder found for this client.</div>`
     : clean
       ? `<div class="aud-ok">✓ All required forms &amp; photos present.</div>`
-      : `<ul class="aud-list">${issues.map((i) =>
-          `<li><span class="aud-tag">${escapeHtml(i.kind)}</span> ${escapeHtml(i.text)}</li>`).join("")}</ul>`;
+      : `<div class="audit-missing-summary"><strong>${issues.length} missing item${issues.length === 1 ? "" : "s"}</strong><span>Complete these before this job can move forward.</span></div><ul class="aud-list missing-audit-list">${issues.map((i) =>
+          `<li><span class="aud-tag aud-missing">Missing ${escapeHtml(i.kind.toLowerCase())}</span> ${escapeHtml(i.text)}</li>`).join("")}</ul>`;
   const facts = (data.info_sections || []).map((section) => `
     <section class="aud-section info-section"><h3>${escapeHtml(section.name)}</h3>
       <dl class="aud-facts">${(section.fields || []).map((f) =>
@@ -1130,15 +1130,22 @@ function openAuditModal(data, trelloUrl = "") {
     ? `<ul class="aud-list">${misplaced.map((item) => `<li><span class="aud-tag aud-warn">Moved</span> ${escapeHtml(item.label || item)}${item.where ? ` <small>${escapeHtml(item.where)}</small>` : ""}</li>`).join("")}</ul>`
     : "";
   const progress = crm.progress || {};
-  const requirementRows = (items) => items.map((item) => `
+  const requirementRows = (items) => items.map((item) => {
+    const statusLabel = item.status === "completed" ? "Complete"
+      : item.status === "not_applicable" ? "N/A"
+      : item.status === "blocked" ? "Blocked"
+      : item.status === "in_progress" ? "In progress" : "Missing";
+    return `
     <div class="requirement-row req-${escapeAttr(item.status || "required_now")}">
       <button type="button" class="requirement-mark" data-requirement-complete="${escapeAttr(item.key || "")}" aria-label="${item.status === "todo" || item.status === "in_progress" ? "Complete" : "Update"} ${escapeAttr(item.label || "requirement")}">${item.status === "completed" ? "✓" : item.status === "not_applicable" ? "—" : item.status === "blocked" ? "×" : item.status === "in_progress" ? "◐" : "○"}</button>
       <span class="requirement-copy"><strong>${escapeHtml(item.label || "")}</strong>
+      <b class="req-status status-${escapeAttr((item.status || "todo").replaceAll("_", "-"))}">${statusLabel}</b>
       <small>${escapeHtml((item.status || "todo").replaceAll("_", " "))} · ${escapeHtml(item.assignee || item.owner || "Unassigned")}${item.due_at ? " · Due " + escapeHtml(formatCommentDate(item.due_at)) : ""}${item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small>
       <span class="requirement-flags">${item.importance === "mandatory" ? `<b class="req-flag mandatory">Mandatory</b>` : item.importance === "recommended" ? `<b class="req-flag recommended">Recommended</b>` : ""}${item.overdue ? `<b class="req-flag overdue">Overdue</b>` : ""}${item.carried_forward ? `<b class="req-flag carried">Carried forward</b>` : ""}${item.status === "blocked" && item.follow_up_at ? `<b class="req-flag blocked">Follow up ${escapeHtml(formatCommentDate(item.follow_up_at))}</b>` : ""}</span>
       ${item.manual_actor ? `<small class="requirement-manual">Updated by ${escapeHtml(item.manual_actor)}${item.manual_at ? " · " + escapeHtml(formatCommentDate(item.manual_at)) : ""}${item.manual_note ? " · " + escapeHtml(item.manual_note) : ""}</small>` : ""}</span>
       <button type="button" class="requirement-edit" data-requirement-key="${escapeAttr(item.key || "")}">Update</button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
   const requirementGroups = {attention: [], completed: [], not_applicable: [], recommended: []};
   (progress.items || []).forEach((item) => {
     if (item.status === "completed" || item.status === "not_applicable") requirementGroups[item.status].push(item);
@@ -1223,7 +1230,7 @@ function openAuditModal(data, trelloUrl = "") {
   const body = `<div class="job-card-layout">
     <div class="job-card-main">
       ${divisionConflictBanner}
-      <section class="aud-section audit-summary"><h3>Current audit</h3>${missing}${misplacedHtml}</section>
+      <section class="aud-section audit-summary"><div class="section-title-row"><h3>Current audit</h3>${!data.deferred_loading && issues.length ? `<span class="audit-missing-count">${issues.length} missing</span>` : ""}</div>${missing}${misplacedHtml}</section>
       <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
         <span class="progress-label">${progress.counts?.overdue || 0} overdue · ${progress.counts?.blocked || 0} blocked · ${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
