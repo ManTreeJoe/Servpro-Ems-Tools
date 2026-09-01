@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Clients — Linguar Hub</title>
+  <script src="../web_shared/usage_track.js?v=20260825a"></script>
+  <script src="../web_shared/health_banner.js?v=20260820a"></script>
+  <script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+  <script src="../web_shared/open_in.js?v=20260831a"></script>
+  <link rel="stylesheet" href="../web_shared/theme.css?v=20260831b">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="client-toolbar">
+    <div>
+      <span class="eyebrow">Client records</span>
+      <h1>Clients</h1>
+    </div>
+    <label class="search-wrap"><span>⌕</span><input id="search" type="search" placeholder="Search clients, properties, or management companies…" autocomplete="off"></label>
+  </header>
+  <nav class="division-nav" aria-label="Client filters">
+    <button class="active" data-division="all">All clients</button>
+    <button data-division="EMS">💧 EMS</button>
+    <button data-division="CONTENTS">📦 Contents</button>
+    <button data-division="RECON">🔨 Recon</button>
+  </nav>
+  <main class="client-layout">
+    <aside class="client-directory" aria-label="Client directory">
+      <div class="directory-head"><strong id="result-count">Clients</strong><button id="refresh" title="Refresh clients">↻</button></div>
+      <div id="client-list" class="client-list"><div class="loading-card">Loading clients…</div></div>
+    </aside>
+    <section id="account" class="account-view" aria-live="polite">
+      <div class="account-empty"><div class="empty-mark">C</div><h2>Select a client</h2><p>Client details and every job or claim will appear here.</p></div>
+    </section>
+  </main>
+  <div id="status" class="status-line" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>

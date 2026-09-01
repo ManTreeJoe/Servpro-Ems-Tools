@@ -17,7 +17,9 @@ def test_pipeline_is_the_primary_jobs_workspace_and_reporting_is_grouped():
     assert work["daily_run"] == "Daily Run"
     assert home_web._asset_folder_for("daily_run").endswith(
         "audit_web_assets/index.html?surface=daily")
-    assert work["audit"] == "Clients"
+    assert work["clients"] == "Clients"
+    assert home_web._asset_folder_for("clients").endswith(
+        "clients_web_assets/index.html")
     assert work["snapshot"] == "Snapshot"
     assert reports["apa"] == "APA"
     assert "hygiene" in reports
@@ -61,18 +63,18 @@ def test_audit_no_longer_appends_duplicate_shared_actions():
 
 
 def test_clients_use_division_views_and_new_loss_lives_in_jobs():
-    clients_html = (ROOT / "audit_web_assets" / "index.html").read_text(
+    clients_html = (ROOT / "clients_web_assets" / "index.html").read_text(
         encoding="utf-8")
-    clients_js = (ROOT / "audit_web_assets" / "app.js").read_text(
+    clients_js = (ROOT / "clients_web_assets" / "app.js").read_text(
         encoding="utf-8")
     jobs_html = (ROOT / "pipeline_web_assets" / "index.html").read_text(
         encoding="utf-8")
     shell_js = (ROOT / "home_web_assets" / "app.js").read_text(
         encoding="utf-8")
 
-    for key in ("all", "ems", "contents", "recon", "starred"):
-        assert f'data-filter="{key}"' in clients_html
-    assert 'id="new-loss-btn" class="btn hidden"' in clients_html
-    assert "clientDivisionKeys" in clients_js
+    for key in ("all", "EMS", "CONTENTS", "RECON"):
+        assert f'data-division="{key}"' in clients_html
+    assert 'id="new-loss-btn"' not in clients_html
+    assert "divisionText" in clients_js
     assert 'id="new-loss-btn" class="btn"' in jobs_html
     assert "linguar-open-new-loss" in shell_js

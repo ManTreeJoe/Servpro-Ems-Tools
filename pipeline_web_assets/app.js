@@ -1322,7 +1322,7 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelector("[data-open-client-page]")?.addEventListener("click", () => {
     const client = data.client || res.client || "";
     close(true);
-    if (window.emsNavigateTo) window.emsNavigateTo("audit", client);
+    if (window.emsNavigateTo) window.emsNavigateTo("clients", client);
   });
   w.querySelectorAll("[data-division-data]").forEach((button) => button.addEventListener("click", async () => {
     if (button.dataset.divisionData === selectedDivision) return;
@@ -1695,7 +1695,7 @@ function openAuditModal(data, trelloUrl = "") {
     }
   });
   w.querySelector("[data-open-audit]").addEventListener("click", () => {
-    if (window.emsNavigateTo) window.emsNavigateTo("audit", res.client || "");
+    if (window.emsNavigateTo) window.emsNavigateTo("clients", res.client || "");
     close();
   });
   return {

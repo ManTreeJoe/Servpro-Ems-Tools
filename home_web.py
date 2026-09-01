@@ -146,7 +146,7 @@ NAV_GROUPS = [
     ("Work", [
         ("pipeline",    "▦", "Jobs"),
         ("daily_run",   "📋", "Daily Run"),
-        ("audit",       "👥", "Clients"),
+        ("clients",     "👥", "Clients"),
         ("snapshot",    "📸", "Snapshot"),
         ("run_doc_editor", "📋", "Daily Run Editor"),
         ("photo_folders","📷", "Photo Folders"),
@@ -192,14 +192,11 @@ def _asset_folder_for(key: str) -> str:
     origin restriction when an iframe at file://.../audit_web_assets/
     tries to access window.parent.pywebview at file://.../home_web_assets/.)
     """
-    # Clients and Daily Run intentionally share the mature audit workspace,
-    # but land on different surfaces. Keeping separate shell destinations
-    # puts daily work with Jobs without duplicating its filesystem/Trello
-    # logic or mixing the Daily Run tab back into the client-account view.
+    # Daily Run retains the mature audit workspace. Clients is a separate
+    # module because client identity/history and a daily operational audit
+    # are different workflows with different navigation needs.
     if key == "daily_run":
         return "../audit_web_assets/index.html?surface=daily"
-    if key == "audit":
-        return "../audit_web_assets/index.html?surface=clients"
     folder = ASSET_FOLDER.get(key, f"{key}_web_assets")
     return f"../{folder}/index.html"
 
@@ -211,6 +208,7 @@ SUB_MODULES = {
     "exceptions":  "exceptions_web",
     "run_doc_editor": "run_doc_editor_web",
     "audit":       "audit_web",
+    "clients":     "clients_web",
     "disputes":    "disputes_web",
     "job_notes":   "job_notes_web",
     "cheat_sheet": "cheat_sheet_web",
