@@ -8,7 +8,7 @@ post-generate Trello attach + missing-items comment.
 """
 from __future__ import annotations
 import dept_browser
-import os, sys, datetime, re
+import os, sys, datetime, re, time
 import webview
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -136,7 +136,8 @@ def _snapshot_work_date(raw: str) -> str:
 
 
 def sync_snapshot_logs_to_job_log(client: str, rows: list,
-                                  updated_by: str = "") -> dict:
+                                  updated_by: str = "", *,
+                                  strict: bool = True) -> dict:
     """Upsert editable Snapshot rows into the durable Job Log.
 
     Existing row metadata is preserved because Snapshot intentionally exposes
@@ -149,15 +150,16 @@ def sync_snapshot_logs_to_job_log(client: str, rows: list,
         return {"ok": False, "error": "job not found", "rows": rows or []}
     existing = {str(e.get("entry_id") or ""): e
                 for e in ems_db.list_job_log_entries(job["canon_key"])}
-    synced, errors = [], []
+    synced, errors, saved_count, skipped = [], [], 0, 0
     for index, raw in enumerate(rows or []):
         row = dict(raw or {})
         work_date = _snapshot_work_date(row.get("date") or "")
         work_type = str(row.get("activity") or "").strip()
         if not work_date or not work_type:
             synced.append(row)
-            if any(str(row.get(k) or "").strip()
-                   for k in ("date", "activity", "techs")):
+            skipped += 1
+            if strict and any(str(row.get(k) or "").strip()
+                              for k in ("date", "activity", "techs")):
                 errors.append(f"row {index + 1} needs a complete date and activity")
             continue
         entry_id = str(row.get("entry_id") or "").strip()
@@ -184,10 +186,12 @@ def sync_snapshot_logs_to_job_log(client: str, rows: list,
                 "trello_comment_id": (saved.get("trello_comment_id")
                                       or payload["trello_comment_id"]),
             })
+            saved_count += 1
         except Exception as ex:
             errors.append(f"row {index + 1}: {type(ex).__name__}: {ex}")
         synced.append(row)
-    return {"ok": not errors, "rows": synced, "saved": len(synced) - len(errors),
+    return {"ok": not errors, "rows": synced, "saved": saved_count,
+            "skipped": skipped,
             "errors": errors, "error": "; ".join(errors[:3])}
 
 
@@ -197,7 +201,10 @@ from job_admin_api import JobAdminApi
 
 
 class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
-    def __init__(self): self._window = None
+    def __init__(self):
+        self._window = None
+        self._candidate_cache = None
+        self._candidate_cache_at = 0.0
     def attach(self, w): self._window = w
 
     def recent_snapshots(self, limit=50):
@@ -1017,8 +1024,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": str(ex)}
 
     # ── Generation flow ──────────────────────────────────────────────
-    def candidate_jobs(self):
+    def candidate_jobs(self, force=False):
         """Open cards on Estimating boards, annotated for Snapshot toggle."""
+        # The UI refreshes on focus and every 60 seconds. Without this small
+        # cache, a focus bounce plus the initial load can independently fetch
+        # boards, lists and every card twice. A manual refresh bypasses it.
+        if (not force and self._candidate_cache is not None
+                and time.monotonic() - self._candidate_cache_at < 25):
+            return [dict(row) for row in self._candidate_cache]
         out = []
         seen = set()
         try:
@@ -1069,6 +1082,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                     })
         except Exception:
             pass
+        self._candidate_cache = [dict(row) for row in out]
+        self._candidate_cache_at = time.monotonic()
         return out
 
     def snapshot_return_destinations(self, card_id: str) -> dict:
@@ -2031,7 +2046,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception:
             actor = ""
         try:
-            return sync_snapshot_logs_to_job_log(client, rows, actor)
+            return sync_snapshot_logs_to_job_log(client, rows, actor,
+                                                 strict=False)
         except Exception as ex:
             return {"ok": False, "rows": rows or [],
                     "error": f"{type(ex).__name__}: {ex}"}

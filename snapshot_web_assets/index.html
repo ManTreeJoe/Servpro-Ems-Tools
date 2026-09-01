@@ -126,6 +126,29 @@
   .empty-inline { padding: 20px; text-align: center; color: var(--text-muted); }
 
   .gen-foot { margin-top: 22px; display: flex; gap: 10px; align-items: center; }
+  .snapshot-form-loading { display:flex;align-items:center;gap:10px;margin:0 0 14px;
+    padding:10px 12px;border:1px solid rgba(76,175,110,.32);border-radius:8px;
+    background:rgba(76,175,110,.07);color:var(--text-muted);font-size:12px; }
+  .snapshot-form-loading.hidden { display:none; }
+  .loading-ring { width:15px;height:15px;flex:0 0 auto;border-radius:50%;
+    border:2px solid rgba(125,205,151,.25);border-top-color:#7dcd97;
+    animation:snapshot-spin .7s linear infinite; }
+  @keyframes snapshot-spin { to { transform:rotate(360deg); } }
+  #snapshot-form-card.is-loading .form-row input,
+  #snapshot-form-card.is-loading textarea,
+  #snapshot-form-card.is-loading .row-table,
+  #snapshot-form-card.is-loading .add-row-btn { opacity:.48;pointer-events:none; }
+  .snapshot-skeleton { display:grid;grid-template-columns:minmax(150px,1fr) 120px 70px;
+    gap:12px;align-items:center;padding:12px;border-bottom:1px solid var(--border); }
+  .snapshot-skeleton>* { display:block;height:10px;border-radius:99px;
+    background:linear-gradient(90deg,var(--surface-2),rgba(255,255,255,.07),var(--surface-2));
+    background-size:220% 100%;animation:snapshot-shimmer 1.25s ease-in-out infinite; }
+  .snapshot-skeleton span{width:88%}.snapshot-skeleton b{width:100%}
+  .snapshot-skeleton.pdf{grid-template-columns:minmax(150px,1fr) 120px 55px}
+  @keyframes snapshot-shimmer { to { background-position:-220% 0; } }
+  .inline-save-state { margin-left:7px;font-size:10px;font-weight:650;text-transform:none;
+    letter-spacing:0;color:var(--text-muted); }
+  .inline-save-state.ok{color:var(--green)}.inline-save-state.warn{color:var(--amber)}
   .post-actions {
     margin-top: 24px; padding: 16px;
     background: var(--surface); border: 1px solid var(--green);
@@ -479,10 +502,13 @@
 
 <!-- GENERATE VIEW -->
 <main id="view-gen" class="wrap hidden">
-  <section class="col">
+  <section class="col" id="snapshot-form-card" aria-busy="false">
     <div class="snapshot-form-heading">
       <h2>＋ New snapshot</h2>
       <button class="btn" id="snapshot-comments-btn" disabled title="Read and post comments on this job's Trello card">💬 Trello comments</button>
+    </div>
+    <div id="snapshot-form-loading" class="snapshot-form-loading hidden" role="status" aria-live="polite">
+      <i class="loading-ring" aria-hidden="true"></i><span>Loading job details…</span>
     </div>
     <div class="form-row">
       <label>Insured / job name *</label>
@@ -529,7 +555,7 @@
     </table>
     <button class="add-row-btn" data-tbl="subs">+ Add sub</button>
 
-    <h3 class="form-h3">Daily job log <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">— drag ⋮⋮ to reorder</span></h3>
+    <h3 class="form-h3">Daily job log <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;">— drag ⋮⋮ to reorder</span><span id="job-log-sync-state" class="inline-save-state"></span></h3>
     <table class="row-table" id="logs-table">
       <thead><tr><th></th><th>Date</th><th>Day</th><th>Activity</th><th>Techs</th><th></th></tr></thead>
       <tbody id="logs-body"></tbody>

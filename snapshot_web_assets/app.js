@@ -14,12 +14,15 @@ const state = {
   importBtn: null,
   candidates: [],
   queue: { search: "", board: "all", lane: "all", showAll: false, focusedFromJobs: false },
+  openRequest: 0,
+  queueLoaded: false,
 };
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 const pad2 = (n) => String(n).padStart(2, "0");
 let _queueSyncBusy = false;
+let _queueSyncPromise = null;
 let _queueSyncTimer = null;
 let _jobLogSyncTimer = null;
 
@@ -64,7 +67,11 @@ window.addEventListener("pywebviewready", async () => {
     renderCandidateQueue();
   });
   attachTopbarTrelloSearch();
-  $("#gen-cancel").addEventListener("click", () => switchTo("list"));
+  $("#gen-cancel").addEventListener("click", () => {
+    state.openRequest += 1; // invalidate any slow prefill still in flight
+    setSnapshotFormLoading(false);
+    switchTo("list");
+  });
   $("#gen-go").addEventListener("click", generate);
   $("#gen-find").addEventListener("click", openFindCardModal);
   $("#gen-audit").addEventListener("click", runSnapshotAudit);
@@ -260,9 +267,22 @@ function toggleSnapshotComments() {
 }
 
 async function loadList() {
-  await syncSnapshotQueue(true);
+  if (!state.queueLoaded) renderQueueSkeleton();
+  // Independent sources load together. A slow Trello response must not hold
+  // the local recent-PDF list hostage.
+  await Promise.allSettled([syncSnapshotQueue(true), loadRecentSnapshots()]);
+  refreshTrackedCountBadge();
+}
 
-  const data = await pywebview.api.recent_snapshots(50);
+async function loadRecentSnapshots() {
+  const pdfs = $("#pdfs");
+  if (pdfs && !pdfs.children.length) pdfs.innerHTML = skeletonRows(3, "pdf");
+  let data;
+  try { data = await pywebview.api.recent_snapshots(50); }
+  catch (ex) {
+    if (pdfs) pdfs.innerHTML = `<div class="empty-inline">Recent PDFs unavailable: ${esc(ex)}</div>`;
+    return;
+  }
   $("#open-folder-btn").onclick = () => pywebview.api.open_folder(data.dir);
   $("#pdfs").innerHTML = data.rows.length
     ? data.rows.map((p) => `
@@ -276,29 +296,42 @@ async function loadList() {
     row.addEventListener("click", () => pywebview.api.open_pdf(row.dataset.path)));
   const queued = state.candidates.filter((r) => r.snapshot).length;
   $("#status-counts").textContent = `${queued} in Snapshot · ${data.rows.length} recent PDFs`;
-  refreshTrackedCountBadge();
 }
 
 async function syncSnapshotQueue(force = false) {
-  if (_queueSyncBusy) return;
+  if (_queueSyncBusy) return _queueSyncPromise;
   if (!force && (document.hidden || state.view !== "list" || $("#tab-today")?.classList.contains("hidden"))) return;
   _queueSyncBusy = true;
-  const synced = $("#queue-synced");
-  if (synced) synced.textContent = "Checking Trello…";
-  try {
-    state.candidates = await pywebview.api.candidate_jobs() || [];
-    refreshQueueFilterOptions();
-    renderCandidateQueue();
-    const queued = state.candidates.filter((r) => r.snapshot).length;
-    if (synced) synced.textContent = `Trello live · ${new Date().toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}`;
-    const recent = $("#status-counts")?.textContent.match(/·\s*(\d+) recent PDFs/);
-    if (recent) $("#status-counts").textContent = `${queued} in Snapshot · ${recent[1]} recent PDFs`;
-  } catch (ex) {
-    if (synced) synced.textContent = "Trello check failed · press ↻";
-    if (force) setStatus(`Could not load Snapshot lane: ${ex}`, "error");
-  } finally {
-    _queueSyncBusy = false;
-  }
+  _queueSyncPromise = (async () => {
+    const synced = $("#queue-synced");
+    if (synced) synced.textContent = state.queueLoaded ? "Refreshing Trello…" : "Loading Snapshot lane…";
+    try {
+      state.candidates = await pywebview.api.candidate_jobs(!!force) || [];
+      state.queueLoaded = true;
+      refreshQueueFilterOptions();
+      renderCandidateQueue();
+      const queued = state.candidates.filter((r) => r.snapshot).length;
+      if (synced) synced.textContent = `Trello live · ${new Date().toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}`;
+      const recent = $("#status-counts")?.textContent.match(/·\s*(\d+) recent PDFs/);
+      if (recent) $("#status-counts").textContent = `${queued} in Snapshot · ${recent[1]} recent PDFs`;
+    } catch (ex) {
+      if (synced) synced.textContent = "Trello unavailable · press ↻";
+      if (!state.queueLoaded) $("#candidates").innerHTML = `<div class="empty-inline">Could not load the Snapshot lane. Recent PDFs and manual snapshots are still available.</div>`;
+      if (force) setStatus(`Could not load Snapshot lane: ${ex}`, "error");
+    } finally {
+      _queueSyncBusy = false;
+      _queueSyncPromise = null;
+    }
+  })();
+  return _queueSyncPromise;
+}
+
+function skeletonRows(count, kind="card") {
+  return Array.from({length:count}, () => `<div class="snapshot-skeleton ${kind}"><i></i><span></span><b></b></div>`).join("");
+}
+function renderQueueSkeleton() {
+  const el = $("#candidates");
+  if (el) el.innerHTML = skeletonRows(6);
 }
 
 function refreshQueueFilterOptions() {
@@ -846,6 +879,7 @@ function hideDraftBanner() {
 }
 
 async function startNew(client = "", cardId = "") {
+  const requestId = ++state.openRequest;
   hideDraftBanner();
   switchTo("gen");
   // Reset form + hide post-actions panel
@@ -862,16 +896,29 @@ async function startNew(client = "", cardId = "") {
   state.lastClient = null;
   state.cardId = cardId || "";   // for the DocuSign-email city lookup
   refreshSnapshotCommentsButton();
+  $("#f-insured").value = client || "";
 
   if (client) {
     // When we have a card_id (search result picked) use the full
     // Trello parser — pulls carrier/claim/DOL/first-visit/cause
     // from card desc + paged comments. Falls back to plain run-doc
     // prefill when the user typed a name without picking a card.
-    setStatus(cardId ? "Parsing Trello card + comments…" : "Loading prefill…");
-    const fill = cardId
-      ? await pywebview.api.prefill_from_trello_card(cardId, client)
-      : await pywebview.api.prefill_for(client);
+    setSnapshotFormLoading(true, cardId
+      ? "Loading card details, comments, and Job Log…"
+      : "Loading job details and Job Log…");
+    let fill;
+    try {
+      fill = cardId
+        ? await pywebview.api.prefill_from_trello_card(cardId, client)
+        : await pywebview.api.prefill_for(client);
+    } catch (ex) {
+      if (requestId !== state.openRequest) return;
+      setStatus(`Could not prefill this job: ${ex}. You can still complete it manually.`, "warn");
+      fill = {insured:client, subs:[], logs:[]};
+    }
+    // A slower earlier click must never overwrite the job opened after it.
+    if (requestId !== state.openRequest) return;
+    fill = fill || {insured:client, subs:[], logs:[]};
     $("#f-insured").value = fill.insured || client;
     $("#f-carrier").value = fill.carrier
       || (fill.claim ? `${fill.carrier || ""} · ${fill.claim}`.replace(/^ · /, "") : "");
@@ -896,7 +943,9 @@ async function startNew(client = "", cardId = "") {
         ? `📋 Parsed from Trello: ${bits.join(" · ")}${pinNote}`
         : `Pre-filled ${fill.logs?.length || 0} log rows from recent run-docs`,
       "ok");
+    setSnapshotFormLoading(false);
   } else {
+    setSnapshotFormLoading(false);
     $("#f-insured").focus();
   }
 
@@ -908,10 +957,27 @@ async function startNew(client = "", cardId = "") {
   // the snapshot is missing, so waiting for a button press meant the
   // form was filled in before anyone looked. Fire-and-forget: it paints
   // into its own subview and must not hold up the form.
-  if (client) { runSnapshotAudit().catch(() => {}); }
+  if (client && requestId === state.openRequest) {
+    // Let the completed form paint before starting folder/audit work.
+    setTimeout(() => {
+      if (requestId === state.openRequest && state.view === "gen")
+        runSnapshotAudit().catch(() => {});
+    }, 250);
+  }
   // Capture the (pre-filled) starting state so a switch-away before the
   // first keystroke still restores it. Blank forms save nothing.
   saveSnapshotDraft();
+}
+
+function setSnapshotFormLoading(active, label="") {
+  const form = $("#snapshot-form-card");
+  const banner = $("#snapshot-form-loading");
+  if (!form || !banner) return;
+  form.classList.toggle("is-loading", !!active);
+  form.setAttribute("aria-busy", active ? "true" : "false");
+  banner.classList.toggle("hidden", !active);
+  const text = banner.querySelector("span");
+  if (text && label) text.textContent = label;
 }
 
 // ── Tech roster ──────────────────────────────────────────────────
@@ -1178,14 +1244,26 @@ async function syncSnapshotJobLog() {
   try {
     const res = await pywebview.api.sync_snapshot_job_log(client, rows);
     applySyncedLogRows(res?.rows || []);
-    if (res?.ok) setStatus("Job Log saved", "ok");
-    else if (res?.error) setStatus(`Snapshot saved locally · Job Log: ${res.error}`, "warn");
+    const saveLabel = res?.ok
+      ? (res.saved ? "Saved" : (res.skipped ? "Finish date + activity to save" : ""))
+      : "Sync pending";
+    setJobLogSyncState(saveLabel, res?.ok ? "ok" : "warn");
+    if (!res?.ok && res?.error) setStatus(`Snapshot saved locally · Job Log: ${res.error}`, "warn");
   } catch (ex) {
+    setJobLogSyncState("Sync pending", "warn");
     setStatus(`Snapshot saved locally · Job Log sync pending: ${ex}`, "warn");
   }
 }
 
+function setJobLogSyncState(text, kind="") {
+  const el = $("#job-log-sync-state");
+  if (!el) return;
+  el.textContent = text || "";
+  el.className = `inline-save-state ${kind}`;
+}
+
 async function generate() {
+  if ($("#gen-go").disabled) return;
   let insured = $("#f-insured").value.trim();
   if (!insured) {
     $("#gen-status").textContent = "Insured / job name is required";
@@ -1224,7 +1302,8 @@ async function generate() {
     logs: collectRows("logs"),
   };
   const btn = $("#gen-go");
-  btn.disabled = true; btn.textContent = "Generating…";
+  btn.disabled = true; btn.textContent = "Creating PDF…";
+  $("#snapshot-form-card")?.setAttribute("aria-busy", "true");
   $("#gen-status").textContent = "Writing PDF…";
   $("#gen-status").className = "";
   try {
@@ -1260,6 +1339,7 @@ async function generate() {
     $("#gen-status").className = "error";
   } finally {
     btn.disabled = false; btn.textContent = "📸 Generate PDF";
+    $("#snapshot-form-card")?.setAttribute("aria-busy", "false");
   }
 }
 

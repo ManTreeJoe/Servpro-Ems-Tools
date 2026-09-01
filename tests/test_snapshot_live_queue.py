@@ -11,7 +11,8 @@ def test_snapshot_queue_auto_refreshes_from_trello():
 
     assert "setInterval(() => syncSnapshotQueue(), 60_000)" in js
     assert 'window.addEventListener("focus", () => syncSnapshotQueue())' in js
-    assert "state.candidates = await pywebview.api.candidate_jobs()" in js
+    assert "state.candidates = await pywebview.api.candidate_jobs(!!force)" in js
+    assert "_queueSyncPromise" in js
 
 
 def test_snapshot_queue_explains_shared_trello_workflow():

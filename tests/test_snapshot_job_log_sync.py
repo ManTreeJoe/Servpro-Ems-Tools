@@ -52,3 +52,16 @@ def test_snapshot_new_row_creates_job_log_entry(monkeypatch):
     assert result["ok"] is True
     assert fake.saved[0]["source"] == "snapshot"
     assert fake.saved[0]["status"] == "completed"
+
+
+def test_live_edit_waits_for_complete_row_without_error(monkeypatch):
+    fake = FakeDb()
+    fake.list_job_log_entries = lambda _canon: []
+    import ems_db
+    monkeypatch.setattr(ems_db, "find_job_by_name", fake.find_job_by_name)
+    monkeypatch.setattr(ems_db, "list_job_log_entries", fake.list_job_log_entries)
+    result = sw.sync_snapshot_logs_to_job_log(
+        "Hoffman, Carol", [{"activity": "Demo"}], strict=False)
+    assert result["ok"] is True
+    assert result["saved"] == 0
+    assert result["skipped"] == 1
