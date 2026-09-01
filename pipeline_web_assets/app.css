@@ -542,7 +542,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .audit-close { flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); font-size: 25px; line-height: 1; cursor: pointer; }
 .audit-close:hover { background: var(--surface-2); color: var(--text); }
 .audit-card .modal-body { flex: 1; min-height: 0; padding: 0; overflow: hidden; overscroll-behavior: contain; }
-.card-quick-actions { width:100%; display:flex; align-items:center; gap:8px; overflow-x:auto; padding:5px 0 4px; scrollbar-width:thin; }
+.card-quick-actions { width:100%; display:flex; flex-wrap:wrap; align-items:center; gap:8px; overflow:visible; padding:5px 0 4px; }
 .quick-primary-actions,.quick-destination-actions,.quick-utility-actions { flex:0 0 auto; display:flex; align-items:center; gap:4px; }
 .quick-destination-actions { padding-left:8px; border-left:1px solid var(--border); }
 .quick-utility-actions { margin-left:auto; padding-left:8px; border-left:1px solid var(--border); }
@@ -564,6 +564,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .copy-menu-panel button span { font-size:11px; font-weight:700; }.copy-menu-panel button small { overflow:hidden; color:var(--text-muted); text-overflow:ellipsis; white-space:nowrap; }.copy-menu-panel .copy-summary-row{margin-top:4px;border-top:1px solid var(--border);border-radius:0 0 7px 7px}
 .checklist-division-tabs { display:flex; align-items:center; gap:3px; padding:3px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); }
 .checklist-division-tabs button { padding:5px 9px; border:0; border-radius:6px; background:transparent; color:var(--text-muted); font:inherit; font-size:10px; font-weight:700; cursor:pointer; }.checklist-division-tabs button.active{background:var(--green-soft);color:var(--green-light)}
+@media (max-width:900px) { .quick-utility-actions{margin-left:0}.quick-destination-actions,.quick-utility-actions{padding-left:0;border-left:0}.card-quick-actions{align-items:flex-start} }
 .folder-link-modal { width:min(780px,92vw); height:min(720px,90vh); }
 .folder-link-tools { position:sticky; top:0; z-index:2; display:grid; grid-template-columns:1fr auto; gap:8px; padding-bottom:10px; background:var(--surface); }
 .folder-link-tools input { width:100%; min-height:38px; }

@@ -58,12 +58,13 @@ Rules:
 - Keep the most common action first and visually primary.
 - Put less-used actions behind one visible `More` or `All actions` control.
 - Avoid rows of equally emphasized buttons.
-- Toolbars may scroll horizontally at narrow widths, but buttons must not shrink into unreadable fragments.
+- Action toolbars wrap at narrow widths. Do not require horizontal scrolling to reach routine actions.
 
 ## Copy actions
 
 - Copy values must come from the saved Job Info record, not a card title or loosely parsed label.
 - A combined Copy menu should use the standard action-button appearance.
+- Copy is a frequent action. Keep it beside the primary job action and never place it beyond a horizontally scrolling action rail.
 - The menu must show the field label and a preview of the exact value that will be copied.
 - Include a clear `Job summary` option for copying all available fields.
 - Close the menu and show a short confirmation after copying.
