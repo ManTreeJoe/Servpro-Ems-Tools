@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Operations Hub</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="nav-rail">
+      <div class="brand" aria-label="Linguar Hub"><span class="brand-mark">LH</span><span class="brand-copy"><strong>Linguar</strong><small>Operations</small></span></div>
+      <nav aria-label="Main navigation">
+        <button class="nav-item active" data-view="home"><i>⌂</i><span>Operations</span></button>
+        <button class="nav-item" data-view="jobs"><i>▦</i><span>Jobs</span><b data-job-count>—</b></button>
+        <button class="nav-item" data-view="dispatch"><i>⌁</i><span>Dispatch</span></button>
+        <button class="nav-item" data-view="clients"><i>◎</i><span>Clients</span></button>
+        <button class="nav-item" data-view="reports"><i>⌗</i><span>Reports</span></button>
+      </nav>
+      <div class="nav-foot"><span class="connection-dot"></span><span data-connection>Starting…</span></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="command-bar">
+        <div class="page-identity"><small data-eyebrow>Front office · Live operations</small><h1 data-title>Operations</h1></div>
+        <label class="global-search"><span>⌕</span><input type="search" placeholder="Find a client, claim, or job" aria-label="Search jobs and clients"><kbd>Ctrl K</kbd></label>
+        <button class="icon-button" data-refresh title="Refresh live information">↻</button>
+        <button class="new-loss">＋ New loss</button>
+      </header>
+
+      <section class="signal-rail" aria-label="Division activity">
+        <div class="signal-cell ems"><span>Water</span><strong data-signal="EMS">—</strong><small>EMS jobs</small></div>
+        <div class="signal-cell contents"><span>Contents</span><strong data-signal="CONTENTS">—</strong><small>active jobs</small></div>
+        <div class="signal-cell recon"><span>Build</span><strong data-signal="RECON">—</strong><small>Recon jobs</small></div>
+        <div class="signal-time"><time data-clock>—</time><small data-updated>Connecting to operations data…</small></div>
+      </section>
+
+      <div class="view-host">
+        <section class="view active" data-panel="home">
+          <div class="hero-grid">
+            <article class="attention-board">
+              <div class="section-heading"><div><small>Control room</small><h2>What needs a decision</h2></div><button class="text-button" data-go-jobs>Open jobs →</button></div>
+              <div class="attention-stats">
+                <button data-filter-job="overdue"><strong data-metric="overdue">—</strong><span>Overdue</span><small>Past committed date</small></button>
+                <button data-filter-job="stalled"><strong data-metric="stalled">—</strong><span>Stalled</span><small>No recent movement</small></button>
+                <button data-filter-job="today"><strong data-metric="due_today">—</strong><span>Due today</span><small>Needs completion</small></button>
+              </div>
+              <div class="priority-feed" data-priority-feed><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>
+            </article>
+            <aside class="day-board">
+              <div class="section-heading"><div><small>Today</small><h2>Dispatch pulse</h2></div><span class="date-chip" data-today>—</span></div>
+              <div class="day-meter"><i data-day-meter></i></div>
+              <dl><div><dt>Scheduled</dt><dd data-today-scheduled>—</dd></div><div><dt>Unscheduled</dt><dd data-unscheduled>—</dd></div><div><dt>Active jobs</dt><dd data-metric="active_jobs">—</dd></div></dl>
+              <button class="primary-action" data-go-dispatch>Open dispatch board</button>
+            </aside>
+          </div>
+          <div class="section-heading section-spaced"><div><small>Live workflow</small><h2>Jobs by operating lane</h2></div><span class="muted" data-source>Loading shared data…</span></div>
+          <div class="lane-summary" data-lane-summary></div>
+        </section>
+
+        <section class="view" data-panel="jobs">
+          <div class="view-toolbar"><div class="segmented" data-board-tabs></div><div class="toolbar-spacer"></div><select data-job-filter aria-label="Job filter"><option value="all">All active jobs</option><option value="attention">Needs attention</option><option value="overdue">Overdue</option></select><button class="quiet-button">Customize</button></div>
+          <div class="jobs-board" data-jobs-board></div>
+        </section>
+
+        <section class="view" data-panel="dispatch">
+          <div class="dispatch-head"><div><small>Seven-day field plan</small><h2>Dispatch</h2><p>Schedule by committed date now; technician capacity and routing plug into this view next.</p></div><div class="dispatch-controls"><button class="quiet-button">Today</button><button class="quiet-button">Week</button></div></div>
+          <div class="dispatch-grid" data-dispatch-grid></div>
+          <div class="unscheduled-tray"><div class="section-heading"><div><small>Waiting for a date</small><h2>Unscheduled jobs</h2></div><strong data-unscheduled-count>—</strong></div><div class="card-strip" data-unscheduled-list></div></div>
+        </section>
+
+        <section class="view" data-panel="clients">
+          <div class="client-layout">
+            <aside class="client-directory"><div class="directory-search"><span>⌕</span><input data-client-search placeholder="Search clients"></div><div class="client-list" data-client-list></div></aside>
+            <article class="client-record" data-client-record><div class="empty-record"><span>◎</span><h2>Choose a client</h2><p>Claims, divisions, contacts, job history, and logs stay together here.</p></div></article>
+          </div>
+        </section>
+
+        <section class="view" data-panel="reports">
+          <div class="reports-head"><div><small>Cycle time · Responsibility · Throughput</small><h2>Operational scorecards</h2></div><select><option>Last 30 days</option><option>Current quarter</option><option>Year to date</option></select></div>
+          <div class="report-grid">
+            <article><div class="section-heading"><div><small>Current workload</small><h2>By division</h2></div></div><div class="bar-chart" data-division-chart></div></article>
+            <article><div class="section-heading"><div><small>Time in current lane</small><h2>Aging exposure</h2></div></div><div class="bar-chart" data-age-chart></div></article>
+            <article class="wide"><div class="section-heading"><div><small>Where work is accumulating</small><h2>Lane pressure</h2></div></div><div class="rank-table" data-lane-report></div></article>
+          </div>
+        </section>
+      </div>
+      <footer class="status-bar"><span data-status>Loading the operating picture…</span><span data-load-time></span></footer>
+    </main>
+  </div>
+  <div class="record-drawer" data-job-drawer hidden></div>
+  <div class="toast" data-toast hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
