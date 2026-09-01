@@ -13,7 +13,7 @@ def test_pipeline_is_the_primary_jobs_workspace_and_reporting_is_grouped():
 
     assert list(work)[0] == "pipeline"
     assert work["pipeline"] == "Jobs"
-    assert work["audit"] == "Job Search"
+    assert work["audit"] == "Clients"
     assert work["snapshot"] == "Snapshot"
     assert reports["apa"] == "APA"
     assert "hygiene" in reports

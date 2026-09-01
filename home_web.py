@@ -145,7 +145,7 @@ def _ensure_root_index():
 NAV_GROUPS = [
     ("Work", [
         ("pipeline",    "▦", "Jobs"),
-        ("audit",       "🔎", "Job Search"),
+        ("audit",       "👥", "Clients"),
         ("snapshot",    "📸", "Snapshot"),
         ("run_doc_editor", "📋", "Run Doc Editor"),
         ("photo_folders","📷", "Photo Folders"),
