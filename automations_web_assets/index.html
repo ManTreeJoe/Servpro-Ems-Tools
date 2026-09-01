@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Workflow Automations</title>
+  <link rel="stylesheet" href="../web_shared/theme.css?v=20260831b">
+  <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a">
+  <link rel="stylesheet" href="app.css?v=20260901a">
+  <script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+</head><body class="responsive-ui">
+  <header class="topbar">
+    <div><div class="eyebrow">Linguar-owned workflows</div><h1>Automations</h1>
+      <p>Simple rules that keep working when Trello is eventually disconnected.</p></div>
+    <div class="review-pill">Review mode</div>
+  </header>
+  <main>
+    <section class="callout"><div class="callout-icon">◎</div><div><strong>Nothing runs silently.</strong>
+      <span>Starter rules are drafts. Review and test them before an admin activates anything.</span></div></section>
+    <nav class="tabs" id="tabs" aria-label="Automation type"></nav>
+    <section class="rule-list" id="rules" aria-live="polite"><div class="empty">Loading workflow inventory…</div></section>
+    <section class="migration">
+      <div><div class="eyebrow">Trello retirement path</div><h2>One workflow, two destinations</h2></div>
+      <ol><li><strong>Review</strong><span>Compare each draft with the current Trello behavior.</span></li>
+        <li><strong>Shadow</strong><span>Linguar records what it would do; Trello still performs the work.</span></li>
+        <li><strong>Own</strong><span>Linguar performs the action and Trello becomes an optional mirror.</span></li></ol>
+    </section>
+  </main>
+  <script src="app.js?v=20260901a"></script>
+</body></html>

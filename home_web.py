@@ -167,6 +167,7 @@ NAV_GROUPS = [
         ("resources",   "📚", "Forms & Resources"),
     ]),
     ("System", [
+        ("automations", "⚡", "Automations"),
         ("health",      "●", "System Health"),
         ("settings",    "⚙", "Settings"),
     ]),
@@ -224,6 +225,7 @@ SUB_MODULES = {
     "photo_folders": "photo_folders_web",
     "notifications": "notifications_web",
     "resources":   "resources_web",
+    "automations": "automations_web",
 }
 
 
