@@ -62,7 +62,9 @@ def test_pipeline_keeps_primary_copy_and_xa_actions_visible():
     modal_start = js.index('w.className = "modal-scrim audit-overlay";',
                            js.index("function openAuditModal"))
     header_start = js.index('<header class="modal-head">', modal_start)
-    header = js[header_start:js.index('</header>', header_start)]
+    header_end = js.index('</header>\n      <div class="modal-body">',
+                          header_start)
+    header = js[header_start:header_end]
     for marker in ("card-quick-actions", "visibleCopyOptions.map",
                    "data-copy-summary", "data-stage-xa",
                    "data-add-job-log", "data-open-docs-folder",

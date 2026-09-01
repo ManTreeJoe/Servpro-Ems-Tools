@@ -1165,6 +1165,9 @@ function openAuditModal(data, trelloUrl = "") {
   const divisionDataTabs = pinnedDivisionCards.length > 1 ? `<div class="division-data-tabs" role="tablist" aria-label="Trello card data">
     ${pinnedDivisionCards.map((card) => `<button type="button" role="tab" data-division-data="${escapeAttr(card.division)}" aria-selected="${card.division === selectedDivision ? "true" : "false"}" class="${card.division === selectedDivision ? "active" : ""}">${card.division === "EMS" ? "💧 EMS" : card.division === "CONTENTS" ? "▣ Contents" : "🔨 Recon"}</button>`).join("")}
   </div>` : "";
+  const checklistDivisionTabs = pinnedDivisionCards.length > 1 ? `<div class="checklist-division-tabs" role="tablist" aria-label="Checklist division">
+    ${pinnedDivisionCards.map((card) => `<button type="button" role="tab" data-checklist-division="${escapeAttr(card.division)}" aria-selected="${card.division === selectedDivision ? "true" : "false"}" class="${card.division === selectedDivision ? "active" : ""}">${card.division === "EMS" ? "💧 EMS" : card.division === "CONTENTS" ? "▣ Contents" : "🔨 Recon"}</button>`).join("")}
+  </div>` : "";
   const workTypes = [["EMS", "💧", "Mitigation"], ["Contents", "▣", "Contents"], ["Recon", "🔨", "Reconstruction"]]
     .map(([name, icon, label]) => {
       const env = workTypeState[name.toLowerCase()] || {};
@@ -1225,7 +1228,7 @@ function openAuditModal(data, trelloUrl = "") {
         <span class="progress-label">${progress.counts?.overdue || 0} overdue · ${progress.counts?.blocked || 0} blocked · ${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div></div><div class="work-types">${workTypes}</div></section>
-      <section class="aud-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} card · stored in Linguar Hub · Trello sync is temporary</small></div></div>${checklistGroups}</section>
+      <section class="aud-section checklist-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} card · stored in Linguar Hub · Trello sync is temporary</small></div>${checklistDivisionTabs}</div>${checklistGroups}</section>
       ${facts || `<section class="aud-section"><h3>Job information</h3><div class="aud-empty">No saved job information yet.</div></section>`}
       ${oldJobsSection}
       <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
@@ -1261,22 +1264,22 @@ function openAuditModal(data, trelloUrl = "") {
         <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div>${divisionDataTabs}</div>
         <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Loading live details…" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh live</button>`}</div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button></div>
-        <div class="card-quick-actions" aria-label="Job audit actions">
-          <div class="quick-action-group"><span>Open</span><div>
-            <button class="action-btn primary" ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 OD folder" : "🔗 Link OD folder"}</button>
-            <button class="action-btn" data-open-trello ${trelloUrl ? "" : "disabled"}>Trello</button>
-            <button class="action-btn" data-open-xa ${data.card_id ? "" : "disabled"}>XA</button>
-            <button class="action-btn" data-open-companycam ${data.card_id ? "" : "disabled"}>CompanyCam</button>
-          </div></div>
-          <div class="quick-action-group"><span>Work</span><div>
-            <button class="action-btn primary" data-add-job-log>＋ Add update</button>
-            <button class="action-btn" data-quick-photo-report>Build photo report</button>
-            <button class="action-btn" data-stage-xa ${res.path ? "" : "disabled"}>📂 Stage for XA</button>
-          </div></div>
-          <div class="quick-action-group"><span>Job details</span><div>
-            <details class="copy-quick-menu"><summary class="action-btn">📋 Copy…</summary><div>${visibleCopyOptions.map(([label, value]) => `<button data-copy-value="${escapeAttr(value)}">${escapeHtml(label.replace("Customer ", ""))}</button>`).join("")}<button data-copy-summary>Job summary</button></div></details>
-            <button class="action-btn" data-open-audit>⚙ Job info &amp; all actions</button>
-          </div></div>
+        <div class="card-quick-actions" aria-label="Job actions">
+          <div class="quick-primary-actions">
+            <button class="action-btn primary" data-add-job-log><span class="quick-action-icon">＋</span>Add update</button>
+            <button class="action-btn" data-quick-photo-report>Photo report</button>
+          </div>
+          <div class="quick-destination-actions" aria-label="Open job in">
+            <button class="action-btn" ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 Folder" : "🔗 Link folder"}</button>
+            <button class="action-btn destination" data-open-trello ${trelloUrl ? "" : "disabled"}><img src="../web_shared/trello.png" alt="">Trello</button>
+            <button class="action-btn destination" data-open-xa ${data.card_id ? "" : "disabled"}><img src="../web_shared/xactanalysis.png" alt="">XA</button>
+            <button class="action-btn destination" data-open-companycam ${data.card_id ? "" : "disabled"}><img src="../web_shared/companycam.png" alt="">CompanyCam</button>
+          </div>
+          <div class="quick-utility-actions">
+            <details class="copy-quick-menu"><summary class="action-btn copy-trigger"><span>▣</span>Copy info<small>⌄</small></summary><div class="copy-menu-panel"><header><strong>Copy job details</strong><small>Uses the saved Job Info record</small></header>${visibleCopyOptions.map(([label, value]) => `<button data-copy-value="${escapeAttr(value)}"><span>${escapeHtml(label.replace("Customer ", ""))}</span><small>${escapeHtml(value)}</small></button>`).join("")}<button class="copy-summary-row" data-copy-summary><span>Job summary</span><small>Copy all available details</small></button></div></details>
+            <button class="action-btn quiet" data-stage-xa ${res.path ? "" : "disabled"}>Stage for XA</button>
+            <button class="action-btn quiet" data-open-audit>All actions</button>
+          </div>
         </div>
       </header>
       <div class="modal-body">${body}</div>
@@ -1315,6 +1318,11 @@ function openAuditModal(data, trelloUrl = "") {
     if (button.dataset.divisionData === selectedDivision) return;
     if (!close()) return;
     await onAuditCard(data.client || res.client || "", "", "", button.dataset.divisionData || "EMS");
+  }));
+  w.querySelectorAll("[data-checklist-division]").forEach((button) => button.addEventListener("click", async () => {
+    if (button.dataset.checklistDivision === selectedDivision) return;
+    if (!close()) return;
+    await onAuditCard(data.client || res.client || "", "", "", button.dataset.checklistDivision || "EMS");
   }));
   w.querySelectorAll("[data-open-trello]").forEach((button) => button.addEventListener("click", () => {
     if (trelloUrl) pywebview.api.open_url(trelloUrl);
