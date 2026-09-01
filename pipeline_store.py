@@ -405,7 +405,7 @@ def mark_card_sync(external_card_id: str, *, ok: bool, error: str = "") -> None:
 
 def add_activity(external_card_id: str, action_type: str, body: str,
                  actor_name: str = "", *, source: str = "linguar",
-                 external_id: str = "") -> dict:
+                 external_id: str = "", actor_id: str = "") -> dict:
     """Append one permanent card activity; returns empty when v11 is absent."""
     try:
         cards = _rows("crm_pipeline_cards",
@@ -419,7 +419,8 @@ def add_activity(external_card_id: str, action_type: str, body: str,
                "action_type": action_type, "body": body,
                "actor_name": actor_name, "happened_at": now,
                "source": source, "external_id": external_id or None,
-               "metadata_json": {}, "created_at": now}
+               "metadata_json": ({"actor_id": actor_id} if actor_id else {}),
+               "created_at": now}
         _upsert("crm_pipeline_activity", row)
         return row
     except Exception:
@@ -476,18 +477,31 @@ def list_activity(external_card_id: str, *, limit: int = 100) -> list:
         return []
 
 
-def update_activity(activity_key: str, body: str) -> dict:
+def _activity_actor_id(row: dict) -> str:
+    metadata = row.get("metadata_json") or {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except (TypeError, ValueError):
+            metadata = {}
+    return str(metadata.get("actor_id") or "").strip()
+
+
+def update_activity(activity_key: str, body: str, *, actor_id: str = "") -> dict:
     """Edit a Linguar-owned activity without rewriting imported history."""
     key, clean = str(activity_key or "").strip(), str(body or "").strip()
     if not key or not clean:
         return {"ok": False, "error": "comment and activity id are required"}
     try:
         rows = _rows("crm_pipeline_activity", activity_key=f"eq.{key}",
-                     select="activity_key,source,external_id", limit="1")
+                     select="activity_key,source,external_id,metadata_json", limit="1")
         if not rows:
             return {"ok": False, "error": "comment was not found"}
         if rows[0].get("source") != "linguar":
             return {"ok": False, "error": "imported comments must be edited at their source"}
+        owner_id = _activity_actor_id(rows[0])
+        if actor_id and owner_id != actor_id:
+            return {"ok": False, "error": "only the comment author can edit this comment"}
         _sb.rest("PATCH", "crm_pipeline_activity",
                  params={"activity_key": f"eq.{key}"}, body={"body": clean})
         return {"ok": True, "activity_key": key, "body": clean,
@@ -496,18 +510,21 @@ def update_activity(activity_key: str, body: str) -> dict:
         return {"ok": False, "error": str(ex)}
 
 
-def delete_activity(activity_key: str) -> dict:
+def delete_activity(activity_key: str, *, actor_id: str = "") -> dict:
     """Delete one Linguar-owned activity; imported Trello rows are protected."""
     key = str(activity_key or "").strip()
     if not key:
         return {"ok": False, "error": "comment was not identified"}
     try:
         rows = _rows("crm_pipeline_activity", activity_key=f"eq.{key}",
-                     select="activity_key,source,external_id", limit="1")
+                     select="activity_key,source,external_id,metadata_json", limit="1")
         if not rows:
             return {"ok": False, "error": "comment was not found"}
         if rows[0].get("source") != "linguar":
             return {"ok": False, "error": "imported comments must be deleted at their source"}
+        owner_id = _activity_actor_id(rows[0])
+        if actor_id and owner_id != actor_id:
+            return {"ok": False, "error": "only the comment author can delete this comment"}
         _sb.rest("DELETE", "crm_pipeline_activity",
                  params={"activity_key": f"eq.{key}"})
         return {"ok": True, "deleted": True,

@@ -640,6 +640,12 @@ class Api:
             division_trello_cards = audit_api.crm_division_trello_cards(client)
         division_cards = division_trello_cards.get("cards", [])
         info_sections, checklists, comments, attachments, members = [], [], [], [], []
+        current_user_id = ""
+        try:
+            import supabase_client
+            current_user_id = str((supabase_client.current_user() or {}).get("id") or "")
+        except Exception:
+            pass
         try:
             import ems_db
             import job_settings
@@ -680,8 +686,8 @@ class Api:
         # Trello, shared activity, shared checklists, and the document-folder
         # walk are independent. Running them together removes three stacked
         # network/disk waits from every uncached card open.
-        trello_card, local_activity = {}, []
-        with ThreadPoolExecutor(max_workers=4,
+        trello_card, local_activity, trello_me = {}, [], {}
+        with ThreadPoolExecutor(max_workers=5,
                                 thread_name_prefix="workspace") as pool:
             checklist_future = pool.submit(pipeline_store.list_checklists, cid)
             activity_future = pool.submit(pipeline_store.list_activity, cid)
@@ -691,8 +697,10 @@ class Api:
             if cid:
                 import trello_client as tc
                 trello_future = pool.submit(tc.get_card, cid)
+                trello_me_future = pool.submit(tc.get_member_me)
             else:
                 trello_future = pool.submit(lambda: {})
+                trello_me_future = pool.submit(lambda: {})
             checklists = checklist_future.result()
             local_activity = activity_future.result()
             documents = document_future.result()
@@ -700,6 +708,10 @@ class Api:
                 trello_card = trello_future.result() or {}
             except Exception as ex:
                 summary["trello_error"] = str(ex)
+            try:
+                trello_me = trello_me_future.result() or {}
+            except Exception:
+                trello_me = {}
         if cid:
             try:
                 imported_checklists = [{
@@ -731,10 +743,13 @@ class Api:
                     text = str((action.get("data") or {}).get("text") or "").strip()
                     if not text:
                         continue
-                    actor = (action.get("memberCreator") or {}).get("fullName") or "Trello"
+                    creator = action.get("memberCreator") or {}
+                    actor = creator.get("fullName") or "Trello"
                     comment = {"id": action.get("id") or "", "text": text,
                                "actor": actor, "at": action.get("date") or "",
-                               "source": "trello"}
+                               "source": "trello",
+                               "can_manage": bool(trello_me.get("id") and
+                                                  creator.get("id") == trello_me.get("id"))}
                     comments.append(comment)
                     activity_import.append({
                         "action_type": "comment", "body": text,
@@ -753,11 +768,20 @@ class Api:
             if ext and ext in seen:
                 continue
             if activity.get("action_type") == "comment":
+                metadata = activity.get("metadata_json") or {}
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except (TypeError, ValueError):
+                        metadata = {}
+                owner_id = str(metadata.get("actor_id") or "")
                 comments.append({"id": ext or activity.get("activity_key") or "",
                                  "text": activity.get("body") or "",
                                  "actor": activity.get("actor_name") or "Linguar Hub",
                                  "at": activity.get("happened_at") or "",
-                                 "source": activity.get("source") or "linguar"})
+                                 "source": activity.get("source") or "linguar",
+                                 "can_manage": bool(current_user_id and
+                                                    owner_id == current_user_id)})
         comments.sort(key=lambda c: c.get("at") or "", reverse=True)
         result = {"ok": True, "client": client, "card_id": cid,
                 "selected_division": selected_division,
@@ -1175,9 +1199,11 @@ class Api:
         if not text:
             return {"ok": False, "error": "write a comment first"}
         actor = "Linguar Hub"
+        actor_id = ""
         try:
             import supabase_client
             user = supabase_client.current_user() or {}
+            actor_id = str(user.get("id") or "")
             if user.get("id") and not user.get("display_name"):
                 return {"ok": False, "error":
                         "Add your name in My Settings before commenting."}
@@ -1197,7 +1223,8 @@ class Api:
         external_id = str(posted_action.get("id") or "") if isinstance(
             posted_action, dict) else ""
         local = pipeline_store.add_activity(
-            card_id, "comment", text, actor, external_id=external_id)
+            card_id, "comment", text, actor, external_id=external_id,
+            actor_id=actor_id)
         posted = bool(posted_action)
         result = {"ok": bool(local) or posted, "posted_trello": posted,
                 "warning": error if local and not posted else "",
@@ -1205,7 +1232,7 @@ class Api:
                             "external_id": external_id,
                             "text": text, "actor": actor,
                             "at": local.get("happened_at") or _dt.datetime.now().isoformat(),
-                            "source": "linguar"}}
+                            "source": "linguar", "can_manage": bool(actor_id)}}
         if result.get("ok"):
             self._invalidate_workspace(client, card_id)
         return result
@@ -1216,12 +1243,18 @@ class Api:
         clean = (text or "").strip()
         if not clean:
             return {"ok": False, "error": "a comment cannot be empty"}
+        actor_id = ""
+        try:
+            import supabase_client
+            actor_id = str((supabase_client.current_user() or {}).get("id") or "")
+        except Exception:
+            pass
         if source == "trello":
             result = self._audit_api().update_card_comment(client, comment_id, clean)
             if result.get("ok"):
                 self._invalidate_workspace(client=client)
             return result
-        result = pipeline_store.update_activity(comment_id, clean)
+        result = pipeline_store.update_activity(comment_id, clean, actor_id=actor_id)
         if not result.get("ok"):
             return result
         trello_id = external_id or result.get("external_id") or ""
@@ -1236,12 +1269,18 @@ class Api:
 
     def delete_job_comment(self, client: str, comment_id: str,
                            source: str, external_id: str = "") -> dict:
+        actor_id = ""
+        try:
+            import supabase_client
+            actor_id = str((supabase_client.current_user() or {}).get("id") or "")
+        except Exception:
+            pass
         if source == "trello":
             result = self._audit_api().delete_card_comment(client, comment_id)
             if result.get("ok"):
                 self._invalidate_workspace(client=client)
             return result
-        result = pipeline_store.delete_activity(comment_id)
+        result = pipeline_store.delete_activity(comment_id, actor_id=actor_id)
         if not result.get("ok"):
             return result
         trello_id = external_id or result.get("external_id") or ""

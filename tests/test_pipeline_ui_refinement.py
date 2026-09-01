@@ -59,10 +59,15 @@ def test_pipeline_authors_visible_focus_and_reduced_motion():
 
 def test_pipeline_keeps_primary_copy_and_xa_actions_visible():
     js = _asset("app.js")
-    footer = js[js.index('<footer class="modal-foot">'):]
-    assert "visibleCopyOptions.map" in footer
-    assert "data-copy-summary" in footer
-    assert "data-stage-xa" in footer
+    modal_start = js.index('w.className = "modal-scrim audit-overlay";',
+                           js.index("function openAuditModal"))
+    header_start = js.index('<header class="modal-head">', modal_start)
+    header = js[header_start:js.index('</header>', header_start)]
+    for marker in ("card-quick-actions", "visibleCopyOptions.map",
+                   "data-copy-summary", "data-stage-xa",
+                   "data-add-job-log", "data-open-docs-folder",
+                   "data-open-trello"):
+        assert marker in header
 
 
 def test_pipeline_status_and_search_are_accessible():

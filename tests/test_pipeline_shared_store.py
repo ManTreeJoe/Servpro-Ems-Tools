@@ -120,6 +120,27 @@ def test_linguar_comments_can_be_edited_and_deleted_but_imports_are_protected(mo
     assert [row["body"] for row in pipeline_store.list_activity("c1")] == ["From Trello"]
 
 
+def test_linguar_comment_author_is_enforced_for_edits_and_deletes(monkeypatch):
+    fake = FakeSupabase()
+    monkeypatch.setattr(pipeline_store, "_sb", fake)
+    pipeline_store.mirror_boards(_payload())
+    local = pipeline_store.add_activity(
+        "c1", "comment", "Nathan's note", "Nathan", actor_id="user-nathan")
+
+    denied_edit = pipeline_store.update_activity(
+        local["activity_key"], "Changed", actor_id="user-sam")
+    denied_delete = pipeline_store.delete_activity(
+        local["activity_key"], actor_id="user-sam")
+    assert denied_edit == {
+        "ok": False, "error": "only the comment author can edit this comment"}
+    assert denied_delete == {
+        "ok": False, "error": "only the comment author can delete this comment"}
+    assert pipeline_store.update_activity(
+        local["activity_key"], "Nathan changed it", actor_id="user-nathan")["ok"]
+    assert pipeline_store.delete_activity(
+        local["activity_key"], actor_id="user-nathan")["deleted"] is True
+
+
 def test_trello_comment_import_batches_rows_and_preserves_dates(monkeypatch):
     fake = FakeSupabase()
     monkeypatch.setattr(pipeline_store, "_sb", fake)
