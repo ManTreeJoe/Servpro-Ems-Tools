@@ -67,6 +67,9 @@ async function bootPipeline() {
 
   $("#view-board-btn").addEventListener("click", () => setView("board"));
   $("#view-stages-btn").addEventListener("click", () => setView("stages"));
+  $("#new-loss-btn").addEventListener("click", () => {
+    window.parent.postMessage({ type: "linguar-open-new-loss" }, "*");
+  });
   $("#refresh-btn").addEventListener("click", () => loadBoard(true));
   $("#board-zoom-out").addEventListener("click", () => changeBoardZoom(-0.1));
   $("#board-zoom-in").addEventListener("click", () => changeBoardZoom(0.1));

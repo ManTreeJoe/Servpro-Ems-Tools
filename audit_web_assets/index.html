@@ -54,7 +54,7 @@
     <button id="clear-oneoff-btn" class="btn hidden"
             title="Clear the jobs you've pulled up by searching. Searched jobs stay on this tab so you can work several at once.">✕ Clear results</button>
     <button id="run-btn"      class="btn btn-primary" disabled title="Run the daily audit for today's run-doc (uses cached results where possible)">↻ Run Audit</button>
-    <button id="new-loss-btn" class="btn" title="Create a new-loss Trello card from a carrier assignment email — paste it in, review the fields, done">🆕 New Loss</button>
+    <button id="new-loss-btn" class="btn hidden" title="Create a new-loss Trello card from a carrier assignment email — paste it in, review the fields, done">🆕 New Loss</button>
     <button id="notes-btn" class="btn" title="Tracked to-do notes — tied to a job or loose">📝 Notes</button>
     <div id="more-wrap" style="position:relative;">
       <button id="more-btn" class="btn" title="More actions">⋯ More</button>
@@ -100,10 +100,12 @@
   <button class="mode-btn" id="mode-starred" title="Clients you've starred — sticky across days, regardless of today's run-doc">⭐ Starred</button>
   <span class="spacer"></span>
   <nav class="filter-bar" id="filter-bar" aria-label="Filters">
-    <button class="filter active" data-filter="all">All</button>
+    <button class="filter active" data-filter="all">All Clients</button>
+    <button class="filter" data-filter="ems">💧 EMS</button>
+    <button class="filter" data-filter="contents">▣ Contents</button>
+    <button class="filter" data-filter="recon">🔨 Recon</button>
     <button class="filter" data-filter="starred"
             title="Only clients you've ⭐ starred">⭐ Starred</button>
-    <button class="filter" data-filter="new_loss">🆕 New loss</button>
   </nav>
 </div>
 

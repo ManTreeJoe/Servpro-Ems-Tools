@@ -263,7 +263,9 @@ window.addEventListener("pywebviewready", async () => {
         landing = st.mode;
       }
       const savedFilter = PanelState.get("filter", "");
-      if (savedFilter) state.filter = savedFilter;
+      if (["all", "ems", "contents", "recon", "starred"].includes(savedFilter)) {
+        state.filter = savedFilter;
+      }
     } catch (_) { /* no saved tab — Search is the default */ }
     // Chrome only: the data load below paints once, under the right tab.
     if (!state.userSwitchedMode) applyModeChrome(landing);
@@ -2837,7 +2839,9 @@ function filterRows() {
   else if (f === "forms") rows = rows.filter((r) => r.form_issues.length);
   else if (f === "photos") rows = rows.filter((r) => r.photo_issues.length);
   else if (f === "not_found") rows = rows.filter((r) => !r.found);
-  else if (f === "new_loss") rows = rows.filter((r) => r.new_loss);
+  else if (["ems", "contents", "recon"].includes(f)) {
+    rows = rows.filter((r) => clientDivisionKeys(r).has(f));
+  }
   else if (f === "has_sp")   rows = rows.filter((r) => (r.sharepoint_new || 0) > 0);
   // ── Smart presets ──
   // "Needs attention" — combines the three high-signal failure modes
@@ -2868,6 +2872,28 @@ function filterRows() {
     });
   }
   return rows;
+}
+
+function clientDivisionKeys(row) {
+  const divisions = new Set();
+  const values = [
+    row?.division, row?.work_type, row?.job_type, row?.board,
+    row?.lane, row?.path, row?.client,
+  ].filter(Boolean).join(" ").toLowerCase();
+  const pinned = row?.division_trello_cards || row?.divisions || [];
+  for (const item of pinned) {
+    const value = String(item?.division || item || "").toLowerCase();
+    if (value.includes("content")) divisions.add("contents");
+    else if (value.includes("recon")) divisions.add("recon");
+    else if (value.includes("ems") || value.includes("mitigation")) divisions.add("ems");
+  }
+  if (/\bcontents?\b/.test(values)) divisions.add("contents");
+  if (/\brecon(?:struction)?\b/.test(values)) divisions.add("recon");
+  if (/\bems\b|mitigation|water|fire/.test(values)) divisions.add("ems");
+  // Older client records predate division metadata. Those records came
+  // from the EMS audit workflow unless Contents or Recon is explicit.
+  if (!divisions.size) divisions.add("ems");
+  return divisions;
 }
 
 function setFilter(value) {

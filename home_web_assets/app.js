@@ -337,6 +337,28 @@ function findItem(key) {
   return null;
 }
 
+// New Loss belongs to Jobs, while its mature intake form still lives in
+// the shared audit workspace. Open that warm workspace and trigger the
+// form after its scripts are ready; the user sees one direct Jobs action,
+// not an implementation detour through Clients.
+window.addEventListener("message", (event) => {
+  if (event.data?.type !== "linguar-open-new-loss") return;
+  const item = findItem("daily_run");
+  if (!item) return;
+  navigate(item.key, item.src);
+  const frame = state.frames.get("daily_run");
+  if (!frame) return;
+  const openIntake = () => {
+    try { frame.contentDocument?.getElementById("new-loss-btn")?.click(); }
+    catch (_) { /* the same-origin frame can still be between documents */ }
+  };
+  if (frame.contentDocument?.readyState === "complete") {
+    setTimeout(openIntake, 0);
+  } else {
+    frame.addEventListener("load", openIntake, { once: true });
+  }
+});
+
 // ── First-run welcome modal ──────────────────────────────────────
 // Shown once on a fresh machine to point the user at Settings (Trello
 // key/token + folder paths). Dismissing either way drops the

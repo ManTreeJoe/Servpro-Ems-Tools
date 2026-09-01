@@ -58,3 +58,21 @@ def test_audit_no_longer_appends_duplicate_shared_actions():
     assert 'add("📋 Scope"' not in extension
     assert 'add("↻ Re-audit"' not in extension
     assert 'add("⋯ More actions"' not in extension
+
+
+def test_clients_use_division_views_and_new_loss_lives_in_jobs():
+    clients_html = (ROOT / "audit_web_assets" / "index.html").read_text(
+        encoding="utf-8")
+    clients_js = (ROOT / "audit_web_assets" / "app.js").read_text(
+        encoding="utf-8")
+    jobs_html = (ROOT / "pipeline_web_assets" / "index.html").read_text(
+        encoding="utf-8")
+    shell_js = (ROOT / "home_web_assets" / "app.js").read_text(
+        encoding="utf-8")
+
+    for key in ("all", "ems", "contents", "recon", "starred"):
+        assert f'data-filter="{key}"' in clients_html
+    assert 'id="new-loss-btn" class="btn hidden"' in clients_html
+    assert "clientDivisionKeys" in clients_js
+    assert 'id="new-loss-btn" class="btn"' in jobs_html
+    assert "linguar-open-new-loss" in shell_js
