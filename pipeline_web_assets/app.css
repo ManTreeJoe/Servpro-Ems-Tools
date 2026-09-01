@@ -482,6 +482,12 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .photo-report-status { min-height:18px; color:var(--text-muted); font-size:11px; }
 .photo-report-status.ok { color:#7bd69c; }
 .photo-report-status.error { color:#ff8e83; }
+.old-jobs-section { border-left:3px solid #72857a; }
+.old-jobs-list { display:grid; gap:8px; }
+.old-job-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:rgba(255,255,255,.02); }
+.old-job-row strong,.old-job-row small { display:block; }.old-job-row small { margin-top:3px; color:var(--text-muted); }
+.old-job-row>span { padding:3px 8px; border-radius:999px; background:#37423b; color:#c4d0c8; font-size:10px; font-weight:700; text-transform:uppercase; }
+@media (max-width:650px) { .old-job-row { grid-template-columns:1fr auto; }.old-job-row .btn { grid-column:1/-1; } }
 @media (max-width:760px) { .photo-report-route { grid-template-columns:38px 1fr; } .photo-report-route .btn { grid-column:1/-1; justify-self:stretch; } }
 .quick-report-modal { width:min(1040px,94vw); height:min(820px,92vh); }
 .quick-report-step { margin-bottom:14px; padding:14px; border:1px solid var(--border); border-radius:12px; background:rgba(255,255,255,.018); }

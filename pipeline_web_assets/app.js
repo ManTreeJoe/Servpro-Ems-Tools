@@ -943,6 +943,16 @@ function openAuditModal(data, trelloUrl = "") {
       <dl class="aud-facts">${(section.fields || []).map((f) =>
         `<div><dt>${escapeHtml(f.label)}</dt><dd>${escapeHtml(f.value)}</dd></div>`).join("")}</dl>
     </section>`).join("");
+  const oldJobs = (data.old_jobs || []).map((job) => `<article class="old-job-row">
+    <div><strong>${escapeHtml(job.name || "Previous EMS job")}</strong><small>${escapeHtml([
+      job.claim_number ? `Claim ${job.claim_number}` : "",
+      job.loss_date ? `Loss ${job.loss_date}` : "",
+      job.date_received ? `Received ${job.date_received}` : "",
+      job.list_name || "THE LOGS - EMS",
+    ].filter(Boolean).join(" · "))}</small></div><span>Closed</span>
+    <button class="btn compact" data-open-old-job="${escapeAttr(job.url || "")}" ${job.url ? "" : "disabled"}>Open old card</button>
+  </article>`).join("");
+  const oldJobsSection = oldJobs ? `<section class="aud-section old-jobs-section"><div class="section-title-row"><div><h3>Previous EMS jobs</h3><small>Separate closed claims found in THE LOGS – EMS</small></div><span>${(data.old_jobs || []).length}</span></div><div class="old-jobs-list">${oldJobs}</div></section>` : "";
   const copyFacts = (data.info_sections || []).flatMap((section) => section.fields || []);
   const copyField = (id) => (copyFacts.find((field) => field.id === id) || {}).value || "";
   const copyValue = (...needles) => (copyFacts.find((field) => needles.some((needle) =>
@@ -1062,6 +1072,7 @@ function openAuditModal(data, trelloUrl = "") {
       <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div></div><div class="work-types">${workTypes}</div></section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} card · stored in Linguar Hub · Trello sync is temporary</small></div>${divisionDataTabs}</div>${checklistGroups}</section>
       ${facts || `<section class="aud-section"><h3>Job information</h3><div class="aud-empty">No saved job information yet.</div></section>`}
+      ${oldJobsSection}
       <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
         <div class="signature-flow"><span class="${dsRequest.requested ? "done" : "active"}">1 Prepare</span><i></i><span class="${dsRequest.requested ? "active" : ""}">2 Send</span><i></i><span class="${(docs.files || []).some((file) => file.signed) ? "done" : ""}">3 Signed copy</span></div>
         ${dsRequest.email ? `<div class="signature-recipient">Sent to <strong>${escapeHtml(dsRequest.email)}</strong> · ${Number(dsRequest.days_pending || 0)} day(s) pending</div>` : ""}
@@ -1379,6 +1390,7 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelector("[data-quick-photo-report]")?.addEventListener("click", () =>
     openQuickPhotoReportModal(data.client || res.client || "", res.path || "", selectedDivision));
   w.querySelector("[data-open-docs-folder]")?.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || ""));
+  w.querySelectorAll("[data-open-old-job]").forEach((button) => button.addEventListener("click", () => pywebview.api.open_url(button.dataset.openOldJob)));
   w.querySelectorAll("[data-document-path]").forEach((button) => button.addEventListener("click", () => {
     pywebview.api.open_document(button.dataset.documentPath || "");
   }));

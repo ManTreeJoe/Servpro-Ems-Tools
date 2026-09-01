@@ -297,6 +297,7 @@ class Api:
         self._board_view_cache = None
         self._workspace_cache = {}
         self._crm_workspace_cache = {}
+        self._old_jobs_cache = {}
         self._companycam_report_window = None
 
     def _workspace_cache_key(self, client: str, card_id: str = "",
@@ -615,8 +616,10 @@ class Api:
         # folder audit. Start it first so its network time overlaps the audit
         # and CRM reads instead of adding ~5 seconds after them.
         reconcile_pool = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="division-reconcile")
+            max_workers=2, thread_name_prefix="workspace-identity")
         reconcile_future = reconcile_pool.submit(load_division_reconciliation)
+        old_jobs_future = reconcile_pool.submit(
+            self._old_ems_jobs, client, card_id)
         summary = self.audit_card(client)
         if not summary.get("ok"):
             reconcile_pool.shutdown(wait=False, cancel_futures=True)
@@ -624,6 +627,7 @@ class Api:
         crm = self._crm_workspace(client, summary)
         try:
             division_reconciliation = reconcile_future.result()
+            old_jobs = old_jobs_future.result()
         finally:
             reconcile_pool.shutdown(wait=False)
         # crm_job_workspace already fetched these pins. Re-reading them here
@@ -762,6 +766,7 @@ class Api:
                 "division_card_reconciliation": division_reconciliation,
                 "checklists": checklists, "comments": comments,
                 "attachments": attachments, "members": members,
+                "old_jobs": old_jobs,
                 "documents": documents,
                 "load_ms": round((time.monotonic() - started) * 1000)}
         if len(self._workspace_cache) >= 80:
@@ -771,6 +776,54 @@ class Api:
         self._workspace_cache[workspace_key] = (time.monotonic(), result)
         return result
 
+    def _old_ems_jobs(self, client: str, current_card_id: str = "") -> list:
+        """Closed LOGS-EMS cards belonging to a currently-open client.
+
+        A person can have several separate losses.  Their old EMS card is a
+        previous job/claim, not more history for the active card.  Keep the
+        Trello card identity intact so opening it can never mix its comments
+        or claim data into the current loss.
+        """
+        from ems_db_sqlite import canon_key
+        key = canon_key(client or "")
+        cached = self._old_jobs_cache.get(key)
+        if cached and time.monotonic() - cached[0] < 600:
+            return [dict(row) for row in cached[1]
+                    if row.get("card_id") != current_card_id]
+        try:
+            import trello_client as tc
+            candidates = [row for row in tc.find_cards_by_name(
+                client, max_results=50, with_lists=True)
+                if str(row.get("board") or "").strip().casefold()
+                   == tc.LOGS_BOARD_NAME.strip().casefold()
+                and canon_key(row.get("name") or "") == key]
+
+            def enrich(row):
+                card = tc.get_card_lite(row.get("card_id") or "") or {}
+                sections = tc.parse_card_desc(card.get("desc") or "") or {}
+                claim = ""
+                loss_date = ""
+                received = ""
+                for fields in sections.values():
+                    if not isinstance(fields, dict):
+                        continue
+                    claim = claim or str(fields.get("CLAIM NUMBER") or "").strip()
+                    loss_date = loss_date or str(fields.get("DATE OF LOSS") or "").strip()
+                    received = received or str(fields.get("DATE RECEIVED") or "").strip()
+                return {**row, "claim_number": claim, "loss_date": loss_date,
+                        "date_received": received, "status": "Closed"}
+
+            with ThreadPoolExecutor(max_workers=min(4, len(candidates) or 1),
+                                    thread_name_prefix="old-ems-job") as pool:
+                rows = list(pool.map(enrich, candidates))
+            rows.sort(key=lambda row: (row.get("date_received") or "",
+                                       row.get("name") or ""), reverse=True)
+            self._old_jobs_cache[key] = (time.monotonic(), rows)
+            return [dict(row) for row in rows
+                    if row.get("card_id") != current_card_id]
+        except Exception:
+            return []
+
     def refresh_job_card_workspace(self, client: str, card_id: str = "",
                                    division: str = "") -> dict:
         """Explicit deep refresh; normal opens remain cache-friendly."""
@@ -778,6 +831,11 @@ class Api:
         self._invalidate_workspace(client, card_id)
         self._audit_card_cache.pop(key, None)
         self._division_reconcile_cache.pop(key, None)
+        try:
+            from ems_db_sqlite import canon_key
+            self._old_jobs_cache.pop(canon_key(client or ""), None)
+        except Exception:
+            pass
         for cache_key in list(self._document_cache):
             if not card_id or cache_key[0] == card_id:
                 self._document_cache.pop(cache_key, None)
