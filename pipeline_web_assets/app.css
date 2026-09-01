@@ -750,6 +750,8 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .work-type.has-stage { opacity: 1; }
 .work-type-ems { border-top-color: #398FE8; }
 .work-type-contents { border-top-color: #D7B12E; }
+.work-type.has-stage .work-type-head small { color:var(--text-muted); }
+.work-type.has-stage select { border-color:color-mix(in srgb, var(--green) 55%, var(--border)); }
 .work-type-recon { border-top-color: #D8762A; }
 .work-type-head { display:flex;align-items:center;gap:8px; }
 .work-type-head > span { display:grid;place-items:center;width:28px;height:28px;border-radius:7px;background:var(--surface-2);font-size:16px; }

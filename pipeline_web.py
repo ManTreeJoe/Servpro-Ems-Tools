@@ -121,6 +121,55 @@ def _complete_board_payload(payload: dict) -> bool:
         for key, _name in BOARD_SPECS
     )
 
+
+def _detected_work_environments(crm: dict, summary: dict,
+                                division_cards: list[dict],
+                                selected_division: str) -> list[dict]:
+    """Add reliable division evidence without silently persisting a status.
+
+    Manual states win. Folder shells and pinned/open cards only make an
+    otherwise-unset division visible as Planned in the workspace.
+    """
+    from ems_db_common import DIVISIONS, normalize_division
+
+    existing = {
+        normalize_division(item.get("work_environment")): dict(item)
+        for item in (crm.get("work_environments") or [])
+        if isinstance(item, dict) and item.get("work_environment")
+    }
+    evidence = {division: [] for division in DIVISIONS}
+    job_path = str(summary.get("path") or "").strip()
+    if job_path and os.path.isdir(job_path):
+        try:
+            import job_folders
+            shells = {str(name or "").upper()
+                      for name in job_folders.shells_at(job_path)}
+            for division in DIVISIONS:
+                if division in shells:
+                    evidence[division].append("job folder")
+        except Exception:
+            pass
+    for card in division_cards or []:
+        if not isinstance(card, dict) or not (card.get("pinned") or card.get("card_id")):
+            continue
+        evidence[normalize_division(card.get("division"))].append("Trello card")
+    evidence[normalize_division(selected_division)].append("open board")
+
+    merged = []
+    for division in DIVISIONS:
+        sources = list(dict.fromkeys(evidence[division]))
+        item = existing.get(division)
+        if item:
+            item.setdefault("work_environment", division)
+            item["detected_sources"] = sources
+            merged.append(item)
+        elif sources:
+            merged.append({
+                "work_environment": division, "stage": "planned", "owner": "",
+                "inferred": True, "detected_sources": sources,
+            })
+    return merged
+
 # Lanes never shown on the board — spacers + admin/template columns that
 # aren't real jobs. (Per-CARD noise is handled by pipeline_stages.
 # is_pipeline_skip.)
@@ -647,7 +696,12 @@ class Api:
         # used to add another shared-database round trip to every open.
         division_trello_cards = {
             "ok": True, "cards": list(crm.get("division_trello_cards") or [])}
-        if not division_trello_cards["cards"]:
+        newly_linked = any(
+            item.get("state") == "auto_pinned"
+            for item in (division_reconciliation.get("divisions") or [])
+            if isinstance(item, dict)
+        )
+        if newly_linked or not division_trello_cards["cards"]:
             division_trello_cards = audit_api.crm_division_trello_cards(client)
         division_cards = division_trello_cards.get("cards", [])
         info_sections, checklists, comments, attachments, members = [], [], [], [], []
@@ -692,6 +746,9 @@ class Api:
         # the EMS card until the user explicitly assigns another division.
         if not cid and selected_division == "EMS":
             cid = opened_id or (summary.get("trello_card_id") or "").strip()
+        crm = dict(crm)
+        crm["work_environments"] = _detected_work_environments(
+            crm, summary, division_cards, selected_division)
         # Linguar Hub is the durable source. Trello below is now an import/
         # compatibility adapter and refreshes this local copy when available.
         # Trello, shared activity, shared checklists, and the document-folder
@@ -921,6 +978,8 @@ class Api:
             "relationships": [], "job_log": [], "timeline": [],
             "progress": evaluate_job_progress(job, summary, []),
         }
+        crm["work_environments"] = _detected_work_environments(
+            crm, summary, division_cards, selected_division)
         crm["progress"]["review_mode"] = True
         info_sections = []
         try:

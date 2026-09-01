@@ -509,7 +509,7 @@ function renderLane(board, lane, q) {
   // When searching, hide lanes with no matches to cut clutter.
   if (q && !cards.length) return "";
   const cardsHtml = cards.length
-    ? cards.map((c) => renderCard(c)).join("") + (matches.length > cards.length
+    ? cards.map((c) => renderCard(c, board)).join("") + (matches.length > cards.length
       ? `<div class="lane-more">${matches.length - cards.length} more old jobs · search to narrow</div>` : "")
     : `<div class="lane-empty">—</div>`;
   return `<div class="lane" data-list-id="${escapeAttr(lane.list_id)}"
@@ -636,7 +636,7 @@ function onLaneDragEnd() {
   $$(".lane").forEach((lane) => lane.classList.remove("lane-dragging", "lane-drop-before", "lane-drop-after"));
 }
 
-function renderCard(c) {
+function renderCard(c, board = {}) {
   const loss = (c.loss_types || []).map((t) =>
     `<span class="chip-loss loss-${escapeAttr(t.toLowerCase())}">${escapeHtml(t)}</span>`).join("");
   const ck = c.checklist || { done: 0, total: 0 };
@@ -661,6 +661,7 @@ function renderCard(c) {
                data-list-id="${escapeAttr(c.list_id)}"
                data-url="${escapeAttr(c.url)}"
                data-client="${escapeAttr(c.client)}"
+               data-division="${escapeAttr(board.key === "contents" ? "CONTENTS" : "EMS")}"
                data-card-summary="${escapeAttr(JSON.stringify({
                  due: c.due || "", overdue: Boolean(c.overdue),
                  days_in_lane: Number(c.days_in_lane || 0),
@@ -939,8 +940,9 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   const client = isCard ? cardOrClient.dataset.client : String(cardOrClient || "");
   const resolvedCardId = isCard ? (cardOrClient.dataset.cardId || "") : cardId;
   const resolvedUrl = isCard ? (cardOrClient.dataset.url || "") : trelloUrl;
+  const resolvedDivision = isCard ? (cardOrClient.dataset.division || division) : division;
   const requestId = ++workspaceRequestId;
-  const instant = instantWorkspaceData(cardOrClient, client, resolvedCardId, division);
+  const instant = instantWorkspaceData(cardOrClient, client, resolvedCardId, resolvedDivision);
   let modal;
   try {
     modal = openAuditModal(instant, resolvedUrl);
@@ -953,7 +955,7 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   }
   setStatus(`Opened "${client}" · loading shared job details…`);
   try {
-    const fast = await pywebview.api.job_card_workspace_fast(client, resolvedCardId, division);
+    const fast = await pywebview.api.job_card_workspace_fast(client, resolvedCardId, resolvedDivision);
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (!fast?.ok) {
       modal.setDeferredError(fast?.error || "Shared job details unavailable");
@@ -967,7 +969,7 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
     // both at once duplicated the same Supabase hydration and could more than
     // double load time on slower office connections.
     const fullPromise = Promise.resolve(pywebview.api.job_card_workspace(
-      client, resolvedCardId, division)).then(
+      client, resolvedCardId, resolvedDivision)).then(
         (value) => ({ value }),
         (error) => ({ error }),
       );
@@ -1214,7 +1216,7 @@ function openAuditModal(data, trelloUrl = "") {
       const trello = divisionCards[name.toLowerCase()] || {};
       const stage = env.stage || "not_applicable";
       return `<div class="work-type work-type-${name.toLowerCase()} ${stage !== "not_applicable" ? "has-stage" : ""}" data-work-type-card="${name}">
-        <div class="work-type-head"><span aria-hidden="true">${icon}</span><div><strong>${label}</strong><small>${name}</small></div></div>
+        <div class="work-type-head"><span aria-hidden="true">${icon}</span><div><strong>${label}</strong><small>${name}${env.inferred ? ` · Detected from ${(env.detected_sources || []).join(" + ")}` : ""}</small></div></div>
         <select data-work-env="${name}" aria-label="${label} status">${workTypeStages.map(([value, text]) => `<option value="${value}" ${value === stage ? "selected" : ""}>${text}</option>`).join("")}</select>
         <input data-work-env-owner="${name}" value="${escapeAttr(env.owner || "")}" placeholder="Owner or crew" aria-label="${label} owner or crew">
         <div class="division-trello ${trello.pinned ? "is-pinned" : ""}">
