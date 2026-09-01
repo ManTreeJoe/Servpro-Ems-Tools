@@ -84,3 +84,17 @@ def test_jobs_board_zoom_is_visible_persistent_and_board_scoped():
 def test_apa_vertical_wheel_stays_in_the_column():
     apa_html = (ROOT / "apa_web_assets" / "index.html").read_text(encoding="utf-8")
     assert '<main class="board" id="board" data-hdrag-nowheel>' in apa_html
+
+
+def test_job_shelf_separates_star_shortcuts_from_held_cards():
+    html = _asset("index.html")
+    js = _asset("app.js")
+    css = _asset("app.css")
+    assert 'id="job-shelf"' in html and 'id="job-shelf-drop-hint"' in html
+    for marker in ('mode = "starred"', 'item.mode === "held"',
+                   'addToJobShelf(live ? shelfEntryFromCard(live)',
+                   '}, "held")', 'data-act="star"',
+                   'mode-${escapeAttr(item.mode || "starred")}'):
+        assert marker in js
+    assert ".job-shelf.drop-ready" in css
+    assert ".shelf-card.mode-held" in css

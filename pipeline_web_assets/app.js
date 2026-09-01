@@ -20,6 +20,7 @@ const state = {
   boardFilter: "all",       // all | attention | due | sync
   boardLooks: {},            // board key -> {preset, customPath, customData}
   boardZoom: 1,
+  jobShelf: [],
   drag: null,               // {cardId, name, fromListId, fromLane, boardKey}
   laneDrag: null,           // {listId, name, targetId, side}
   // Stages table view
@@ -57,6 +58,10 @@ async function bootPipeline() {
   state.boardFilter    = PanelState.get("boardFilter", "all");
   state.boardLooks     = PanelState.get("boardLooks", {});
   state.boardZoom      = Number(PanelState.get("boardZoom", 1)) || 1;
+  state.jobShelf       = Array.isArray(PanelState.get("jobShelf", []))
+    ? PanelState.get("jobShelf", []).filter((item) => item?.cardId).map((item) => ({
+        ...item, mode: item.mode === "held" ? "held" : "starred",
+      })) : [];
   state.active_stage   = PanelState.get("active_stage", state.active_stage);
   state.search         = PanelState.get("search", "");
 
@@ -66,6 +71,11 @@ async function bootPipeline() {
   $("#board-zoom-out").addEventListener("click", () => changeBoardZoom(-0.1));
   $("#board-zoom-in").addEventListener("click", () => changeBoardZoom(0.1));
   $("#board-zoom-reset").addEventListener("click", () => setBoardZoom(1));
+  $("#job-shelf-clear").addEventListener("click", clearJobShelf);
+  const shelf = $("#job-shelf");
+  shelf.addEventListener("dragover", onShelfDragOver);
+  shelf.addEventListener("dragleave", onShelfDragLeave);
+  shelf.addEventListener("drop", onShelfDrop);
   $("#customize-board-btn").addEventListener("click", openBoardCustomize);
   $("#custom-background-btn").addEventListener("click", chooseCustomBackground);
   $("#clear-background-btn").addEventListener("click", () => setBoardLook({ preset: "asphalt" }));
@@ -100,6 +110,7 @@ async function bootPipeline() {
   window.addEventListener("keydown", onBoardZoomShortcut);
 
   applyBoardZoom();
+  renderJobShelf();
 
   const initialView = state.view;
   state.view = "";
@@ -385,6 +396,9 @@ function renderBoard() {
     cardEl.addEventListener("dragstart", onCardDragStart);
     cardEl.addEventListener("dragend", onCardDragEnd);
     cardEl.addEventListener("contextmenu", onCardContext);
+    cardEl.querySelector('[data-act="star"]')?.addEventListener("click", (e) => {
+      e.stopPropagation(); toggleCardShelf(cardEl);
+    });
     cardEl.querySelector('[data-act="more"]')?.addEventListener("click", (e) => {
       e.stopPropagation(); openCardMenu(e, cardEl);
     });
@@ -472,6 +486,9 @@ async function chooseCustomBackground() {
 
 function laneMatches(lane, q) {
   return (lane.cards || []).filter((c) => {
+    // A dragged/held card lives in the shelf until it is placed or returned.
+    // A starred card is only a shortcut and remains visible in its lane.
+    if (state.jobShelf.some((item) => item.cardId === c.card_id && item.mode === "held")) return false;
     if (!cardMatchesBoardFilter(c)) return false;
     return !q || `${c.client} ${lane.name}`.toLowerCase().includes(q);
   });
@@ -603,6 +620,7 @@ function renderCard(c) {
     : c.sync_status === "pending"
       ? `<span class="chip-mini sync-pending" title="Saved in Linguar Hub; waiting for Trello">↻ Sync</span>` : "";
   const chips = [loss, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
+  const starred = isJobStarred(c.card_id);
   return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false" data-no-drag
                role="button" tabindex="0" aria-label="Open ${escapeAttr(c.client || "job")}"
                data-card-id="${escapeAttr(c.card_id)}"
@@ -618,6 +636,7 @@ function renderCard(c) {
     <div class="kcard-title">${escapeHtml(c.client || "(no name)")}</div>
     ${chips ? `<div class="kcard-chips">${chips}</div>` : ""}
     <div class="kcard-actions">
+      <button class="kbtn card-star ${starred ? "active" : ""}" data-act="star" aria-label="${starred ? "Unstar" : "Star"} ${escapeAttr(c.client || "job")}" title="${starred ? "Remove quick-look shortcut" : "Keep a quick-look shortcut on the Job Shelf"}">★</button>
       <button class="kbtn" data-act="more" aria-label="More actions for ${escapeAttr(c.client || "job")}" title="More job actions">⋯</button>
     </div>
   </div>`;
@@ -696,8 +715,12 @@ function onCardDragStart(ev) {
     cardId:   el.dataset.cardId,
     name:     el.dataset.client,
     fromListId: el.dataset.listId,
+    url:        el.dataset.url || "",
+    summary:    el.dataset.cardSummary || "",
+    source:     "board",
   };
   el.classList.add("dragging");
+  showShelfForDrag();
   try { ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", el.dataset.cardId); } catch (_) {}
 }
 
@@ -705,6 +728,7 @@ function onCardDragEnd(ev) {
   ev.currentTarget.draggable = false;
   ev.currentTarget.classList.remove("dragging", "drag-ready");
   state.drag = null;
+  hideShelfAfterDrag();
   $$(".lane.drop-target").forEach((l) => l.classList.remove("drop-target"));
 }
 
@@ -719,6 +743,7 @@ function onLaneDragOver(ev) {
     state.laneDrag.targetId = lane.dataset.listId; state.laneDrag.side = side;
     return;
   }
+  reconcileJobShelfWithBoard();
   if (!state.drag) return;
   ev.preventDefault();
   try { ev.dataTransfer.dropEffect = "move"; } catch (_) {}
@@ -757,7 +782,11 @@ async function onLaneDrop(ev) {
   if (!drag) return;
   const toListId = laneEl.dataset.listId;
   const toLane = laneEl.dataset.laneName;
-  if (!toListId || toListId === drag.fromListId) return;   // same lane, no-op
+  if (!toListId) return;
+  if (toListId === drag.fromListId) {
+    if (drag.source === "shelf") removeFromJobShelf(drag.cardId);
+    return;
+  }
   if (!confirm(`Move "${drag.name}" to "${toLane}" on Trello?\n\nThis updates the real board everyone sees.`))
     return;
   setStatus(`Moving "${drag.name}" → ${toLane}…`);
@@ -769,6 +798,7 @@ async function onLaneDrop(ev) {
   }
   // Optimistic local move so the board updates instantly.
   moveCardLocally(drag.cardId, drag.fromListId, toListId, toLane);
+  if (drag.source === "shelf") removeFromJobShelf(drag.cardId);
   renderBoard();
   setStatus(res.synced === false
     ? `✓ Moved in Linguar Hub · ${res.warning || "Trello needs review"}`
@@ -787,6 +817,12 @@ function moveCardLocally(cardId, fromListId, toListId, toLane) {
   }
   if (!moved) return;
   moved.list_id = toListId; moved.lane = toLane;
+  const shelfItem = state.jobShelf.find((item) => item.cardId === cardId);
+  if (shelfItem) {
+    shelfItem.fromListId = toListId;
+    shelfItem.lane = toLane;
+    persistJobShelf(); renderJobShelf();
+  }
   for (const b of state.board.boards || []) {
     for (const l of b.lanes || []) {
       if (l.list_id === toListId) { (l.cards = l.cards || []).unshift(moved); return; }
@@ -1585,6 +1621,154 @@ function openJobLogHistoryModal(history) {
   const close = () => modal.remove();
   modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
   modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+}
+
+// ── Persistent Job Shelf ─────────────────────────────────────────
+function isJobShelved(cardId) {
+  return state.jobShelf.some((item) => item.cardId === cardId);
+}
+
+function isJobStarred(cardId) {
+  return state.jobShelf.some((item) => item.cardId === cardId && item.mode === "starred");
+}
+
+function shelfEntryFromCard(cardEl) {
+  const lane = cardEl.closest(".lane");
+  return {
+    cardId: cardEl.dataset.cardId || "",
+    name: cardEl.dataset.client || "(no name)",
+    url: cardEl.dataset.url || "",
+    fromListId: cardEl.dataset.listId || "",
+    lane: lane?.dataset.laneName || "",
+    boardKey: lane?.dataset.boardKey || state.activeBoardKey || "",
+    summary: cardEl.dataset.cardSummary || "",
+  };
+}
+
+function persistJobShelf() {
+  PanelState.set({ jobShelf: state.jobShelf });
+}
+
+function reconcileJobShelfWithBoard() {
+  if (!state.jobShelf.length) return;
+  let changed = false;
+  for (const item of state.jobShelf) {
+    let match = null;
+    for (const board of state.board.boards || []) {
+      for (const lane of board.lanes || []) {
+        const card = (lane.cards || []).find((candidate) => candidate.card_id === item.cardId);
+        if (card) { match = { board, lane, card }; break; }
+      }
+      if (match) break;
+    }
+    if (!match) continue;
+    const next = {
+      name: match.card.client || item.name,
+      url: match.card.url || item.url,
+      fromListId: match.lane.list_id,
+      lane: match.lane.name,
+      boardKey: match.board.key,
+    };
+    for (const [key, value] of Object.entries(next)) {
+      if (item[key] !== value) { item[key] = value; changed = true; }
+    }
+  }
+  if (changed) { persistJobShelf(); renderJobShelf(); }
+}
+
+function addToJobShelf(entry, mode = "starred") {
+  if (!entry?.cardId) return;
+  const index = state.jobShelf.findIndex((item) => item.cardId === entry.cardId);
+  const next = { ...entry, mode };
+  if (index >= 0) state.jobShelf[index] = { ...state.jobShelf[index], ...next };
+  else state.jobShelf.push(next);
+  persistJobShelf(); renderJobShelf();
+  setStatus(mode === "held"
+    ? `Held ${entry.name} on the Job Shelf · drag it to a lane to place it`
+    : `★ ${entry.name} starred for quick access`, "ok");
+}
+
+function removeFromJobShelf(cardId) {
+  state.jobShelf = state.jobShelf.filter((item) => item.cardId !== cardId);
+  persistJobShelf(); renderJobShelf(); renderBoard();
+}
+
+function clearJobShelf() {
+  state.jobShelf = [];
+  persistJobShelf(); renderJobShelf(); renderBoard();
+  setStatus("Job Shelf cleared", "ok");
+}
+
+function toggleCardShelf(cardEl) {
+  const entry = shelfEntryFromCard(cardEl);
+  if (isJobStarred(entry.cardId)) removeFromJobShelf(entry.cardId);
+  else { addToJobShelf(entry, "starred"); renderBoard(); }
+}
+
+function showShelfForDrag() {
+  const shelf = $("#job-shelf");
+  shelf.classList.remove("hidden");
+  shelf.classList.add("drag-visible");
+}
+
+function hideShelfAfterDrag() {
+  const shelf = $("#job-shelf");
+  shelf.classList.remove("drag-visible", "drop-ready");
+  if (!state.jobShelf.length) shelf.classList.add("hidden");
+}
+
+function onShelfDragOver(event) {
+  if (!state.drag || state.drag.source === "shelf") return;
+  event.preventDefault();
+  try { event.dataTransfer.dropEffect = "copy"; } catch (_) {}
+  event.currentTarget.classList.add("drop-ready");
+}
+
+function onShelfDragLeave(event) {
+  if (!event.currentTarget.contains(event.relatedTarget))
+    event.currentTarget.classList.remove("drop-ready");
+}
+
+function onShelfDrop(event) {
+  event.preventDefault();
+  const drag = state.drag;
+  event.currentTarget.classList.remove("drop-ready");
+  if (!drag || drag.source === "shelf") return;
+  const live = document.querySelector(`.kcard[data-card-id="${cssEsc(drag.cardId)}"]`);
+  addToJobShelf(live ? shelfEntryFromCard(live) : {
+    cardId: drag.cardId, name: drag.name, url: drag.url,
+    fromListId: drag.fromListId, summary: drag.summary,
+  }, "held");
+  renderBoard();
+}
+
+function renderJobShelf() {
+  const shelf = $("#job-shelf");
+  const track = $("#job-shelf-track");
+  if (!shelf || !track) return;
+  $("#job-shelf-count").textContent = `${state.jobShelf.length} held`;
+  $("#job-shelf-clear").hidden = !state.jobShelf.length;
+  track.innerHTML = state.jobShelf.map((item) => `
+    <article class="shelf-card mode-${escapeAttr(item.mode || "starred")}" draggable="true" data-shelf-card="${escapeAttr(item.cardId)}"
+      data-list-id="${escapeAttr(item.fromListId || "")}" title="Drag to a lane to place this job">
+      <button class="shelf-open" type="button"><strong>${escapeHtml(item.name)}</strong><span>${item.mode === "held" ? "Held for placement" : "★ Quick look"}${item.lane ? ` · ${escapeHtml(item.lane)}` : ""}</span></button>
+      <button class="shelf-remove" type="button" aria-label="Remove ${escapeAttr(item.name)} from Job Shelf">×</button>
+    </article>`).join("");
+  shelf.classList.toggle("hidden", !state.jobShelf.length && !shelf.classList.contains("drag-visible"));
+  track.querySelectorAll(".shelf-card").forEach((card) => {
+    const item = state.jobShelf.find((entry) => entry.cardId === card.dataset.shelfCard);
+    card.querySelector(".shelf-open").addEventListener("click", () =>
+      onAuditCard(item.name, item.cardId, item.url || ""));
+    card.querySelector(".shelf-remove").addEventListener("click", () => removeFromJobShelf(item.cardId));
+    card.addEventListener("dragstart", (event) => {
+      state.drag = { cardId: item.cardId, name: item.name,
+        fromListId: item.fromListId || card.dataset.listId, url: item.url || "",
+        summary: item.summary || "", source: "shelf" };
+      card.classList.add("dragging");
+      try { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.cardId); } catch (_) {}
+    });
+    card.addEventListener("dragend", () => { card.classList.remove("dragging"); state.drag = null; });
+  });
 }
 
 function openQuickPhotoReportModal(client, jobPath, division) {

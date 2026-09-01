@@ -17,7 +17,7 @@
 <meta name="theme-color" content="#111513" />
 <title>Pipeline — Linguar Hub</title>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260831b" />
-<link rel="stylesheet" href="app.css?v=20260901b" />
+<link rel="stylesheet" href="app.css?v=20260901c" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
 </head>
 <body class="responsive-ui">
@@ -91,6 +91,15 @@
   </main>
 </div>
 
+<aside id="job-shelf" class="job-shelf hidden" aria-label="Held jobs">
+  <header>
+    <div><strong>★ Job Shelf</strong><span id="job-shelf-count">0 held</span></div>
+    <button id="job-shelf-clear" type="button">Clear shelf</button>
+  </header>
+  <div id="job-shelf-track" class="job-shelf-track"></div>
+  <div id="job-shelf-drop-hint" class="job-shelf-drop-hint">Drop here to keep this job in view</div>
+</aside>
+
 <footer class="statusbar">
   <span id="status-counts">— jobs</span>
   <span id="status-msg" class="status-msg" aria-live="polite"></span>
@@ -130,6 +139,6 @@
   </form>
 </dialog>
 
-<script src="app.js?v=20260901b"></script>
+<script src="app.js?v=20260901c"></script>
 </body>
 </html>
