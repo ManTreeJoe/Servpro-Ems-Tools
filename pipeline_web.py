@@ -42,14 +42,14 @@ ASSETS_DIR = os.path.join(_HERE, "pipeline_web_assets")
 INDEX_HTML = os.path.join(ASSETS_DIR, "index.html")
 
 
-def _row_to_jsdict(r: dict) -> dict:
+def _row_to_jsdict(r: dict, *, thresholds=None, history=None) -> dict:
     """Shape one lifecycle row for the frontend. Pre-computes the
     cheap derivations (days_in_stage, days_since_created, anomaly
     flag) here so the JS side stays declarative."""
     days_in = ps.days_in_stage(r)
     days_age = ps.days_since_created(r)
     stage = r.get("current_stage") or ""
-    thresholds = ps.get_thresholds()
+    thresholds = thresholds if thresholds is not None else ps.get_thresholds()
     threshold = thresholds.get(stage, 9999)
     stall = "none"
     if days_in > threshold * 2:
@@ -58,7 +58,7 @@ def _row_to_jsdict(r: dict) -> dict:
         stall = "warn"
     # Anomaly check — defaults guard already inside is_anomaly.
     try:
-        is_anomaly = ps.is_anomaly(r)
+        is_anomaly = ps.is_anomaly(r, history=history)
     except Exception:
         is_anomaly = False
     return {
@@ -295,6 +295,8 @@ class Api:
         self._division_reconcile_cache = {}
         self._document_cache = {}
         self._board_view_cache = None
+        self._lifecycle_view_cache = None
+        self._lifecycle_housekeeping_done = False
         self._workspace_cache = {}
         self._crm_workspace_cache = {}
         self._old_jobs_cache = {}
@@ -1439,6 +1441,51 @@ class Api:
         return [{"key": s, "label": ps.STAGE_LABELS.get(s, s)}
                 for s in ps.STAGES]
 
+    def lifecycle_view(self, force: bool = False) -> dict:
+        """Return the complete Stages projection in one bounded DB pass.
+
+        The old UI made three bridge calls and shaped every row by querying
+        transition history again for each individual job.  On a hosted DB
+        that turned a 2,000-row view into thousands of requests.  Cache the
+        finished projection briefly; explicit lifecycle sync bypasses it.
+        """
+        now = time.monotonic()
+        cached = self._lifecycle_view_cache
+        if (not force and cached and now - cached[0] < 45):
+            return cached[1]
+        try:
+            # Legacy cleanup is maintenance, not a prerequisite for paint.
+            # The Trello sync already performs it; never put table-wide
+            # repair/delete work in the user's read path.
+            if not self._lifecycle_housekeeping_done:
+                self._lifecycle_housekeeping_done = True
+
+            rows = ems_db.lifecycle_list(paid_window_days=30)
+            thresholds = ps.get_thresholds()
+            try:
+                history = ps.historical_stage_stats()
+            except Exception:
+                history = {}
+            shaped = [_row_to_jsdict(r, thresholds=thresholds,
+                                     history=history) for r in rows]
+            counts = {}
+            for row in shaped:
+                stage = row.get("stage") or ""
+                counts[stage] = counts.get(stage, 0) + 1
+            result = {
+                "ok": True,
+                "stages": self.stages(),
+                "rows": shaped,
+                "counts": counts,
+            }
+            self._last_rows = shaped
+            self._lifecycle_view_cache = (now, result)
+            return result
+        except Exception as ex:
+            return {"ok": False,
+                    "error": f"{type(ex).__name__}: {ex}",
+                    "stages": self.stages(), "rows": [], "counts": {}}
+
     def lifecycle_rows(self) -> list[dict]:
         """Every active lifecycle row (plus paid within 30d), shaped
         for the frontend table. Read-only — no DB writes happen here.
@@ -1446,31 +1493,13 @@ class Api:
         Also runs the self-heal backfill so legacy 0d-in-stage rows
         get their stage_entered_at corrected before the JS side
         renders day counts."""
-        try:
-            ems_db.backfill_stage_entered_dates()
-        except Exception:
-            pass
-        try:
-            ps.purge_skipped_lifecycle_rows()
-        except Exception:
-            pass
-        try:
-            rows = ems_db.lifecycle_list(paid_window_days=30)
-        except Exception:
-            return []
-        shaped = [_row_to_jsdict(r) for r in rows]
-        # Cache the shaped rows so export_to_excel doesn't have to
-        # re-query the DB — and so the export matches exactly what
-        # the user is currently looking at (same filter window).
-        self._last_rows = shaped
-        return shaped
+        result = self.lifecycle_view()
+        return result.get("rows", []) if result.get("ok") else []
 
     def stage_counts(self) -> dict:
         """{stage_key: count} for the filter chip badges."""
-        try:
-            return ems_db.lifecycle_counts_by_stage(paid_window_days=30)
-        except Exception:
-            return {}
+        result = self.lifecycle_view()
+        return result.get("counts", {}) if result.get("ok") else {}
 
     # ── Actions ──────────────────────────────────────────────────────
     def open_url(self, url: str) -> bool:

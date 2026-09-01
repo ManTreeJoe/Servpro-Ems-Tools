@@ -275,6 +275,46 @@ def test_pipeline_board_revisit_uses_short_memory_cache(monkeypatch):
     assert len(calls) == 1
 
 
+def test_lifecycle_view_shapes_in_one_pass_and_reuses_cache(monkeypatch):
+    calls = {"rows": 0, "history": 0, "thresholds": 0}
+    lifecycle = [{
+        "card_id": "c1", "client_display": "Rose, Jasmin",
+        "current_stage": "mitigation", "stage_entered_at": "2026-08-30",
+        "created_at": "2026-08-20", "last_activity_at": "2026-08-31",
+        "board_name": "WORK IN PROGRESS", "list_name": "MITIGATION",
+    }]
+    monkeypatch.setattr(pipeline_web.ems_db, "lifecycle_list",
+                        lambda paid_window_days=30: calls.__setitem__(
+                            "rows", calls["rows"] + 1) or lifecycle)
+    monkeypatch.setattr(pipeline_web.ps, "historical_stage_stats",
+                        lambda: calls.__setitem__(
+                            "history", calls["history"] + 1) or {})
+    monkeypatch.setattr(pipeline_web.ps, "get_thresholds",
+                        lambda: calls.__setitem__(
+                            "thresholds", calls["thresholds"] + 1) or {})
+    monkeypatch.setattr(pipeline_web.ps, "is_anomaly",
+                        lambda row, history=None, **kwargs: False)
+
+    api = pipeline_web.Api()
+    first = api.lifecycle_view()
+    second = api.lifecycle_view()
+
+    assert first["ok"] is True
+    assert first["rows"][0]["client"] == "Rose, Jasmin"
+    assert second is first
+    assert calls == {"rows": 1, "history": 1, "thresholds": 1}
+
+
+def test_lifecycle_frontend_has_timeout_retry_and_bounded_rendering():
+    root = Path(__file__).parents[1]
+    js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    for marker in ("pywebview.api.lifecycle_view(false)",
+                   "Lifecycle took too long to respond",
+                   "data-retry-stages", "stage_render_limit: 350",
+                   "data-load-more-stages"):
+        assert marker in js
+
+
 def test_pipeline_workspace_cache_is_bounded_and_invalidatable():
     api = pipeline_web.Api()
     api._workspace_cache[("smith", "c1", "EMS")] = (1.0, {"ok": True})

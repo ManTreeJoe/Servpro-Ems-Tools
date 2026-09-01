@@ -30,8 +30,11 @@ const state = {
   sort_key: "days_in_stage",
   sort_dir: "desc",
   selected_card_id: null,
+  board_loaded: false,
+  stage_render_limit: 350,
 };
 let workspaceRequestId = 0;
+let stagesLoadPromise = null;
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -92,13 +95,13 @@ async function bootPipeline() {
 
   const initialView = state.view;
   state.view = "";
-  setView(initialView);
-  await loadBoard();
+  setView(initialView, false);
+  if (initialView === "board") await loadBoard();
   // A custom board photo is decoration, not job data. Load it only after
   // the lanes are usable so a slow OneDrive path or missing image can never
   // hold the Jobs board on its skeleton.
   hydrateCustomBoardLooks().then(() => applyBoardLook(state.activeBoardKey)).catch(() => {});
-  if (state.view === "stages" && !state.stages.length) await loadStages();
+  if (initialView === "stages" && !state.stages.length) await loadStages();
 }
 
 function showPipelineStartupError(error) {
@@ -118,7 +121,7 @@ function showPipelineStartupError(error) {
 }
 
 // ── View switching ───────────────────────────────────────────────
-function setView(v) {
+function setView(v, loadOnEnter = true) {
   if (state.view === v) return;
   state.view = v;
   PanelState.set({ view: v });
@@ -132,8 +135,9 @@ function setView(v) {
   $$(".view-stages-only").forEach((el) => el.classList.toggle("hidden", v !== "stages"));
   $("#search-box").placeholder = v === "board"
     ? "🔎 Search client / lane…" : "🔎 Search client / lane / owner…";
-  if (v === "stages" && !state.stages.length) loadStages();
+  if (loadOnEnter && v === "stages" && !state.stages.length) loadStages();
   else if (v === "stages") renderTable();
+  else if (loadOnEnter && !state.board_loaded) loadBoard();
   else renderBoard();
 }
 
@@ -158,6 +162,7 @@ async function loadBoard(isRefresh) {
       return;
     }
     state.board = res;
+    state.board_loaded = true;
     renderBoard();
     const total = boardCardTotal();
     const source = res.source === "shared" ? "shared Pipeline" :
@@ -1704,22 +1709,56 @@ function fmtDue(iso) {
 //  STAGES TABLE VIEW  (lifecycle — read-only from ems_db)
 // ════════════════════════════════════════════════════════════════
 async function loadStages() {
+  if (stagesLoadPromise) return stagesLoadPromise;
+  stagesLoadPromise = loadStagesOnce();
+  try { return await stagesLoadPromise; }
+  finally { stagesLoadPromise = null; }
+}
+
+async function loadStagesOnce() {
   setStatus("Loading lifecycle…");
+  $("#loading-state")?.classList.remove("hidden");
   try {
-    state.stages = await pywebview.api.stages();
-    await refreshRows();
+    const result = await withTimeout(
+      pywebview.api.lifecycle_view(false), 15000,
+      "Lifecycle took too long to respond"
+    );
+    if (!result?.ok) throw new Error(result?.error || "Lifecycle returned no data");
+    state.stages = result.stages || [];
+    state.rows = result.rows || [];
+    state.stage_counts = result.counts || {};
+    state.stage_render_limit = 350;
+    renderChips();
+    renderTable();
+    setStatus(`✓ ${state.rows.length} lifecycle jobs loaded`, "ok");
   } catch (ex) {
-    setStatus(`Failed to load: ${ex}`, "error");
+    showStagesLoadError(ex?.message || ex);
+    setStatus(`Lifecycle failed: ${ex?.message || ex}`, "error");
+  } finally {
+    $("#loading-state")?.classList.add("hidden");
   }
 }
 
 async function refreshRows() {
-  state.rows = await pywebview.api.lifecycle_rows();
-  state.stage_counts = await pywebview.api.stage_counts();
-  renderChips();
-  renderTable();
-  $("#loading-state")?.classList.add("hidden");
-  setStatus("");
+  const result = await withTimeout(pywebview.api.lifecycle_view(true), 20000,
+    "Lifecycle refresh took too long");
+  if (!result?.ok) throw new Error(result?.error || "Lifecycle refresh failed");
+  state.stages = result.stages || [];
+  state.rows = result.rows || [];
+  state.stage_counts = result.counts || {};
+  state.stage_render_limit = 350;
+  renderChips(); renderTable();
+}
+
+function showStagesLoadError(error) {
+  const tbody = $("#pipeline-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state startup-error">
+    <div class="empty-emoji">⚠️</div><strong>Lifecycle could not be loaded</strong>
+    <div>${escapeHtml(String(error || "Unknown lifecycle error"))}</div>
+    <button class="btn btn-primary" type="button" data-retry-stages>Retry Lifecycle</button>
+  </div></td></tr>`;
+  tbody.querySelector("[data-retry-stages]")?.addEventListener("click", loadStages);
 }
 
 function renderChips() {
@@ -1738,6 +1777,7 @@ function renderChips() {
   nav.querySelectorAll(".chip").forEach((b) =>
     b.addEventListener("click", () => {
       state.active_stage = b.dataset.stage;
+      state.stage_render_limit = 350;
       PanelState.set({ active_stage: state.active_stage });
       renderChips(); renderTable();
     }));
@@ -1764,7 +1804,15 @@ function renderTable() {
   if (state.view !== "stages") return;
   const rows = filteredAndSortedRows();
   const tbody = $("#pipeline-tbody");
-  tbody.innerHTML = rows.map(renderRow).join("");
+  const visible = rows.slice(0, state.stage_render_limit);
+  const remaining = rows.length - visible.length;
+  tbody.innerHTML = visible.map(renderRow).join("") + (remaining > 0 ? `
+    <tr class="load-more-row"><td colspan="7"><button class="btn" data-load-more-stages>
+      Show ${Math.min(350, remaining)} more · ${remaining} remaining
+    </button></td></tr>` : "");
+  tbody.querySelector("[data-load-more-stages]")?.addEventListener("click", () => {
+    state.stage_render_limit += 350; renderTable();
+  });
   $("#empty-state").classList.toggle("hidden", rows.length > 0);
   $$(".pipeline-table thead th").forEach((th) => {
     th.classList.remove("sort-asc", "sort-desc");
@@ -1775,7 +1823,7 @@ function renderTable() {
     tr.addEventListener("dblclick", () => onRowOpen(tr.dataset.cardId));
     tr.addEventListener("contextmenu", (ev) => onRowContext(ev, tr.dataset.cardId));
   });
-  $("#status-counts").textContent = `${rows.length} shown · ${state.rows.length} total`;
+  $("#status-counts").textContent = `${visible.length} shown · ${rows.length} matching · ${state.rows.length} total`;
 }
 
 function renderRow(r) {
@@ -1799,6 +1847,7 @@ function renderRow(r) {
 let searchTimer = null;
 function onSearchInput(ev) {
   state.search = ev.target.value;
+  state.stage_render_limit = 350;
   PanelState.set({ search: state.search });
   if (searchTimer) clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
