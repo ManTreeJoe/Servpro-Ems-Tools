@@ -86,6 +86,16 @@ def test_pipeline_job_actions_match_the_audit_button_language():
     assert "quick-action-group" not in js
 
 
+def test_copy_menu_stays_inside_card_and_closes_after_copy():
+    css = _asset("app.css")
+    js = _asset("app.js")
+    menu_rule = css[css.index(".copy-quick-menu>.copy-menu-panel"):
+                    css.index(".copy-menu-panel header")]
+    assert "left:0" in menu_rule and "right:auto" in menu_rule
+    assert "calc(100vw - 72px)" in menu_rule
+    assert 'closest(".copy-quick-menu")' in js
+
+
 def test_current_audit_labels_missing_and_requirement_states_explicitly():
     js = _asset("app.js")
     css = _asset("app.css")

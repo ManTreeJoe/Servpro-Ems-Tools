@@ -1371,13 +1371,13 @@ function openAuditModal(data, trelloUrl = "") {
   });
   w.querySelectorAll("[data-copy-value]").forEach((button) => button.addEventListener("click", async () => {
     await pywebview.api.copy_to_clipboard(button.dataset.copyValue || "");
-    button.closest(".job-copy-menu")?.removeAttribute("open");
+    button.closest(".copy-quick-menu")?.removeAttribute("open");
     setStatus(`Copied ${button.textContent}`, "ok");
   }));
   w.querySelector("[data-copy-summary]")?.addEventListener("click", async (event) => {
     const summary = copyOptions.map(([label, value]) => `${label}: ${value}`).join("\n");
     await pywebview.api.copy_to_clipboard(summary);
-    event.currentTarget.closest(".job-copy-menu")?.removeAttribute("open");
+    event.currentTarget.closest(".copy-quick-menu")?.removeAttribute("open");
     setStatus("Copied formatted job summary", "ok");
   });
   w.querySelectorAll("[data-attachment-url]").forEach((button) => button.addEventListener("click", () => {
