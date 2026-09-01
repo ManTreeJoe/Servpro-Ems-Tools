@@ -529,6 +529,10 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .audit-card { width: min(1180px, 97vw); height: min(900px, calc(100vh - clamp(24px, 7vh, 76px))); max-height: none; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
 .audit-card .modal-head { position:relative; z-index:12; display:flex; flex-direction:column; gap:10px; padding:14px 18px 10px; }
 .audit-head-main { width:100%; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.modal-title-row { display:flex; align-items:center; gap:9px; min-width:0; }
+.modal-title-row .modal-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.client-page-link { flex:0 0 auto; padding:4px 7px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--green-light); font:inherit; font-size:11px; font-weight:700; cursor:pointer; }
+.client-page-link:hover { border-color:var(--green); background:var(--green-soft); }
 .audit-head-copy { min-width: 0; }
 .audit-card .modal-title { font-size: 18px; line-height: 1.25; }
 .audit-close { flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); font-size: 25px; line-height: 1; cursor: pointer; }

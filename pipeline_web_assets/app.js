@@ -1257,7 +1257,7 @@ function openAuditModal(data, trelloUrl = "") {
   w.innerHTML = `
     <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job audit" tabindex="-1">
       <header class="modal-head">
-        <div class="audit-head-main"><div class="audit-head-copy"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div>
+        <div class="audit-head-main"><div class="audit-head-copy"><div class="modal-title-row"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div><button type="button" class="client-page-link" data-open-client-page>👤 Client page</button></div>
         <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div>${divisionDataTabs}</div>
         <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Loading live details…" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh live</button>`}</div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button></div>
@@ -1306,6 +1306,11 @@ function openAuditModal(data, trelloUrl = "") {
   const keyClose = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", keyClose);
   w.querySelector(".audit-card")?.focus();
+  w.querySelector("[data-open-client-page]")?.addEventListener("click", () => {
+    const client = data.client || res.client || "";
+    close(true);
+    if (window.emsNavigateTo) window.emsNavigateTo("audit", client);
+  });
   w.querySelectorAll("[data-division-data]").forEach((button) => button.addEventListener("click", async () => {
     if (button.dataset.divisionData === selectedDivision) return;
     if (!close()) return;
