@@ -182,6 +182,7 @@ async function loadBoard(isRefresh) {
     }
     state.board = res;
     state.board_loaded = true;
+    reconcileJobShelfWithBoard();
     renderBoard();
     const total = boardCardTotal();
     const source = res.source === "shared" ? "shared Pipeline" :
@@ -721,9 +722,11 @@ function wireCardClickAndHold(cardEl) {
 let pointerCardDrag = null;
 
 function dragDetailsFromCard(el) {
+  const lane = el.closest(".lane");
   return {
     cardId: el.dataset.cardId, name: el.dataset.client,
     fromListId: el.dataset.listId, url: el.dataset.url || "",
+    fromLane: lane?.dataset.laneName || "",
     summary: el.dataset.cardSummary || "", source: "board",
   };
 }
@@ -851,7 +854,9 @@ async function onLaneDrop(ev) {
     if (drag.source === "shelf") removeFromJobShelf(drag.cardId);
     return;
   }
-  if (!confirm(`Move "${drag.name}" to "${toLane}" on Trello?\n\nThis updates the real board everyone sees.`))
+  const conflictNote = drag.conflict
+    ? `\n\nConflict: Trello moved this card to “${drag.actualLane || "another lane"}” while it was held.` : "";
+  if (!confirm(`Move "${drag.name}" to "${toLane}" on Trello?\n\nThis updates the real board everyone sees.${conflictNote}`))
     return;
   setStatus(`Moving "${drag.name}" → ${toLane}…`);
   const res = await pywebview.api.move_card(drag.cardId, toListId);
@@ -864,6 +869,7 @@ async function onLaneDrop(ev) {
   moveCardLocally(drag.cardId, drag.fromListId, toListId, toLane);
   if (drag.source === "shelf") removeFromJobShelf(drag.cardId);
   renderBoard();
+  showMoveUndo(drag, toListId, toLane);
   setStatus(res.synced === false
     ? `✓ Moved in Linguar Hub · ${res.warning || "Trello needs review"}`
     : `✓ Moved "${drag.name}" → ${toLane}`, res.synced === false ? "warn" : "ok");
@@ -1687,6 +1693,25 @@ function openJobLogHistoryModal(history) {
   modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
 }
 
+function showMoveUndo(drag, toListId, toLane) {
+  if (!drag?.fromListId || drag.fromListId === toListId) return;
+  document.querySelector(".move-undo")?.remove();
+  const undo = document.createElement("div");
+  undo.className = "requirement-undo move-undo";
+  undo.innerHTML = `<span><strong>Job moved to ${escapeHtml(toLane)}</strong><small>${escapeHtml(drag.name || "Job")}</small></span><button type="button">Undo</button>`;
+  document.body.appendChild(undo);
+  const timer = window.setTimeout(() => undo.remove(), 9000);
+  undo.querySelector("button").addEventListener("click", async () => {
+    window.clearTimeout(timer);
+    const button = undo.querySelector("button");
+    button.disabled = true; button.textContent = "Undoing…";
+    const result = await pywebview.api.move_card(drag.cardId, drag.fromListId);
+    if (!result?.ok) { setStatus(`Undo failed: ${result?.error || "?"}`, "error"); undo.remove(); return; }
+    moveCardLocally(drag.cardId, toListId, drag.fromListId, drag.fromLane || "Previous lane");
+    renderBoard(); undo.remove(); setStatus(`Returned “${drag.name}” to ${drag.fromLane || "its previous lane"}`, "ok");
+  });
+}
+
 // ── Persistent Job Shelf ─────────────────────────────────────────
 function isJobShelved(cardId) {
   return state.jobShelf.some((item) => item.cardId === cardId);
@@ -1726,13 +1751,20 @@ function reconcileJobShelfWithBoard() {
       if (match) break;
     }
     if (!match) continue;
+    const actualListId = match.lane.list_id;
+    const heldConflict = item.mode === "held" && Boolean(item.fromListId) && item.fromListId !== actualListId;
     const next = {
       name: match.card.client || item.name,
       url: match.card.url || item.url,
-      fromListId: match.lane.list_id,
-      lane: match.lane.name,
       boardKey: match.board.key,
+      conflict: heldConflict,
+      actualListId: heldConflict ? actualListId : "",
+      actualLane: heldConflict ? match.lane.name : "",
     };
+    if (item.mode !== "held") {
+      next.fromListId = actualListId;
+      next.lane = match.lane.name;
+    }
     for (const [key, value] of Object.entries(next)) {
       if (item[key] !== value) { item[key] = value; changed = true; }
     }
@@ -1828,11 +1860,11 @@ function renderJobShelf() {
     const angle = Math.max(-13, Math.min(13, offset * 4));
     const drop = Math.min(18, Math.abs(offset) * 4);
     return `
-    <article class="shelf-card mode-${escapeAttr(item.mode || "starred")}" draggable="true" data-shelf-card="${escapeAttr(item.cardId)}"
+    <article class="shelf-card mode-${escapeAttr(item.mode || "starred")} ${item.conflict ? "has-conflict" : ""}" draggable="true" data-shelf-card="${escapeAttr(item.cardId)}"
       data-list-id="${escapeAttr(item.fromListId || "")}" style="--fan-angle:${angle}deg;--fan-drop:${drop}px;--fan-z:${index + 1}"
       title="${item.mode === "held" ? "Held locally — drag to a lane to update Trello" : "Starred quick look — original stays in its lane"}">
       <span class="shelf-corner" aria-hidden="true">${item.mode === "held" ? "↗" : "★"}</span>
-      <button class="shelf-open" type="button" draggable="false"><strong>${escapeHtml(item.name)}</strong><span>${item.mode === "held" ? "In hand · Trello unchanged" : "★ Quick look · stays in lane"}${item.lane ? ` · ${escapeHtml(item.lane)}` : ""}</span></button>
+      <button class="shelf-open" type="button" draggable="false"><strong>${escapeHtml(item.name)}</strong><span>${item.conflict ? `⚠ Trello moved to ${escapeHtml(item.actualLane || "another lane")}` : (item.mode === "held" ? "In hand · Trello unchanged" : "★ Quick look · stays in lane")}${item.lane && !item.conflict ? ` · ${escapeHtml(item.lane)}` : ""}</span></button>
       <button class="shelf-remove" type="button" aria-label="Remove ${escapeAttr(item.name)} from Job Shelf">×</button>
     </article>`;
   }).join("");
@@ -1844,8 +1876,9 @@ function renderJobShelf() {
     card.querySelector(".shelf-remove").addEventListener("click", () => removeFromJobShelf(item.cardId));
     card.addEventListener("dragstart", (event) => {
       state.drag = { cardId: item.cardId, name: item.name,
-        fromListId: item.fromListId || card.dataset.listId, url: item.url || "",
-        summary: item.summary || "", source: "shelf" };
+        fromListId: item.actualListId || item.fromListId || card.dataset.listId,
+        fromLane: item.actualLane || item.lane || "", url: item.url || "",
+        summary: item.summary || "", source: "shelf", conflict: Boolean(item.conflict), actualLane: item.actualLane || "" };
       card.classList.add("dragging");
       try { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.cardId); } catch (_) {}
     });

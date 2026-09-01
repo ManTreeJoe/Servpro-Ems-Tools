@@ -104,3 +104,13 @@ def test_job_shelf_separates_star_shortcuts_from_held_cards():
     assert "--fan-angle:" in js and "--fan-drop:" in js
     assert "Trello stays in its current lane until you place it" in js
     assert ".card-drag-ghost" in css
+
+
+def test_held_job_detects_trello_conflicts_and_moves_can_be_undone():
+    js = _asset("app.js")
+    css = _asset("app.css")
+    for marker in ("reconcileJobShelfWithBoard();", "heldConflict",
+                   "actualListId", "showMoveUndo(drag, toListId, toLane)",
+                   'className = "requirement-undo move-undo"'):
+        assert marker in js
+    assert ".shelf-card.has-conflict" in css
