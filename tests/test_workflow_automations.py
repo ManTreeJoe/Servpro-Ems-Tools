@@ -26,3 +26,18 @@ def test_non_admin_cannot_activate_rule(tmp_path):
         assert wa.list_rules()[0]["enabled"] is False
     finally:
         db.reset_db_path(original)
+
+
+def test_review_rule_logs_proposal_once_without_returning_actions(tmp_path):
+    original = db.DB_PATH
+    try:
+        db.reset_db_path(str(tmp_path / "jobs.db"))
+        event = {"type": "stage_changed", "job_id": "job-1", "stage": "active"}
+        first = wa.evaluate(event, event_key="stage:job-1:active")
+        again = wa.evaluate(event, event_key="stage:job-1:active")
+        assert first["ok"] and first["matched"]
+        assert all(row["outcome"] == "proposed" for row in first["matched"])
+        assert all(row["actions"] == [] for row in first["matched"])
+        assert all(row["outcome"] == "duplicate" for row in again["matched"])
+    finally:
+        db.reset_db_path(original)

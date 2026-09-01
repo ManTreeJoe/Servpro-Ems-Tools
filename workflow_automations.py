@@ -222,3 +222,54 @@ def recent_runs(limit: int = 50) -> list[dict]:
         result.append(item)
     return result
 
+
+def _condition_matches(condition: dict, event: dict) -> bool:
+    actual = event.get(str(condition.get("field") or ""))
+    operator = condition.get("operator", "equals")
+    expected = condition.get("value")
+    if operator == "exists":
+        return bool(actual) is bool(expected)
+    if operator == "is_not":
+        return str(actual).casefold() != str(expected).casefold()
+    if operator == "greater_than":
+        try:
+            return float(actual) > float(expected)
+        except (TypeError, ValueError):
+            return False
+    return str(actual).casefold() == str(expected).casefold()
+
+
+def evaluate(event: dict, *, event_key: str | None = None) -> dict:
+    """Evaluate one app event and record proposed or executable outcomes.
+
+    Review and shadow rules only log.  Enabled ``own`` rules are returned as
+    actions for the caller's registered adapter to execute; this module never
+    reaches into a UI, Trello, or a job database behind the caller's back.
+    """
+    trigger_type = str(event.get("type") or "")
+    if trigger_type not in TRIGGERS:
+        return {"ok": False, "error": "Unknown workflow event type", "matched": []}
+    key = event_key or str(event.get("event_key") or uuid.uuid4())
+    job_id = str(event.get("job_id") or "") or None
+    matched = []
+    for rule in list_rules():
+        if rule["trigger_type"] != trigger_type:
+            continue
+        if not all(_condition_matches(c, event) for c in rule["conditions"]):
+            continue
+        outcome = "ready" if rule["enabled"] and rule["mode"] == "own" else "proposed"
+        detail = {"actions": rule["actions"], "event": event, "mode": rule["mode"]}
+        try:
+            with _db._LOCK, _db._connect() as conn:
+                conn.execute(
+                    """INSERT INTO workflow_automation_runs
+                    (automation_id,event_key,job_id,outcome,detail_json,created_at)
+                    VALUES (?,?,?,?,?,?)""",
+                    (rule["id"], key, job_id, outcome, json.dumps(detail), _now()))
+                conn.commit()
+        except sqlite3.IntegrityError:
+            outcome = "duplicate"
+        matched.append({"rule_id": rule["id"], "name": rule["name"],
+                        "outcome": outcome,
+                        "actions": rule["actions"] if outcome == "ready" else []})
+    return {"ok": True, "event_key": key, "matched": matched}
