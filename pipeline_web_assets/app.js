@@ -621,7 +621,7 @@ function renderCard(c) {
       ? `<span class="chip-mini sync-pending" title="Saved in Linguar Hub; waiting for Trello">↻ Sync</span>` : "";
   const chips = [loss, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
   const starred = isJobStarred(c.card_id);
-  return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false" data-no-drag
+  return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="true" data-no-drag
                role="button" tabindex="0" aria-label="Open ${escapeAttr(c.client || "job")}"
                data-card-id="${escapeAttr(c.card_id)}"
                data-list-id="${escapeAttr(c.list_id)}"
@@ -661,9 +661,9 @@ function wireCardClickAndHold(cardEl) {
     startY = event.clientY;
     pressActive = true;
     suppressClick = false;
-    // Arm native drag immediately. The browser waits for pointer movement,
-    // so a stationary press remains a normal click with no artificial delay.
-    cardEl.draggable = true;
+    // Cards remain native-draggable at render time. WebView2 may decide whether
+    // a native drag can start before pointerdown handlers run, so arming it here
+    // was intermittent. A stationary press still opens normally on pointerup.
   });
   cardEl.addEventListener("pointermove", (event) => {
     if (!pressActive) return;
@@ -678,7 +678,6 @@ function wireCardClickAndHold(cardEl) {
       && cardEl.dataset.didDrag !== "true";
     pressActive = false;
     cardEl.classList.remove("drag-ready");
-    window.setTimeout(() => { cardEl.draggable = false; }, 0);
     if (shouldOpen) {
       // Open on pointerup so the ancestor grab-scroll helper cannot swallow
       // the later synthetic click during its capture phase.
@@ -725,7 +724,6 @@ function onCardDragStart(ev) {
 }
 
 function onCardDragEnd(ev) {
-  ev.currentTarget.draggable = false;
   ev.currentTarget.classList.remove("dragging", "drag-ready");
   state.drag = null;
   hideShelfAfterDrag();
@@ -1740,20 +1738,31 @@ function onShelfDrop(event) {
     fromListId: drag.fromListId, summary: drag.summary,
   }, "held");
   renderBoard();
+  setStatus(`Held “${drag.name}” locally · Trello stays in its current lane until you place it`, "ok");
 }
 
 function renderJobShelf() {
   const shelf = $("#job-shelf");
   const track = $("#job-shelf-track");
   if (!shelf || !track) return;
-  $("#job-shelf-count").textContent = `${state.jobShelf.length} held`;
+  const heldCount = state.jobShelf.filter((item) => item.mode === "held").length;
+  const starredCount = state.jobShelf.length - heldCount;
+  $("#job-shelf-count").textContent = `${heldCount} held · ${starredCount} starred`;
   $("#job-shelf-clear").hidden = !state.jobShelf.length;
-  track.innerHTML = state.jobShelf.map((item) => `
+  const fanCenter = (state.jobShelf.length - 1) / 2;
+  track.innerHTML = state.jobShelf.map((item, index) => {
+    const offset = index - fanCenter;
+    const angle = Math.max(-13, Math.min(13, offset * 4));
+    const drop = Math.min(18, Math.abs(offset) * 4);
+    return `
     <article class="shelf-card mode-${escapeAttr(item.mode || "starred")}" draggable="true" data-shelf-card="${escapeAttr(item.cardId)}"
-      data-list-id="${escapeAttr(item.fromListId || "")}" title="Drag to a lane to place this job">
-      <button class="shelf-open" type="button"><strong>${escapeHtml(item.name)}</strong><span>${item.mode === "held" ? "Held for placement" : "★ Quick look"}${item.lane ? ` · ${escapeHtml(item.lane)}` : ""}</span></button>
+      data-list-id="${escapeAttr(item.fromListId || "")}" style="--fan-angle:${angle}deg;--fan-drop:${drop}px;--fan-z:${index + 1}"
+      title="${item.mode === "held" ? "Held locally — drag to a lane to update Trello" : "Starred quick look — original stays in its lane"}">
+      <span class="shelf-corner" aria-hidden="true">${item.mode === "held" ? "↗" : "★"}</span>
+      <button class="shelf-open" type="button" draggable="false"><strong>${escapeHtml(item.name)}</strong><span>${item.mode === "held" ? "In hand · Trello unchanged" : "★ Quick look · stays in lane"}${item.lane ? ` · ${escapeHtml(item.lane)}` : ""}</span></button>
       <button class="shelf-remove" type="button" aria-label="Remove ${escapeAttr(item.name)} from Job Shelf">×</button>
-    </article>`).join("");
+    </article>`;
+  }).join("");
   shelf.classList.toggle("hidden", !state.jobShelf.length && !shelf.classList.contains("drag-visible"));
   track.querySelectorAll(".shelf-card").forEach((card) => {
     const item = state.jobShelf.find((entry) => entry.cardId === card.dataset.shelfCard);

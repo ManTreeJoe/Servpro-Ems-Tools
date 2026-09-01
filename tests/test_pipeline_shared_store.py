@@ -328,8 +328,8 @@ def test_pipeline_cards_click_to_open_and_hold_to_drag():
     root = Path(__file__).parents[1]
     js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     css = (root / "pipeline_web_assets" / "app.css").read_text(encoding="utf-8")
-    for marker in ("wireCardClickAndHold(cardEl)", 'draggable="false"',
-                   'window.setTimeout(() => {', 'cardEl.draggable = true',
+    for marker in ("wireCardClickAndHold(cardEl)", 'draggable="true"',
+                   'showShelfForDrag()', 'onCardDragStart',
                    'onAuditCard(cardEl)'):
         assert marker in js
     assert 'data-act="audit"' not in js

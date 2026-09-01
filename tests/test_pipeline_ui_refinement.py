@@ -23,7 +23,8 @@ def test_card_role_does_not_suppress_its_own_click():
 
 def test_card_open_is_not_swallowed_by_horizontal_grab_scroll():
     js = _asset("app.js")
-    assert 'draggable="false" data-no-drag' in js
+    assert 'draggable="true" data-no-drag' in js
+    assert "ev.currentTarget.draggable = false" not in js
     assert "openedOnPointerUp = true" in js
     assert "Open on pointerup" in js
 
@@ -98,3 +99,5 @@ def test_job_shelf_separates_star_shortcuts_from_held_cards():
         assert marker in js
     assert ".job-shelf.drop-ready" in css
     assert ".shelf-card.mode-held" in css
+    assert "--fan-angle:" in js and "--fan-drop:" in js
+    assert "Trello stays in its current lane until you place it" in js
