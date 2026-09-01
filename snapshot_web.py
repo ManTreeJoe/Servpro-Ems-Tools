@@ -114,7 +114,81 @@ def _merge_log_row(existing: dict, incoming: dict) -> dict:
                 seen.add(k)
                 merged.append(t)
     existing["techs"] = ", ".join(merged)
+    # A durable Job Log row may be merged into a richer Trello/run-doc row.
+    # Keep its identity so editing the displayed Snapshot row updates the
+    # existing log entry instead of creating a duplicate.
+    for key in ("entry_id", "source", "source_id", "trello_comment_id"):
+        if not existing.get(key) and incoming.get(key):
+            existing[key] = incoming[key]
     return existing
+
+
+def _snapshot_work_date(raw: str) -> str:
+    """Snapshot's human date formats -> Job Log's stable YYYY-MM-DD."""
+    text = str(raw or "").strip()
+    for fmt in ("%Y-%m-%d", "%m/%d/%y", "%m-%d-%y", "%m/%d/%Y",
+                "%m-%d-%Y"):
+        try:
+            return datetime.datetime.strptime(text, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return ""
+
+
+def sync_snapshot_logs_to_job_log(client: str, rows: list,
+                                  updated_by: str = "") -> dict:
+    """Upsert editable Snapshot rows into the durable Job Log.
+
+    Existing row metadata is preserved because Snapshot intentionally exposes
+    only the four closeout columns, while Job Log can also hold notes,
+    equipment, Trello source information and revision history.
+    """
+    import ems_db
+    job = ems_db.find_job_by_name(client)
+    if not job:
+        return {"ok": False, "error": "job not found", "rows": rows or []}
+    existing = {str(e.get("entry_id") or ""): e
+                for e in ems_db.list_job_log_entries(job["canon_key"])}
+    synced, errors = [], []
+    for index, raw in enumerate(rows or []):
+        row = dict(raw or {})
+        work_date = _snapshot_work_date(row.get("date") or "")
+        work_type = str(row.get("activity") or "").strip()
+        if not work_date or not work_type:
+            synced.append(row)
+            if any(str(row.get(k) or "").strip()
+                   for k in ("date", "activity", "techs")):
+                errors.append(f"row {index + 1} needs a complete date and activity")
+            continue
+        entry_id = str(row.get("entry_id") or "").strip()
+        prior = dict(existing.get(entry_id) or {})
+        payload = prior
+        payload.update({
+            "entry_id": entry_id,
+            "work_date": work_date,
+            "work_type": work_type,
+            "status": prior.get("status") or "completed",
+            "technicians": str(row.get("techs") or "").strip(),
+            "source": prior.get("source") or row.get("source") or "snapshot",
+            "source_id": prior.get("source_id") or row.get("source_id") or "",
+            "trello_comment_id": (prior.get("trello_comment_id")
+                                  or row.get("trello_comment_id") or ""),
+            "updated_by": updated_by or prior.get("updated_by") or "",
+        })
+        try:
+            saved = ems_db.save_job_log_entry(job["canon_key"], payload)
+            row.update({
+                "entry_id": saved.get("entry_id") or entry_id,
+                "source": saved.get("source") or payload["source"],
+                "source_id": saved.get("source_id") or payload["source_id"],
+                "trello_comment_id": (saved.get("trello_comment_id")
+                                      or payload["trello_comment_id"]),
+            })
+        except Exception as ex:
+            errors.append(f"row {index + 1}: {type(ex).__name__}: {ex}")
+        synced.append(row)
+    return {"ok": not errors, "rows": synced, "saved": len(synced) - len(errors),
+            "errors": errors, "error": "; ".join(errors[:3])}
 
 
 from companycam_web_api import CompanyCamApi
@@ -1601,6 +1675,10 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                         "weekday": wd,
                         "activity": entry.get("work_type") or "Update",
                         "techs": entry.get("technicians") or "",
+                        "entry_id": entry.get("entry_id") or "",
+                        "source": entry.get("source") or "",
+                        "source_id": entry.get("source_id") or "",
+                        "trello_comment_id": entry.get("trello_comment_id") or "",
                     })
         except Exception:
             pass
@@ -1920,12 +1998,43 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 _cw.mark_drafted(card_id)
         except Exception:
             pass
+        # Snapshot's daily log is the closeout view of the durable Job Log.
+        # Save edits after the PDF succeeds; a log outage should be visible
+        # but must not discard a successfully written closeout document.
+        try:
+            import supabase_client as _sb
+            user = _sb.current_user() or {}
+            actor = user.get("display_name") or user.get("email") or ""
+        except Exception:
+            actor = ""
+        try:
+            log_sync = sync_snapshot_logs_to_job_log(insured, logs, actor)
+        except Exception as ex:
+            log_sync = {"ok": False, "rows": logs,
+                        "error": f"{type(ex).__name__}: {ex}"}
         return {"ok": True, "path": output_path,
                 "rows_logs": len(logs), "rows_subs": len(subs),
                 "revision": revision_result.get("revision"),
                 "snapshot_id": revision_result.get("snapshot_id", ""),
                 "revision_saved": bool(revision_result.get("ok")),
-                "revision_error": revision_result.get("error", "")}
+                "revision_error": revision_result.get("error", ""),
+                "job_log_synced": bool(log_sync.get("ok")),
+                "job_log_error": log_sync.get("error", ""),
+                "synced_logs": log_sync.get("rows", logs)}
+
+    def sync_snapshot_job_log(self, client: str, rows: list) -> dict:
+        """Debounced edit path used by the Snapshot table."""
+        try:
+            import supabase_client as _sb
+            user = _sb.current_user() or {}
+            actor = user.get("display_name") or user.get("email") or ""
+        except Exception:
+            actor = ""
+        try:
+            return sync_snapshot_logs_to_job_log(client, rows, actor)
+        except Exception as ex:
+            return {"ok": False, "rows": rows or [],
+                    "error": f"{type(ex).__name__}: {ex}"}
 
     def snapshot_history(self, client: str, limit: int = 100) -> dict:
         try:

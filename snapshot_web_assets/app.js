@@ -21,6 +21,7 @@ const $$ = (s) => Array.from(document.querySelectorAll(s));
 const pad2 = (n) => String(n).padStart(2, "0");
 let _queueSyncBusy = false;
 let _queueSyncTimer = null;
+let _jobLogSyncTimer = null;
 
 // Live HEIC→JPEG conversion progress from the backend (do_import emits
 // `import:progress` per file). Updates the running import button so a
@@ -98,6 +99,12 @@ window.addEventListener("pywebviewready", async () => {
   $("#view-gen")?.addEventListener("input", () => {
     clearTimeout(_draftTimer);
     _draftTimer = setTimeout(saveSnapshotDraft, 400);
+  });
+  // The Snapshot daily-log table is a closeout view of Job Log, not a
+  // separate copy. Save complete edited rows after the user pauses typing.
+  $("#logs-body")?.addEventListener("input", () => {
+    clearTimeout(_jobLogSyncTimer);
+    _jobLogSyncTimer = setTimeout(syncSnapshotJobLog, 900);
   });
   // Snapshot list-view tabs (Today vs Tracked)
   document.querySelectorAll("#snap-tabs .tab-btn").forEach((b) =>
@@ -1011,6 +1018,10 @@ function setTechStatus(msg, isErr) {
 
 function addRow(tableKey, prefill) {
   const tr = document.createElement("tr");
+  tr.dataset.entryId = prefill.entry_id || "";
+  tr.dataset.source = prefill.source || "";
+  tr.dataset.sourceId = prefill.source_id || "";
+  tr.dataset.trelloCommentId = prefill.trello_comment_id || "";
   // Drag is gated behind the ⠿ handle — only mousedown on the
   // col-drag cell sets draggable=true. Otherwise typing inside an
   // input would accidentally start a drag and steal text selection.
@@ -1137,8 +1148,41 @@ function collectRows(tableKey) {
   return Array.from($(`#${tableKey}-body`).querySelectorAll("tr")).map((tr) => {
     const out = {};
     tr.querySelectorAll("input").forEach((i) => out[i.dataset.k] = i.value);
+    if (tableKey === "logs") {
+      out.entry_id = tr.dataset.entryId || "";
+      out.source = tr.dataset.source || "";
+      out.source_id = tr.dataset.sourceId || "";
+      out.trello_comment_id = tr.dataset.trelloCommentId || "";
+    }
     return out;
   }).filter((r) => r.date || r.activity || r.techs);  // skip blank rows
+}
+
+function applySyncedLogRows(rows) {
+  const trs = Array.from($("#logs-body").querySelectorAll("tr"));
+  (rows || []).forEach((row, index) => {
+    const tr = trs[index];
+    if (!tr) return;
+    tr.dataset.entryId = row.entry_id || tr.dataset.entryId || "";
+    tr.dataset.source = row.source || tr.dataset.source || "";
+    tr.dataset.sourceId = row.source_id || tr.dataset.sourceId || "";
+    tr.dataset.trelloCommentId = row.trello_comment_id || tr.dataset.trelloCommentId || "";
+  });
+}
+
+async function syncSnapshotJobLog() {
+  const client = $("#f-insured")?.value?.trim() || "";
+  if (!client) return;
+  const rows = collectRows("logs");
+  if (!rows.length) return;
+  try {
+    const res = await pywebview.api.sync_snapshot_job_log(client, rows);
+    applySyncedLogRows(res?.rows || []);
+    if (res?.ok) setStatus("Job Log saved", "ok");
+    else if (res?.error) setStatus(`Snapshot saved locally · Job Log: ${res.error}`, "warn");
+  } catch (ex) {
+    setStatus(`Snapshot saved locally · Job Log sync pending: ${ex}`, "warn");
+  }
 }
 
 async function generate() {
@@ -1198,6 +1242,10 @@ async function generate() {
     $("#gen-status").className = res.revision_saved ? "ok" : "warn";
     state.lastPdfPath = res.path;
     state.lastClient = insured;
+    applySyncedLogRows(res.synced_logs || []);
+    if (!res.job_log_synced && res.job_log_error) {
+      setStatus(`PDF saved · Job Log sync pending: ${res.job_log_error}`, "warn");
+    }
     // Snapshot generated — the draft is no longer "unsaved work".
     clearSnapshotDraft();
     // Open the PDF immediately so the user can review
