@@ -461,32 +461,30 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 /* A fanned hand of jobs. Starred jobs are shortcuts; cards dragged here are
    visually lifted from the board while Trello remains untouched. */
 .job-shelf {
-  position:fixed; z-index:145; left:14px; right:14px; bottom:29px;
-  max-height:190px; overflow:hidden; border:1px solid #536158;
-  border-radius:18px 18px 0 0;
-  background:radial-gradient(ellipse at 50% 120%,rgba(35,118,69,.34),transparent 58%),linear-gradient(180deg,rgba(24,31,27,.98),rgba(13,25,18,.99));
-  box-shadow:0 -14px 42px rgba(0,0,0,.46); backdrop-filter:blur(14px);
-  transition:border-color 120ms ease,box-shadow 120ms ease,transform 120ms ease;
+  position:fixed; z-index:145; left:12px; right:12px; bottom:29px;
+  height:166px; overflow:visible; pointer-events:none;
 }
-.job-shelf>header { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:35px; padding:6px 11px; border-bottom:1px solid var(--border); }
+.job-shelf>header { position:absolute; left:50%; bottom:4px; z-index:70; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; gap:12px; min-height:27px; padding:4px 9px; border:1px solid rgba(108,130,115,.34); border-radius:999px; background:rgba(18,24,20,.8); box-shadow:0 4px 14px rgba(0,0,0,.25); backdrop-filter:blur(10px); pointer-events:auto; }
 .job-shelf>header>div { display:flex; align-items:baseline; gap:8px; }
 .job-shelf>header strong { color:#f2d57c; font-size:12px; }
 .job-shelf>header span { color:var(--text-muted); font-size:10px; }
 .job-shelf>header button { border:0; background:transparent; color:var(--text-muted); cursor:pointer; font:600 10px/1 var(--font-body); }
 .job-shelf>header button:hover { color:var(--text); }
-.job-shelf-track { display:flex; align-items:flex-end; justify-content:center; min-height:118px; padding:12px 26px 5px; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
-.job-shelf-drop-hint { display:none; min-height:108px; place-content:center; gap:5px; padding:12px; color:#a9b8ae; text-align:center; letter-spacing:.01em; }
+.job-shelf-track { position:absolute; inset:0 0 22px; display:flex; align-items:flex-end; justify-content:center; padding:12px 26px 5px; overflow:visible; pointer-events:none; }
+.job-shelf-track .shelf-card { pointer-events:auto; }
+.job-shelf-drop-hint { display:none; position:absolute; left:50%; bottom:20px; transform:translateX(-50%); place-content:center; gap:3px; min-width:190px; padding:8px 15px; border:1px solid rgba(88,199,131,.42); border-radius:999px; background:rgba(20,52,31,.86); box-shadow:0 0 34px rgba(63,198,111,.22); color:#d9f8e5; text-align:center; letter-spacing:.01em; pointer-events:none; }
 .job-shelf-drop-hint strong,.job-shelf-drop-hint span { display:block; }.job-shelf-drop-hint strong { font-size:14px; }.job-shelf-drop-hint span { color:var(--text-muted); font-size:10px; font-weight:600; }
 .job-shelf.drag-visible .job-shelf-drop-hint { display:grid; }
-.job-shelf.drag-visible .job-shelf-track:has(.shelf-card) + .job-shelf-drop-hint { position:absolute; inset:35px 0 0; background:rgba(16,32,22,.93); }
-.job-shelf.drop-ready { border-color:#58c783; box-shadow:0 -12px 44px rgba(34,151,83,.28),inset 0 0 0 2px rgba(88,199,131,.24); }
-.job-shelf.drop-ready .job-shelf-drop-hint { color:#d9f8e5; background:rgba(31,75,48,.94)!important; }
+.job-shelf.drag-visible>header,.job-shelf.drag-visible .job-shelf-track { opacity:.28; }
+.job-shelf.drop-ready .job-shelf-drop-hint { background:rgba(31,94,51,.95); box-shadow:0 0 44px rgba(63,198,111,.46); transform:translateX(-50%) scale(1.04); }
 .shelf-card { position:relative; z-index:var(--fan-z); flex:0 0 clamp(176px,18vw,224px); min-width:0; min-height:88px; margin-left:-54px; display:grid; grid-template-columns:minmax(0,1fr) 28px; align-items:stretch; overflow:hidden; border:1px solid #526058; border-radius:12px; background:linear-gradient(145deg,#303a34,#202722 72%); box-shadow:0 8px 18px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.04); cursor:grab; transform-origin:50% 115%; transform:translateY(var(--fan-drop)) rotate(var(--fan-angle)); transition:transform 130ms ease,box-shadow 130ms ease,border-color 130ms ease; }
 .shelf-card:first-child { margin-left:0; }
 .shelf-card:hover,.shelf-card:focus-within { z-index:50; transform:translateY(-12px) rotate(0deg) scale(1.04); box-shadow:0 15px 28px rgba(0,0,0,.56); }
 .shelf-card.mode-held { border-color:#52b879; box-shadow:0 8px 18px rgba(0,0,0,.42),inset 0 3px #52b879; }
 .shelf-card.mode-starred { border-color:#9f8036; box-shadow:0 8px 18px rgba(0,0,0,.42),inset 0 3px #d3a83b; }
 .shelf-card.dragging { opacity:.42; }
+.card-drag-ghost { position:fixed; z-index:500; top:0; left:0; width:min(220px,34vw); padding:12px 14px; border:1px solid #62ce89; border-radius:12px; background:linear-gradient(145deg,#f9f7ed,#e8eadf); box-shadow:0 18px 36px rgba(0,0,0,.42); color:#172019; pointer-events:none; will-change:transform; }
+.card-drag-ghost strong,.card-drag-ghost span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.card-drag-ghost strong{font:700 13px/1.25 var(--font-display)}.card-drag-ghost span{margin-top:4px;color:#526158;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
 .shelf-corner { position:absolute; top:8px; left:9px; color:#f0cc69; font-size:12px; font-weight:800; }
 .mode-held .shelf-corner { color:#6ee09a; }
 .shelf-open { min-width:0; padding:27px 9px 10px 12px; border:0; background:transparent; color:var(--text); cursor:pointer; text-align:left; }

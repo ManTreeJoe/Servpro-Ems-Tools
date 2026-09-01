@@ -621,7 +621,7 @@ function renderCard(c) {
       ? `<span class="chip-mini sync-pending" title="Saved in Linguar Hub; waiting for Trello">↻ Sync</span>` : "";
   const chips = [loss, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
   const starred = isJobStarred(c.card_id);
-  return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="true" data-no-drag
+  return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false" data-no-drag
                role="button" tabindex="0" aria-label="Open ${escapeAttr(c.client || "job")}"
                data-card-id="${escapeAttr(c.card_id)}"
                data-list-id="${escapeAttr(c.list_id)}"
@@ -649,6 +649,7 @@ function wireCardClickAndHold(cardEl) {
   let pressActive = false;
   let suppressClick = false;
   let openedOnPointerUp = false;
+  let pointerDragging = false;
   // The card itself has role="button" for keyboard accessibility. Only
   // controls nested inside it should suppress the card-open action.
   const interactive = (target) => {
@@ -661,18 +662,28 @@ function wireCardClickAndHold(cardEl) {
     startY = event.clientY;
     pressActive = true;
     suppressClick = false;
-    // Cards remain native-draggable at render time. WebView2 may decide whether
-    // a native drag can start before pointerdown handlers run, so arming it here
-    // was intermittent. A stationary press still opens normally on pointerup.
+    try { cardEl.setPointerCapture(event.pointerId); } catch (_) {}
   });
   cardEl.addEventListener("pointermove", (event) => {
     if (!pressActive) return;
     if (Math.hypot(event.clientX - startX, event.clientY - startY) > 5) {
       suppressClick = true;
       cardEl.classList.add("drag-ready");
+      if (!pointerDragging) {
+        pointerDragging = true;
+        beginPointerCardDrag(cardEl, event);
+      }
+      updatePointerCardDrag(event);
     }
   });
   const release = (event, allowOpen = true) => {
+    if (pointerDragging) {
+      pointerDragging = false;
+      pressActive = false;
+      cardEl.classList.remove("drag-ready");
+      finishPointerCardDrag(event);
+      return;
+    }
     const shouldOpen = allowOpen && event.button === 0 && !interactive(event.target)
       && pressActive && !suppressClick
       && cardEl.dataset.didDrag !== "true";
@@ -705,6 +716,61 @@ function wireCardClickAndHold(cardEl) {
     event.preventDefault();
     onAuditCard(cardEl);
   });
+}
+
+let pointerCardDrag = null;
+
+function dragDetailsFromCard(el) {
+  return {
+    cardId: el.dataset.cardId, name: el.dataset.client,
+    fromListId: el.dataset.listId, url: el.dataset.url || "",
+    summary: el.dataset.cardSummary || "", source: "board",
+  };
+}
+
+function beginPointerCardDrag(cardEl, event) {
+  const ghost = document.createElement("div");
+  ghost.className = "card-drag-ghost";
+  ghost.innerHTML = `<strong>${escapeHtml(cardEl.dataset.client || "Job")}</strong><span>Release at the bottom to hold</span>`;
+  document.body.appendChild(ghost);
+  cardEl.dataset.didDrag = "true";
+  cardEl.classList.add("dragging");
+  state.drag = dragDetailsFromCard(cardEl);
+  pointerCardDrag = { cardEl, ghost, drag: { ...state.drag } };
+  showShelfForDrag();
+  updatePointerCardDrag(event);
+}
+
+function updatePointerCardDrag(event) {
+  if (!pointerCardDrag) return;
+  pointerCardDrag.ghost.style.transform = `translate3d(${event.clientX + 14}px,${event.clientY + 14}px,0) rotate(2deg)`;
+  const inHandZone = event.clientY >= window.innerHeight - 175;
+  $("#job-shelf").classList.toggle("drop-ready", inHandZone);
+  $$(".lane.drop-target").forEach((lane) => lane.classList.remove("drop-target"));
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".lane");
+  if (!inHandZone && target) target.classList.add("drop-target");
+}
+
+function finishPointerCardDrag(event) {
+  if (!pointerCardDrag) return;
+  const active = pointerCardDrag;
+  const drag = active.drag;
+  const inHandZone = event.clientY >= window.innerHeight - 175;
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".lane");
+  active.ghost.remove();
+  active.cardEl.classList.remove("dragging", "drag-ready");
+  pointerCardDrag = null;
+  $$(".lane.drop-target").forEach((lane) => lane.classList.remove("drop-target"));
+  if (inHandZone) {
+    holdDraggedCard(drag);
+  } else if (target) {
+    hideShelfAfterDrag();
+    state.drag = drag;
+    void onLaneDrop({ preventDefault() {}, currentTarget: target });
+  } else {
+    state.drag = null;
+    hideShelfAfterDrag();
+  }
 }
 
 function onCardDragStart(ev) {
@@ -1732,11 +1798,18 @@ function onShelfDrop(event) {
   const drag = state.drag;
   event.currentTarget.classList.remove("drop-ready");
   if (!drag || drag.source === "shelf") return;
+  holdDraggedCard(drag);
+}
+
+function holdDraggedCard(drag) {
+  if (!drag || drag.source === "shelf") return;
   const live = document.querySelector(`.kcard[data-card-id="${cssEsc(drag.cardId)}"]`);
   addToJobShelf(live ? shelfEntryFromCard(live) : {
     cardId: drag.cardId, name: drag.name, url: drag.url,
     fromListId: drag.fromListId, summary: drag.summary,
   }, "held");
+  state.drag = null;
+  hideShelfAfterDrag();
   renderBoard();
   setStatus(`Held “${drag.name}” locally · Trello stays in its current lane until you place it`, "ok");
 }
