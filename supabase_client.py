@@ -26,6 +26,7 @@ import json
 import os
 import threading
 import time
+from contextlib import contextmanager
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -35,6 +36,7 @@ import paths as _paths
 
 _USER_AGENT = "EMS-Automation/1.0"
 _SESSION_PATH = _paths.data("supabase_session.json")
+_SESSION_LOCK_PATH = _paths.data("supabase_session.lock")
 _LOCK = threading.RLock()
 
 # Refresh this long before the token actually expires, so a call that
@@ -99,6 +101,51 @@ def _write_session(sess: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(sess or {}, f, indent=2)
     os.replace(tmp, _SESSION_PATH)
+
+
+@contextmanager
+def _cross_process_session_lock(timeout_s: float = 15.0):
+    """Serialize refresh-token rotation across Main, Trial, and panels.
+
+    Supabase refresh tokens are single-use. A threading lock protects one
+    process, but installed Main and a local Trial can run side-by-side and
+    share the same session file. Locking one byte gives those processes one
+    refresh lane without adding another dependency.
+    """
+    os.makedirs(os.path.dirname(_SESSION_LOCK_PATH), exist_ok=True)
+    handle = open(_SESSION_LOCK_PATH, "a+b")
+    acquired = False
+    try:
+        try:
+            import msvcrt
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"0")
+                handle.flush()
+            deadline = time.monotonic() + timeout_s
+            while not acquired:
+                try:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    acquired = True
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("another Linguar Hub instance is still refreshing sign-in")
+                    time.sleep(0.05)
+        except ImportError:
+            # Windows is the supported desktop target. Tests and developer
+            # environments on other platforms still retain the thread lock.
+            acquired = True
+        yield
+    finally:
+        if acquired:
+            try:
+                import msvcrt
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            except (ImportError, OSError):
+                pass
+        handle.close()
 
 
 def _store_session(payload: dict) -> dict:
@@ -344,9 +391,21 @@ def _refresh(sess: dict) -> dict:
     rt = sess.get("refresh_token")
     if not rt:
         raise NotSignedIn("no refresh token; sign in again")
-    payload = _raw("POST", "/auth/v1/token",
-                   params={"grant_type": "refresh_token"},
-                   body={"refresh_token": rt})
+    try:
+        payload = _raw("POST", "/auth/v1/token",
+                       params={"grant_type": "refresh_token"},
+                       body={"refresh_token": rt})
+    except SupabaseError as ex:
+        # An older app instance may not yet use the cross-process lock. If it
+        # won the race, accept the newer session it wrote instead of showing
+        # refresh_token_already_used throughout the UI.
+        if ex.status == 400 and "refresh_token_already_used" in str(ex.body).lower():
+            time.sleep(0.15)
+            newer = _read_session()
+            if newer.get("access_token") and newer.get("refresh_token") != rt:
+                return newer
+            raise NotSignedIn("Your sign-in was refreshed by another app window. Please try again.") from None
+        raise
     if not (payload or {}).get("access_token"):
         raise NotSignedIn("refresh failed; sign in again")
     return _store_session(payload)
@@ -359,12 +418,15 @@ def access_token() -> str:
     rotates refresh tokens — the loser's token would already be spent.
     """
     with _LOCK:
-        sess = _read_session()
-        if not sess.get("access_token"):
-            raise NotSignedIn("not signed in")
-        if time.time() >= float(sess.get("expires_at") or 0) - _REFRESH_MARGIN_S:
-            sess = _refresh(sess)
-        return sess["access_token"]
+        with _cross_process_session_lock():
+            # Re-read only after the process-wide lock is ours: another app
+            # may have written a fresh access/refresh pair while we waited.
+            sess = _read_session()
+            if not sess.get("access_token"):
+                raise NotSignedIn("not signed in")
+            if time.time() >= float(sess.get("expires_at") or 0) - _REFRESH_MARGIN_S:
+                sess = _refresh(sess)
+            return sess["access_token"]
 
 
 # ── PostgREST ───────────────────────────────────────────────────────────
