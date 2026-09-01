@@ -1261,12 +1261,22 @@ function openAuditModal(data, trelloUrl = "") {
         <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div>${divisionDataTabs}</div>
         <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Loading live details…" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh live</button>`}</div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button></div>
-        <div class="card-quick-actions" aria-label="Job quick actions">
-          <button class="btn btn-primary compact" data-add-job-log>＋ Add update</button>
-          <details class="copy-quick-menu"><summary class="btn compact">📋 Copy…</summary><div>${visibleCopyOptions.map(([label, value]) => `<button data-copy-value="${escapeAttr(value)}">${escapeHtml(label.replace("Customer ", ""))}</button>`).join("")}<button data-copy-summary>Job summary</button></div></details>
-          <button class="btn btn-primary compact" data-stage-xa ${res.path ? "" : "disabled"}>📂 Stage for XA</button>
-          <button class="btn compact" data-open-docs-folder ${res.path ? "" : "disabled"}>📁 Folder</button>
-          <button class="btn compact" data-open-trello ${trelloUrl ? "" : "disabled"}>Trello ↗</button>
+        <div class="card-quick-actions" aria-label="Job audit actions">
+          <div class="quick-action-group"><span>Open</span><div>
+            <button class="action-btn primary" ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 OD folder" : "🔗 Link OD folder"}</button>
+            <button class="action-btn" data-open-trello ${trelloUrl ? "" : "disabled"}>Trello</button>
+            <button class="action-btn" data-open-xa ${data.card_id ? "" : "disabled"}>XA</button>
+            <button class="action-btn" data-open-companycam ${data.card_id ? "" : "disabled"}>CompanyCam</button>
+          </div></div>
+          <div class="quick-action-group"><span>Work</span><div>
+            <button class="action-btn primary" data-add-job-log>＋ Add update</button>
+            <button class="action-btn" data-quick-photo-report>Build photo report</button>
+            <button class="action-btn" data-stage-xa ${res.path ? "" : "disabled"}>📂 Stage for XA</button>
+          </div></div>
+          <div class="quick-action-group"><span>Job details</span><div>
+            <details class="copy-quick-menu"><summary class="action-btn">📋 Copy…</summary><div>${visibleCopyOptions.map(([label, value]) => `<button data-copy-value="${escapeAttr(value)}">${escapeHtml(label.replace("Customer ", ""))}</button>`).join("")}<button data-copy-summary>Job summary</button></div></details>
+            <button class="action-btn" data-open-audit>⚙ Job info &amp; all actions</button>
+          </div></div>
         </div>
       </header>
       <div class="modal-body">${body}</div>
@@ -1304,6 +1314,16 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelectorAll("[data-open-trello]").forEach((button) => button.addEventListener("click", () => {
     if (trelloUrl) pywebview.api.open_url(trelloUrl);
   }));
+  w.querySelector("[data-open-xa]")?.addEventListener("click", async () => {
+    const ok = await pywebview.api.open_xa_link(data.client || res.client || "", data.card_id || "");
+    if (!ok) setStatus("No XactAnalysis link is saved for this job", "warn");
+  });
+  w.querySelector("[data-open-companycam]")?.addEventListener("click", async () => {
+    const ok = await pywebview.api.open_companycam_link(data.client || res.client || "");
+    if (!ok) setStatus("No CompanyCam project is linked to this job", "warn");
+  });
+  w.querySelector("[data-link-job-folder]")?.addEventListener("click", () =>
+    openJobFolderLinkModal(data, close));
   w.querySelector("[data-refresh-workspace]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -2044,6 +2064,62 @@ function formatCommentDate(value) {
   if (!value) return "now";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? value : `${formatAppDate(d)} at ${d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
+}
+
+async function openJobFolderLinkModal(data, closeWorkspace) {
+  const client = data.client || data.audit?.client || "";
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay";
+  modal.innerHTML = `<div class="modal-box folder-link-modal" role="dialog" aria-modal="true" aria-label="Link OD job folder">
+    <header class="modal-head"><div><div class="modal-title">Link OD job folder</div><div class="modal-sub">${escapeHtml(client)} · this folder becomes the job's saved file location</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
+    <div class="modal-body"><div class="folder-link-tools"><input type="search" data-folder-filter placeholder="Filter folder names…" aria-label="Filter folder names"><button class="btn" data-all-years>Search all years</button></div>
+      <div class="folder-link-message" data-folder-message>Finding the best matching folders…</div><div class="folder-link-list" data-folder-list></div></div>
+    <footer class="modal-foot"><small>Pick the actual job folder—not EMS, DOCS, or PICS inside it.</small><button class="btn" data-close>Cancel</button></footer></div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
+  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+  const list = modal.querySelector("[data-folder-list]");
+  const message = modal.querySelector("[data-folder-message]");
+  const filter = modal.querySelector("[data-folder-filter]");
+  let candidates = [];
+  const render = () => {
+    const query = (filter.value || "").trim().toLowerCase();
+    const shown = candidates.filter((item) => !query || `${item.name} ${item.parent || ""} ${item.year || ""}`.toLowerCase().includes(query)).slice(0, 60);
+    list.innerHTML = shown.map((item) => `<button class="folder-link-row" data-folder-path="${escapeAttr(item.path || "")}"><span><strong>${escapeHtml(item.name || "Job folder")}</strong><small>${escapeHtml([item.parent, item.year_folder || item.year].filter(Boolean).join(" · "))}</small></span><b>Link folder</b></button>`).join("") || `<div class="aud-empty">No matching folders. Search all years or change the filter.</div>`;
+    list.querySelectorAll("[data-folder-path]").forEach((button) => button.addEventListener("click", async () => {
+      button.disabled = true; button.querySelector("b").textContent = "Linking…";
+      let result = await pywebview.api.link_job_folder(client, button.dataset.folderPath || "", false);
+      if (result?.needs_confirm && window.confirm(`${result.warning}\n\nLink this folder anyway?`)) {
+        result = await pywebview.api.link_job_folder(client, button.dataset.folderPath || "", true);
+      }
+      if (!result?.ok) {
+        button.disabled = false; button.querySelector("b").textContent = "Link folder";
+        message.textContent = result?.error || result?.warning || "Folder could not be linked";
+        message.className = "folder-link-message error";
+        return;
+      }
+      close(); closeWorkspace(true);
+      setStatus(`Linked OD folder to ${client}`, "ok");
+      await onAuditCard(client, data.card_id || "", "", data.selected_division || "EMS");
+    }));
+  };
+  const load = async (scope = "") => {
+    message.textContent = scope === "all" ? "Searching every job year…" : "Finding current-year job folders…";
+    message.className = "folder-link-message";
+    const result = await pywebview.api.list_job_folder_candidates(client, scope);
+    if (!result?.ok) {
+      message.textContent = result?.error || "Job folders could not be read";
+      message.className = "folder-link-message error"; candidates = []; render(); return;
+    }
+    candidates = result.candidates || [];
+    message.textContent = `${candidates.length} folders found · best matches first`;
+    render();
+  };
+  filter.addEventListener("input", render);
+  modal.querySelector("[data-all-years]").addEventListener("click", () => load("all"));
+  filter.focus();
+  await load("");
 }
 
 function formatAppDate(value) {

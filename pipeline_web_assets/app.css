@@ -534,12 +534,24 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .audit-close { flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); font-size: 25px; line-height: 1; cursor: pointer; }
 .audit-close:hover { background: var(--surface-2); color: var(--text); }
 .audit-card .modal-body { flex: 1; min-height: 0; padding: 0; overflow: hidden; overscroll-behavior: contain; }
-.card-quick-actions { width:100%; display:flex; align-items:center; gap:6px; overflow-x:auto; padding:2px 0 3px; scrollbar-width:thin; }
-.card-quick-actions>.btn,.copy-quick-menu>summary { flex:0 0 auto; white-space:nowrap; }
+.card-quick-actions { width:100%; display:flex; align-items:stretch; gap:12px; overflow-x:auto; padding:5px 0 4px; scrollbar-width:thin; }
+.quick-action-group { flex:0 0 auto; display:grid; grid-template-columns:auto 1fr; align-items:center; gap:7px; padding-right:12px; border-right:1px solid var(--border); }
+.quick-action-group:last-child { border-right:0; padding-right:0; }
+.quick-action-group>span { color:var(--text-muted); font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; writing-mode:vertical-rl; transform:rotate(180deg); }
+.quick-action-group>div { display:flex; align-items:center; gap:5px; }
+.card-quick-actions .action-btn { min-height:31px; padding:6px 9px; white-space:nowrap; }
+.card-quick-actions .action-btn.primary { background:var(--green); border-color:var(--green); color:#fff; }
 .copy-quick-menu { position:relative; flex:0 0 auto; }
 .copy-quick-menu>summary { list-style:none; cursor:pointer; }.copy-quick-menu>summary::-webkit-details-marker{display:none}
 .copy-quick-menu>div { position:absolute; top:calc(100% + 5px); left:0; z-index:240; min-width:190px; padding:6px; border:1px solid var(--border); border-radius:9px; background:#202622; box-shadow:0 14px 32px rgba(0,0,0,.48); }
 .copy-quick-menu button { display:block; width:100%; padding:8px 10px; border:0; border-radius:6px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }.copy-quick-menu button:hover{background:var(--green-soft)}
+.folder-link-modal { width:min(780px,92vw); height:min(720px,90vh); }
+.folder-link-tools { position:sticky; top:0; z-index:2; display:grid; grid-template-columns:1fr auto; gap:8px; padding-bottom:10px; background:var(--surface); }
+.folder-link-tools input { width:100%; min-height:38px; }
+.folder-link-message { padding:8px 2px; color:var(--text-muted); font-size:12px; }.folder-link-message.error{color:var(--danger)}
+.folder-link-list { display:grid; gap:6px; }
+.folder-link-row { width:100%; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:11px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); color:var(--text); text-align:left; cursor:pointer; }
+.folder-link-row:hover { border-color:var(--green); background:var(--green-soft); }.folder-link-row span,.folder-link-row strong,.folder-link-row small{display:block}.folder-link-row small{margin-top:3px;color:var(--text-muted)}.folder-link-row b{flex:0 0 auto;color:var(--green-light);font-size:11px}
 .footer-job-context { align-self:center; color:var(--text-muted); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
 .audit-loading-body { padding: 18px !important; background: var(--bg); }
 .job-card-loading-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 34%); gap: 16px; height: 100%; }

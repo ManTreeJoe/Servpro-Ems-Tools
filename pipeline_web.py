@@ -1119,6 +1119,24 @@ class Api:
     def open_job_folder(self, client: str, path: str = "") -> dict:
         return self._audit_api().open_od_for_client(client, path)
 
+    def list_job_folder_candidates(self, client: str, year: str = "") -> dict:
+        """Visible folder-link flow for Pipeline cards; no context menu required."""
+        return self._audit_api().list_folder_candidates(client, year)
+
+    def link_job_folder(self, client: str, path: str,
+                        confirm: bool = False) -> dict:
+        result = self._audit_api().set_folder_path(client, path, confirm)
+        if result.get("ok"):
+            self._invalidate_workspace(client=client)
+            self._board_view_cache = None
+        return result
+
+    def open_xa_link(self, client: str, card_id: str = "") -> bool:
+        return self._audit_api().open_xa_link(client, card_id)
+
+    def open_companycam_link(self, client: str) -> bool:
+        return self._audit_api().open_companycam_link(client)
+
     def open_document(self, path: str) -> dict:
         path = os.path.abspath(path or "")
         if not path or not os.path.isfile(path):
