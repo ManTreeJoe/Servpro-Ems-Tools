@@ -34,6 +34,25 @@ class Api:
         try:
             import job_folders
             rows = job_folders.search_clients(query or "", limit=max(1, int(limit or 250)))
+            # A job-card deep link carries the card title, not merely the
+            # account name. Management work commonly uses
+            #   PCM - (Kellogg Terrace) - Cruz, Sarah 8/28
+            # where PCM is the client and the rest identifies one job. If
+            # the complete title is not a top-level OD client, retry its
+            # leading segments against real top-level folders. The folder
+            # match is the proof; splitting alone never invents a parent.
+            if not rows and query:
+                pieces = [part.strip() for part in str(query).split(" - ")]
+                for end in range(len(pieces) - 1, 0, -1):
+                    hint = " - ".join(pieces[:end])
+                    candidates = job_folders.search_clients(hint, limit=max(1, int(limit or 250)))
+                    normalized_hint = " ".join(hint.casefold().split())
+                    exact = [row for row in candidates if
+                             " ".join(str(row.get("name") or "").casefold().split())
+                             == normalized_hint]
+                    if exact:
+                        rows = exact
+                        break
             wanted = (division or "all").strip().upper()
             clients = []
             for row in rows:
