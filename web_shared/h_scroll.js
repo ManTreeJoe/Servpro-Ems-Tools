@@ -28,6 +28,22 @@
     let startX = 0;
     let scrollLeft = 0;
     let moved = false;
+    let dragFrame = 0;
+    let pendingX = 0;
+    let wheelFrame = 0;
+    let wheelTarget = 0;
+
+    function clamp(value) {
+      return Math.max(0, Math.min(value, el.scrollWidth - el.clientWidth));
+    }
+
+    function paintDrag() {
+      dragFrame = 0;
+      if (!isDown) return;
+      const walk = pendingX - startX;
+      if (Math.abs(walk) > 2) moved = true;
+      el.scrollLeft = clamp(scrollLeft - walk);
+    }
 
     el.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || e.pointerType === "touch") return;
@@ -37,6 +53,7 @@
       moved = false;
       el.classList.add("hdrag-active");
       startX = e.clientX;
+      pendingX = e.clientX;
       scrollLeft = el.scrollLeft;
       e.preventDefault();
       try { el.setPointerCapture(pointerId); } catch (_) { /* optional */ }
@@ -44,6 +61,10 @@
 
     function endDrag(e) {
       if (e && pointerId !== null && e.pointerId !== pointerId) return;
+      if (dragFrame) {
+        cancelAnimationFrame(dragFrame);
+        paintDrag();
+      }
       isDown = false;
       if (pointerId !== null) {
         try { el.releasePointerCapture(pointerId); } catch (_) { /* already released */ }
@@ -58,9 +79,8 @@
     el.addEventListener("pointermove", (e) => {
       if (!isDown || e.pointerId !== pointerId) return;
       e.preventDefault();
-      const walk = e.clientX - startX;
-      if (Math.abs(walk) > 4) moved = true;
-      el.scrollLeft = scrollLeft - walk;
+      pendingX = e.clientX;
+      if (!dragFrame) dragFrame = requestAnimationFrame(paintDrag);
     });
 
     // Click swallow: when the user drag-scrolled past a click target,
@@ -88,19 +108,34 @@
       const hasHScroll = el.scrollWidth > el.clientWidth + 1;
       if (!hasHScroll) return;
       const noAuto = el.hasAttribute("data-hdrag-nowheel");
-      const vertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
+      const absX = Math.abs(e.deltaX);
+      const absY = Math.abs(e.deltaY);
+      const horizontal = absX > 0 && absX >= absY * .65;
+      const vertical = absY > absX;
       const smartWheel = el.hasAttribute("data-hdrag-smartwheel");
       const verticalPane = smartWheel ? e.target.closest(".lane-cards") : null;
       const canScrollPane = verticalPane && verticalPane.scrollHeight > verticalPane.clientHeight + 1 && (
         (e.deltaY < 0 && verticalPane.scrollTop > 0) ||
         (e.deltaY > 0 && verticalPane.scrollTop + verticalPane.clientHeight < verticalPane.scrollHeight - 1)
       );
-      if (!e.shiftKey && canScrollPane) return;
-      if (e.shiftKey || (!noAuto && vertical && Math.abs(e.deltaX) < 5)) {
-        e.preventDefault();
-        el.scrollLeft += e.shiftKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)
-          ? e.deltaX : e.deltaY;
-      }
+      if (!e.shiftKey && !horizontal && canScrollPane) return;
+      // Logitech MX Master thumb wheels arrive as deltaX. WebView2 does not
+      // consistently apply that native horizontal delta to nested boards, so
+      // consume it explicitly. Vertical wheels are converted only on boards
+      // that have not opted out with data-hdrag-nowheel.
+      if (!horizontal && !e.shiftKey && (noAuto || !vertical)) return;
+      let delta = horizontal ? e.deltaX : e.deltaY;
+      if (e.shiftKey && absX > absY) delta = e.deltaX;
+      // deltaMode 1 is lines (common in Logitech Options+); pixels are mode 0.
+      if (e.deltaMode === 1) delta *= 22;
+      else if (e.deltaMode === 2) delta *= el.clientWidth * .85;
+      e.preventDefault();
+      if (!wheelFrame) wheelTarget = el.scrollLeft;
+      wheelTarget = clamp(wheelTarget + delta);
+      if (!wheelFrame) wheelFrame = requestAnimationFrame(() => {
+        wheelFrame = 0;
+        el.scrollLeft = wheelTarget;
+      });
     }, { passive: false });
   }
 
@@ -116,6 +151,7 @@
       .board, [data-hdrag] {
         cursor: grab;
         scroll-behavior: auto;   /* drag-scroll feels broken with smooth */
+        overscroll-behavior-inline: contain;
       }
       .board.hdrag-active, [data-hdrag].hdrag-active {
         cursor: grabbing;
@@ -135,7 +171,16 @@
     // user changes dates, which would otherwise leave the new
     // board element unwired.
     try {
-      const obs = new MutationObserver(scan);
+      let scanFrame = 0;
+      const obs = new MutationObserver(() => {
+        // Large board renders can emit hundreds of mutations. One whole-page
+        // query per mutation visibly stalls pointer scrolling, so scan once
+        // at the next paint instead.
+        if (!scanFrame) scanFrame = requestAnimationFrame(() => {
+          scanFrame = 0;
+          scan();
+        });
+      });
       obs.observe(document.body, { childList: true, subtree: true });
     } catch (_) { /* no MutationObserver — give up gracefully */ }
   }

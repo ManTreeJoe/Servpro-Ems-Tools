@@ -14,7 +14,7 @@ def test_apa_board_scrolls_horizontally_without_wrapping():
     assert "overflow-x: auto" in board
     assert "overflow-y: hidden" in board
     assert "flex-wrap: nowrap" in board
-    assert "scroll-snap-type: x proximity" in board
+    assert "scroll-snap-type: none" in board
     assert "flex: 0 0 clamp(" in section
     assert "height: 100%" in section
 
@@ -24,8 +24,10 @@ def test_apa_board_loads_grab_to_pan_helper():
     html = (root / "apa_web_assets" / "index.html").read_text(encoding="utf-8")
     helper = (root / "web_shared" / "h_scroll.js").read_text(encoding="utf-8")
 
-    assert '../web_shared/h_scroll.js?v=20260827a' in html
-    assert 'el.scrollLeft = scrollLeft - walk' in helper
+    assert '../web_shared/h_scroll.js?v=20260901a' in html
+    assert 'el.scrollLeft = clamp(scrollLeft - walk)' in helper
+    assert 'const horizontal = absX > 0' in helper
+    assert 'requestAnimationFrame(paintDrag)' in helper
     assert 'cursor: grabbing' in helper
 
 
