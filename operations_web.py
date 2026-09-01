@@ -6,6 +6,7 @@ import sys
 import webview
 
 from operations_hub import OperationsHub
+import paths
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -15,16 +16,47 @@ INDEX_HTML = os.path.join(HERE, "operations_web_assets", "index.html")
 class Api:
     def __init__(self, hub=None):
         self.hub = hub or OperationsHub()
-        self.window = None
+        # Keep native pywebview objects private. Public attributes on a JS API
+        # are recursively exposed; publishing the Window makes the bridge walk
+        # WinForms AccessibilityObject forever during startup.
+        self._window = None
 
     def attach(self, window):
-        self.window = window
+        self._window = window
 
     def bootstrap(self, force=False):
         return self.hub.bootstrap(bool(force))
 
     def client_account(self, name):
         return self.hub.client_account(name)
+
+    def job_context(self, client, card_id="", division="EMS"):
+        return self.hub.job_context(client, card_id, division)
+
+    def job_action(self, action, job):
+        return self.hub.job_action(action, job)
+
+    def save_job_update(self, client, entry):
+        return self.hub.save_job_update(client, entry)
+
+    def copy_text(self, text):
+        from web_helpers import set_clipboard_text
+        return {"ok": bool(set_clipboard_text(str(text or "")))}
+
+    def launch_tool(self, tool):
+        allowed = {
+            "new_job", "audit_web", "snapshot_web", "job_notes_web",
+            "apa_web", "disputes_web", "kpi_web", "photo_folders_web",
+            "resources_web", "cheat_sheet_web", "settings_web", "home_web",
+        }
+        value = str(tool or "").strip()
+        if value not in allowed:
+            return {"ok": False, "error": "That tool is not available here."}
+        try:
+            paths.spawn_tool(value)
+            return {"ok": True}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def open_url(self, url):
         value = str(url or "").strip()

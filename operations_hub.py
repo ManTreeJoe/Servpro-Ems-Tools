@@ -1,8 +1,9 @@
 """Read-optimized Operations Hub model shared by desktop and browser shells.
 
-The interface deliberately stays small: bootstrap the operating picture and
-open one client account. Existing Trello, OD, and database modules remain
-adapters behind this seam while Linguar Hub gradually takes ownership.
+The interface deliberately stays small: bootstrap the operating picture, open
+one client account, and hydrate or act on one job. Existing Trello, OD, and
+database modules remain adapters behind this seam while Linguar Hub gradually
+takes ownership.
 """
 from __future__ import annotations
 
@@ -134,6 +135,70 @@ class OperationsHub:
 
     def client_account(self, name: str) -> dict:
         return self._clients.client_account((name or "").strip())
+
+    def job_context(self, client: str, card_id: str = "",
+                    division: str = "EMS") -> dict:
+        """Return the fast job projection used to enrich an open drawer.
+
+        Cards render immediately from ``bootstrap``. This slower adapter is
+        called only after a user opens one card, so folder discovery and Job
+        Info never hold up the board itself.
+        """
+        result = self._pipeline.job_card_workspace_fast(
+            (client or "").strip(), (card_id or "").strip(),
+            (division or "EMS").strip().upper())
+        audit = result.get("audit") or {}
+        crm = result.get("crm") or {}
+        fields = []
+        for section in result.get("info_sections") or []:
+            for field in section.get("fields") or []:
+                value = str(field.get("value") or "").strip()
+                if value:
+                    fields.append({
+                        "id": field.get("id") or "",
+                        "label": field.get("label") or "Job detail",
+                        "value": value,
+                    })
+        return {
+            "ok": bool(result.get("ok")),
+            "error": result.get("error") or "",
+            "client": result.get("client") or client,
+            "card_id": result.get("card_id") or card_id,
+            "division": result.get("selected_division") or division,
+            "trello_url": result.get("selected_trello_url") or "",
+            "path": audit.get("path") or "",
+            "fields": fields,
+            "job_log": list(crm.get("job_log") or []),
+            "progress": crm.get("progress") or {},
+            "load_ms": result.get("load_ms") or 0,
+        }
+
+    def job_action(self, action: str, job: dict) -> dict:
+        """Route one clearly named job action to the existing adapter."""
+        action = (action or "").strip().lower()
+        job = job if isinstance(job, dict) else {}
+        client = str(job.get("client") or "").strip()
+        card_id = str(job.get("card_id") or "").strip()
+        division = str(job.get("division") or "EMS").strip().upper()
+        path = str(job.get("path") or "").strip()
+        if not client:
+            return {"ok": False, "error": "This job has no client name."}
+        if action == "folder":
+            return self._pipeline.open_job_folder(client, path)
+        if action == "xa":
+            opened = self._pipeline.open_xa_link(client, card_id)
+            return {"ok": bool(opened), "error": "No XA link was found." if not opened else ""}
+        if action == "companycam":
+            opened = self._pipeline.open_companycam_link(client)
+            return {"ok": bool(opened), "error": "No CompanyCam link was found." if not opened else ""}
+        if action == "photo_report":
+            return self._pipeline.open_companycam_report_editor(
+                client, path, division)
+        return {"ok": False, "error": "That job action is not available."}
+
+    def save_job_update(self, client: str, entry: dict) -> dict:
+        return self._pipeline.save_job_log_update(
+            (client or "").strip(), entry if isinstance(entry, dict) else {})
 
     @staticmethod
     def _flatten_jobs(boards: list[dict]) -> list[dict]:

@@ -190,6 +190,7 @@ TOOLS = {
     "settings_web":   "settings_web",
     "home_web":       "home_web",
     "photo_folders_web": "photo_folders_web",
+    "resources_web":  "resources_web",
     "settings":       "settings_gui",
 }
 

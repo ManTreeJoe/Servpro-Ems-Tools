@@ -1,4 +1,4 @@
-const state={data:null,view:"home",board:"wip",jobFilter:"all",query:"",selectedClient:"",accessKey:""};
+const state={data:null,view:"home",board:"wip",jobFilter:"all",query:"",selectedClient:"",selectedJob:null,jobContext:null,accessKey:""};
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=(v)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const attr=esc;
@@ -15,16 +15,20 @@ function bind(){
   $("[data-client-search]").addEventListener("input",e=>{state.query=e.target.value.trim().toLowerCase();renderClientList();});
   $$("[data-filter-job]").forEach(b=>b.addEventListener("click",()=>{state.jobFilter=b.dataset.filterJob;showView("jobs");renderJobs();}));
   $("[data-job-drawer]").addEventListener("click",e=>{if(e.target.closest("[data-drawer-close]"))closeDrawer();});
-  document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();$(".global-search input").focus();}if(e.key==="Escape")closeDrawer();});
-  $(".new-loss").addEventListener("click",()=>toast("New-loss intake will connect here next; the existing intake remains unchanged."));
+  $("[data-tools-toggle]").addEventListener("click",e=>{e.stopPropagation();toggleTools();});
+  $$('[data-tool]').forEach(button=>button.addEventListener("click",()=>launchTool(button.dataset.tool,button)));
+  document.addEventListener("click",e=>{if(!e.target.closest(".tools-anchor"))closeTools();});
+  document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();$(".global-search input").focus();}if(e.key==="Escape"){closeTools();closeDrawer();}});
+  $(".new-loss").addEventListener("click",e=>launchTool("new_job",e.currentTarget));
   const queryKey=new URLSearchParams(location.search).get("key")||sessionStorage.getItem("operations-key")||"";
   if(queryKey){state.accessKey=queryKey;sessionStorage.setItem("operations-key",queryKey);}
 }
 
 async function transport(method,...args){
   if(window.pywebview?.api?.[method])return window.pywebview.api[method](...args);
+  if(!["bootstrap","client_account","job_context"].includes(method))return {ok:false,error:"This action is available in the desktop app."};
   const headers=state.accessKey?{"X-Operations-Key":state.accessKey}:{};
-  let url=method==="bootstrap"?`/api/bootstrap?force=${args[0]?1:0}`:`/api/client?name=${encodeURIComponent(args[0]||"")}`;
+  let url=method==="bootstrap"?`/api/bootstrap?force=${args[0]?1:0}`:method==="job_context"?`/api/job?client=${encodeURIComponent(args[0]||"")}&card_id=${encodeURIComponent(args[1]||"")}&division=${encodeURIComponent(args[2]||"EMS")}`:`/api/client?name=${encodeURIComponent(args[0]||"")}`;
   const response=await fetch(url,{headers});
   if(response.status===401&&!state.accessKey){const key=prompt("Enter the Operations Hub access key");if(key){state.accessKey=key;sessionStorage.setItem("operations-key",key);return transport(method,...args);}}
   return response.json();
@@ -87,8 +91,57 @@ function renderBars(host,rows,division=false){const max=Math.max(1,...rows.map(x
 
 function showView(view){state.view=view;$$('[data-view]').forEach(b=>b.classList.toggle("active",b.dataset.view===view));$$('[data-panel]').forEach(p=>p.classList.toggle("active",p.dataset.panel===view));const titles={home:["Front office · Live operations","Operations"],jobs:["Claims in motion","Jobs"],dispatch:["Field capacity · Seven days","Dispatch"],clients:["Account → Property → Claim","Clients"],reports:["Cycle time · Responsibility · Throughput","Reports"]};$("[data-eyebrow]").textContent=titles[view][0];$("[data-title]").textContent=titles[view][1];}
 function wireJobs(root){$$('[data-open-job]',root).forEach(el=>el.addEventListener("click",()=>openJob(el.dataset.openJob)));}
-function openJob(id){const job=state.data.jobs.find(j=>j.card_id===id);if(!job)return;const drawer=$("[data-job-drawer]");drawer.innerHTML=`<button class="drawer-close" data-drawer-close>×</button><small class="drawer-kicker">${esc(job.division)} · ${esc(job.board)}</small><h2>${esc(job.client)}</h2><div class="drawer-meta">${esc(job.lane)} · ${job.days_in_lane} day(s) in lane</div><div class="drawer-actions"><button class="primary-action" data-client-page>Open client</button>${job.url?"<button data-trello>Open Trello ↗</button>":""}</div><section class="drawer-section"><h3>Operating status</h3><div class="drawer-facts">${fact("Division",job.division)}${fact("Current lane",job.lane)}${fact("Due",job.due?fmtDate(job.due):"Not scheduled")}${fact("Activity",job.last_activity_at?fmtDate(job.last_activity_at):"—")}</div></section><section class="drawer-section"><h3>Job workspace</h3><p class="muted">The complete requirements, timeline, forms, photos, and division controls will connect here through the same shared job record.</p></section>`;drawer.hidden=false;$("[data-client-page]",drawer).addEventListener("click",()=>{closeDrawer();showView("clients");openClient(job.client);});$("[data-trello]",drawer)?.addEventListener("click",()=>desktopAction("open_url",job.url));}
-function closeDrawer(){$("[data-job-drawer]").hidden=true;}
+function openJob(id){const job=state.data.jobs.find(j=>j.card_id===id);if(!job)return;state.selectedJob=job;state.jobContext=null;renderJobDrawer(job);loadJobContext(job);}
+function renderJobDrawer(job,context=state.jobContext){
+  const drawer=$("[data-job-drawer]"),progress=context?.progress||{},counts=progress.counts||{},fields=context?.fields||[];
+  const copyFields=fields.length?fields:[{id:"job_name",label:"Job name",value:job.client}];
+  const copyRows=copyFields.slice(0,18).map(field=>`<button data-copy-value="${attr(field.value)}"><span>${esc(field.label)}</span><small>${esc(field.value)}</small></button>`).join("");
+  const loadState=context?`${context.load_ms||0} ms`:`Loading saved Job Info…`;
+  drawer.innerHTML=`
+    <header class="drawer-head">
+      <div><small class="drawer-kicker">${esc(job.division)} · ${esc(job.board)}</small><h2>${esc(job.client)}</h2><div class="drawer-meta">${esc(job.lane)} · ${job.days_in_lane} day(s) in lane</div></div>
+      <div class="drawer-head-actions"><button class="client-link" data-client-page>Client page</button><button class="drawer-close" data-drawer-close aria-label="Close">×</button></div>
+    </header>
+    <div class="job-action-bar" aria-label="Job actions">
+      <div class="action-cluster action-primary">
+        <button class="job-action primary" data-add-update><i>＋</i>Add update</button>
+        <details class="copy-menu"><summary class="job-action"><i>▣</i>Copy <span>⌄</span></summary><div class="copy-panel"><header><strong>Copy job details</strong><small>Uses the saved Job Info record</small></header>${copyRows}<button data-copy-summary><span>Job summary</span><small>All available details</small></button></div></details>
+        <button class="job-action" data-job-action="photo_report"><i>▧</i>Photo report</button>
+      </div>
+      <div class="action-cluster action-destinations" aria-label="Open job in">
+        <button class="job-action" data-job-action="folder"><i>▰</i>${context?.path?"Folder":"Find folder"}</button>
+        ${job.url?`<button class="job-action destination" data-trello><i class="trello-mark">T</i>Trello</button>`:""}
+        <button class="job-action destination" data-job-action="xa"><i class="xa-mark">XA</i>XA</button>
+        <button class="job-action destination" data-job-action="companycam"><i class="cc-mark">C</i>CompanyCam</button>
+      </div>
+    </div>
+    <section class="update-composer" data-update-composer hidden></section>
+    <div class="drawer-scroll">
+      <section class="drawer-section"><div class="drawer-section-title"><h3>Operating status</h3><small>${esc(loadState)}</small></div><div class="drawer-facts">${fact("Division",job.division)}${fact("Current lane",job.lane)}${fact("Due",job.due?fmtDate(job.due):"Not scheduled")}${fact("Last activity",job.last_activity_at?fmtDate(job.last_activity_at):"—")}</div></section>
+      ${context?renderProgress(progress,counts):`<section class="drawer-section context-loading"><i></i><div><strong>Loading job workspace</strong><small>Board details are ready; saved Job Info and requirements are loading.</small></div></section>`}
+      ${context?renderJobInfo(fields):""}
+      ${context?renderJobLog(context.job_log||[]):""}
+    </div>`;
+  drawer.hidden=false;
+  $("[data-client-page]",drawer).addEventListener("click",()=>{closeDrawer();showView("clients");openClient(job.client);});
+  $("[data-trello]",drawer)?.addEventListener("click",()=>desktopAction("open_url",context?.trello_url||job.url));
+  $$('[data-job-action]',drawer).forEach(button=>button.addEventListener("click",()=>runJobAction(button.dataset.jobAction,button)));
+  $("[data-add-update]",drawer).addEventListener("click",()=>showUpdateComposer(job));
+  $$('[data-copy-value]',drawer).forEach(button=>button.addEventListener("click",()=>copyValue(button.dataset.copyValue,button)));
+  $("[data-copy-summary]",drawer)?.addEventListener("click",()=>copyValue(copyFields.map(field=>`${field.label}: ${field.value}`).join("\n"),$("[data-copy-summary]",drawer)));
+}
+function renderProgress(progress,counts){const total=(progress.items||[]).filter(item=>["mandatory","required"].includes(item.importance)).length;return `<section class="drawer-section"><div class="drawer-section-title"><h3>Requirements</h3><strong>${progress.percent_complete??0}%</strong></div><div class="progress-track"><i style="width:${Math.max(0,Math.min(100,progress.percent_complete||0))}%"></i></div><div class="progress-meta"><span>${counts.todo||0} to do</span><span>${counts.blocked||0} blocked</span><span>${total} required</span></div></section>`;}
+function renderJobInfo(fields){return `<section class="drawer-section"><div class="drawer-section-title"><h3>Job Info</h3><small>${fields.length?`${fields.length} saved details`:"No saved details yet"}</small></div>${fields.length?`<div class="job-info-grid">${fields.slice(0,12).map(field=>fact(field.label,field.value)).join("")}</div>`:`<p class="muted">Job Info has not been filled out for this job.</p>`}</section>`;}
+function renderJobLog(entries){return `<section class="drawer-section"><div class="drawer-section-title"><h3>Recent job log</h3><small>${entries.length} update${entries.length===1?"":"s"}</small></div><div class="job-log-preview">${entries.slice(0,4).map(entry=>`<article><header><strong>${esc(entry.work_type||"Job update")}</strong><time>${fmtDate(entry.work_date||entry.created_at)}</time></header><p>${esc(entry.note||entry.status||"Saved update")}</p></article>`).join("")||`<p class="muted">No job-log updates yet. Add the first update above.</p>`}</div></section>`;}
+async function loadJobContext(job){try{const result=await transport("job_context",job.client,job.card_id,job.division);if(state.selectedJob?.card_id!==job.card_id)return;if(!result?.ok)throw new Error(result?.error||"Job workspace unavailable");state.jobContext=result;renderJobDrawer(job,result);}catch(error){if(state.selectedJob?.card_id===job.card_id){state.jobContext={fields:[],job_log:[],progress:{},error:String(error)};renderJobDrawer(job,state.jobContext);toast(`Job details: ${error}`);}}}
+function showUpdateComposer(job){const host=$("[data-update-composer]");if(!host)return;const today=todayIso();host.hidden=false;host.innerHTML=`<div class="composer-grid"><label>Date<input type="date" data-update-field="work_date" value="${today}"></label><label>Activity<select data-update-field="work_type">${["Initial inspection","Demo","Monitor","Equipment placed","Equipment pickup","Contents","Recon","Final inspection","Other"].map(value=>`<option>${value}</option>`).join("")}</select></label><label>Status<select data-update-field="status">${["completed","scheduled","rescheduled","cancelled","skipped","needs_review"].map(value=>`<option value="${value}">${value.replaceAll("_"," ")}</option>`).join("")}</select></label><label>Crew<input data-update-field="technicians" placeholder="Technician or crew"></label><label class="wide">Work completed / next step<textarea rows="3" data-update-field="note" placeholder="What happened, what was completed, and what comes next"></textarea></label></div><div class="composer-actions"><button class="primary-action" data-save-update>Save update</button><button class="quiet-button" data-cancel-update>Cancel</button><span data-update-status></span></div>`;host.scrollIntoView({behavior:"smooth",block:"nearest"});$("[data-cancel-update]",host).addEventListener("click",()=>{host.hidden=true;});$("[data-save-update]",host).addEventListener("click",()=>saveUpdate(job,host));}
+async function saveUpdate(job,host){const button=$("[data-save-update]",host),status=$("[data-update-status]",host),entry={source:"pc"};$$('[data-update-field]',host).forEach(field=>entry[field.dataset.updateField]=field.value);button.disabled=true;button.textContent="Saving…";const result=await transport("save_job_update",job.client,entry);if(!result?.ok){button.disabled=false;button.textContent="Save update";status.textContent=result?.error||"Could not save";return;}status.textContent="Saved";state.jobContext=await transport("job_context",job.client,job.card_id,job.division);renderJobDrawer(job,state.jobContext);toast("Job Log updated");}
+async function runJobAction(action,button){const job={...state.selectedJob,...(state.jobContext||{})};if(!window.pywebview?.api?.job_action){toast("This action is available in the desktop app.");return;}const label=button.innerHTML;button.disabled=true;button.textContent="Opening…";try{const result=await transport("job_action",action,job);if(!result?.ok)throw new Error(result?.error||"Action unavailable");toast(action==="photo_report"?"CompanyCam report workspace opened":"Opened");}catch(error){toast(String(error));}finally{button.disabled=false;button.innerHTML=label;}}
+async function copyValue(value,button){if(!value)return;let ok=false;if(window.pywebview?.api?.copy_text){const result=await transport("copy_text",value);ok=Boolean(result?.ok);}else{try{await navigator.clipboard.writeText(value);ok=true;}catch(_){}}toast(ok?"Copied":"Could not copy");button.closest("details")?.removeAttribute("open");}
+function closeDrawer(){state.selectedJob=null;state.jobContext=null;$("[data-job-drawer]").hidden=true;}
+function toggleTools(){const menu=$("[data-tools-menu]"),willOpen=menu.hidden;menu.hidden=!willOpen;$("[data-tools-toggle]").setAttribute("aria-expanded",String(willOpen));}
+function closeTools(){$("[data-tools-menu]").hidden=true;$("[data-tools-toggle]").setAttribute("aria-expanded","false");}
+async function launchTool(tool,button){closeTools();if(!window.pywebview?.api?.launch_tool){toast("Office tools open from the desktop app.");return;}const label=button.innerHTML;button.disabled=true;try{const result=await transport("launch_tool",tool);if(!result?.ok)throw new Error(result?.error||"Tool could not open");toast("Tool opened in its own window");}catch(error){toast(String(error));}finally{button.disabled=false;button.innerHTML=label;}}
 async function desktopAction(method,arg){if(window.pywebview?.api?.[method])return window.pywebview.api[method](arg);if(method==="open_url")window.open(arg,"_blank","noopener");else toast("Folder access is available in the desktop app.");}
 function tick(){$("[data-clock]").textContent=new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
 function setStatus(text,error=false){$("[data-status]").textContent=text;$("[data-status]").style.color=error?"var(--danger)":"";}

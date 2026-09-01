@@ -17,7 +17,7 @@
         <button class="nav-item" data-view="clients"><i>◎</i><span>Clients</span></button>
         <button class="nav-item" data-view="reports"><i>⌗</i><span>Reports</span></button>
       </nav>
-      <div class="nav-foot"><span class="connection-dot"></span><span data-connection>Starting…</span></div>
+      <div class="nav-foot"><div class="connection-state"><span class="connection-dot"></span><span data-connection>Starting…</span></div><button data-tool="settings_web" title="Settings" aria-label="Settings">⚙</button></div>
     </aside>
 
     <main class="workspace">
@@ -25,6 +25,28 @@
         <div class="page-identity"><small data-eyebrow>Front office · Live operations</small><h1 data-title>Operations</h1></div>
         <label class="global-search"><span>⌕</span><input type="search" placeholder="Find a client, claim, or job" aria-label="Search jobs and clients"><kbd>Ctrl K</kbd></label>
         <button class="icon-button" data-refresh title="Refresh live information">↻</button>
+        <div class="tools-anchor">
+          <button class="tools-button" data-tools-toggle aria-expanded="false">Tools <span>⌄</span></button>
+          <section class="tools-menu" data-tools-menu hidden aria-label="Operations tools">
+            <header><strong>Tools</strong><small>Open an office-wide workflow</small></header>
+            <div class="tool-group"><small>Job workflow</small>
+              <button data-tool="snapshot_web"><i>◫</i><span><strong>Snapshot</strong><small>Closeout queue and handoff</small></span></button>
+              <button data-tool="job_notes_web"><i>✎</i><span><strong>Job Notes</strong><small>Review and organize updates</small></span></button>
+            </div>
+            <div class="tool-group"><small>Reports</small>
+              <button data-tool="apa_web"><i>▥</i><span><strong>APA</strong><small>Production monitoring</small></span></button>
+              <button data-tool="disputes_web"><i>⚖</i><span><strong>Disputes</strong><small>Billing and exceptions</small></span></button>
+              <button data-tool="kpi_web"><i>⌗</i><span><strong>KPI</strong><small>Cycle time and performance</small></span></button>
+            </div>
+            <div class="tool-group"><small>Reference & setup</small>
+              <button data-tool="photo_folders_web"><i>▧</i><span><strong>Photo Folders</strong><small>Find and organize job photos</small></span></button>
+              <button data-tool="resources_web"><i>⌑</i><span><strong>Resources</strong><small>Forms and office references</small></span></button>
+              <button data-tool="cheat_sheet_web"><i>≡</i><span><strong>Cheat Sheet</strong><small>Workflow and comment reference</small></span></button>
+              <button class="mobile-tool" data-tool="settings_web"><i>⚙</i><span><strong>Settings</strong><small>Account, folders, and connections</small></span></button>
+            </div>
+            <button class="all-tools" data-tool="home_web">All legacy tools →</button>
+          </section>
+        </div>
         <button class="new-loss">＋ New loss</button>
       </header>
 

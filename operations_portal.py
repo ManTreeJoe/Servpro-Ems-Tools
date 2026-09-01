@@ -54,6 +54,13 @@ class OperationsHandler(SimpleHTTPRequestHandler):
                 name = parse_qs(parsed.query).get("name", [""])[0]
                 self._json(self.hub.client_account(name))
                 return
+            if parsed.path == "/api/job":
+                query = parse_qs(parsed.query)
+                self._json(self.hub.job_context(
+                    query.get("client", [""])[0],
+                    query.get("card_id", [""])[0],
+                    query.get("division", ["EMS"])[0]))
+                return
             if parsed.path == "/api/health":
                 self._json({"ok": True})
                 return
