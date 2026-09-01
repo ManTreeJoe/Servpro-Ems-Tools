@@ -17,9 +17,11 @@ Retry-After, exactly like trello_client._call.
 import json
 import os
 import re
+import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
 
 import config
 
@@ -980,43 +982,90 @@ def new_photos(project_id, since_epoch=None, include_unprocessed=False):
     return out
 
 
+_DOWNLOAD_LOCKS = {}
+_DOWNLOAD_LOCKS_GUARD = threading.Lock()
+
+
+def _download_lock(dest_path):
+    """One in-process lock per final photo path.
+
+    Snapshot, Job Workspace and a repair pull can all request the same photo.
+    Sharing ``<photo>.part`` let those requests overwrite/rename each other's
+    open file on Windows.  Locks are intentionally process-local; unique temp
+    names below also make a concurrently running installed build safe.
+    """
+    key = os.path.normcase(os.path.abspath(dest_path))
+    with _DOWNLOAD_LOCKS_GUARD:
+        return _DOWNLOAD_LOCKS.setdefault(key, threading.Lock())
+
+
+def _replace_download(tmp, dest_path, _max_retries=8):
+    """Finish a network-drive download despite short Windows file locks."""
+    for attempt in range(_max_retries + 1):
+        try:
+            # A second app instance may have completed this exact photo while
+            # this instance downloaded its private temp file.
+            if os.path.isfile(dest_path) and os.path.getsize(dest_path) > 0:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                return dest_path
+            os.replace(tmp, dest_path)
+            return dest_path
+        except PermissionError:
+            if attempt >= _max_retries:
+                raise
+            time.sleep(min(0.12 * (attempt + 1), 1.0))
+
+
 def _download(url, dest_path, _max_retries=3):
     """Stream one photo to disk. The `uris` are pre-signed storage URLs, so
     they're fetched WITHOUT the Bearer header. Best-effort retry on
     transient errors. Writes atomically (temp + rename)."""
     import shutil
-    tmp = dest_path + ".part"
-    headers = {"User-Agent": _USER_AGENT}
-    req = urllib.request.Request(url, headers=headers)
-    attempt = 0
-    while True:
+    # PID + thread + random suffix prevents collisions with Main, Trial, a
+    # repair pull, or a prior interrupted pull on the shared X: drive.
+    tmp = (f"{dest_path}.part.{os.getpid()}.{threading.get_ident()}."
+           f"{uuid.uuid4().hex[:8]}")
+    with _download_lock(dest_path):
+        if os.path.isfile(dest_path):
+            try:
+                if os.path.getsize(dest_path) > 0:
+                    return dest_path
+            except OSError:
+                pass
+        headers = {"User-Agent": _USER_AGENT}
+        req = urllib.request.Request(url, headers=headers)
+        attempt = 0
         try:
-            with urllib.request.urlopen(req, timeout=60) as r, \
-                    open(tmp, "wb") as fh:
-                shutil.copyfileobj(r, fh)
-            break
-        except urllib.request.HTTPError as ex:
-            if ex.code in (429, 500, 502, 503) and attempt < _max_retries:
-                time.sleep(min(2 ** attempt, 8))
-                attempt += 1
-                continue
+            while True:
+                try:
+                    with urllib.request.urlopen(req, timeout=60) as r, \
+                            open(tmp, "wb") as fh:
+                        shutil.copyfileobj(r, fh)
+                        fh.flush()
+                    break
+                except urllib.request.HTTPError as ex:
+                    if ex.code in (429, 500, 502, 503) and attempt < _max_retries:
+                        time.sleep(min(2 ** attempt, 8))
+                        attempt += 1
+                        continue
+                    raise
+                except (urllib.request.URLError, TimeoutError):
+                    if attempt < _max_retries:
+                        time.sleep(min(2 ** attempt, 8))
+                        attempt += 1
+                        continue
+                    raise
+            return _replace_download(tmp, dest_path)
+        finally:
+            # Safe after success (tmp was renamed) and after any failure.
             try:
-                os.remove(tmp)
+                if os.path.exists(tmp):
+                    os.remove(tmp)
             except OSError:
                 pass
-            raise
-        except (urllib.request.URLError, TimeoutError):
-            if attempt < _max_retries:
-                time.sleep(min(2 ** attempt, 8))
-                attempt += 1
-                continue
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-            raise
-    os.replace(tmp, dest_path)
-    return dest_path
 
 
 def tech_label(photo, fallback="", *, force=False):
@@ -1680,11 +1729,18 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         if cap is not None and (latest is None or int(cap) > int(latest)):
             latest = int(cap)
 
-    if advance_watermark and latest is not None:
+    # Never advance past a failed photo.  Otherwise the ordinary "new photos"
+    # pull will skip that photo forever and only a manual repair pull can find
+    # it. Successfully downloaded files dedupe on the retry, so holding the
+    # watermark is safe and makes the next click self-healing.
+    watermark_advanced = bool(advance_watermark and latest is not None
+                              and failed == 0)
+    if watermark_advanced:
         persistence.set_companycam_seen(pid, latest, job=job)
 
     return {"ok": True, "downloaded": downloaded, "skipped": skipped,
             "failed": failed, "error": last_error,
             "files": files, "latest": latest,
+            "watermark_advanced": watermark_advanced,
             "rooms": rooms_used, "stages": stages_used,
             "boxes": boxes_used, "untagged": untagged}
