@@ -106,7 +106,7 @@ def test_editor_is_wired_into_the_work_sidebar():
 
     work = dict((key, label) for group, items in home_web.NAV_GROUPS
                 if group == "Work" for key, _icon, label in items)
-    assert work["run_doc_editor"] == "Run Doc Editor"
+    assert work["run_doc_editor"] == "Daily Run Editor"
     assert home_web.SUB_MODULES["run_doc_editor"] == "run_doc_editor_web"
 
 

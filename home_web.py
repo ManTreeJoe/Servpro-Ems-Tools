@@ -148,7 +148,7 @@ NAV_GROUPS = [
         ("daily_run",   "📋", "Daily Run"),
         ("audit",       "👥", "Clients"),
         ("snapshot",    "📸", "Snapshot"),
-        ("run_doc_editor", "📋", "Run Doc Editor"),
+        ("run_doc_editor", "📋", "Daily Run Editor"),
         ("photo_folders","📷", "Photo Folders"),
     ]),
     ("Reports", [
@@ -156,7 +156,7 @@ NAV_GROUPS = [
         ("exceptions",  "⚠", "Exceptions"),
         ("notifications", "🔔", "Notifications"),
         ("hygiene",     "⚠", "Hygiene"),
-        ("disputes",    "⚖", "Disputes"),
+        ("disputes",    "⚖", "Billing Disputes"),
         ("wc_audit",    "🗂", "WC Audit"),
     ]),
     ("Reference", [
@@ -164,10 +164,10 @@ NAV_GROUPS = [
         ("job_notes",   "🗒", "Job Notes"),
         ("multi_unit",  "🏢", "Multi-Unit"),
         ("cheat_sheet", "📝", "Cheat Sheet"),
-        ("resources",   "📚", "Resources"),
+        ("resources",   "📚", "Forms & Resources"),
     ]),
     ("System", [
-        ("health",      "●", "Data & Sync Health"),
+        ("health",      "●", "System Health"),
         ("settings",    "⚙", "Settings"),
     ]),
 ]

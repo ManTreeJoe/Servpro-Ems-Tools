@@ -126,10 +126,27 @@ window.addEventListener("pywebviewready", async () => {
   state.dayOffset = 0;
   state.mode = fixedSurface === "daily" ? "daily" : "search";
   if (fixedSurface === "daily") {
+    document.title = "Daily Run — Linguar Hub";
+    $(".brand-name").textContent = "SERVPRO · Daily Run";
+    $(".brand-tag").textContent = "today’s jobs & file checks";
+    $("#search-box").placeholder = "🔎 Find a job on the daily run…";
+    $("#run-btn").textContent = "↻ Check Daily Run";
+    $("#open-doc-btn").textContent = "📄 Open Daily Run";
+    document.querySelector('[data-filter="all"]').textContent = "All Jobs";
     $("#mode-search")?.classList.add("hidden");
     $("#mode-starred")?.classList.add("hidden");
   } else if (fixedSurface === "clients") {
+    document.title = "Clients — Linguar Hub";
+    $(".brand-tag").textContent = "client directory & claim history";
+    $("#run-btn")?.classList.add("hidden");
+    for (const id of ["rerun-btn", "push-new-losses-btn", "post-daily-misses-btn",
+                      "export-flagged-btn", "export-all-btn", "archive-month-btn",
+                      "copy-xa-apology-btn"]) {
+      document.getElementById(id)?.classList.add("hidden");
+    }
+    $("#mode-search")?.classList.add("hidden");
     $("#mode-daily")?.classList.add("hidden");
+    $("#mode-starred")?.classList.add("hidden");
   }
   refreshDayLabel();
   updateNotesBadge();          // show the open-notes count on the 📝 button
@@ -384,7 +401,7 @@ function applyModeChrome(mode) {
   if (state.loading) {
     $("#loading-state").classList.toggle("hidden", mode !== "daily");
   }
-  $("#run-btn").textContent = mode === "daily" ? "↻ Run Audit"
+  $("#run-btn").textContent = mode === "daily" ? "↻ Check Daily Run"
     : mode === "starred" ? "↻ Reload starred"
     :                      "↻ Reload";
 }
