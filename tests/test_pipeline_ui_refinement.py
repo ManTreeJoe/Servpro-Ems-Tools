@@ -79,3 +79,8 @@ def test_jobs_board_zoom_is_visible_persistent_and_board_scoped():
                    "Math.min(1.4"):
         assert marker in js
     assert "zoom: var(--board-zoom, 1)" in css
+
+
+def test_apa_vertical_wheel_stays_in_the_column():
+    apa_html = (ROOT / "apa_web_assets" / "index.html").read_text(encoding="utf-8")
+    assert '<main class="board" id="board" data-hdrag-nowheel>' in apa_html
