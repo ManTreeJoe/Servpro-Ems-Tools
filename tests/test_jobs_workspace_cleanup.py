@@ -13,6 +13,10 @@ def test_pipeline_is_the_primary_jobs_workspace_and_reporting_is_grouped():
 
     assert list(work)[0] == "pipeline"
     assert work["pipeline"] == "Jobs"
+    assert list(work)[1] == "daily_run"
+    assert work["daily_run"] == "Daily Run"
+    assert home_web._asset_folder_for("daily_run").endswith(
+        "audit_web_assets/index.html?surface=daily")
     assert work["audit"] == "Clients"
     assert work["snapshot"] == "Snapshot"
     assert reports["apa"] == "APA"

@@ -120,8 +120,17 @@ window.addEventListener("pywebviewready", async () => {
     if (e.key === "ArrowDown") { e.preventDefault(); rows[0].focus(); }
     else if (e.key === "Enter") { e.preventDefault(); rows[0].click(); }
   });
+  const requestedSurface = new URLSearchParams(window.location.search).get("surface");
+  const fixedSurface = requestedSurface === "daily" || requestedSurface === "clients"
+    ? requestedSurface : "";
   state.dayOffset = 0;
-  state.mode = "search";
+  state.mode = fixedSurface === "daily" ? "daily" : "search";
+  if (fixedSurface === "daily") {
+    $("#mode-search")?.classList.add("hidden");
+    $("#mode-starred")?.classList.add("hidden");
+  } else if (fixedSurface === "clients") {
+    $("#mode-daily")?.classList.add("hidden");
+  }
   refreshDayLabel();
   updateNotesBadge();          // show the open-notes count on the 📝 button
   // Mode switcher (streamlined 2026-07: Search default, Daily Run, Starred)
@@ -245,12 +254,12 @@ window.addEventListener("pywebviewready", async () => {
   // isRestore flag, which PERSISTED mode="search" on every boot and quietly
   // overwrote whichever tab you'd actually left open.
   if (!_focus && !state.userSwitchedMode) {
-    let landing = "search";
+    let landing = fixedSurface === "daily" ? "daily" : "search";
     try {
       // PanelState caches the whole panel record, so the filter restore
       // below costs no extra round trip.
       const st = await PanelState.init("audit");
-      if (st && ["search", "daily", "starred"].includes(st.mode)) {
+      if (!fixedSurface && st && ["search", "daily", "starred"].includes(st.mode)) {
         landing = st.mode;
       }
       const savedFilter = PanelState.get("filter", "");

@@ -145,6 +145,7 @@ def _ensure_root_index():
 NAV_GROUPS = [
     ("Work", [
         ("pipeline",    "▦", "Jobs"),
+        ("daily_run",   "📋", "Daily Run"),
         ("audit",       "👥", "Clients"),
         ("snapshot",    "📸", "Snapshot"),
         ("run_doc_editor", "📋", "Run Doc Editor"),
@@ -191,6 +192,14 @@ def _asset_folder_for(key: str) -> str:
     origin restriction when an iframe at file://.../audit_web_assets/
     tries to access window.parent.pywebview at file://.../home_web_assets/.)
     """
+    # Clients and Daily Run intentionally share the mature audit workspace,
+    # but land on different surfaces. Keeping separate shell destinations
+    # puts daily work with Jobs without duplicating its filesystem/Trello
+    # logic or mixing the Daily Run tab back into the client-account view.
+    if key == "daily_run":
+        return "../audit_web_assets/index.html?surface=daily"
+    if key == "audit":
+        return "../audit_web_assets/index.html?surface=clients"
     folder = ASSET_FOLDER.get(key, f"{key}_web_assets")
     return f"../{folder}/index.html"
 
