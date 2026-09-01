@@ -82,15 +82,27 @@
 <!-- Date navigator -->
 <nav class="date-nav" id="date-nav" aria-label="Date navigator">
   <button class="nav-arrow" id="prev-date" title="Previous working day">◀</button>
-  <div class="date-current">
-    <div class="date-label" id="date-label">—</div>
-    <div class="date-meta" id="date-meta">—</div>
+  <div class="run-calendar-anchor" id="run-calendar-anchor">
+    <button class="date-current" id="apa-date-label" aria-haspopup="dialog" aria-expanded="false" title="Choose an APA date">
+      <span class="date-label" id="date-label">—</span>
+      <span class="date-meta" id="date-meta">—</span>
+      <span class="date-caret" aria-hidden="true">▾</span>
+    </button>
+    <section class="run-calendar hidden" id="run-calendar" role="dialog" aria-label="Choose an APA date">
+      <header class="run-calendar-head">
+        <button class="calendar-nav" id="calendar-prev" aria-label="Previous month">‹</button>
+        <strong id="calendar-title">—</strong>
+        <button class="calendar-nav" id="calendar-next" aria-label="Next month">›</button>
+      </header>
+      <div class="calendar-weekdays" aria-hidden="true">
+        <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+      </div>
+      <div class="calendar-grid" id="calendar-grid"></div>
+      <footer class="calendar-foot"><span><i class="run-dot"></i> APA document</span><span id="calendar-count">—</span></footer>
+    </section>
   </div>
   <button class="nav-arrow" id="next-date" title="Next working day">▶</button>
   <button class="nav-today" id="today-btn">Today</button>
-  <div class="date-strip" id="date-strip">
-    <!-- Quick-pick chips for recent working days -->
-  </div>
 </nav>
 
 <!-- Section toggles -->
@@ -117,6 +129,6 @@
   <span id="status-msg" class="status-msg"></span>
 </footer>
 
-<script src="app.js?v=20260826b"></script>
+<script src="app.js?v=20260901b"></script>
 </body>
 </html>

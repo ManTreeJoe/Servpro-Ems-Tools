@@ -104,12 +104,16 @@ body { display: flex; flex-direction: column; }
 }
 .nav-arrow:hover { background: var(--border); }
 .date-current {
-  display: flex; flex-direction: column; align-items: center;
+  position: relative; display: flex; flex-direction: column; align-items: center;
   min-width: 160px;
-  padding: 0 4px;
+  padding: 3px 24px 3px 8px; border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: inherit; cursor: pointer; font: inherit;
 }
+.date-current:hover { border-color: var(--border); background: var(--surface-2); }
+.date-current:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .date-label { font-size: 15px; font-weight: 600; color: var(--text); }
 .date-meta { font-size: 11px; color: var(--text-muted); }
+.date-caret { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 9px; }
 .nav-today {
   background: var(--green); color: #FFFFFF; border: 1px solid var(--green);
   padding: 6px 14px; border-radius: 6px; cursor: pointer;
@@ -117,26 +121,28 @@ body { display: flex; flex-direction: column; }
 }
 .nav-today:hover { background: var(--green-hover); }
 
-.date-strip {
-  display: flex; gap: 4px; overflow-x: auto;
-  flex: 1; max-width: 800px;
-  scrollbar-width: thin;
-}
-.date-chip {
-  background: var(--chip-bg); color: var(--text-muted);
-  border: 1px solid transparent;
-  padding: 4px 10px; border-radius: 999px;
-  font-size: 11px; cursor: pointer; white-space: nowrap;
-  transition: background 120ms ease, color 120ms ease;
-  font-variant-numeric: tabular-nums;
-}
-.date-chip:hover { background: var(--surface-3); color: var(--text); }
-.date-chip.active {
-  background: var(--chip-active); color: #FFFFFF;
-  border-color: var(--green);
-}
-.date-chip.no-doc { color: var(--text-dim); font-style: italic; }
-.date-chip.today { font-weight: 600; }
+.run-calendar-anchor { position: relative; }
+.run-calendar { position:absolute; top:calc(100% + 8px); left:0; z-index:180; width:322px; padding:12px; border:1px solid var(--border); border-radius:10px; background:#252525; box-shadow:0 16px 42px rgba(0,0,0,.58); }
+.run-calendar-head { display:grid; grid-template-columns:34px 1fr 34px; align-items:center; margin-bottom:10px; }
+.run-calendar-head strong { text-align:center; font-family:"Bahnschrift SemiCondensed","Arial Narrow",sans-serif; font-size:16px; font-weight:650; }
+.calendar-nav { width:30px; height:30px; border:0; border-radius:50%; background:transparent; color:var(--text); cursor:pointer; font-size:22px; }
+.calendar-nav:hover { background:var(--surface-3); }
+.calendar-nav:focus-visible,.calendar-day:focus-visible { outline:2px solid var(--green); outline-offset:1px; }
+.calendar-weekdays,.calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+.calendar-weekdays { margin-bottom:4px; }
+.calendar-weekdays span { color:var(--text-dim); text-align:center; font-size:9px; font-weight:700; text-transform:uppercase; }
+.calendar-day,.calendar-blank { position:relative; width:38px; height:38px; border-radius:50%; }
+.calendar-day { border:1px solid transparent; background:transparent; color:var(--text); cursor:pointer; font:500 12px/1 "Segoe UI Variable","Segoe UI",sans-serif; }
+.calendar-day:hover { background:var(--surface-3); }
+.calendar-day.today { border-color:var(--green); color:#9be0b2; font-weight:700; }
+.calendar-day.selected { background:var(--green); color:#fff; font-weight:700; }
+.calendar-day.has-run::after { content:""; position:absolute; width:5px; height:5px; left:50%; bottom:4px; transform:translateX(-50%); border-radius:50%; background:#52c77d; }
+.calendar-day.selected.has-run::after { background:#e3fff0; }
+.calendar-day.no-run { color:var(--text-muted); }
+.calendar-foot { display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:9px; border-top:1px solid var(--border); color:var(--text-muted); font-size:10px; }
+.calendar-foot span:first-child { display:inline-flex; align-items:center; gap:6px; }
+.run-dot { width:6px; height:6px; border-radius:50%; background:#52c77d; }
+.calendar-loading { grid-column:1/-1; padding:60px 0; text-align:center; color:var(--text-muted); font-size:11px; }
 
 /* ── Section view toggles ──────────────────────────────────────── */
 .section-toggles {

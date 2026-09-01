@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import audit_web
+import apa_web
 import run_doc
 
 
@@ -54,3 +55,25 @@ def test_audit_calendar_ui_has_run_dots_and_date_jump():
     assert "run_doc_calendar" in js
     assert "selectCalendarDate" in js and "Date.UTC" in js
     assert 'app.js?v=20260827b' in html
+
+
+def test_apa_calendar_marks_existing_documents(monkeypatch):
+    monkeypatch.setattr(apa_web.apa, "doc_path_for_today",
+                        lambda day: f"C:/runs/{day.isoformat()}.docx")
+    monkeypatch.setattr(apa_web.os.path, "isfile",
+                        lambda path: path.endswith("2026-08-03.docx") or
+                                     path.endswith("2026-08-24.docx"))
+    result = apa_web.Api().run_doc_calendar(2026, 8)
+    assert result["ok"] is True
+    assert result["dates"] == ["2026-08-03", "2026-08-24"]
+
+
+def test_apa_uses_daily_run_calendar_instead_of_date_chip_strip():
+    root = Path(__file__).resolve().parents[1] / "apa_web_assets"
+    html = (root / "index.html").read_text(encoding="utf-8")
+    css = (root / "app.css").read_text(encoding="utf-8")
+    js = (root / "app.js").read_text(encoding="utf-8")
+    assert 'id="run-calendar"' in html
+    assert 'id="date-strip"' not in html
+    assert ".calendar-day.has-run::after" in css
+    assert "pywebview.api.run_doc_calendar" in js

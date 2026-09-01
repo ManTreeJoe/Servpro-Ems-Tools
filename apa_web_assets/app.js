@@ -11,10 +11,10 @@
 
 const state = {
   doc:          null,    // current payload from Api.today_doc / doc_for_date
-  nav_dates:    [],      // recent working days for the chip strip
   active_date:  null,    // ISO string
   search:       "",
   toggle:       "all",   // "all" / "estimator" / "builtin" / "nonempty"
+  calendar:     { year: 0, month: 0, dates: new Set(), seq: 0 },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -36,6 +36,18 @@ window.addEventListener("pywebviewready", async () => {
   $("#prev-date").addEventListener("click", () => stepDate(-1));
   $("#next-date").addEventListener("click", () => stepDate(+1));
   $("#today-btn").addEventListener("click", () => loadToday());
+  $("#apa-date-label").addEventListener("click", (event) => {
+    event.stopPropagation(); toggleRunCalendar();
+  });
+  $("#calendar-prev").addEventListener("click", (event) => {
+    event.stopPropagation(); shiftCalendarMonth(-1);
+  });
+  $("#calendar-next").addEventListener("click", (event) => {
+    event.stopPropagation(); shiftCalendarMonth(1);
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest?.("#run-calendar-anchor")) closeRunCalendar();
+  });
   $("#search-box").addEventListener("input", onSearchInput);
   $$(".toggle-btn").forEach((b) =>
     b.addEventListener("click", () => setToggle(b.dataset.toggle))
@@ -259,7 +271,6 @@ async function sendEodEmail() {
 async function loadInitialData() {
   setStatus("Loading APA doc…");
   try {
-    state.nav_dates = await pywebview.api.nav_dates();
     await loadToday();
   } catch (ex) {
     setStatus(`Failed to load: ${ex}`, "error");
@@ -284,13 +295,84 @@ async function loadDate(iso) {
 }
 
 function stepDate(delta) {
-  // Walk the nav_dates list by `delta` positions. The list is
-  // newest-first, so delta=-1 = older, delta=+1 = newer.
-  const ix = state.nav_dates.findIndex((d) => d.iso === state.active_date);
-  if (ix === -1) return;
-  const target_ix = ix - delta;   // newest-first → invert
-  if (target_ix < 0 || target_ix >= state.nav_dates.length) return;
-  loadDate(state.nav_dates[target_ix].iso);
+  const date = parseIsoDate(state.active_date) || new Date();
+  do { date.setDate(date.getDate() + delta); }
+  while (date.getDay() === 0 || date.getDay() === 6);
+  loadDate(localIso(date));
+}
+
+function toggleRunCalendar() {
+  const popover = $("#run-calendar");
+  if (!popover.classList.contains("hidden")) { closeRunCalendar(); return; }
+  const selected = parseIsoDate(state.active_date) || new Date();
+  state.calendar.year = selected.getFullYear();
+  state.calendar.month = selected.getMonth() + 1;
+  popover.classList.remove("hidden");
+  $("#apa-date-label").setAttribute("aria-expanded", "true");
+  loadRunCalendarMonth();
+}
+
+function closeRunCalendar() {
+  $("#run-calendar")?.classList.add("hidden");
+  $("#apa-date-label")?.setAttribute("aria-expanded", "false");
+}
+
+function shiftCalendarMonth(delta) {
+  const date = new Date(state.calendar.year, state.calendar.month - 1 + delta, 1);
+  state.calendar.year = date.getFullYear();
+  state.calendar.month = date.getMonth() + 1;
+  loadRunCalendarMonth();
+}
+
+async function loadRunCalendarMonth() {
+  const { year, month } = state.calendar;
+  const seq = ++state.calendar.seq;
+  $("#calendar-title").textContent = new Intl.DateTimeFormat(undefined, {
+    month: "long", year: "numeric"
+  }).format(new Date(year, month - 1, 1));
+  $("#calendar-grid").innerHTML = '<div class="calendar-loading">Finding APA documents…</div>';
+  $("#calendar-count").textContent = "";
+  let result;
+  try { result = await pywebview.api.run_doc_calendar(year, month); }
+  catch (error) { result = { ok: false, error: String(error), dates: [] }; }
+  if (seq !== state.calendar.seq) return;
+  state.calendar.dates = new Set(result?.dates || []);
+  renderRunCalendar();
+  $("#calendar-count").textContent = result?.ok
+    ? `${state.calendar.dates.size} APA day${state.calendar.dates.size === 1 ? "" : "s"}`
+    : "Couldn’t scan this month";
+}
+
+function renderRunCalendar() {
+  const { year, month, dates } = state.calendar;
+  if (!year || !month) return;
+  const firstWeekday = new Date(year, month - 1, 1).getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const today = localIso(new Date());
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i += 1) cells.push('<span class="calendar-blank"></span>');
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const hasRun = dates.has(iso);
+    const classes = ["calendar-day", hasRun ? "has-run" : "no-run"];
+    if (iso === today) classes.push("today");
+    if (iso === state.active_date) classes.push("selected");
+    cells.push(`<button class="${classes.join(" ")}" data-date="${iso}">${day}</button>`);
+  }
+  $("#calendar-grid").innerHTML = cells.join("");
+  $("#calendar-grid").querySelectorAll(".calendar-day").forEach((button) =>
+    button.addEventListener("click", () => {
+      closeRunCalendar(); loadDate(button.dataset.date);
+    }));
+}
+
+function parseIsoDate(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  return match ? new Date(+match[1], +match[2] - 1, +match[3]) : null;
+}
+
+function localIso(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 // ── Render ───────────────────────────────────────────────────────
@@ -331,17 +413,7 @@ function renderDateNav() {
     emptyCreate._wired = true;
     emptyCreate.addEventListener("click", createTodayDoc);
   }
-  const strip = $("#date-strip");
-  strip.innerHTML = state.nav_dates.map((d) => {
-    const classes = ["date-chip"];
-    if (d.iso === state.active_date) classes.push("active");
-    if (!d.exists) classes.push("no-doc");
-    if (d.is_today) classes.push("today");
-    return `<button class="${classes.join(" ")}" data-iso="${d.iso}">${escapeHtml(d.short)}</button>`;
-  }).join("");
-  strip.querySelectorAll(".date-chip").forEach((c) =>
-    c.addEventListener("click", () => loadDate(c.dataset.iso))
-  );
+  if (!$("#run-calendar").classList.contains("hidden")) renderRunCalendar();
 }
 
 // ── Name filter ────────────────────────────────────────────────────
@@ -824,6 +896,7 @@ async function revealInExplorer() {
 }
 
 function onKeyDown(ev) {
+  if (ev.key === "Escape") closeRunCalendar();
   // Ctrl+S / Cmd+S → save immediately + show a toast. APA already
   // auto-saves on every edit, but the user expected the keyboard
   // shortcut to work (Tk apa_monitor_gui.py:744 had the same).

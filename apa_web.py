@@ -381,6 +381,23 @@ class Api:
             })
         return out
 
+    def run_doc_calendar(self, year: int, month: int) -> dict:
+        """Dates with APA documents for the shared Daily Run calendar."""
+        try:
+            import calendar
+            year, month = int(year), int(month)
+            days = calendar.monthrange(year, month)[1]
+            dates = []
+            for day in range(1, days + 1):
+                date_obj = _dt.date(year, month, day)
+                if os.path.isfile(apa.doc_path_for_today(date_obj)):
+                    dates.append(date_obj.isoformat())
+            return {"ok": True, "year": year, "month": month,
+                    "dates": dates, "count": len(dates)}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}",
+                    "dates": []}
+
     def section_order(self) -> list[str]:
         """Current persisted section order — for re-ordering UI later."""
         return list(apa.SECTION_ORDER)
