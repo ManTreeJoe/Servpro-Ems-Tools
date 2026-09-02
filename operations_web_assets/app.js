@@ -158,7 +158,7 @@ function wireJobs(root){$$('[data-open-job]',root).forEach(el=>el.addEventListen
 
 function enableHorizontalGrab(host){
   if(!host||host._grabBound)return;host._grabBound=true;let gesture=null;
-  host.addEventListener("pointerdown",event=>{const control=event.target.closest("button,input,select,textarea,a,summary");if(event.button!==0||(control&&!control.matches(".job-card,.dispatch-job"))||event.clientY>=host.getBoundingClientRect().bottom-14)return;gesture={id:event.pointerId,x:event.clientX,y:event.clientY,left:host.scrollLeft,axis:"",moved:false};if(event.pointerType==="mouse"){try{host.setPointerCapture(event.pointerId);}catch(_){}}});
+  host.addEventListener("pointerdown",event=>{const control=event.target.closest("button,input,select,textarea,a,summary");if(event.button!==0||(control&&!control.matches(".job-card,.dispatch-job"))||event.clientY>=host.getBoundingClientRect().bottom-14)return;gesture={id:event.pointerId,x:event.clientX,y:event.clientY,left:host.scrollLeft,axis:"",moved:false};});
   host.addEventListener("pointermove",event=>{if(!gesture||gesture.id!==event.pointerId)return;const dx=event.clientX-gesture.x,dy=event.clientY-gesture.y;if(!gesture.axis&&Math.hypot(dx,dy)>3)gesture.axis=Math.abs(dx)>=Math.abs(dy)?"x":"y";if(gesture.axis!=="x")return;event.preventDefault();gesture.moved=true;host.classList.add("is-grabbing");try{host.setPointerCapture(event.pointerId);}catch(_){}host.scrollLeft=gesture.left-dx;});
   const finish=event=>{if(!gesture||gesture.id!==event.pointerId)return;if(gesture.moved)host._suppressClickUntil=performance.now()+180;gesture=null;host.classList.remove("is-grabbing");};
   host.addEventListener("pointerup",finish);host.addEventListener("pointercancel",finish);host.addEventListener("lostpointercapture",event=>{if(gesture&&gesture.id===event.pointerId){gesture=null;host.classList.remove("is-grabbing");}});
@@ -173,7 +173,7 @@ async function runConnectionAction(button){const action=button.dataset.connectio
 function openAccountModal(){$("[data-account-modal]").hidden=false;setTimeout(()=>$("[data-account-form] input[name='email']")?.focus(),0);}
 function closeAccountModal(){$("[data-account-modal]").hidden=true;$("[data-account-error]").textContent="";}
 async function submitAccountSignIn(event){event.preventDefault();const form=event.currentTarget,submit=$("button[type='submit']",form),error=$("[data-account-error]",form),values=new FormData(form);submit.disabled=true;submit.textContent="Signing in…";error.textContent="";const result=await transport("account_sign_in",String(values.get("email")||""),String(values.get("password")||""));submit.disabled=false;submit.textContent="Sign in";if(!result?.ok){error.textContent=result?.error||"Sign in failed";form.elements.password.select();return;}form.reset();closeAccountModal();toast(result.message||"Signed in");await loadConnections();boot(true);}
-function openJob(id){const job=state.data.jobs.find(j=>j.card_id===id);if(!job)return;state.selectedJob=job;state.jobContext=null;renderJobDrawer(job);loadJobContext(job);}
+function openJob(id){const job=state.data.jobs.find(j=>String(j.card_id)===String(id));if(!job)return;state.selectedJob=job;state.jobContext=null;renderJobDrawer(job);loadJobContext(job);}
 function renderJobDrawer(job,context=state.jobContext){
   const drawer=$("[data-job-drawer]"),progress=context?.progress||{},counts=progress.counts||{},fields=context?.fields||[];
   const copyFields=fields.length?fields:[{id:"job_name",label:"Job name",value:job.client}];

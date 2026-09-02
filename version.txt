@@ -1,6 +1,6 @@
 {
-  "version": "1.8.0",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.0",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.0/Linguar-Hub-Setup-1.8.0.exe",
-  "notes": "Promotes the verified Operations Hub update to Main. Adds the modern browser-ready operations workspace, Run Doc-backed dispatch, mobile-friendly field notes, department timing and franchise scorecard tracking, user-attributed service connections, light/system themes, improved job-detail loading, and complete Trello-to-Supabase job information backfill with safe active/history merging."
+  "version": "1.8.1",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.1",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.1/Linguar-Hub-Setup-1.8.1.exe",
+  "notes": "Fixes job cards in the new Operations Jobs board so a normal click opens the job immediately while horizontal grab-scrolling still activates only after an intentional drag. Also normalizes card identifiers for reliable job lookup."
 }

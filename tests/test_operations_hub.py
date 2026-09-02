@@ -217,7 +217,7 @@ def test_browser_and_desktop_use_the_same_responsive_assets():
                    '"/api/requirement"', "Referenced job matched to this client"):
         assert marker in js
     for marker in ("data-job-backdrop", "linguar_hub.png",
-                   "app.js?v=20260902b", "data-edit-dispatch"):
+                   "app.js?v=20260902c", "data-edit-dispatch"):
         assert marker in html
     for marker in ("enableHorizontalGrab", "serviceIcon", "web_shared/trello.png",
                    "web_shared/xactanalysis.png", "web_shared/companycam.png",
@@ -225,6 +225,11 @@ def test_browser_and_desktop_use_the_same_responsive_assets():
         assert marker in js
     assert "scroll-snap-type:none" in css
     assert ".jobs-board.is-grabbing" in css
+    pointerdown = js.split('host.addEventListener("pointerdown"', 1)[1].split('host.addEventListener("pointermove"', 1)[0]
+    pointermove = js.split('host.addEventListener("pointermove"', 1)[1].split("const finish=", 1)[0]
+    assert "setPointerCapture" not in pointerdown
+    assert "setPointerCapture" in pointermove
+    assert "String(j.card_id)===String(id)" in js
 
 
 def test_operations_shell_has_no_fake_dashboard_controls_or_copy():
