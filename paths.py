@@ -320,14 +320,51 @@ def auto_detect():
             detected["audit_base"] = os.path.normpath(cand)
             break
 
-    # runs_dir — OneDrive subfolder containing daily run .docx files
+    # runs_dir — OneDrive/SharePoint library containing current Daily Runs.
+    # The IE library is two levels below OneDrive:
+    #   OneDrive - company/Servpro Team ... - Documents/EMS Daily Run
+    # The old immediate-only glob missed it and the app fell back to the
+    # reachable but stale X:/IE_Public/Daily Run archive.
     runs_candidates = []
     for od in onedrive_roots:
         runs_candidates.extend(glob.glob(os.path.join(od, "*Run*")))
         runs_candidates.extend(glob.glob(os.path.join(od, "*Daily*")))
-    # Prefer ones that actually contain .docx files
+        try:
+            with os.scandir(od) as entries:
+                first_level = [e.path for e in entries if e.is_dir()]
+        except OSError:
+            first_level = []
+        for parent in first_level:
+            try:
+                with os.scandir(parent) as entries:
+                    for entry in entries:
+                        if (entry.is_dir()
+                                and ("run" in entry.name.casefold()
+                                     or "daily" in entry.name.casefold())):
+                            runs_candidates.append(entry.path)
+            except OSError:
+                continue
+
+    def _has_run_docs(folder):
+        if not os.path.isdir(folder):
+            return False
+        for probe in (folder, *glob.glob(os.path.join(folder, "*"))):
+            if not os.path.isdir(probe):
+                continue
+            try:
+                if any(name.lower().endswith((".docx", ".msg"))
+                       for name in os.listdir(probe)):
+                    return True
+            except OSError:
+                continue
+        return False
+
+    # Prefer named daily-run libraries that actually contain documents.
+    runs_candidates = list(dict.fromkeys(runs_candidates))
+    runs_candidates.sort(key=lambda p: (
+        "ems daily run" not in os.path.basename(p).casefold(), len(p)))
     for cand in runs_candidates:
-        if os.path.isdir(cand) and glob.glob(os.path.join(cand, "*.docx")):
+        if _has_run_docs(cand):
             detected["runs_dir"] = os.path.normpath(cand)
             break
     if "runs_dir" not in detected:
