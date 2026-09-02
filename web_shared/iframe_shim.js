@@ -126,6 +126,22 @@
         if (typeof prop !== "string") return undefined;
         return function (...args) {
           const nsKey = ns + "_" + prop;
+          // A browser Proxy reports every property as a function, so the
+          // normal `typeof` presence check below cannot tell a shared shell
+          // method (health_state, appearance_preferences, etc.) from a
+          // namespaced panel method. Ask the HTTP adapter once and fall back
+          // to the unprefixed shell method only when the registry says the
+          // namespaced method does not exist.
+          if (parentWin.__LINGUAR_BROWSER_TOOLS__
+              && typeof parentWin.__linguarBrowserCall === "function") {
+            const request = parentWin.__linguarBrowserCall(nsKey, args).then((result) => {
+              if (result && result.missing_method) {
+                return parentWin.__linguarBrowserCall(prop, args);
+              }
+              return result;
+            });
+            return _track(prop, request);
+          }
           if (typeof parentApi[nsKey] === "function") {
             return _track(prop, parentApi[nsKey](...args));
           }

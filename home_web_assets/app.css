@@ -33,7 +33,7 @@ body { background: var(--bg); }
   transition: filter 140ms ease, transform 140ms ease;
 }
 .brand-mark img { display:block; width:32px; height:32px; border-radius:8px; }
-.brand-mark:hover { transform:scale(1.06); filter:drop-shadow(0 2px 7px rgba(134,240,0,.28)); }
+.brand-mark:hover { filter:none; }
 .brand-name { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0.01em; }
 .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .sb-nav {
@@ -156,10 +156,12 @@ body { background: var(--bg); }
 .welcome-mark {
   width: 64px; height: 64px;
   border-radius: 14px;
-  background: linear-gradient(135deg, var(--green) 0%, #3FAE7A 100%);
   margin: 0 auto 22px;
-  box-shadow: 0 6px 18px rgba(88,183,125,0.24);
+  overflow:hidden;
+  border:1px solid var(--border);
 }
+.welcome-mark img { display:block;width:100%;height:100%;object-fit:cover; }
+.fr-emoji img { display:block;border:1px solid var(--border);border-radius:9px; }
 .welcome-greet {
   font-size: 26px;
   font-weight: 300;
@@ -322,12 +324,7 @@ body { background: var(--bg); }
 .brand-name { font-family:var(--font-display); font-size:16px; font-weight:750;
   letter-spacing:.025em; }
 .sb-item:hover { background:var(--surface-2); }
-.pane { background-color:var(--bg);
-  background-image:linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),
-                   linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px);
-  background-size:24px 24px; }
-.welcome-mark { background:linear-gradient(135deg,var(--green) 0 68%,
-  var(--amber) 68% 76%,#273029 76%); }
+.pane { background:var(--bg); }
 .welcome-greet { font-family:var(--font-display); font-weight:600; letter-spacing:.01em; }
 .fr-card { border-top:3px solid var(--green)!important; border-radius:10px!important; }
 .fr-title { font-family:var(--font-display); letter-spacing:.01em; }
@@ -338,3 +335,15 @@ body { background: var(--bg); }
   .sb-head { padding-inline:14px; }
   .sb-item { padding-inline:10px; }
 }
+
+:root[data-theme="light"] .sidebar { background:#F1F3ED; }
+:root[data-theme="light"] .pane { background:#F7F8F4; }
+:root[data-theme="light"] .tool-workspace {
+  border-color:#8EAD97;
+  box-shadow:0 24px 60px rgba(38,48,42,.2),0 0 0 100vmax var(--scrim);
+}
+:root[data-theme="light"] .tool-workspace-head {
+  background:linear-gradient(90deg,#DDE9DF,var(--surface));
+  border-bottom-color:#A4BBAA;
+}
+:root[data-theme="light"] .tool-workspace-kicker { color:#286B47; }

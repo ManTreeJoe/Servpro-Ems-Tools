@@ -29,4 +29,4 @@ def test_bulk_name_checker_finds_unknowns_across_sections(monkeypatch):
 def test_apa_page_busts_cache_for_name_checker_script():
     root = Path(__file__).resolve().parents[1]
     html = (root / "apa_web_assets" / "index.html").read_text(encoding="utf-8")
-    assert 'app.js?v=20260826b' in html
+    assert 'app.js?v=20260901b' in html

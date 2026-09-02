@@ -13,6 +13,7 @@ import json
 import pytest
 
 import ems_db_supabase as sup
+import trello_job_sync as walk
 
 
 @pytest.fixture
@@ -57,6 +58,29 @@ def _rec(key, name, **kw):
             "lane": "Initial", "card_id": "card-" + key}
     base.update(kw)
     return base
+
+
+def test_included_logs_cards_stay_closed(monkeypatch):
+    """A full-history import must never reactivate the Logs board."""
+    import trello_client as tc
+
+    monkeypatch.setattr(tc, "list_boards", lambda **_kw: [
+        {"id": "logs", "name": "THE LOGS - EMS"},
+    ])
+    monkeypatch.setattr(tc, "get_logs_board_id", lambda: "logs")
+
+    def _call(path, params=None):
+        if path.endswith("/lists"):
+            return [{"id": "done", "name": "Completed"}]
+        if path.endswith("/cards"):
+            return [{"id": "c1", "name": "Smith, Jane - AAA",
+                     "idList": "done", "closed": False, "desc": ""}]
+        return []
+
+    monkeypatch.setattr(tc, "_call", _call)
+    result = walk.collect(exclude_logs=False)
+    assert len(result["records"]) == 1
+    assert result["records"][0]["status"] == "closed"
 
 
 def test_nothing_found_writes_nothing(sync):
@@ -154,11 +178,66 @@ def test_several_cards_for_one_client_all_get_links(sync):
     assert res["jobs_upserted"] == 1     # ...but one job row
 
 
+def test_active_card_wins_logs_status_and_historical_fields_fill_blanks(sync):
+    closed = _rec("a b", "Old A B", card_id="old-card", status="closed")
+    closed["columns"] = {"address": "9 Elm Ave", "carrier": "AAA"}
+    active = _rec("a b", "A B", card_id="live-card", status="active")
+    active["columns"] = {"phone": "555-0100", "carrier": "Mercury"}
+    active["carrier"] = "Mercury"
+
+    res, calls = sync([active, closed])
+    job = [c for c in calls if c["table"] == "jobs"][0]["body"][0]
+    links = [c for c in calls if c["table"] == "job_links"][0]["body"]
+    assert job["status"] == "active"
+    assert job["address"] == "9 Elm Ave"
+    assert job["phone"] == "555-0100"
+    assert job["carrier"] == "Mercury"
+    assert {row["link_value"] for row in links} == {"old-card", "live-card"}
+    assert res["jobs_upserted"] == 1
+
+
 def test_metadata_carries_board_and_lane(sync):
     _res, calls = sync([_rec("a b", "A B", board="WIP", lane="Demo")])
     job = [c for c in calls if c["table"] == "jobs"][0]["body"][0]
     md = json.loads(job["metadata_json"])
     assert md == {"board": "WIP", "lane": "Demo"}
+
+
+def test_non_column_card_fields_are_kept_as_light_text_metadata(sync):
+    rec = _rec("a b", "A B")
+    rec["settings"] = {
+        "source_of_lead": "Repeat customer",
+        "addl_contacts": "Spouse: Jordan, may approve access",
+        "link_companycam": "https://companycam.example/project/1",
+        "scope_initial": "Dry kitchen and remove wet toe-kick",
+    }
+    _res, calls = sync([rec])
+    job = [c for c in calls if c["table"] == "jobs"][0]["body"][0]
+    md = json.loads(job["metadata_json"])
+    assert md["settings"] == rec["settings"]
+    assert md["trello_base"] == rec["settings"]
+
+
+def test_manual_metadata_edit_survives_while_trello_baseline_advances(sync):
+    prior = {"a b": {
+        "canon_key": "a b", "display_name": "A B",
+        "first_seen_at": "2026-01-01", "department": "IE",
+        "metadata_json": json.dumps({
+            "settings": {"office_notes": "Manual Hub correction"},
+            "trello_base": {"office_notes": "Old Trello note"},
+            "custom_flag": "keep me",
+        }),
+    }}
+    rec = _rec("a b", "A B")
+    rec["settings"] = {"office_notes": "New Trello note",
+                       "source_of_lead": "Plumber"}
+    _res, calls = sync([rec], prior)
+    job = [c for c in calls if c["table"] == "jobs"][0]["body"][0]
+    md = json.loads(job["metadata_json"])
+    assert md["settings"]["office_notes"] == "Manual Hub correction"
+    assert md["settings"]["source_of_lead"] == "Plumber"
+    assert md["trello_base"]["office_notes"] == "New Trello note"
+    assert md["custom_flag"] == "keep me"
 
 
 def test_links_use_the_real_column_name_and_are_canonicalised(sync):

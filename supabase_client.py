@@ -404,7 +404,14 @@ def _refresh(sess: dict) -> dict:
             newer = _read_session()
             if newer.get("access_token") and newer.get("refresh_token") != rt:
                 return newer
-            raise NotSignedIn("Your sign-in was refreshed by another app window. Please try again.") from None
+            # Nobody wrote a rotated pair for us to adopt. Leaving the spent
+            # token on disk makes is_signed_in() stay True and every panel
+            # repeats the same impossible refresh forever. Clear only if the
+            # token is still the one we tried, so a genuinely newer session
+            # can never be erased by a late loser.
+            if newer.get("refresh_token") == rt:
+                _write_session({})
+            raise NotSignedIn("Your saved sign-in expired. Sign in again.") from None
         raise
     if not (payload or {}).get("access_token"):
         raise NotSignedIn("refresh failed; sign in again")

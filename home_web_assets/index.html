@@ -6,8 +6,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#1A1A1A" />
 <title>Linguar Hub</title>
-<link rel="stylesheet" href="theme.css?v=20260831a" />
-<link rel="stylesheet" href="app.css?v=20260831a" />
+<script src="../web_shared/appearance.js?v=20260901a"></script>
+<link rel="stylesheet" href="../web_shared/theme.css?v=20260901a" />
+<link rel="stylesheet" href="app.css?v=20260901d" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
 </head>
 <body class="responsive-ui">
@@ -16,7 +17,7 @@
   <aside class="sidebar" id="sidebar">
     <header class="sb-head">
       <div class="brand-row">
-        <span class="brand-mark" aria-hidden="true"><img src="../linguar_hub.png" alt=""></span>
+        <span class="brand-mark" aria-hidden="true"><img src="../linguar_hub.png" width="40" height="40" alt=""></span>
         <div>
           <div class="brand-name">Linguar Hub</div>
           <div class="brand-sub" id="time-meta">—</div>
@@ -26,8 +27,8 @@
     </header>
     <nav class="sb-nav" id="sb-nav"></nav>
     <footer class="sb-foot">
-      <button class="sb-foot-btn" id="refresh-btn" title="Reload current tool + refresh sidebar counts">↻</button>
-      <details class="sb-support-menu"><summary class="sb-foot-btn" title="Support tools">⋯</summary><div>
+      <button class="sb-foot-btn" id="refresh-btn" title="Reload current tool + refresh sidebar counts" aria-label="Refresh current tool and counts">↻</button>
+      <details class="sb-support-menu"><summary class="sb-foot-btn" title="Support tools" aria-label="Open support tools">⋯</summary><div>
         <button id="toast-log-btn">🛎 Status history</button>
         <button id="legacy-btn">🪟 Open legacy app</button>
       </div></details>
@@ -41,7 +42,7 @@
               title="Tool content"></iframe>
       <div class="welcome" id="welcome">
         <div class="welcome-inner">
-          <div class="welcome-mark"></div>
+          <div class="welcome-mark" aria-hidden="true"><img src="../linguar_hub.png" width="64" height="64" alt=""></div>
           <div class="welcome-greet" id="welcome-greet">Welcome to Linguar Hub</div>
           <div class="welcome-sub" id="welcome-sub">Pick a tool from the sidebar to get started</div>
           <div class="welcome-quick" id="welcome-quick"></div>
@@ -54,15 +55,15 @@
 <!-- First-run welcome (shown once, until dismissed) -->
 <div class="fr-overlay hidden" id="fr-overlay">
   <div class="fr-card" role="dialog" aria-modal="true" aria-labelledby="fr-title">
-    <div class="fr-emoji">👋</div>
+    <div class="fr-emoji" aria-hidden="true"><img src="../linguar_hub.png" width="38" height="38" alt=""></div>
     <div class="fr-title" id="fr-title">Welcome to Linguar Hub</div>
     <div class="fr-body">
-      <p>Before the connected panels (Clients, Jobs, Snapshot, APA…) can
-         load, you need to connect your account and confirm your folders.</p>
-      <p>Open <strong>⚙ Settings</strong> (bottom of the sidebar) and set:</p>
+      <p>Before Clients, Jobs, Snapshot, and APA can load, connect your account and confirm your folders.</p>
+      <p>Open <strong>Settings</strong> at the bottom of the sidebar, then:</p>
       <ul>
-        <li><strong>Trello API key</strong> and <strong>Trello token</strong> — your Trello login for the boards.</li>
-        <li><strong>Folder paths</strong> — these are auto-detected on first launch; just confirm they point to the right places.</li>
+        <li><strong>Sign in</strong> with your SERVPRO work account.</li>
+        <li><strong>Connect Trello</strong> using the guided sign-in.</li>
+        <li><strong>Confirm folder paths</strong> point to the right shared folders.</li>
       </ul>
       <p class="fr-note">Your settings are saved to your own PC
          in its own local profile. Shared jobs and franchise access remain online.</p>
@@ -154,6 +155,6 @@
 
 <script src="../web_shared/health_banner.js?v=20260826a"></script>
 <script src="../web_shared/toast_log.js?v=20260731j"></script>
-<script src="app.js?v=20260828b"></script>
+<script src="app.js?v=20260901e"></script>
 </body>
 </html>

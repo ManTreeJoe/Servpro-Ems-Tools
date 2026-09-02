@@ -50,15 +50,20 @@ def test_no_last_panel_on_a_fresh_install(api):
 
 
 def test_last_panel_round_trips(api):
-    assert api.set_last_panel("audit")["ok"]
-    assert api.get_last_panel() == "audit"
+    assert api.set_last_panel("daily_run")["ok"]
+    assert api.get_last_panel() == "daily_run"
 
 
 def test_last_panel_rides_in_on_header(api):
     """It must ship inside header(), not as its own call — a second round
     trip is the window where a late restore steals the user's click."""
+    api.set_last_panel("daily_run")
+    assert api.header()["last_panel"] == "daily_run"
+
+
+def test_legacy_audit_last_panel_migrates_to_daily_run(api):
     api.set_last_panel("audit")
-    assert api.header()["last_panel"] == "audit"
+    assert api.get_last_panel() == "daily_run"
 
 
 def test_hidden_panel_is_not_restored(api, monkeypatch):
@@ -78,7 +83,7 @@ def test_dead_panel_is_not_restored(api):
 
 
 def test_blank_key_clears_it(api):
-    api.set_last_panel("audit")
+    api.set_last_panel("daily_run")
     api.set_last_panel("")
     assert api.get_last_panel() == ""
 

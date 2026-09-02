@@ -502,3 +502,5 @@ body { display: flex; flex-direction: column; }
 @media (prefers-reduced-motion: reduce) {
   .board { scroll-behavior: auto; }
 }
+:root[data-theme="light"] .run-calendar,
+:root[data-theme="light"] .apa-popover { background:var(--surface);box-shadow:var(--shadow-1); }

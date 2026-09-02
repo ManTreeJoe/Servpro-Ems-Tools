@@ -13,6 +13,7 @@ const state = {
   cycle_time:       {},
   repeat_offenders: [],
   job_performance:  {},
+  operational_groups: {},
   last_refresh:     null,
 };
 
@@ -66,6 +67,8 @@ async function refresh(showSpinner) {
     state.cycle_time = data.cycle_time || {};
     state.repeat_offenders = data.repeat_offenders || [];
     state.job_performance = data.job_performance || {};
+    state.operational_groups = data.operational_groups
+      || state.job_performance.operational_groups || {};
     state.last_refresh = new Date();
     renderAll();
     setStatus(showSpinner ? "Refreshed" : "", "ok");
@@ -83,6 +86,7 @@ function renderAll() {
   renderCycleTime();
   renderRepeatOffenders();
   renderJobPerformance();
+  renderOperationalGroups();
   $("#last-refresh").textContent = state.last_refresh
     ? `Refreshed ${fmtTime(state.last_refresh)}`
     : "—";
@@ -92,6 +96,34 @@ function renderAll() {
     renderAll._restored = true;
     try { PanelState.restoreScroll(document.scrollingElement); } catch (_) { /**/ }
   }
+}
+
+function renderOperationalGroups() {
+  const data = state.operational_groups || {};
+  const rows = data.groups || [];
+  const quality = $("#operations-quality");
+  quality.textContent = data.clock_quality === "estimated_from_stage_history"
+    ? "Existing history · pause-adjusted timing starts with new events"
+    : "Live ownership clocks";
+  $("#operations-groups").innerHTML = rows.length ? rows.map((row) => {
+    const active = Number(row.active || 0);
+    const overdue = Number(row.overdue || 0);
+    const statusClass = overdue ? "is-overdue" : "is-clear";
+    return `<article class="operations-group ${statusClass}">
+      <div class="operations-group-head">
+        <h3>${escapeHtml(row.label || row.key || "Group")}</h3>
+        <span>${Number(row.jobs || 0)} tracked</span>
+      </div>
+      <div class="operations-group-signal">
+        <strong>${overdue}</strong><span>overdue</span>
+        <strong>${active}</strong><span>active</span>
+      </div>
+      <dl>
+        <div><dt>Median total</dt><dd>${fmtDays(row.median_total_days)}</dd></div>
+        <div><dt>Median controllable</dt><dd>${fmtDays(row.median_controllable_days)}</dd></div>
+      </dl>
+    </article>`;
+  }).join("") : `<div class="empty-inline">Department timing appears after jobs enter the Pipeline.</div>`;
 }
 
 function renderJobPerformance() {

@@ -99,6 +99,29 @@ class Api:
                     "completed_this_month": 0, "monthly_quota": 0,
                     "quota_remaining": 0, "quota_percent": None}
 
+    def franchise_scorecard_spec(self) -> dict:
+        """Machine-readable official scorecard rules and source coverage."""
+        try:
+            import franchise_scorecard
+            return franchise_scorecard.specification()
+        except Exception as ex:
+            return {"metrics": {}, "metric_order": [],
+                    "weight_profiles": {}, "error": str(ex)}
+
+    def operational_tracking_spec(self) -> dict:
+        """Internal ownership clocks, separate from the official scorecard."""
+        try:
+            import operational_tracking
+            return operational_tracking.specification()
+        except Exception as ex:
+            return {"groups": {}, "group_order": [], "error": str(ex)}
+
+    def operational_group_stats(self) -> dict:
+        try:
+            return kpi_metrics.operational_group_stats()
+        except Exception as ex:
+            return {"groups": [], "jobs": 0, "error": str(ex)}
+
     def all_sections(self) -> dict:
         """One-shot bundle for the initial render — saves four
         bridge round-trips."""
@@ -108,6 +131,9 @@ class Api:
             "cycle_time": self.cycle_time_stats(),
             "repeat_offenders": self.repeat_offenders(),
             "job_performance": self.job_performance_stats(),
+            "franchise_scorecard": self.franchise_scorecard_spec(),
+            "operational_tracking": self.operational_tracking_spec(),
+            "operational_groups": self.operational_group_stats(),
         }
 
     # ── Actions ──────────────────────────────────────────────────────

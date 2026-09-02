@@ -101,6 +101,7 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 .dashboard .card.weekly { grid-column: 1 / -1; }     /* full width */
 .dashboard .card.repeat { grid-column: 1 / -1; }
 .dashboard .card.performance { grid-column: 1 / -1; }
+.dashboard .card.operations-timing { grid-column: 1 / -1; }
 
 .card {
   background: var(--surface);
@@ -258,7 +259,25 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 @media (max-width: 760px) {
   .dashboard { grid-template-columns: 1fr; }
   .performance-columns { grid-template-columns: 1fr; }
+  .operations-groups { grid-template-columns: 1fr; }
 }
+.section-intro { margin: 4px 0 0; color: var(--text-muted); font-size: 12px; }
+
+.operations-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.operations-group { border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2); padding: 14px; }
+.operations-group.is-overdue { border-left: 3px solid var(--red); }
+.operations-group.is-clear { border-left: 3px solid var(--green); }
+.operations-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.operations-group-head h3 { margin: 0; font-size: 14px; }
+.operations-group-head span { color: var(--text-muted); font-size: 11px; }
+.operations-group-signal { display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: baseline; gap: 5px; margin: 18px 0; }
+.operations-group-signal strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.operations-group.is-overdue .operations-group-signal strong:first-child { color: var(--red); }
+.operations-group-signal span { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.operations-group dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.operations-group dl div { border-top: 1px solid var(--border); padding-top: 9px; }
+.operations-group dt { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.operations-group dd { margin: 3px 0 0; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ── Repeat-offenders table ────────────────────────────────────── */
 .empty-inline {

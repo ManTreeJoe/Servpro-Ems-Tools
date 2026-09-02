@@ -5527,6 +5527,8 @@ async function runCompanyCamSync() {
 }
 
 function openNewLossModal() {
+  const existing = document.getElementById("nl-paste");
+  if (existing) { existing.focus(); return; }
   const inputStyle =
     "width:100%;font:inherit;background:var(--surface-2);color:var(--text);" +
     "border:1px solid var(--border);border-radius:6px;padding:6px 9px;";

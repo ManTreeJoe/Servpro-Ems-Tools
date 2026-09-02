@@ -57,3 +57,16 @@
   .section-nav{flex:0 0 170px}
   .document-pages{padding:10px 8px 48px}
 }
+
+:root[data-theme="light"] .section-rail{background:#E1E6DE}
+:root[data-theme="light"] .document-pages{background:#DDE3DA}
+:root[data-theme="light"] .document-section{border-color:var(--border);background:var(--surface);box-shadow:var(--shadow-1)}
+:root[data-theme="light"] .document-section .section-head{background:linear-gradient(100deg,var(--dispatch-blue-soft),var(--surface));border-bottom-color:var(--border)}
+:root[data-theme="light"] .document-section .add-row{background:var(--surface-2)}
+:root[data-theme="light"] .document-section .run-row{background:#FAF9F5}
+:root[data-theme="light"] .document-section .run-row:hover{background:var(--row-hover)}
+:root[data-theme="light"] .composer-head,
+:root[data-theme="light"] .composer-foot{background:var(--surface-2)}
+:root[data-theme="light"] .composer-preview{background:#E5EDF5}
+:root[data-theme="light"] .notice.warn{border-color:#D1B36F;background:#F5EBCF;color:#62490E}
+:root[data-theme="light"] .notice.error{border-color:#D1A19D;background:#F8E8E6;color:#7C302B}

@@ -6,6 +6,7 @@
   <script src="../web_shared/usage_track.js?v=20260825a"></script>
 <meta charset="UTF-8" />
 <title>Settings — Linguar Hub</title>
+<script src="../web_shared/appearance.js?v=20260901a"></script>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260831b" />
 <link rel="stylesheet" href="theme.css" />
 <script src="../web_shared/health_banner.js?v=20260820a"></script>
@@ -24,6 +25,13 @@
     padding: 9px 12px; font: inherit; font-size: 13px; outline: none;
   }
   .field input:focus, .field select:focus { border-color: var(--green); }
+  .appearance-readout { display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr;
+    gap:6px 9px;align-items:center;margin-top:8px;padding:9px 10px;
+    border:1px solid var(--border);border-radius:7px;background:var(--surface-2);
+    color:var(--text-muted);font-size:11px; }
+  .appearance-readout b { color:var(--text-dim);font-size:9px;text-transform:uppercase;
+    letter-spacing:.05em; }
+  .appearance-readout span { color:var(--text);font-weight:650; }
   .field.bool { display: flex; align-items: center; gap: 10px; }
   .field.bool label { margin: 0; }
   .footer {
@@ -91,11 +99,30 @@
   .signin-fields { display:grid;gap:10px; }
   .signin-fields input { width:100%; }
   .signin-close { min-width:36px;padding:7px 9px;font-size:18px;line-height:1; }
+  .connections-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px; }
+  .connection-card { min-width:0;padding:13px;border:1px solid var(--border);border-radius:9px;
+    background:var(--surface-2);display:grid;grid-template-columns:38px minmax(0,1fr);gap:10px; }
+  .connection-mark { width:38px;height:38px;border:1px solid var(--border);border-radius:10px;
+    display:flex;align-items:center;justify-content:center;background:var(--surface);
+    color:var(--text);font-size:11px;font-weight:850;letter-spacing:-.03em; }
+  .connection-card[data-state="connected"] .connection-mark { color:var(--green);border-color:var(--green); }
+  .connection-name { display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:750; }
+  .connection-state { display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;
+    background:var(--surface);color:var(--text-muted);font-size:9px;font-weight:750; }
+  .connection-card[data-state="connected"] .connection-state { color:var(--green); }
+  .connection-card[data-state="sign_in_required"] .connection-state,
+  .connection-card[data-state="admin_required"] .connection-state { color:var(--amber); }
+  .connection-detail { margin-top:5px;color:var(--text-muted);font-size:10.5px;line-height:1.45; }
+  .connection-identity { margin-top:5px;color:var(--text);font-size:10.5px;font-weight:650;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .connection-action { margin-top:9px; }
   @media (max-width:620px) {
     .pm-grid { grid-template-columns:1fr auto; }
     .pm-template { grid-column:1 / -1; }
     .pm-fields { grid-template-columns:1fr; }
     .pm-span { grid-column:auto; }
+    .appearance-readout { grid-template-columns:auto 1fr; }
+    .connections-grid { grid-template-columns:1fr; }
   }
 </style>
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
@@ -132,6 +159,24 @@
     <div id="fr-ready" style="display:none;margin-top:12px;padding:10px 12px;
          border-radius:7px;background:rgba(84,180,120,.13);border:1px solid var(--green);
          font-size:12px;font-weight:700;color:var(--green);">✓ You’re ready to use Linguar Hub.</div>
+  </section>
+
+  <section id="my-connections" data-settings-scope="personal" class="settings-card">
+    <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;">
+      <div style="flex:1;min-width:0;">
+        <h2 style="margin-bottom:4px;">My connections</h2>
+        <div class="muted" style="font-size:11px;line-height:1.5;">
+          Sign in normally with your own account. CompanyCam is connected once per
+          franchise by an admin, then records work as the signed-in employee.
+        </div>
+      </div>
+      <button class="btn" id="connections-refresh" type="button">Refresh</button>
+    </div>
+    <div id="connections-grid" class="connections-grid" aria-live="polite">
+      <div class="muted" style="font-size:11px;">Checking connections…</div>
+    </div>
+    <div id="connections-msg" class="muted" role="status"
+         style="min-height:16px;margin-top:9px;font-size:10.5px;"></div>
   </section>
 
   <section data-settings-scope="admin" style="margin-bottom: 22px; padding: 14px 18px;
@@ -570,12 +615,14 @@ window.addEventListener("pywebviewready", async () => {
   SCHEMA = await pywebview.api.schema() || [];
   VALUES = await pywebview.api.load() || {};
   render();
+  await renderConnections();
   await renderFirstRunWizard();
   await renderMyFranchiseFolders();
   await loadBrowsers();
   if (SETTINGS_ACCESS.is_admin) await loadUserAccess();
   document.getElementById("pf-run").addEventListener("click", runPreflight);
   document.getElementById("save").addEventListener("click", save);
+  document.getElementById("connections-refresh")?.addEventListener("click", renderConnections);
   document.getElementById("reload").addEventListener("click", async () => {
     VALUES = await pywebview.api.load() || {};
     render();
@@ -901,6 +948,7 @@ function bindSupabaseControls() {
       const r = await pywebview.api.supabase_sign_out();
       sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
       await refreshSupabase();
+      await renderConnections();
     } catch (e) { sbMsg(`Sign out failed: ${e}`, true); }
   });
   document.getElementById("sb-save-display-name")?.addEventListener("click", async (event) => {
@@ -986,6 +1034,79 @@ async function refreshSupabase() {
   }
 }
 
+async function renderConnections() {
+  const grid = document.getElementById("connections-grid");
+  const msg = document.getElementById("connections-msg");
+  if (!grid) return;
+  let result;
+  try { result = await pywebview.api.user_connections(); }
+  catch (e) { result = {ok:false, error:String(e)}; }
+  if (!result?.ok) {
+    grid.innerHTML = `<div class="muted">Connections could not be checked.</div>`;
+    if (msg) { msg.textContent = result?.error || ""; msg.style.color = "var(--red)"; }
+    return;
+  }
+  grid.innerHTML = (result.connections || []).map((card) => `
+    <article class="connection-card" data-provider="${esc(card.provider)}" data-state="${esc(card.state)}">
+      <div class="connection-mark" aria-hidden="true">${esc(card.icon)}</div>
+      <div style="min-width:0;">
+        <div class="connection-name">${esc(card.name)}
+          <span class="connection-state">${esc(card.status)}</span></div>
+        <div class="connection-detail">${esc(card.detail)}</div>
+        ${card.identity ? `<div class="connection-identity">${esc(card.identity)}</div>` : ""}
+        ${card.action ? `<div class="connection-action"><button class="btn ${card.state === "connected" ? "" : "btn-primary"}"
+          type="button" data-connection-action="${esc(card.action)}"
+          data-provider="${esc(card.provider)}">${esc(card.action_label)}</button></div>` : ""}
+      </div>
+    </article>`).join("");
+  grid.querySelectorAll("[data-connection-action]").forEach((button) =>
+    button.addEventListener("click", () => runConnectionAction(button)));
+  if (msg) { msg.textContent = ""; msg.style.color = ""; }
+}
+
+async function runConnectionAction(button) {
+  const action = button.dataset.connectionAction;
+  const provider = button.dataset.provider;
+  const msg = document.getElementById("connections-msg");
+  if (action === "sign_in") {
+    openSupabaseSignIn();
+    return;
+  }
+  if (action === "sign_out") {
+    document.getElementById("sb-sign-out")?.click();
+    return;
+  }
+  if (action === "admin_setup") {
+    showSettingsScope("admin");
+    requestAnimationFrame(() => {
+      const field = document.getElementById(provider === "companycam"
+        ? "f-companycam_api_token" : "f-trello_api_key");
+      field?.scrollIntoView({behavior:"smooth", block:"center"});
+      field?.focus();
+    });
+    return;
+  }
+  button.disabled = true;
+  const label = button.textContent;
+  button.textContent = action === "connect_trello" ? "Waiting for Trello…" : "Opening…";
+  if (msg) {
+    msg.textContent = action === "connect_trello"
+      ? "Finish signing in and approving access in the browser tab."
+      : `Opening ${provider}…`;
+    msg.style.color = "";
+  }
+  let result;
+  try { result = await pywebview.api.open_user_connection(provider); }
+  catch (e) { result = {ok:false, error:String(e)}; }
+  button.disabled = false;
+  button.textContent = label;
+  if (msg) {
+    msg.textContent = result?.ok ? (result.message || "Opened.") : (result?.error || "Could not connect.");
+    msg.style.color = result?.ok ? "var(--green)" : "var(--red)";
+  }
+  if (result?.ok) await renderConnections();
+}
+
 async function runPreflight() {
   const btn = document.getElementById("pf-run");
   const box = document.getElementById("pf-out");
@@ -1061,6 +1182,7 @@ async function sbPasswordSignIn() {
     try { window.parent?.postMessage({type: "health-refresh"}, "*"); } catch (_) {}
     closeSupabaseSignIn();
     await refreshSupabase();
+    await renderConnections();
   } else {
     document.getElementById("sb-password").select();
   }
@@ -1079,6 +1201,7 @@ async function sbVerify() {
     try { window.parent?.postMessage({type: "health-refresh"}, "*"); } catch (_) {}
   }
   await refreshSupabase();
+  await renderConnections();
 }
 
 async function sbSetBackend(name) {
@@ -1201,7 +1324,9 @@ function renderDeptFields() {
   if (!dept) { wrap.innerHTML = ""; return; }
   const base = DEPT.base || {};
   const groups = {};
-  (DEPT.fields || []).forEach((f) => { (groups[f.group] = groups[f.group] || []).push(f); });
+  (DEPT.fields || []).filter((f) => !f.managed_connection).forEach((f) => {
+    (groups[f.group] = groups[f.group] || []).push(f);
+  });
   const baseDept = (DEPT.departments || []).find((d) => d.is_base);
   const baseName = baseDept ? `${baseDept.label} (${baseDept.key})` : "main settings";
   const inheritNote = dept.is_base
@@ -1223,6 +1348,7 @@ function renderDeptFields() {
                  style="flex:1;min-width:0;" />
           ${browse}
         </div>
+        ${f.key === "companycam_api_token" ? `<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:5px;">Admin only. Use the franchise Application Key; employees connect by signing into Linguar Hub and never paste personal CompanyCam tokens.</div>` : ""}
       </div>`;
     }).join("")}
   `).join("");
@@ -1316,6 +1442,9 @@ function render() {
     }
     if (f.kind === "choice") {
       const choiceLabels = {
+        "system": "Follow Windows",
+        "light": "Light",
+        "dark": "Dark",
         "ctrl+alt+space": "Ctrl + Alt + Space",
         "ctrl+shift+space": "Ctrl + Shift + Space",
         "alt+shift+space": "Alt + Shift + Space",
@@ -1326,6 +1455,7 @@ function render() {
         <select id="f-${esc(f.key)}" data-key="${esc(f.key)}">
           ${(f.choices || []).map((c) => `<option value="${esc(c)}" ${c === String(v||"") ? "selected" : ""}>${esc(choiceLabels[c] || c)}</option>`).join("")}
         </select>
+        ${f.key === "appearance" ? '<div class="appearance-readout" id="appearance-readout"><span>Checking Windows theme…</span></div>' : ''}
         ${f.key === "global_hotkey" ? '<div class="muted" style="font-size:11px;margin-top:5px;">Works while Linguar Hub is open, even when another program is in front.</div>' : ''}
       </div>`;
     }
@@ -1355,10 +1485,11 @@ function render() {
                style="flex:1;min-width:0;" />
         ${browse}
       </div>
+      ${f.key === "companycam_api_token" ? `<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:5px;">Admin only. One CompanyCam Application Key for this franchise; employee actions are attributed from their Linguar Hub sign-in.</div>` : ""}
     </div>`;
   }
   const grouped = {};
-  SCHEMA.forEach((f) => {
+  SCHEMA.filter((f) => !f.managed_connection).forEach((f) => {
     const scope = f.scope || "admin";
     const group = f.group || "Other";
     (((grouped[scope] ||= {})[group]) ||= []).push(f);
@@ -1371,7 +1502,34 @@ function render() {
       </section>`).join("")
   ).join("");
   wireBrowse();
+  wireAppearanceControl();
   showSettingsScope(SETTINGS_SCOPE);
+}
+
+function appearanceLabel(value) {
+  return value === "light" ? "Light" : value === "dark" ? "Dark" : "Follow Windows";
+}
+
+async function refreshAppearanceStatus(previewValue = "") {
+  const readout = document.getElementById("appearance-readout");
+  if (!readout) return;
+  let info = null;
+  try { info = await pywebview.api.appearance_preferences(); } catch (_) {}
+  const selected = previewValue || document.getElementById("f-appearance")?.value || info?.selected || "system";
+  const system = info?.system || window.LinguarAppearance?.detectedSystemMode?.() || "dark";
+  const effective = selected === "system" ? system : selected;
+  readout.innerHTML = `<b>Your choice</b><span>${esc(appearanceLabel(selected))}</span><b>Windows</b><span>${esc(appearanceLabel(system))}</span><b>App now</b><span>${esc(appearanceLabel(effective))}</span>`;
+}
+
+function wireAppearanceControl() {
+  const select = document.getElementById("f-appearance");
+  if (!select) return;
+  select.addEventListener("change", () => {
+    window.LinguarAppearance?.setPreference(select.value);
+    refreshAppearanceStatus(select.value);
+    setStatus("Appearance previewed — click Save to keep it", "ok");
+  });
+  refreshAppearanceStatus();
 }
 
 function wireBrowse() {
@@ -1563,10 +1721,10 @@ async function save() {
     if (el.type === "checkbox") out[k] = el.checked;
     else out[k] = el.value;
   });
-  // Appearance + UI scale are applied to the DOM at render time, so those
-  // two still need a reload. Everything else now takes effect immediately:
+  // UI scale still needs a reload. Appearance is applied live by the shared
+  // theme controller; everything else clears the relevant caches on save.
   // the save clears the caches that were holding the old values.
-  const needsReload = ["appearance", "ui_scale"].some(
+  const needsReload = ["ui_scale"].some(
     (k) => k in out && String(out[k]) !== String(VALUES?.[k] ?? ""));
   const res = await pywebview.api.save(out);
   setStatus(
@@ -1576,7 +1734,14 @@ async function save() {
           : "💾 Saved — applied, no restart needed")
       : `Save failed: ${res?.error || "?"}`,
     res?.ok ? "ok" : "error");
-  if (res?.ok) { VALUES = out; await renderFirstRunWizard(); }
+  if (res?.ok) {
+    VALUES = {...VALUES, ...out};
+    if (out.appearance) {
+      window.LinguarAppearance?.setPreference(out.appearance);
+      await refreshAppearanceStatus(out.appearance);
+    }
+    await renderFirstRunWizard();
+  }
   if (res?.ok && out.global_hotkey_enabled) {
     setTimeout(async () => {
       let h = null;

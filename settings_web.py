@@ -37,7 +37,7 @@ FIELDS = [
     ("trello_snapshot_list_id", "Trello Snapshot list ID", "text"),
     ("disputes_board_short_link", "Disputes board short link", "text"),
     ("trello_boards_exclude", "Trello boards to exclude", "list"),
-    ("companycam_api_token", "CompanyCam access token",   "secret"),
+    ("companycam_api_token", "CompanyCam organization key", "secret"),
     ("graph_client_id",      "Microsoft Graph client ID", "text"),
     ("graph_tenant_id",      "Microsoft Graph tenant ID", "text"),
     ("franchise_name",      "Franchise display name",     "text"),
@@ -133,7 +133,7 @@ DEPT_FIELDS = [
     # Each office has its own CompanyCam account. Blank means INHERIT the
     # base token, which is how OC's projects were being created in IE's
     # CompanyCam — the field has to exist before it can be set.
-    ("companycam_api_token",  "CompanyCam access token",  "secret",
+    ("companycam_api_token",  "CompanyCam organization key", "secret",
      "CompanyCam"),
 ]
 
@@ -149,6 +149,7 @@ DEPT_FIELDS = [
 # the config, which is how IE ended up searching OC's Trello workspace.
 # The selector is scoped now; this makes the same mistake unwritable.
 _ALLOWED_SAVE_KEYS = frozenset(f[0] for f in FIELDS)
+_MANAGED_CONNECTION_FIELDS = frozenset({"trello_token"})
 _INITIAL_ADMIN_EMAIL = "nathan@servpro10100.com"
 
 
@@ -224,8 +225,9 @@ def _legacy_daily_run_under(job_root):
     preferred = ("Daily Run", "Daily Runs", "Daily Run Docs",
                  "Daily Run Documents")
     try:
-        children = {entry.name.casefold(): entry.path for entry in os.scandir(root)
-                    if entry.is_dir()}
+        with os.scandir(root) as entries:
+            children = {entry.name.casefold(): entry.path for entry in entries
+                        if entry.is_dir()}
     except OSError:
         return ""
     for name in preferred:
@@ -251,7 +253,8 @@ class Api:
         return [{"key": f[0], "label": f[1], "kind": f[2],
                   "choices": (f[3] if len(f) > 3 else []),
                   "scope": ("personal" if f[0] in _PERSONAL_FIELDS else "admin"),
-                  "group": _FIELD_GROUPS.get(f[0], "Other")}
+                  "group": _FIELD_GROUPS.get(f[0], "Other"),
+                  "managed_connection": f[0] in _MANAGED_CONNECTION_FIELDS}
                 for f in FIELDS]
 
     def settings_access(self):
@@ -262,6 +265,34 @@ class Api:
                 "is_owner": bool(access.get("is_owner")),
                 "departments": list(access.get("departments") or []),
                 "error": access.get("error") or ""}
+
+    def user_connections(self):
+        """One normalized, non-secret connection view for this employee."""
+        try:
+            import user_connections
+            return {"ok": True, "connections": user_connections.statuses()}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "connections": []}
+
+    def open_user_connection(self, provider: str):
+        """Open the provider's normal sign-in UI or run its connect flow."""
+        provider = str(provider or "").strip().lower()
+        if provider == "trello":
+            return self.authorize_trello()
+        try:
+            import user_connections
+            url = user_connections.open_target(provider)
+            if not url:
+                return {"ok": False, "error": "That connection is not available."}
+            import webbrowser
+            webbrowser.open(url)
+            return {"ok": True, "message": f"Opened {provider} sign in."}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def appearance_preferences(self):
+        from web_appearance import preferences
+        return preferences()
 
     def _my_folder_departments(self):
         """Franchises whose machine-local roots this user may configure."""
@@ -527,7 +558,8 @@ class Api:
         try:
             base = config.load_base()
             depts = base.get("departments") or {}
-            fields = [{"key": f[0], "label": f[1], "kind": f[2], "group": f[3]}
+            fields = [{"key": f[0], "label": f[1], "kind": f[2], "group": f[3],
+                       "managed_connection": f[0] in _MANAGED_CONNECTION_FIELDS}
                       for f in DEPT_FIELDS]
             keyset = [f[0] for f in DEPT_FIELDS]
             out = []

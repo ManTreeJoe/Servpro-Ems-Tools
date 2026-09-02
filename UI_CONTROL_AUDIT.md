@@ -83,6 +83,15 @@ Hidden-by-default specialist tools should remain available in Settings rather th
 - Preserve keyboard alternatives for board dragging and card-shelf gestures.
 - Virtualize or progressively render any list that can exceed 50 rows.
 
+## Design-integrity cleanup
+
+- Removed unwired board `Customize`, Dispatch range, and Reports range controls from the Operations shell.
+- Removed decorative lane ellipsis marks that looked like menus but did nothing.
+- Replaced the blank gradient welcome tile with the established Hub logo.
+- Replaced dashboard-style wording with direct operational labels.
+- Browser Tools no longer shows the Windows application updater or legacy-app launcher.
+- Job and Dispatch cards use native buttons so click and keyboard behavior agree.
+
 ## Decision boundary
 
 No capability is deleted during this pass. A control can be hidden or moved when its destination is clear. Removal requires usage evidence or an explicit approval because specialist tools may be infrequent rather than obsolete.

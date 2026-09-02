@@ -159,7 +159,9 @@ def test_trello_comment_import_batches_rows_and_preserves_dates(monkeypatch):
 
 
 def test_pipeline_reads_shared_before_trello(monkeypatch):
-    shared = {"ok": True, "source": "shared", "boards": [{"key": "wip"}]}
+    shared = {"ok": True, "source": "shared", "boards": [
+        {"key": key} for key, _name in pipeline_web.BOARD_SPECS
+    ]}
     monkeypatch.setattr(pipeline_web.pipeline_store, "load_boards",
                         lambda specs: shared)
     monkeypatch.setattr(pipeline_web, "_trello_board_payload",
@@ -285,7 +287,9 @@ def test_pipeline_workspace_progressively_loads_shared_then_live_data():
 
 def test_pipeline_board_revisit_uses_short_memory_cache(monkeypatch):
     calls = []
-    shared = {"ok": True, "source": "shared", "boards": [{"key": "wip"}]}
+    shared = {"ok": True, "source": "shared", "boards": [
+        {"key": key} for key, _name in pipeline_web.BOARD_SPECS
+    ]}
     monkeypatch.setattr(pipeline_web.pipeline_store, "load_boards",
                         lambda specs: calls.append(specs) or shared)
     api = pipeline_web.Api()

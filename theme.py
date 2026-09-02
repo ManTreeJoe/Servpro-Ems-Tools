@@ -225,10 +225,10 @@ def current_mode() -> str:
     from config.py (shared with the Settings dialog). 'system' resolves
     to dark if Windows is in dark mode, else light. Default is 'dark'
     when no setting is saved yet."""
-    raw = "dark"
+    raw = "system"
     try:
         import config as _cfg
-        raw = (_cfg.load().get("appearance") or "dark").lower()
+        raw = (_cfg.load().get("appearance") or "system").lower()
     except Exception:
         pass
     if raw == "system":

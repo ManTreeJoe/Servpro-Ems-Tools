@@ -301,6 +301,9 @@ def load_boards(board_specs) -> dict:
                 shaped_cards.append({
                     "card_id": c.get("external_id") or c.get("card_key"),
                     "name": c.get("title") or "", "client": c.get("title") or "",
+                    "job_id": c.get("job_id") or "",
+                    "client_id": c.get("client_id") or "",
+                    "claim_id": c.get("claim_id") or "",
                     "url": c.get("external_url") or "",
                     "list_id": lane.get("external_id") or lane.get("lane_key"),
                     "lane": lane.get("name") or "", "loss_types": labels,
@@ -308,6 +311,7 @@ def load_boards(board_specs) -> dict:
                     "due_complete": bool(c.get("due_complete")), "overdue": False,
                     "days_in_lane": 0, "stall": "none",
                     "sync_status": c.get("sync_status") or "local",
+                    "sync_error": c.get("sync_error") or "",
                 })
             shaped_lanes.append({"list_id": lane.get("external_id") or lane.get("lane_key"),
                                  "name": lane.get("name") or "",

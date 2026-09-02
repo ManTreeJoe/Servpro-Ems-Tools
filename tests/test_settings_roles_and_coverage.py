@@ -21,7 +21,9 @@ def test_settings_schema_separates_personal_and_admin_fields():
     assert by_key["audit_base"]["scope"] == "personal"
     assert by_key["runs_dir"]["scope"] == "personal"
     assert by_key["trello_token"]["scope"] == "personal"
+    assert by_key["trello_token"]["managed_connection"] is True
     assert by_key["companycam_api_token"]["scope"] == "admin"
+    assert by_key["companycam_api_token"]["managed_connection"] is False
     assert by_key["supabase_anon_key"]["scope"] == "admin"
 
 

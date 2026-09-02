@@ -6,10 +6,10 @@ name, hit CompanyCam's live API, find the matching PROJECT, and hand back its
 `id` so downstream code can pull photos (`GET /v2/projects/{id}/photos`) or
 check for new ones without a manual export.
 
-Auth: a single Bearer access token (generated in the CompanyCam app) stored in
-config as `companycam_api_token`. No OAuth / Azure needed — read + download
-only. See docs.companycam.com: List Projects supports a `query=` param that
-filters by name or address line 1 server-side, so a "find" is one call.
+Auth: one organization Application Key per franchise, stored in config as
+`companycam_api_token`. Employees do not paste personal keys. On writes, the
+signed-in Linguar Hub email is sent as CompanyCam's ``X_COMPANYCAM_USER``
+header so CompanyCam can attribute the action to the employee.
 
 Rate limits (per token): GET 240/min. We retry 429/503 with backoff, honoring
 Retry-After, exactly like trello_client._call.
@@ -34,9 +34,9 @@ def _token():
     tok = (cfg.get("companycam_api_token") or "").strip()
     if not tok:
         raise RuntimeError(
-            "CompanyCam not configured. Set companycam_api_token in "
-            r"%APPDATA%\Linguar Hub\config.json (generate an access "
-            "token in the CompanyCam app → Integrations → Developer).")
+            "CompanyCam is not connected for this franchise. An admin must "
+            "add the organization Application Key in Linguar Hub Settings; "
+            "employees should not add a personal token.")
     return tok
 
 
@@ -61,6 +61,16 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
         "Authorization": "Bearer " + _token(),
         "Accept": "application/json",
     }
+    # CompanyCam's private-integration model uses one company credential and
+    # a user header on mutations. Keep that provider-specific distinction out
+    # of callers: every create/tag/edit is attributed consistently here.
+    try:
+        import user_connections
+        headers.update(user_connections.companycam_actor_headers(method))
+    except Exception:
+        # Reading and existing organization-key workflows must remain usable
+        # during sign-in recovery; Settings surfaces the missing identity.
+        pass
     body = None
     if data is not None:
         body = json.dumps(data).encode("utf-8")
@@ -516,7 +526,9 @@ def create_project(name, *, address="", contact_name="", contact_email="",
         if ex.code in (401, 403):
             return {"ok": False, "code": ex.code, "scope": False,
                     "error": f"CompanyCam refused the write ({ex.code}). "
-                             f"The API token is read-only. {detail}".strip()}
+                             f"The organization key may be read-only, or the "
+                             f"signed-in employee is not a CompanyCam user. "
+                             f"{detail}".strip()}
         return {"ok": False, "code": ex.code,
                 "error": f"CompanyCam create failed ({ex.code}): {detail}"}
     except Exception as ex:

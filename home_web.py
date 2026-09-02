@@ -311,6 +311,11 @@ class HomeApi:
             return {"ok": True, "problems": [],
                     "error": f"{type(ex).__name__}: {ex}"}
 
+    def appearance_preferences(self):
+        """Safe, unprefixed preference used by the shell and every iframe."""
+        from web_appearance import preferences
+        return preferences()
+
     def log_js_error(self, source="", message="", detail=""):
         try:
             import web_health
@@ -538,6 +543,10 @@ class HomeApi:
             key = (persistence.get("home_last_panel") or "").strip()
         except Exception:
             return ""
+        # Audit became Daily Run when Clients received its own page. Preserve
+        # the user's last location across that navigation rename.
+        if key == "audit":
+            key = "daily_run"
         if not key:
             return ""
         if key in getattr(self, "_failed_subs", {}):

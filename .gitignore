@@ -68,6 +68,8 @@ build_release/
 /build_main*/
 /installer_main*/
 /work/
+/.local_build_trial*/
+/local_dist*/
 
 # Inno Setup compiler output — installers are release artifacts, not source
 Output/

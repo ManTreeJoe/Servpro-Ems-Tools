@@ -381,9 +381,51 @@ def repeat_offenders(*, threshold: int = 5,
     return out[:limit]
 
 
+def _operational_group_rollup(lifecycle, transitions) -> dict[str, Any]:
+    """Project the existing stage history through the shared group clocks."""
+    try:
+        import operational_tracking as tracking
+        import pipeline_stages
+    except Exception:
+        return {"groups": [], "jobs": 0, "clock_quality": "unavailable"}
+    by_card = defaultdict(list)
+    for row in transitions or []:
+        card_id = str(row.get("card_id") or "")
+        if card_id:
+            by_card[card_id].append(row)
+    thresholds = pipeline_stages.get_thresholds()
+    projected = [
+        tracking.project_stage_history(
+            by_card.get(str(row.get("card_id") or ""), []),
+            row, thresholds=thresholds)
+        for row in (lifecycle or []) if row.get("card_id")
+    ]
+    result = tracking.rollup(projected)
+    result["clock_quality"] = "estimated_from_stage_history"
+    result["note"] = (
+        "Existing history has total stage time. Controllable time becomes exact "
+        "as approved pause and handoff events are recorded in Linguar Hub."
+    )
+    return result
+
+
+def operational_group_stats(*, days_back: int = 90) -> dict[str, Any]:
+    """Front Operations, Field, and Estimating cycle-time rollup."""
+    try:
+        import ems_db
+        since = (_dt.datetime.now() - _dt.timedelta(days=days_back)).isoformat()
+        transitions = ems_db.list_transitions(since_iso=since, limit=5000)
+        lifecycle = ems_db.lifecycle_list(paid_window_days=None)
+    except Exception:
+        return {"groups": [], "jobs": 0, "clock_quality": "unavailable"}
+    return _operational_group_rollup(lifecycle, transitions)
+
+
 def job_performance_stats(*, days_back: int = 90) -> dict[str, Any]:
     """Stage bottlenecks, current stalls, and monthly completion progress."""
     out = {"stage_bottlenecks": [], "stalled_jobs": [],
+           "operational_groups": {"groups": [], "jobs": 0,
+                                  "clock_quality": "unavailable"},
            "completed_this_month": 0, "monthly_quota": 0,
            "quota_remaining": 0, "quota_percent": None}
     try:
@@ -394,6 +436,9 @@ def job_performance_stats(*, days_back: int = 90) -> dict[str, Any]:
         lifecycle = ems_db.lifecycle_list(paid_window_days=None)
     except Exception:
         return out
+
+    out["operational_groups"] = _operational_group_rollup(
+        lifecycle, transitions)
 
     by_stage: dict[str, list[float]] = {}
     for row in transitions:

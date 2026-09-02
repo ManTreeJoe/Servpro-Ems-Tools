@@ -2286,9 +2286,10 @@ def sync_from_trello(*, exclude_quality: bool = True,
     _walk.resolve_against_existing(
         found["records"], lambda k: get_job(k) is not None)
 
-    for rec in found["records"]:
+    job_records = _walk.collapse_records(found["records"])
+    for rec in job_records:
         key = rec["canon_key"]
-        meta = {"board": rec["board"], "lane": rec["lane"]}
+        meta = _walk.merge_card_metadata(get_job(key), rec)
         # Every column the card stated, not just claim + carrier. Blanks
         # are already dropped by the collector, and upsert_job treats a
         # blank as "don't overwrite", so a card that omits a field never
@@ -2311,14 +2312,21 @@ def sync_from_trello(*, exclude_quality: bool = True,
         for extra in (rec.get("aliases") or ()):
             if extra:
                 add_alias(key, extra, source="trello")
-        set_link(key, "trello_card", rec["card_id"],
-                 metadata=meta, added_by="sync_from_trello")
-        links_added += 1
         cards_total += 1
+
+    # Keep every source card pinned even when several cards collapse into one
+    # job row (for example an active job plus its older Logs card).
+    for rec in found["records"]:
+        key = rec["canon_key"]
+        set_link(key, "trello_card", rec["card_id"],
+                 metadata={"board": rec.get("board", ""),
+                           "lane": rec.get("lane", "")},
+                 added_by="sync_from_trello")
+        links_added += 1
 
     return {
         "boards": b_total,
-        "cards": cards_total,
+        "cards": len(found["records"]),
         "jobs_upserted": jobs_upserted,
         "links_added": links_added,
     }

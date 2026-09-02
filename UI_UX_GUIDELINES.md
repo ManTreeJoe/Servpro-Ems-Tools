@@ -120,6 +120,20 @@ Rules:
 - Say what happened and what the user can do next.
 - Avoid backend terminology such as schema names, table names, or internal module names in ordinary UI.
 
+## Anti-template standard
+
+Linguar Hub must look like a restoration operations tool, not a generated SaaS dashboard.
+
+- Every visible control must perform its labeled action. Hide unfinished controls; never use decorative `•••`, fake filters, or placeholder mode switches.
+- Use the established Hub logo and real provider marks. Do not substitute emoji, letter tiles, blank gradient squares, or invented icons when an approved asset exists.
+- Keep SERVPRO green as a functional brand/status color. Do not add neon glow, decorative gradients, glass panels, grid-paper backgrounds, or ambient animation without an operational reason.
+- Headings name the work directly: `Jobs needing action`, `Today’s schedule`, and `Jobs by lane`. Avoid slogan-like eyebrow triplets and vague labels such as `Control room`, `Pulse`, `Exposure`, or `Pressure`.
+- Metrics must answer a current workflow question and open the records behind the number. Do not add generic KPI cards merely to fill space.
+- Empty and loading states explain what is happening or what action comes next. They are not decorative mood content.
+- Use one restrained signature: the Hub mark with division colors. Everything else stays quiet, compact, and consistent with Job Audit.
+- Browser screens never imitate desktop-only behavior. Installers, Windows launch actions, and local file controls appear only where they can work.
+- Before merging UI work, list every new button and verify its event handler, keyboard path, loading state, and failure message.
+
 ## Review checklist
 
 Before a Trial build is handed to the user:

@@ -9412,6 +9412,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
 
 
 def main(argv=None):
+    _argv = argv if argv is not None else sys.argv[1:]
     api = Api()
     window = webview.create_window(
         title="Audit — Linguar Hub (web spike)",
@@ -9421,6 +9422,9 @@ def main(argv=None):
         min_size=(820, 540),
     )
     api.attach(window)
+    if "--new-loss" in _argv:
+        window.events.loaded += lambda *_args: window.evaluate_js(
+            "setTimeout(() => openNewLossModal(), 50)")
     webview.start(debug=False)
 
 

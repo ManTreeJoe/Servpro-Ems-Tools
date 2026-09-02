@@ -718,14 +718,15 @@ class Api:
             values = job_settings.stored_values(job)
             grouped = {}
             order = []
-            for fid, section, _key, label, _core in job_settings.FIELDS:
+            for fid, section, _key, label, core in job_settings.FIELDS:
                 value = str(values.get(fid) or "").strip()
                 if not value:
                     continue
                 if section not in grouped:
                     grouped[section] = []
                     order.append(section)
-                grouped[section].append({"id": fid, "label": label, "value": value})
+                grouped[section].append({"id": fid, "label": label,
+                                         "value": value, "core": bool(core)})
             info_sections = [{"name": section.title(), "fields": grouped[section]}
                              for section in order]
         except Exception:

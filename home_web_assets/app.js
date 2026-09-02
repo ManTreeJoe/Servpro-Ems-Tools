@@ -22,6 +22,7 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 window.addEventListener("pywebviewready", async () => {
+  if (window.__LINGUAR_BROWSER_TOOLS__) $("#legacy-btn")?.remove();
   // WebView2 focus fix: nudge the app window to the foreground on click so
   // a text field doesn't just blink a caret while the window stays inactive.
   let _focusNudgeAt = 0;
@@ -63,10 +64,70 @@ async function loadShell() {
   // there is nothing left to wait for here; any await between the sidebar
   // appearing and this call is a window in which the user could click a
   // tool and then get thrown somewhere else.
-  restoreLastPanel();
+  if (!openRequestedBrowserPanel()) restoreLastPanel();
   renderWelcome();
   updateClock();
   renderDeptSwitch();
+}
+
+// Browser links can open a specific tool without forcing hidden/advanced
+// panels back into everyone's everyday sidebar.  When a requested panel is
+// normally hidden, expose it only for this browser session under "Open tool".
+const BROWSER_PANEL_FALLBACKS = {
+  pipeline: ["▦", "Jobs", "../pipeline_web_assets/index.html"],
+  daily_run: ["📋", "Daily Run", "../audit_web_assets/index.html?surface=daily"],
+  clients: ["👥", "Clients", "../clients_web_assets/index.html"],
+  snapshot: ["📸", "Snapshot", "../snapshot_web_assets/index.html"],
+  run_doc_editor: ["📋", "Daily Run Editor", "../run_doc_editor_web_assets/index.html"],
+  photo_folders: ["📷", "Photo Folders", "../photo_folders_web_assets/index.html"],
+  apa: ["📊", "APA", "../apa_web_assets/index.html"],
+  disputes: ["⚖", "Billing Disputes", "../disputes_web_assets/index.html"],
+  kpi: ["⌗", "KPI", "../kpi_web_assets/index.html"],
+  job_notes: ["🗒", "Job Notes", "../job_notes_web_assets/index.html"],
+  cheat_sheet: ["📝", "Cheat Sheet", "../cheat_sheet_web_assets/index.html"],
+  resources: ["📚", "Forms & Resources", "../resources_web_assets/index.html"],
+  settings: ["⚙", "Settings", "../settings_web_assets/index.html"],
+};
+
+// New Loss lives inside the mature Daily Run workspace.  A one-shot click
+// races the iframe navigation (about:blank can still report `complete` after
+// its real URL is assigned), so retry until the intake button actually exists.
+function openNewLossWhenReady(frame) {
+  if (!frame) return;
+  const started = Date.now();
+  let opened = false;
+  const attempt = () => {
+    if (opened) return;
+    try {
+      const button = frame.contentDocument?.getElementById("new-loss-btn");
+      if (button) {
+        opened = true;
+        button.click();
+        return;
+      }
+    } catch (_) { /* same-origin frame can be between documents */ }
+    if (Date.now() - started < 10000) setTimeout(attempt, 150);
+  };
+  frame.addEventListener("load", attempt, { once: true });
+  setTimeout(attempt, 0);
+}
+
+function openRequestedBrowserPanel() {
+  const query = new URLSearchParams(location.search);
+  const key = query.get("panel");
+  if (!key || !BROWSER_PANEL_FALLBACKS[key]) return false;
+  let item = findItem(key);
+  if (!item) {
+    const [icon, name, src] = BROWSER_PANEL_FALLBACKS[key];
+    item = { key, icon, name, src, temporary: true };
+    state.nav.push({ label: "Open tool", items: [item] });
+    renderSidebar();
+  }
+  navigate(key, item.src, query.get("focus") || "");
+  if (query.get("new_loss") === "1" && key === "daily_run") {
+    openNewLossWhenReady(state.frames.get(key));
+  }
+  return true;
 }
 
 function restoreLastPanel() {
@@ -217,6 +278,10 @@ function renderSidebar() {
 
 // Update banner — polls the repo's version.txt; shows a bar when newer.
 async function maybeCheckUpdate() {
+  // Browser pages are deployed/served by the Hub and do not install the
+  // Windows application.  Only the native pywebview shell owns the desktop
+  // release checker and installer flow.
+  if (window.__LINGUAR_BROWSER_TOOLS__) return;
   let r;
   try { r = await pywebview.api.check_update(); } catch (e) { return; }
   if (!r || !r.ok || !r.update_available) return;
@@ -347,16 +412,7 @@ window.addEventListener("message", (event) => {
   if (!item) return;
   navigate(item.key, item.src);
   const frame = state.frames.get("daily_run");
-  if (!frame) return;
-  const openIntake = () => {
-    try { frame.contentDocument?.getElementById("new-loss-btn")?.click(); }
-    catch (_) { /* the same-origin frame can still be between documents */ }
-  };
-  if (frame.contentDocument?.readyState === "complete") {
-    setTimeout(openIntake, 0);
-  } else {
-    frame.addEventListener("load", openIntake, { once: true });
-  }
+  openNewLossWhenReady(frame);
 });
 
 // ── First-run welcome modal ──────────────────────────────────────

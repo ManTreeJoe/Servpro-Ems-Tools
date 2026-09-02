@@ -11,10 +11,22 @@ both start from `collect()`.
 """
 from __future__ import annotations
 
+import json
 from typing import Iterable
 
 
-def _card_columns(tc, card) -> dict:
+def _card_values(card) -> dict:
+    """Return every recognized nonblank Job Info value on a card."""
+    try:
+        import job_settings as _js
+        values = _js.from_card((card or {}).get("desc") or "") or {}
+        return {key: str(value).strip() for key, value in values.items()
+                if str(value or "").strip()}
+    except Exception:
+        return {}
+
+
+def _card_columns(tc, card, values=None) -> dict:
     """{column: value} for every card field that has a column.
 
     Driven by `job_settings` — FIELDS says where a value lives on the
@@ -32,10 +44,7 @@ def _card_columns(tc, card) -> dict:
         import job_settings as _js
     except Exception:
         return {}
-    try:
-        fields = tc.parse_card_desc((card or {}).get("desc") or "") or {}
-    except Exception:
-        return {}
+    values = values if isinstance(values, dict) else _card_values(card)
     out = {}
     for entry in getattr(_js, "FIELDS", ()):
         # (field_id, section, key, label, core)
@@ -43,7 +52,7 @@ def _card_columns(tc, card) -> dict:
         col = (getattr(_js, "COLUMN_FIELDS", {}) or {}).get(fid)
         if not col:
             continue                     # lives in the JSON blob, not a column
-        val = ((fields.get(section) or {}).get(key) or "").strip()
+        val = str(values.get(fid) or "").strip()
         if not val:
             continue
         if col == "carrier":
@@ -54,6 +63,39 @@ def _card_columns(tc, card) -> dict:
                 pass
         out[col] = val
     return out
+
+
+def merge_card_metadata(existing: dict | None, record: dict) -> dict:
+    """Merge light Trello text into metadata without erasing Hub edits.
+
+    ``settings`` is the current Hub value and ``trello_base`` is the last
+    value observed on the card.  A new card value advances the Hub value only
+    when nobody changed that same field in Linguar Hub since the prior sync.
+    """
+    existing = existing or {}
+    metadata = existing.get("metadata")
+    if not isinstance(metadata, dict):
+        raw = existing.get("metadata_json") or ""
+        try:
+            metadata = json.loads(raw) if raw else {}
+        except (TypeError, ValueError):
+            metadata = {}
+    metadata = dict(metadata or {})
+    saved = dict(metadata.get("settings") or {})
+    prior_base = dict(metadata.get("trello_base") or {})
+    incoming = dict(record.get("settings") or {})
+    for field_id, value in incoming.items():
+        current = str(saved.get(field_id) or "").strip()
+        previous = str(prior_base.get(field_id) or "").strip()
+        if not current or current == previous:
+            saved[field_id] = value
+    metadata.update({"board": record.get("board") or "",
+                     "lane": record.get("lane") or ""})
+    if saved:
+        metadata["settings"] = saved
+    if incoming:
+        metadata["trello_base"] = incoming
+    return metadata
 
 
 def resolve_against_existing(records, exists) -> dict:
@@ -114,6 +156,65 @@ class CardRecord(dict):
     """
 
 
+def collapse_records(records: Iterable[dict]) -> list[CardRecord]:
+    """Merge cards that resolve to one job without losing card links.
+
+    Historical Logs cards often share a canonical name with a currently
+    active card.  A job row needs one coherent view of those cards: older
+    cards may fill fields the current card omits, but an active card must
+    win current values, name, lane and status.  Callers still retain the
+    original record list for writing every Trello-card link.
+    """
+    grouped: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for rec in records:
+        key = str(rec.get("canon_key") or "").strip()
+        if not key:
+            continue
+        if key not in grouped:
+            grouped[key] = []
+            order.append(key)
+        grouped[key].append(rec)
+
+    collapsed: list[CardRecord] = []
+    for key in order:
+        cards = grouped[key]
+        active = [r for r in cards if r.get("status") == "active"]
+        winner = (active or cards)[-1]
+        merged = CardRecord(dict(winner))
+
+        # Historical values establish the base; active cards override them.
+        # Blank values never participate, matching the database partial-update
+        # rule used by both backends.
+        precedence = ([r for r in cards if r.get("status") != "active"] +
+                      active)
+        columns: dict[str, str] = {}
+        settings: dict[str, str] = {}
+        aliases: list[str] = []
+        for rec in precedence:
+            for field, value in (rec.get("columns") or {}).items():
+                if str(value or "").strip():
+                    columns[field] = value
+            for field, value in (rec.get("settings") or {}).items():
+                if str(value or "").strip():
+                    settings[field] = value
+            name = str(rec.get("display_name") or "").strip()
+            if name and name != winner.get("display_name"):
+                aliases.append(name)
+            aliases.extend(a for a in (rec.get("aliases") or ()) if a)
+
+        merged["columns"] = columns
+        merged["settings"] = settings
+        merged["claim_number"] = columns.get(
+            "claim_number", winner.get("claim_number") or "")
+        merged["carrier"] = columns.get(
+            "carrier", winner.get("carrier") or "")
+        merged["status"] = "active" if active else winner.get("status", "")
+        merged["aliases"] = list(dict.fromkeys(aliases))
+        collapsed.append(merged)
+    return collapsed
+
+
 def collect(*, exclude_quality: bool = True,
             exclude_logs: bool = True,
             lane_filter: Iterable[str] | None = None,
@@ -145,10 +246,14 @@ def collect(*, exclude_quality: bool = True,
     # status='closed' without a second Trello call.
     closed_board_ids: set[str] = set()
     try:
-        if exclude_logs:
-            logs_bid = tc.get_logs_board_id()
-            if logs_bid:
-                closed_board_ids.add(logs_bid)
+        logs_bid = tc.get_logs_board_id()
+        if logs_bid:
+            # A Logs card is historical whether the caller asks us to
+            # include it or not.  Previously we only recorded this id
+            # inside the exclusion branch, so a full-history sync could
+            # incorrectly reactivate every closed job it imported.
+            closed_board_ids.add(logs_bid)
+            if exclude_logs:
                 # Drop them from the walk too — saves the /cards call
                 # when the caller doesn't want them.
                 boards = [b for b in boards
@@ -199,7 +304,8 @@ def collect(*, exclude_quality: bool = True,
             # discard the rest, which is why a card with an address,
             # phone, adjuster, agent, year built and date of loss sat
             # beside a job row that was completely empty.
-            cols = _card_columns(tc, card)
+            values = _card_values(card)
+            cols = _card_columns(tc, card, values)
             claim = cols.get("claim_number", "")
             carrier = cols.get("carrier", "")
 
@@ -217,6 +323,9 @@ def collect(*, exclude_quality: bool = True,
                 # stay as their own keys for the callers that only want
                 # those two; `columns` is the whole set.
                 "columns":      cols,
+                # Non-column values (links, other contacts, notes and scope)
+                # stay as lightweight text metadata in the shared record.
+                "settings":     values,
             }))
             if progress_cb is not None:
                 try:

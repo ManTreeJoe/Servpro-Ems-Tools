@@ -51,6 +51,64 @@
   --font-display:"Bahnschrift", "Arial Narrow", "Segoe UI Variable", sans-serif;
   --font-body:   "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --font-utility:"Cascadia Mono", "Consolas", monospace;
+  --on-accent:   #101713;
+  --scrim:       rgba(5,8,7,.72);
+}
+
+/* Warm field-paper light mode: the same green/amber operations language,
+ * without turning the app into a featureless white admin template. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg:           #E9ECE6;
+  --surface:      #F8F7F2;
+  --surface-2:    #EEF1EB;
+  --surface-3:    #E1E6DE;
+  --border:       #C8D0C6;
+  --border-strong:#A9B6AA;
+  --text:         #19231E;
+  --text-muted:   #53635A;
+  --text-dim:     #78857D;
+  --green:        #2D7950;
+  --green-hover:  #256944;
+  --green-dark:   #1E5B3A;
+  --green-soft:   rgba(45,121,80,.12);
+  --amber:        #A86510;
+  --amber-soft:   rgba(168,101,16,.12);
+  --red:          #B84E49;
+  --red-soft:     rgba(184,78,73,.11);
+  --link:         #315FA8;
+  --cobalt:       #496AB0;
+  --violet:       #765C9E;
+  --chip-bg:      #DEE4DC;
+  --chip-active:  #CFE1D4;
+  --highlight:    #F1D75A;
+  --highlight-fg: #332B08;
+  --extended:     #B74742;
+  --row-hover:    #E6EBE4;
+  --row-active:   #D9E7DC;
+  --act-demo:     #537B39;
+  --act-monitor:  #496C95;
+  --act-mold:     #8A6128;
+  --act-initial:  #6D5889;
+  --act-post:     #486A9F;
+  --act-contents: #8A5250;
+  --shadow-1:     0 1px 2px rgba(38,48,42,.12), 0 12px 28px rgba(38,48,42,.08);
+  --on-accent:    #FFFFFF;
+  --scrim:        rgba(31,43,36,.34);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg:#E9ECE6;--surface:#F8F7F2;--surface-2:#EEF1EB;--surface-3:#E1E6DE;
+    --border:#C8D0C6;--border-strong:#A9B6AA;--text:#19231E;
+    --text-muted:#53635A;--text-dim:#78857D;--green:#2D7950;
+    --green-hover:#256944;--green-dark:#1E5B3A;--green-soft:rgba(45,121,80,.12);
+    --amber:#A86510;--amber-soft:rgba(168,101,16,.12);--red:#B84E49;
+    --red-soft:rgba(184,78,73,.11);--link:#315FA8;--chip-bg:#DEE4DC;
+    --chip-active:#CFE1D4;--row-hover:#E6EBE4;--row-active:#D9E7DC;
+    --on-accent:#FFFFFF;--scrim:rgba(31,43,36,.34);
+  }
 }
 
 * { box-sizing: border-box; }
@@ -104,7 +162,7 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
 }
 .btn:hover { background: var(--border); }
 .btn-primary {
-  background: var(--green); border-color: var(--green); color: #101713;
+  background: var(--green); border-color: var(--green); color: var(--on-accent);
 }
 .btn-primary:hover { background: var(--green-hover); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -130,7 +188,7 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
   background: var(--chip-bg);
   color: var(--text);
 }
-.chip.ok      { background: var(--green); color: #101713; }
+.chip.ok      { background: var(--green); color: var(--on-accent); }
 .chip.warn    { background: var(--amber); color: #FFFFFF; }
 .chip.hot     { background: var(--red);   color: #FFFFFF; }
 .chip.muted   { background: var(--chip-bg); color: var(--text-muted); }
@@ -154,9 +212,14 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
  * dark scheme makes the UA render the popup dark-aware; the explicit
  * option colors cover engines that honor author styling on <option>.
  * (2026-06-23 — fixes "dropdowns show no text, just the box".) */
-:root { color-scheme: dark; }
-select, .search { color-scheme: dark; }
+:root[data-theme="dark"] { color-scheme: dark; }
+select, .search { color-scheme: inherit; }
 option, optgroup {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+:root[data-theme="light"] option,
+:root[data-theme="light"] optgroup {
   background-color: var(--surface-2);
   color: var(--text);
 }

@@ -1518,12 +1518,11 @@ def sync_from_trello(*, exclude_quality: bool = True,
             known.add(row["canon_key"])
     _walk.resolve_against_existing(records, lambda k: k in known)
 
-    # One card per key wins the job fields — a client with several cards
-    # would otherwise fight itself. Every card still gets its own link,
-    # which is how multi-card clients stay reachable.
-    by_key: dict = {}
-    for rec in records:
-        by_key[rec["canon_key"]] = rec
+    # One merged record per key writes the job fields. Historical cards can
+    # fill blanks, while an active card always wins current values and status.
+    # Every original card still gets its own link below.
+    by_key = {rec["canon_key"]: rec
+              for rec in _walk.collapse_records(records)}
     keys = list(by_key)
 
     existing: dict = {}
@@ -1543,7 +1542,7 @@ def sync_from_trello(*, exclude_quality: bool = True,
         supplied.update({"claim_number": rec["claim_number"],
                          "carrier": rec["carrier"],
                          "status": rec["status"]})
-        md_json = json.dumps({"board": rec["board"], "lane": rec["lane"]})
+        md_json = json.dumps(_walk.merge_card_metadata(prior, rec))
         row = {"canon_key": key, "display_name": name,
                "last_seen_at": now, "metadata_json": md_json}
         if prior is None:

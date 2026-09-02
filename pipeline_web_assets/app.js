@@ -1170,12 +1170,15 @@ function openAuditModal(data, trelloUrl = "") {
       : item.status === "not_applicable" ? "N/A"
       : item.status === "blocked" ? "Blocked"
       : item.status === "in_progress" ? "In progress" : "Missing";
+    const timingLabel = item.carried_forward
+      ? (item.overdue ? "Overdue from earlier stages" : `Carried from ${item.introduced_stage_label || "an earlier stage"}`)
+      : `Required at ${item.introduced_stage_label || "this stage"}`;
     return `
     <div class="requirement-row req-${escapeAttr(item.status || "required_now")}">
       <button type="button" class="requirement-mark" data-requirement-complete="${escapeAttr(item.key || "")}" aria-label="${item.status === "todo" || item.status === "in_progress" ? "Complete" : "Update"} ${escapeAttr(item.label || "requirement")}">${item.status === "completed" ? "✓" : item.status === "not_applicable" ? "—" : item.status === "blocked" ? "×" : item.status === "in_progress" ? "◐" : "○"}</button>
       <span class="requirement-copy"><strong>${escapeHtml(item.label || "")}</strong>
       <b class="req-status status-${escapeAttr((item.status || "todo").replaceAll("_", "-"))}">${statusLabel}</b>
-      <small>${escapeHtml((item.status || "todo").replaceAll("_", " "))} · ${escapeHtml(item.assignee || item.owner || "Unassigned")}${item.due_at ? " · Due " + escapeHtml(formatCommentDate(item.due_at)) : ""}${item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small>
+      <small>${escapeHtml(timingLabel)} · ${escapeHtml(item.assignee || item.owner || "Unassigned")}${item.due_at ? " · Due " + escapeHtml(formatCommentDate(item.due_at)) : ""}${item.evidence ? " · " + escapeHtml(item.evidence) : ""}</small>
       <span class="requirement-flags">${item.importance === "mandatory" ? `<b class="req-flag mandatory">Mandatory</b>` : item.importance === "recommended" ? `<b class="req-flag recommended">Recommended</b>` : ""}${item.overdue ? `<b class="req-flag overdue">Overdue</b>` : ""}${item.carried_forward ? `<b class="req-flag carried">Carried forward</b>` : ""}${item.status === "blocked" && item.follow_up_at ? `<b class="req-flag blocked">Follow up ${escapeHtml(formatCommentDate(item.follow_up_at))}</b>` : ""}</span>
       ${item.manual_actor ? `<small class="requirement-manual">Updated by ${escapeHtml(item.manual_actor)}${item.manual_at ? " · " + escapeHtml(formatCommentDate(item.manual_at)) : ""}${item.manual_note ? " · " + escapeHtml(item.manual_note) : ""}</small>` : ""}</span>
       <button type="button" class="requirement-edit" data-requirement-key="${escapeAttr(item.key || "")}">Update</button>

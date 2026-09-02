@@ -3,33 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0E1112">
   <title>Operations Hub</title>
-  <link rel="stylesheet" href="app.css">
+  <script src="../web_shared/appearance.js?v=20260901a"></script>
+  <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a">
+  <link rel="stylesheet" href="app.css?v=20260902b">
 </head>
-<body>
+<body class="responsive-ui">
   <div class="app-shell">
     <aside class="nav-rail">
-      <div class="brand" aria-label="Linguar Hub"><span class="brand-mark">LH</span><span class="brand-copy"><strong>Linguar</strong><small>Operations</small></span></div>
+      <div class="brand" aria-label="Linguar Hub"><span class="brand-mark"><img src="../linguar_hub.png" width="37" height="37" alt=""></span><span class="brand-copy"><strong>Linguar</strong><small>Operations</small></span></div>
       <nav aria-label="Main navigation">
-        <button class="nav-item active" data-view="home"><i>⌂</i><span>Operations</span></button>
-        <button class="nav-item" data-view="jobs"><i>▦</i><span>Jobs</span><b data-job-count>—</b></button>
-        <button class="nav-item" data-view="dispatch"><i>⌁</i><span>Dispatch</span></button>
-        <button class="nav-item" data-view="clients"><i>◎</i><span>Clients</span></button>
-        <button class="nav-item" data-view="reports"><i>⌗</i><span>Reports</span></button>
+        <button class="nav-item active" data-view="home"><i aria-hidden="true">⌂</i><span>Operations</span></button>
+        <button class="nav-item" data-view="jobs"><i aria-hidden="true">▦</i><span>Jobs</span><b data-job-count>—</b></button>
+        <button class="nav-item" data-view="dispatch"><i aria-hidden="true">⌁</i><span>Dispatch</span></button>
+        <button class="nav-item" data-view="clients"><i aria-hidden="true">◎</i><span>Clients</span></button>
+        <button class="nav-item" data-view="reports"><i aria-hidden="true">⌗</i><span>Reports</span></button>
       </nav>
-      <div class="nav-foot"><div class="connection-state"><span class="connection-dot"></span><span data-connection>Starting…</span></div><button data-tool="settings_web" title="Settings" aria-label="Settings">⚙</button></div>
+      <div class="nav-foot"><div class="connection-state"><span class="connection-dot"></span><span data-connection>Starting…</span></div><button data-open-settings title="Settings" aria-label="Settings">⚙</button></div>
     </aside>
 
     <main class="workspace">
       <header class="command-bar">
-        <div class="page-identity"><small data-eyebrow>Front office · Live operations</small><h1 data-title>Operations</h1></div>
-        <label class="global-search"><span>⌕</span><input type="search" placeholder="Find a client, claim, or job" aria-label="Search jobs and clients"><kbd>Ctrl K</kbd></label>
-        <button class="icon-button" data-refresh title="Refresh live information">↻</button>
+        <div class="page-identity"><small data-eyebrow>Office workflow</small><h1 data-title>Operations</h1></div>
+        <label class="global-search"><span aria-hidden="true">⌕</span><input type="search" name="operations-search" autocomplete="off" placeholder="Find a client, claim, or job…" aria-label="Search jobs and clients"><kbd>Ctrl K</kbd></label>
+        <button class="icon-button" data-refresh title="Refresh live information" aria-label="Refresh live information">↻</button>
         <div class="tools-anchor">
           <button class="tools-button" data-tools-toggle aria-expanded="false">Tools <span>⌄</span></button>
           <section class="tools-menu" data-tools-menu hidden aria-label="Operations tools">
             <header><strong>Tools</strong><small>Open an office-wide workflow</small></header>
             <div class="tool-group"><small>Job workflow</small>
+              <button data-tool="audit_web"><i>✓</i><span><strong>Full Job Audit</strong><small>All legacy job actions and detailed checks</small></span></button>
               <button data-tool="snapshot_web"><i>◫</i><span><strong>Snapshot</strong><small>Closeout queue and handoff</small></span></button>
               <button data-tool="job_notes_web"><i>✎</i><span><strong>Job Notes</strong><small>Review and organize updates</small></span></button>
             </div>
@@ -42,9 +46,9 @@
               <button data-tool="photo_folders_web"><i>▧</i><span><strong>Photo Folders</strong><small>Find and organize job photos</small></span></button>
               <button data-tool="resources_web"><i>⌑</i><span><strong>Resources</strong><small>Forms and office references</small></span></button>
               <button data-tool="cheat_sheet_web"><i>≡</i><span><strong>Cheat Sheet</strong><small>Workflow and comment reference</small></span></button>
-              <button class="mobile-tool" data-tool="settings_web"><i>⚙</i><span><strong>Settings</strong><small>Account, folders, and connections</small></span></button>
+              <button class="mobile-tool" data-open-settings><i>⚙</i><span><strong>Settings</strong><small>Account, folders, and connections</small></span></button>
             </div>
-            <button class="all-tools" data-tool="home_web">All legacy tools →</button>
+            <button class="all-tools" data-tool="home_web">Open all browser tools →</button>
           </section>
         </div>
         <button class="new-loss">＋ New loss</button>
@@ -61,7 +65,7 @@
         <section class="view active" data-panel="home">
           <div class="hero-grid">
             <article class="attention-board">
-              <div class="section-heading"><div><small>Control room</small><h2>What needs a decision</h2></div><button class="text-button" data-go-jobs>Open jobs →</button></div>
+              <div class="section-heading"><div><small>Attention</small><h2>Jobs needing action</h2></div><button class="text-button" data-go-jobs>Open jobs →</button></div>
               <div class="attention-stats">
                 <button data-filter-job="overdue"><strong data-metric="overdue">—</strong><span>Overdue</span><small>Past committed date</small></button>
                 <button data-filter-job="stalled"><strong data-metric="stalled">—</strong><span>Stalled</span><small>No recent movement</small></button>
@@ -70,48 +74,87 @@
               <div class="priority-feed" data-priority-feed><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>
             </article>
             <aside class="day-board">
-              <div class="section-heading"><div><small>Today</small><h2>Dispatch pulse</h2></div><span class="date-chip" data-today>—</span></div>
+              <div class="section-heading"><div><small>Today</small><h2>Today’s schedule</h2></div><span class="date-chip" data-today>—</span></div>
               <div class="day-meter"><i data-day-meter></i></div>
               <dl><div><dt>Scheduled</dt><dd data-today-scheduled>—</dd></div><div><dt>Unscheduled</dt><dd data-unscheduled>—</dd></div><div><dt>Active jobs</dt><dd data-metric="active_jobs">—</dd></div></dl>
               <button class="primary-action" data-go-dispatch>Open dispatch board</button>
             </aside>
           </div>
-          <div class="section-heading section-spaced"><div><small>Live workflow</small><h2>Jobs by operating lane</h2></div><span class="muted" data-source>Loading shared data…</span></div>
+          <div class="section-heading section-spaced"><div><small>Current work</small><h2>Jobs by lane</h2></div><span class="muted" data-source>Loading shared data…</span></div>
           <div class="lane-summary" data-lane-summary></div>
         </section>
 
         <section class="view" data-panel="jobs">
-          <div class="view-toolbar"><div class="segmented" data-board-tabs></div><div class="toolbar-spacer"></div><select data-job-filter aria-label="Job filter"><option value="all">All active jobs</option><option value="attention">Needs attention</option><option value="overdue">Overdue</option></select><button class="quiet-button">Customize</button></div>
+          <div class="view-toolbar"><div class="segmented" data-board-tabs></div><div class="toolbar-spacer"></div><select data-job-filter aria-label="Job filter"><option value="all">All active jobs</option><option value="attention">Needs attention</option><option value="overdue">Overdue</option></select></div>
           <div class="jobs-board" data-jobs-board></div>
         </section>
 
         <section class="view" data-panel="dispatch">
-          <div class="dispatch-head"><div><small>Seven-day field plan</small><h2>Dispatch</h2><p>Schedule by committed date now; technician capacity and routing plug into this view next.</p></div><div class="dispatch-controls"><button class="quiet-button">Today</button><button class="quiet-button">Week</button></div></div>
+          <div class="dispatch-head"><div><small>Run Doc · Next 7 days</small><h2>Dispatch</h2><p>The daily Run Doc is the schedule for now. Assign a technician there and the job will appear in that technician’s mobile Dispatch.</p></div><button type="button" class="primary-action" data-edit-dispatch>Edit today’s Run Doc</button></div>
           <div class="dispatch-grid" data-dispatch-grid></div>
-          <div class="unscheduled-tray"><div class="section-heading"><div><small>Waiting for a date</small><h2>Unscheduled jobs</h2></div><strong data-unscheduled-count>—</strong></div><div class="card-strip" data-unscheduled-list></div></div>
+          <div class="unscheduled-tray"><div class="section-heading"><div><small>Not listed in the next 7 Run Docs</small><h2>Unscheduled active jobs</h2></div><strong data-unscheduled-count>—</strong></div><div class="card-strip" data-unscheduled-list></div></div>
         </section>
 
         <section class="view" data-panel="clients">
           <div class="client-layout">
-            <aside class="client-directory"><div class="directory-search"><span>⌕</span><input data-client-search placeholder="Search clients"></div><div class="client-list" data-client-list></div></aside>
+            <aside class="client-directory"><div class="directory-search"><span aria-hidden="true">⌕</span><input data-client-search type="search" name="client-search" autocomplete="off" aria-label="Search clients" placeholder="Search clients…"></div><div class="client-list" data-client-list></div></aside>
             <article class="client-record" data-client-record><div class="empty-record"><span>◎</span><h2>Choose a client</h2><p>Claims, divisions, contacts, job history, and logs stay together here.</p></div></article>
           </div>
         </section>
 
         <section class="view" data-panel="reports">
-          <div class="reports-head"><div><small>Cycle time · Responsibility · Throughput</small><h2>Operational scorecards</h2></div><select><option>Last 30 days</option><option>Current quarter</option><option>Year to date</option></select></div>
+          <div class="reports-head"><div><small>Current active work</small><h2>Workload report</h2></div><span class="report-scope">Current jobs</span></div>
           <div class="report-grid">
             <article><div class="section-heading"><div><small>Current workload</small><h2>By division</h2></div></div><div class="bar-chart" data-division-chart></div></article>
-            <article><div class="section-heading"><div><small>Time in current lane</small><h2>Aging exposure</h2></div></div><div class="bar-chart" data-age-chart></div></article>
-            <article class="wide"><div class="section-heading"><div><small>Where work is accumulating</small><h2>Lane pressure</h2></div></div><div class="rank-table" data-lane-report></div></article>
+            <article><div class="section-heading"><div><small>Current lane</small><h2>Time in lane</h2></div></div><div class="bar-chart" data-age-chart></div></article>
+            <article class="wide"><div class="section-heading"><div><small>Current workload</small><h2>Jobs by lane</h2></div></div><div class="rank-table" data-lane-report></div></article>
+          </div>
+        </section>
+
+        <section class="view" data-panel="settings">
+          <div class="settings-intro">
+            <div><small>Account access</small><h2>Account &amp; connections</h2><p>Sign in with your work account and check the services available to you.</p></div>
+            <button class="quiet-button" data-settings-refresh>Refresh status</button>
+          </div>
+          <div class="settings-workspace">
+            <article class="settings-panel connections-panel">
+              <header><div><small>My account</small><h3>Connected services</h3></div></header>
+              <div class="operations-connections" data-operations-connections>
+                <div class="settings-loading"><i></i><span>Checking your connections…</span></div>
+              </div>
+              <p class="settings-message" data-settings-message aria-live="polite"></p>
+            </article>
+            <aside class="settings-side">
+              <article class="settings-panel">
+                <header><div><small>This computer</small><h3>Local setup</h3></div></header>
+                <p>Folder paths, franchise assignments, templates, and administrator keys stay in Advanced Settings.</p>
+                <button class="quiet-button wide-button" data-advanced-settings>Open advanced settings</button>
+              </article>
+              <article class="settings-panel settings-principle">
+                <small>How connections work</small>
+                <strong>Use your own work account.</strong>
+                <p>CompanyCam is connected once per franchise. Trello is personal. Microsoft uses the Outlook account on this Windows PC.</p>
+              </article>
+            </aside>
           </div>
         </section>
       </div>
-      <footer class="status-bar"><span data-status>Loading the operating picture…</span><span data-load-time></span></footer>
+      <footer class="status-bar"><span data-status aria-live="polite">Loading current jobs…</span><span data-load-time></span></footer>
     </main>
   </div>
+  <div class="drawer-backdrop" data-job-backdrop hidden></div>
   <div class="record-drawer" data-job-drawer hidden></div>
-  <div class="toast" data-toast hidden></div>
-  <script src="app.js"></script>
+  <div class="account-modal" data-account-modal hidden>
+    <form class="account-dialog" data-account-form role="dialog" aria-modal="true" aria-labelledby="account-signin-title">
+      <header><div><small>Linguar Hub account</small><h2 id="account-signin-title">Sign in</h2></div><button type="button" class="drawer-close" data-account-close aria-label="Close">×</button></header>
+      <p>Use your SERVPRO work email and password. Your password is sent directly to the private authentication service and is never saved here.</p>
+      <label>Work email<input type="email" name="email" autocomplete="email" required placeholder="name@servpro…"></label>
+      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+      <footer><button class="primary-action" type="submit">Sign in</button><button class="quiet-button" type="button" data-account-close>Cancel</button></footer>
+      <p class="account-error" data-account-error aria-live="polite"></p>
+    </form>
+  </div>
+  <div class="toast" data-toast role="status" aria-live="polite" hidden></div>
+  <script src="app.js?v=20260902b"></script>
 </body>
 </html>

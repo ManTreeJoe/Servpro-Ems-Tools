@@ -6,7 +6,6 @@ import sys
 import webview
 
 from operations_hub import OperationsHub
-import paths
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,8 +26,24 @@ class Api:
     def bootstrap(self, force=False):
         return self.hub.bootstrap(bool(force))
 
+    def appearance_preferences(self):
+        from web_appearance import preferences
+        return preferences()
+
     def client_account(self, name):
         return self.hub.client_account(name)
+
+    def connections(self):
+        return self.hub.connections()
+
+    def account_sign_in(self, email, password):
+        return self.hub.account_sign_in(email, password)
+
+    def account_sign_out(self):
+        return self.hub.account_sign_out()
+
+    def begin_connection(self, provider):
+        return self.hub.begin_connection(provider)
 
     def job_context(self, client, card_id="", division="EMS"):
         return self.hub.job_context(client, card_id, division)
@@ -39,24 +54,29 @@ class Api:
     def save_job_update(self, client, entry):
         return self.hub.save_job_update(client, entry)
 
+    def field_note_templates(self, division="EMS"):
+        return self.hub.field_note_templates(division)
+
+    def save_field_note(self, client, note_type, values, division="EMS",
+                        source_id=""):
+        return self.hub.save_field_note(
+            client, note_type, values, division, source_id)
+
+    def import_job_log(self, client, card_id=""):
+        return self.hub.import_job_log(client, card_id)
+
+    def set_job_requirement(self, client, requirement_key, state, note="",
+                            details=None, card_id="", division="EMS"):
+        return self.hub.set_job_requirement(
+            client, requirement_key, state, note, details, card_id, division)
+
     def copy_text(self, text):
         from web_helpers import set_clipboard_text
         return {"ok": bool(set_clipboard_text(str(text or "")))}
 
     def launch_tool(self, tool):
-        allowed = {
-            "new_job", "audit_web", "snapshot_web", "job_notes_web",
-            "apa_web", "disputes_web", "kpi_web", "photo_folders_web",
-            "resources_web", "cheat_sheet_web", "settings_web", "home_web",
-        }
-        value = str(tool or "").strip()
-        if value not in allowed:
-            return {"ok": False, "error": "That tool is not available here."}
-        try:
-            paths.spawn_tool(value)
-            return {"ok": True}
-        except Exception as ex:
-            return {"ok": False, "error": str(ex)}
+        from operations_tools import launch_desktop
+        return launch_desktop(tool)
 
     def open_url(self, url):
         value = str(url or "").strip()

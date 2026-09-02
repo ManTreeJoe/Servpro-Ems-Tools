@@ -451,10 +451,10 @@ class SettingsDialog(tk.Toplevel):
         # and reconfigure the ones we can, then ask the launcher
         # (via on_save) to do a fuller rebuild for tools it can recreate.
         try:
-            old_mode = (self.cfg.get("appearance") or "dark").lower()
+            old_mode = (self.cfg.get("appearance") or "system").lower()
         except Exception:
             old_mode = "dark"
-        new_mode = (new_cfg.get("appearance") or "dark").lower()
+        new_mode = (new_cfg.get("appearance") or "system").lower()
         appearance_changed = (new_mode != old_mode)
         if appearance_changed:
             try:

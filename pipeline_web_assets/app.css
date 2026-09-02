@@ -1142,3 +1142,26 @@ button,input,select,textarea { font-family:var(--font-body); }
 .lane-popover button:hover { background:rgba(255,255,255,.08); }
 .lane-popover button.danger { color:#ffaaa2; }
 .lane-more{margin:8px;padding:10px;border:1px dashed var(--border);border-radius:8px;color:var(--text-muted);font-size:10px;text-align:center}.archive-tab{border-style:dashed!important}
+
+/* Light-mode surface pass. Status chips keep their semantic colors; working
+   surfaces use the shared warm field-paper palette. */
+:root[data-theme="light"] .topbar,
+:root[data-theme="light"] .lane-head,
+:root[data-theme="light"] .view-toggle,
+:root[data-theme="light"] .search { background:var(--surface); }
+:root[data-theme="light"] .lane,
+:root[data-theme="light"] .lane-popover,
+:root[data-theme="light"] .board-customize-dialog { background:var(--surface);border-color:var(--border); }
+:root[data-theme="light"] .job-card-activity { background:var(--surface-2); }
+:root[data-theme="light"] .copy-quick-menu>.copy-menu-panel,
+:root[data-theme="light"] .job-log-editor { background:var(--surface);box-shadow:var(--shadow-1); }
+:root[data-theme="light"] .requirement-review-note { border-color:#D1B36F;background:#F5EBCF;color:#62490E; }
+:root[data-theme="light"] .requirement-undo { border-color:#9DB9A5;background:#F8F7F2;box-shadow:var(--shadow-1); }
+:root[data-theme="light"] .lane-name-input { background:#FFFFFF;color:var(--text); }
+:root[data-theme="light"] .lane-menu-button:hover,
+:root[data-theme="light"] .lane-popover button:hover { background:var(--row-hover); }
+:root[data-theme="light"] .lane-add-button { border-color:rgba(35,71,49,.18);background:rgba(248,247,242,.72);color:var(--text); }
+:root[data-theme="light"] .lane-add-button:hover { background:rgba(248,247,242,.92);border-color:rgba(35,71,49,.3); }
+:root[data-theme="light"] .lane-add-form { border-color:var(--border);background:rgba(248,247,242,.96);box-shadow:var(--shadow-1); }
+:root[data-theme="light"] .dialog-eyebrow,
+:root[data-theme="light"] .background-status { color:var(--green); }
