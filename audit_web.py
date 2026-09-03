@@ -3249,23 +3249,26 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                         second_claim: bool = False,
                         promote_first: bool = False,
                         make_folder: bool = True,
-                        make_companycam: bool = False,
+                        make_companycam: bool = True,
                         parent: str = "") -> dict:
-        """Clone the matching template into the intake list, fill it, and
-        (by default) create the job folder.
+        """Provision a new loss across Trello, job storage and CompanyCam.
 
-        The card and the folder are created independently: a client with
-        several claims or units has several cards but ONE client folder,
-        so the two aren't one-to-one. A folder failure never fails the
-        card — the card is the part that can't be redone by hand.
-
-        `make_companycam` also creates the CompanyCam project now and
-        pins its id, instead of leaving it to be fuzzy-matched by name
-        later (projects are named by the INSURED, run-doc names often
-        aren't — that match is the part that fails). OFF by default: it
-        posts a record every tech can see. Like the folder, it never
-        fails the card.
+        Main's New Loss UI always requests all three. The optional flags
+        remain for migration scripts and tests, but the default contract is
+        complete provisioning. CompanyCam is preflighted before the Trello
+        create because CompanyCam projects cannot be deleted with the
+        configured integration; a missing token must not leave a new loss
+        half-created before work even starts.
         """
+        if make_companycam:
+            try:
+                import companycam_api as cc
+                if not cc.is_configured():
+                    return {"ok": False,
+                            "error": "CompanyCam is not connected. Connect it in Settings before creating a new loss."}
+            except Exception as ex:
+                return {"ok": False,
+                        "error": f"CompanyCam preflight failed: {type(ex).__name__}: {ex}"}
         try:
             import new_loss_intake as nli
             fields = dict(fields or {})
@@ -3283,14 +3286,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             except Exception as ex:
                 folder = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
             res["folder"] = folder
-        # ALWAYS run this, and let the checkbox govern CREATION only.
-        #
-        # It used to be skipped entirely when the box was unticked, so a
-        # project that already existed in CompanyCam was never pinned --
-        # which is why 44 jobs had a CompanyCam link against 341 with a
-        # Trello card. Adopting an existing project posts nothing and
-        # tells no one; it just records the id, so there is no reason to
-        # make somebody opt in to it.
+        # Always adopt an existing project. Main also always passes
+        # make_companycam=True, so a missing project is created at intake.
         try:
             res["companycam"] = nli.create_companycam_project(
                 fields,
@@ -3301,6 +3298,39 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             res["companycam"] = {"ok": False,
                                  "error": f"{type(ex).__name__}: {ex}"}
+        # Record all locators together even when CompanyCam's own helper
+        # could not pin. This is the identity seam consumed by Jobs,
+        # Clients, Snapshot and search; none should have to guess later.
+        folder_path = str((res.get("folder") or {}).get("path") or "")
+        project_id = str(((res.get("companycam") or {}).get("project") or {}).get("id") or "")
+        graph = {"ok": False, "error": "job links were not recorded"}
+        try:
+            import ems_db
+            identity = (res.get("name") or fields.get("insured_name") or "").strip()
+            linked = ems_db.resolve_and_link(
+                identity,
+                trello_card=str(res.get("card_id") or ""),
+                folder_path=folder_path,
+                companycam_project=project_id,
+                create=True,
+                source="new_loss")
+            graph = {"ok": bool(linked), "job": linked or {}}
+            if not linked:
+                graph["error"] = "shared job record was not returned"
+        except Exception as ex:
+            graph = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+        res["job_links"] = graph
+        steps = {
+            "trello": bool(res.get("card_id")),
+            "folder": bool((res.get("folder") or {}).get("ok") and folder_path),
+            "companycam": bool((res.get("companycam") or {}).get("ok") and project_id),
+            "links": bool(graph.get("ok")),
+        }
+        res["provisioning"] = {
+            "complete": all(steps.values()),
+            "steps": steps,
+            "failed": [name for name, complete in steps.items() if not complete],
+        }
         return res
 
     # ── P0: XactAnalysis quick link from right-click menu ────────────

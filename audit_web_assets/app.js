@@ -5565,8 +5565,8 @@ function openNewLossModal() {
     </div>`;
 
   const overlay = createOverlay({
-    title: "🆕 New Loss — create Trello card from assignment email",
-    sub:   "Paste the carrier email, hit Parse, review/fill the fields, then Create. Fields the email omits can be typed in.",
+    title: "🆕 New Loss",
+    sub:   "Paste the assignment, review the details, then create the complete job.",
     body: `
       <div id="nl-board-line" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Resolving board…</div>
       <label class="modal-lbl" style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:2px;">Paste assignment email</label>
@@ -5597,18 +5597,14 @@ function openNewLossModal() {
 
       ${NL_FIELD_GROUPS.map(groupBlock).join("")}
 
-      <label id="nl-cc-row" style="display:none;align-items:center;gap:6px;
-             margin-top:14px;font-size:12px;">
-        <input type="checkbox" id="nl-make-companycam" checked />
-        <span>Also create the <b>CompanyCam project</b> now and pin it
-              <span class="muted">— so photos don't have to be matched by
-              name later. An EXISTING project is pinned either way.</span></span>
-      </label>
+      <div class="new-loss-provisioning" style="margin-top:14px;padding:10px 12px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);font-size:12px;">
+        <b>Creates and links</b><span class="muted"> · OD job folder · Trello card · CompanyCam project</span>
+      </div>
 
       <div class="modal-footer" style="margin-top:16px;display:flex;gap:8px;align-items:center;">
         <span id="nl-status" style="flex:1;font-size:11px;"></span>
         <button class="btn modal-close">Cancel</button>
-        <button class="btn btn-primary" id="nl-create">🆕 Create card</button>
+        <button class="btn btn-primary" id="nl-create">🆕 Create job</button>
       </div>`,
   });
 
@@ -5792,18 +5788,6 @@ function openNewLossModal() {
     } catch (e) { /* non-fatal */ }
   })();
 
-  // Only offer the CompanyCam option when a token is actually set —
-  // otherwise it's a checkbox whose only outcome is an error.
-  (async () => {
-    try {
-      const c = await pywebview.api.companycam_configured();
-      if (c?.configured) {
-        const row = $$("#nl-cc-row");
-        if (row) row.style.display = "flex";
-      }
-    } catch (e) { /* leave it hidden */ }
-  })();
-
   $$("#nl-parse").addEventListener("click", async () => {
     const text = $$("#nl-paste").value.trim();
     if (!text) { $$("#nl-parse-status").textContent = "Paste the email first"; return; }
@@ -5844,7 +5828,7 @@ function openNewLossModal() {
     }
     const btn = $$("#nl-create");
     btn.disabled = true;
-    $$("#nl-status").textContent = "Creating card…";
+    $$("#nl-status").textContent = "Creating folder, Trello card, and CompanyCam project…";
     const res = await pywebview.api.create_new_loss(
       fields,
       // Folder options come from the panel above. The card and the folder
@@ -5855,7 +5839,7 @@ function openNewLossModal() {
       !!$$("#nl-second-claim")?.checked,
       !!$$("#nl-promote")?.checked,
       true,                                   // make_folder
-      !!$$("#nl-make-companycam")?.checked,
+      true,                                   // make_companycam
       nlParent);                              // chosen umbrella, if any
     if (!res?.ok) {
       btn.disabled = false;
@@ -5878,8 +5862,12 @@ function openNewLossModal() {
                       : " · 📷 CompanyCam project already existed — pinned")
         : ` · ⚠ CompanyCam: ${cc.error || "failed"}`;
     }
-    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom)${folderNote}${ccNote}. ${res.url || ""}`,
-              (f.error || (cc && !cc.ok)) ? "warn" : "ok");
+    const provisioning = res.provisioning || {};
+    const incomplete = provisioning.complete === false;
+    const incompleteNote = incomplete
+      ? ` · ⚠ setup incomplete: ${(provisioning.failed || []).join(", ")}` : "";
+    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom)${folderNote}${ccNote}${incompleteNote}. ${res.url || ""}`,
+              (f.error || (cc && !cc.ok) || incomplete) ? "warn" : "ok");
     if (typeof runAudit === "function") { try { runAudit(true); } catch (e) {} }
   });
 }

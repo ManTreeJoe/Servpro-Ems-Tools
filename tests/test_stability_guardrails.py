@@ -22,7 +22,7 @@ def test_audit_search_normalizes_optional_lists():
 def test_audit_loader_uses_current_cache_key():
     html = (ROOT / "audit_web_assets" / "index.html").read_text(
         encoding="utf-8")
-    assert 'app.js?v=20260903b' in html
+    assert 'app.js?v=20260903c' in html
 
 
 def test_normal_backup_worker_schedules_the_next_check(monkeypatch):

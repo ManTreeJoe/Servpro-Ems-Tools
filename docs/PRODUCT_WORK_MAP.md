@@ -39,6 +39,10 @@ The Client is the permanent record. Jobs are the individual pieces of work. Divi
 - Closing a Job Workspace warns only about a real unsaved draft. It never warns for a change that already autosaved.
 - Every failed save leaves the entered value visible and explains what was not saved.
 
+## New Loss contract
+
+Main's **New Loss** action provisions one complete operational Job. It creates the appropriate OD job-folder skeleton, clones and pins the selected live Trello template, creates or adopts and pins the CompanyCam project, then records all three locators against the same Job identity. CompanyCam must be connected before provisioning begins. A partial external failure is reported as `setup incomplete` with the failed step; it is never presented as a fully ready job.
+
 ## Source ownership
 
 | Information | Owner | Temporary adapter |
