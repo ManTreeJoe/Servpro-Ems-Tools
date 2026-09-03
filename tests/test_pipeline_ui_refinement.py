@@ -96,6 +96,17 @@ def test_add_update_reveals_and_focuses_the_job_log_editor():
     assert 'host.querySelector(\'[data-log-field="work_type"]\')?.focus()' in editor
 
 
+def test_job_log_is_above_requirements_and_checklists():
+    js = _asset("app.js")
+    body_start = js.index('const body = `<div class="job-card-layout">')
+    body_end = js.index('const w = document.createElement("div")', body_start)
+    body = js[body_start:body_end]
+    assert body.index('class="aud-section job-log-section"') < body.index(
+        'class="aud-section progress-section"')
+    assert body.index('class="aud-section job-log-section"') < body.index(
+        'class="aud-section checklist-section"')
+
+
 def test_cross_tool_job_links_target_jobs_not_removed_audit_panel():
     root = ROOT
     apa = (root / "apa_web_assets" / "app.js").read_text(encoding="utf-8")
