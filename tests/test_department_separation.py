@@ -152,6 +152,21 @@ def test_load_for_resolves_a_non_active_department(tmp_path, monkeypatch):
     assert config.active_department() == "IE"
 
 
+def test_board_exclusions_do_not_leak_into_another_franchise(tmp_path,
+                                                              monkeypatch):
+    """An empty OC exclusion list means no OC boards are hidden.
+
+    Trello board ids belong to one workspace.  Inheriting IE's ids made OC
+    silently apply another franchise's board policy.
+    """
+    cfg = _base(trello_boards_exclude=["ie-hidden-board"])
+    _write(tmp_path, monkeypatch, cfg)
+
+    assert config.load_for("IE")["trello_boards_exclude"] == [
+        "ie-hidden-board"]
+    assert config.load_for("OC")["trello_boards_exclude"] == []
+
+
 def test_scaffold_does_not_invent_a_franchise(tmp_path, monkeypatch):
     """Franchise records are user data, not product defaults."""
     cfg = {

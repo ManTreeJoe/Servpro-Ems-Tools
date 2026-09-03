@@ -31,6 +31,22 @@ def test_month_index_handles_year_nested_run_root(tmp_path, monkeypatch):
     assert run_doc.run_doc_dates_for_month(2026, 8) == ["2026-08-24"]
 
 
+def test_year_folder_setting_also_finds_legacy_sibling_month(tmp_path,
+                                                             monkeypatch):
+    """OC has both Daily Run/2026/August and Daily Run/September layouts."""
+    year_root = tmp_path / "Daily Run" / "2026"
+    year_root.mkdir(parents=True)
+    month = tmp_path / "Daily Run" / "September"
+    month.mkdir()
+    expected = month / "Thursday 9032026.msg"
+    expected.write_bytes(b"test")
+    monkeypatch.setattr(run_doc, "_runs_dir", lambda: str(year_root))
+
+    assert run_doc.run_doc_dates_for_month(2026, 9) == ["2026-09-03"]
+    assert run_doc._find_run_doc_for_date(
+        __import__("datetime").date(2026, 9, 3)) == str(expected)
+
+
 def test_month_index_handles_ie_year_ems_month_layout(tmp_path, monkeypatch):
     month = tmp_path / "2026" / "EMS" / "Aug"
     month.mkdir(parents=True)

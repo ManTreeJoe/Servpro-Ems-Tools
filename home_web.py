@@ -1061,6 +1061,15 @@ class HomeApi:
             if not config.set_active_department(key):
                 return {"ok": False, "error": f"unknown department '{key}'"}
             _invalidate_scoped_caches()
+            # Sub-APIs live for the lifetime of the shell so their UI state
+            # survives normal navigation. A franchise switch is different:
+            # any name-keyed board/workspace result now belongs to the wrong
+            # office and must be dropped before the reloaded page asks again.
+            for sub in self._subs.values():
+                callback = getattr(sub, "_department_changed", None)
+                if callable(callback):
+                    callback()
+            self._counts_cache = None
             return {"ok": True, "switched_to": key, "reload": True}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}

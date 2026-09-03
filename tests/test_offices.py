@@ -266,3 +266,28 @@ def test_no_board_syncs_nothing_rather_than_someone_elses(two_franchises,
     res = dt.sync_from_trello_board()
     assert res["no_board"] is True
     assert res["added"] == 0
+
+
+def test_shell_notifies_long_lived_panels_after_office_switch(monkeypatch):
+    import home_web
+
+    calls = []
+
+    class _Sub:
+        def _department_changed(self):
+            calls.append("changed")
+
+    api = home_web.HomeApi.__new__(home_web.HomeApi)
+    api._subs = {"pipeline": _Sub()}
+    api._counts_cache = {"pipeline": 1}
+    api.department_state = lambda: {
+        "departments": [{"key": "IE"}, {"key": "OC"}]}
+    monkeypatch.setattr(config, "active_department", lambda: "IE")
+    monkeypatch.setattr(config, "set_active_department", lambda key: key == "OC")
+    monkeypatch.setattr(home_web, "_invalidate_scoped_caches", lambda: None)
+
+    result = home_web.HomeApi.switch_department(api, "OC")
+
+    assert result == {"ok": True, "switched_to": "OC", "reload": True}
+    assert calls == ["changed"]
+    assert api._counts_cache is None

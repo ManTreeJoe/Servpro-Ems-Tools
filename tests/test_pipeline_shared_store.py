@@ -67,6 +67,46 @@ def test_trello_projection_round_trips_through_shared_store(monkeypatch):
     assert card["sync_status"] == "synced"
 
 
+def test_non_base_franchise_does_not_touch_unscoped_shared_pipeline(monkeypatch):
+    """OC must not read or overwrite IE's v11 global board keys."""
+    monkeypatch.setattr(pipeline_store, "shared_scope_safe", lambda: False)
+    monkeypatch.setattr(pipeline_store, "load_board_cache",
+                        lambda: {"ok": False, "boards": []})
+    monkeypatch.setattr(pipeline_store, "load_boards",
+                        lambda specs: (_ for _ in ()).throw(
+                            AssertionError("OC must not read shared boards")))
+    monkeypatch.setattr(pipeline_store, "mirror_boards",
+                        lambda payload: (_ for _ in ()).throw(
+                            AssertionError("OC must not overwrite shared boards")))
+    monkeypatch.setattr(pipeline_store, "save_board_cache", lambda payload: None)
+    monkeypatch.setattr(pipeline_web, "_trello_board_payload", lambda: _payload())
+
+    result = pipeline_web.Api().board_view()
+
+    assert result["ok"] is True
+    assert result["source"] == "trello"
+    assert result["shared_scope_deferred"] is True
+
+
+def test_department_switch_drops_pipeline_instance_caches():
+    api = pipeline_web.Api()
+    api._board_view_cache = (1.0, {"boards": ["IE"]})
+    api._lifecycle_view_cache = (1.0, ["IE"])
+    api._workspace_cache[("ie client", "card", "EMS")] = (1.0, {})
+    api._crm_workspace_cache["ie client"] = (1.0, {})
+    api._audit_card_cache["card"] = {}
+    api._old_jobs_cache["ie client"] = {}
+
+    api._department_changed()
+
+    assert api._board_view_cache is None
+    assert api._lifecycle_view_cache is None
+    assert api._workspace_cache == {}
+    assert api._crm_workspace_cache == {}
+    assert api._audit_card_cache == {}
+    assert api._old_jobs_cache == {}
+
+
 def test_card_identity_links_to_client_claim_and_job():
     index = {
         "canon": lambda value: value.strip().lower(),

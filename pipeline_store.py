@@ -334,6 +334,25 @@ def _cache_scope() -> str:
         return "DEFAULT"
 
 
+def shared_scope_safe() -> bool:
+    """Whether the v11 shared projection can represent this franchise.
+
+    The original Pipeline schema uses global keys such as ``wip`` and has
+    no franchise column.  Until a schema migration adds that boundary, only
+    the base franchise may read/write it. Other franchises still use their
+    franchise-scoped disk cache and live Trello adapter.
+    """
+    try:
+        import config
+        if not config.is_multi_dept():
+            return True
+        active = (config.active_department() or "").strip().upper()
+        base = (config.base_department() or "").strip().upper()
+        return bool(active and base and active == base)
+    except Exception:
+        return False
+
+
 def save_board_cache(payload: dict) -> None:
     """Keep the last text-only board projection for an instant cold paint."""
     if not payload.get("ok") or not payload.get("boards"):

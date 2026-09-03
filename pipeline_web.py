@@ -92,7 +92,9 @@ BOARD_SPECS = (
 # Historical EMS cards are deliberately outside BOARD_SPECS. Pulling 1,500+
 # closed cards during normal startup made the active board slow again. The
 # frontend requests this board only when the user opens Old Jobs.
-ARCHIVE_BOARD_SPEC = ("logs", "THE LOGS - EMS")
+ARCHIVE_BOARD_SPEC = ("logs", "THE LOGS")
+# Franchise-neutral prefix: IE adds an EMS suffix while OC adds its office
+# number. `_resolve_board` accepts one unique suffix match.
 
 
 def _board_name_key(value: str) -> str:
@@ -357,6 +359,18 @@ class Api(JobSettingsApi):
         self._old_jobs_cache = {}
         self._companycam_report_window = None
 
+    def _department_changed(self):
+        """Drop API-instance state that belongs to the previous franchise."""
+        self._board_view_cache = None
+        self._lifecycle_view_cache = None
+        self._workspace_cache.clear()
+        self._crm_workspace_cache.clear()
+        self._audit_card_cache.clear()
+        self._division_reconcile_cache.clear()
+        self._document_cache.clear()
+        self._old_jobs_cache.clear()
+        self._audit = None
+
     def _workspace_cache_key(self, client: str, card_id: str = "",
                              division: str = ""):
         return ((client or "").strip().casefold(),
@@ -446,37 +460,45 @@ class Api(JobSettingsApi):
             cached_at, cached_payload = self._board_view_cache
             if time.monotonic() - cached_at < 30:
                 return {**cached_payload, "cached": True}
+        shared_safe = pipeline_store.shared_scope_safe()
         if not force_trello:
             saved = pipeline_store.load_board_cache()
             if _complete_board_payload(saved):
                 self._board_view_cache = (time.monotonic(), saved)
                 return saved
-            shared = pipeline_store.load_boards(BOARD_SPECS)
-            if _complete_board_payload(shared):
-                self._board_view_cache = (time.monotonic(), shared)
-                return shared
+            if shared_safe:
+                shared = pipeline_store.load_boards(BOARD_SPECS)
+                if _complete_board_payload(shared):
+                    self._board_view_cache = (time.monotonic(), shared)
+                    return shared
         live = _trello_board_payload()
         if not live.get("ok"):
-            shared = pipeline_store.load_boards(BOARD_SPECS)
-            if shared.get("ok"):
-                shared["warning"] = "Trello unavailable; showing shared Pipeline"
-                self._board_view_cache = (time.monotonic(), shared)
-                return shared
+            if shared_safe:
+                shared = pipeline_store.load_boards(BOARD_SPECS)
+                if shared.get("ok"):
+                    shared["warning"] = "Trello unavailable; showing shared Pipeline"
+                    self._board_view_cache = (time.monotonic(), shared)
+                    return shared
             return live
         live.setdefault("source", "trello")
-        mirrored = pipeline_store.mirror_boards(live)
-        live["mirrored"] = bool(mirrored.get("ok"))
-        live["schema_missing"] = bool(mirrored.get("schema_missing"))
+        if shared_safe:
+            mirrored = pipeline_store.mirror_boards(live)
+            live["mirrored"] = bool(mirrored.get("ok"))
+            live["schema_missing"] = bool(mirrored.get("schema_missing"))
+        else:
+            live["mirrored"] = False
+            live["shared_scope_deferred"] = True
         pipeline_store.save_board_cache(live)
         self._board_view_cache = (time.monotonic(), live)
         return live
 
     def board_view_shared_refresh(self) -> dict:
         """Refresh the saved projection after the UI has already painted."""
-        shared = pipeline_store.load_boards(BOARD_SPECS)
-        if _complete_board_payload(shared):
-            self._board_view_cache = (time.monotonic(), shared)
-            return shared
+        if pipeline_store.shared_scope_safe():
+            shared = pipeline_store.load_boards(BOARD_SPECS)
+            if _complete_board_payload(shared):
+                self._board_view_cache = (time.monotonic(), shared)
+                return shared
         # Until the shared Pipeline migration is installed, keep the instant
         # disk-cache paint but refresh that projection from Trello in the
         # background.  This avoids leaving users on a stale board indefinitely.
@@ -503,7 +525,9 @@ class Api(JobSettingsApi):
             # of legacy cards into the active shared Pipeline projection.
             return {"ok": True, "board": board, "source": "trello",
                     "historical": True, "mirrored": False}
-        mirrored = pipeline_store.mirror_boards({"boards": [board]})
+        mirrored = (pipeline_store.mirror_boards({"boards": [board]})
+                    if pipeline_store.shared_scope_safe()
+                    else {"ok": False, "scope_deferred": True})
         return {"ok": True, "board": board, "source": "trello",
                 "mirrored": bool(mirrored.get("ok"))}
 

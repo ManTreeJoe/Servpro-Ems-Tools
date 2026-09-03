@@ -132,6 +132,9 @@ DEPT_IDENTITY_KEYS = (
 # default instead - a fresh, empty, editable workbook - and a blank board
 # link simply turns that franchise's sync off until a board exists.
 DEPT_NO_INHERIT_KEYS = (
+    # Board ids/short-links are workspace-specific.  An OC profile with no
+    # exclusions must mean "show every OC board", never "reuse IE's ids".
+    "trello_boards_exclude",
     "dispute_tracker_path",
     "disputes_board_short_link",
     "snapshots_root",
@@ -181,7 +184,7 @@ def _apply_department(cfg, dept=None):
     if active != base_department(cfg):
         for k in DEPT_NO_INHERIT_KEYS:
             if _is_blank(prof.get(k, "")):
-                merged[k] = ""
+                merged[k] = [] if k == "trello_boards_exclude" else ""
     return merged
 
 

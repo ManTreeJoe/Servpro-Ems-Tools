@@ -7,12 +7,23 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_old_jobs_board_is_lazy_and_not_in_startup_boards():
     backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
     frontend = (ROOT / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
-    assert 'ARCHIVE_BOARD_SPEC = ("logs", "THE LOGS - EMS")' in backend
+    assert 'ARCHIVE_BOARD_SPEC = ("logs", "THE LOGS")' in backend
     board_specs = backend[backend.index("BOARD_SPECS ="):backend.index("ARCHIVE_BOARD_SPEC")]
     assert "THE LOGS - EMS" not in board_specs
     assert 'pywebview.api.board_view_one("logs")' in frontend
     assert "loadArchiveBoard" in frontend
     assert 'board.key === "logs" ? 80' in frontend
+
+
+def test_old_jobs_board_name_matches_ie_and_oc_suffixes():
+    import pipeline_web
+
+    boards = [
+        {"id": "ie", "name": "THE LOGS - EMS"},
+        {"id": "oc", "name": "THE LOGS 1234"},
+    ]
+    assert pipeline_web._resolve_board([boards[0]], "THE LOGS")["id"] == "ie"
+    assert pipeline_web._resolve_board([boards[1]], "THE LOGS")["id"] == "oc"
 
 
 def test_old_jobs_remain_read_only_on_trello_board():

@@ -83,13 +83,23 @@ def _month_search_dirs(runs_dir, year, month):
     """Existing folders that may hold one month's run documents."""
     probe = datetime(year, month, 1)
     found = []
-    year_root = os.path.join(runs_dir, str(year))
-    roots = [runs_dir, year_root]
+    normalized_root = os.path.normpath(runs_dir)
+    # Settings may point at either ``Daily Run`` or ``Daily Run\2026``.
+    # OC contains both layouts at once: older/current documents can live in
+    # sibling month folders while other months live under the year folder.
+    # From a year-folder setting, include its parent; from a parent setting,
+    # include its requested year child.
+    if os.path.basename(normalized_root) == str(year):
+        parent_root = os.path.dirname(normalized_root)
+        roots = [normalized_root, parent_root]
+    else:
+        year_root = os.path.join(normalized_root, str(year))
+        roots = [normalized_root, year_root]
     # IE stores daily runs under <Daily Run>/<year>/EMS/<month>. Other
     # departments use the same extra division layer for Contents/Recon/Fire.
     # A connected parent folder is therefore not proof the old two-level
     # finder could see a single document.
-    for parent in (runs_dir, year_root):
+    for parent in tuple(roots):
         for division in ("EMS", "FIRE", "Contents", "CONTENT",
                          "Recon", "RECONSTRUCTION"):
             candidate = os.path.join(parent, division)
