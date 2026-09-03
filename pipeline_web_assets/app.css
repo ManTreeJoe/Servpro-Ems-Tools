@@ -1226,3 +1226,52 @@ button,input,select,textarea { font-family:var(--font-body); }
 :root[data-theme="light"] .lane-add-form { border-color:var(--border);background:rgba(248,247,242,.96);box-shadow:var(--shadow-1); }
 :root[data-theme="light"] .dialog-eyebrow,
 :root[data-theme="light"] .background-status { color:var(--green); }
+
+/* New Loss stays over the Jobs board. The form is dense enough for intake,
+   but grouped so an assignment can be parsed, reviewed, and created without
+   sending the operator through Daily Run. */
+.new-loss-board-line { display:flex; align-items:center; gap:8px; min-height:24px; color:var(--text-muted); font-size:12px; }
+.new-loss-board-line strong { color:var(--text); }
+.new-loss-board-line span::before { content:"/"; margin-right:8px; color:var(--text-dim); }
+.new-loss-board-line.warn { color:var(--amber); }
+.new-loss-paste { display:grid; gap:7px; }
+.new-loss-paste>label,.new-loss-field>span { color:var(--text-muted); font:700 11px/1.2 var(--font-utility); letter-spacing:.025em; }
+.new-loss-paste textarea,.new-loss-field input,.new-loss-field textarea,.new-loss-field select,
+.new-loss-parent input,.new-loss-folder-options input {
+  width:100%; box-sizing:border-box; border:1px solid var(--border); border-radius:7px;
+  background:var(--surface-2); color:var(--text); font:inherit; padding:8px 10px;
+}
+.new-loss-paste textarea { min-height:150px; resize:vertical; line-height:1.45; }
+.new-loss-parse-row { display:flex; align-items:center; gap:10px; min-height:34px; }
+.new-loss-parse-row span { color:var(--text-muted); font-size:12px; }
+.new-loss-heading-fields { display:grid; grid-template-columns:minmax(180px,.7fr) minmax(280px,1.6fr); gap:12px; }
+.new-loss-field { display:grid; align-content:start; gap:5px; min-width:0; }
+.new-loss-field textarea { resize:vertical; }
+.new-loss-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start; }
+.new-loss-group { min-width:0; padding:13px; border:1px solid var(--border); border-radius:9px; background:var(--surface); }
+.new-loss-group h3 { margin:0 0 10px; color:var(--text); font:750 12px/1 var(--font-utility); letter-spacing:.055em; text-transform:uppercase; }
+.new-loss-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.new-loss-group:last-child .new-loss-fields { grid-template-columns:1fr; }
+.new-loss-folder { display:grid; gap:5px; padding:11px 12px; border:1px solid var(--border); border-left:3px solid var(--green); border-radius:7px; background:var(--surface-2); font-size:12px; }
+.new-loss-folder.warn { border-left-color:var(--amber); }
+.new-loss-folder code { overflow-wrap:anywhere; color:var(--text-muted); font-size:11px; }
+.new-loss-folder-options { display:grid; grid-template-columns:minmax(220px,1fr) auto; align-items:center; gap:8px; margin:5px 0; }
+.new-loss-folder-options label { display:flex; align-items:center; gap:5px; color:var(--text-muted); }
+.new-loss-parent { padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+.new-loss-parent summary { cursor:pointer; font-weight:700; }
+.new-loss-parent p { margin:7px 0 10px; color:var(--text-muted); font-size:12px; }
+#nl-parent-hits { display:grid; gap:4px; max-height:170px; margin-top:6px; overflow-y:auto; }
+#nl-parent-hits button { display:flex; justify-content:space-between; gap:10px; padding:7px 9px; border:0; border-radius:6px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+#nl-parent-hits button:hover { background:var(--row-hover); }
+#nl-parent-hits button span { color:var(--text-muted); font-size:11px; }
+.new-loss-parent-selected { padding:7px 9px; color:var(--green); }
+.new-loss-provisioning { display:flex; flex-wrap:wrap; align-items:center; gap:7px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); font-size:12px; }
+.new-loss-provisioning span { padding:3px 7px; border-radius:999px; background:var(--row-hover); color:var(--text-muted); }
+.new-loss-footer { position:sticky; bottom:-18px; display:flex; align-items:center; justify-content:flex-end; gap:8px; margin:0 -22px -18px; padding:12px 22px; border-top:1px solid var(--border); background:var(--bg); }
+.new-loss-footer>span { flex:1; color:var(--text-muted); font-size:12px; }
+.new-loss-footer>span.error { color:var(--red); }
+
+@media (max-width:760px) {
+  .new-loss-heading-fields,.new-loss-grid,.new-loss-fields { grid-template-columns:1fr; }
+  .new-loss-footer { margin-inline:-14px; padding-inline:14px; }
+}

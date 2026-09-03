@@ -48,6 +48,27 @@ let archiveLoadPromise = null;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+const NEW_LOSS_GROUPS = [
+  ["Customer", [
+    ["insured_name", "Customer name"], ["address", "Address"],
+    ["phone", "Phone"], ["email", "Email"],
+    ["additional_contacts", "Other contacts"],
+  ]],
+  ["Insurance", [
+    ["carrier", "Insurance company"], ["claim_number", "Claim number"],
+    ["adjuster_name", "Adjuster / claim rep"],
+    ["adjuster_email", "Adjuster email"],
+    ["adjuster_number", "Adjuster phone"], ["deductible", "Deductible"],
+    ["agent_name", "Agent name"],
+  ]],
+  ["Claim", [
+    ["year_built", "Year built"], ["date_of_loss", "Date of loss"],
+    ["date_received", "Date received"], ["xa_id", "XA ID"],
+  ]],
+  ["Notes", [["field_notes", "Field notes"], ["office_notes", "Office notes"]]],
+];
+const NEW_LOSS_TEXTAREAS = new Set(["address", "field_notes", "office_notes"]);
+
 // ── Boot ─────────────────────────────────────────────────────────
 window.addEventListener("pywebviewready", () => bootPipeline().catch(showPipelineStartupError));
 
@@ -93,9 +114,7 @@ async function bootPipeline() {
   $("#view-daily-btn").addEventListener("click", () => {
     window.parent.postMessage({ type: "linguar-open-daily-run" }, "*");
   });
-  $("#new-loss-btn").addEventListener("click", () => {
-    window.parent.postMessage({ type: "linguar-open-new-loss" }, "*");
-  });
+  $("#new-loss-btn").addEventListener("click", () => openNewLossModal());
   $("#refresh-btn").addEventListener("click", () => loadBoard(true));
   $("#board-zoom-out").addEventListener("click", () => changeBoardZoom(-0.1));
   $("#board-zoom-in").addEventListener("click", () => changeBoardZoom(0.1));
@@ -2917,6 +2936,235 @@ async function openThresholdsModal() {
 
 // ── Status + escaping helpers ────────────────────────────────────
 let statusTimer = null;
+function openNewLossModal() {
+  const alreadyOpen = document.getElementById("nl-paste");
+  if (alreadyOpen) { alreadyOpen.focus(); return; }
+  if (!window.openModal) {
+    setStatus("New Loss dialog could not load. Refresh Jobs and try again.", "error");
+    return;
+  }
+
+  const renderField = ([key, label]) => `
+    <label class="new-loss-field">
+      <span>${escapeHtml(label)}</span>
+      ${NEW_LOSS_TEXTAREAS.has(key)
+        ? `<textarea id="nl-${key}" rows="${key === "field_notes" ? 3 : 2}"></textarea>`
+        : `<input id="nl-${key}" type="text" autocomplete="off" />`}
+    </label>`;
+  const renderGroup = ([label, fields]) => `
+    <section class="new-loss-group">
+      <h3>${escapeHtml(label)}</h3>
+      <div class="new-loss-fields">${fields.map(renderField).join("")}</div>
+    </section>`;
+
+  const overlay = window.openModal({
+    title: "New Loss",
+    sub: "Create the job without leaving the Jobs board.",
+    width: 860,
+    body: `
+      <div id="nl-board-line" class="new-loss-board-line">Finding live templates…</div>
+      <section class="new-loss-paste">
+        <label for="nl-paste">Paste assignment</label>
+        <textarea id="nl-paste" rows="8" placeholder="Paste the carrier assignment email here…" autofocus></textarea>
+        <div class="new-loss-parse-row">
+          <button class="btn" id="nl-parse" type="button">Parse assignment</button>
+          <span id="nl-parse-status" aria-live="polite"></span>
+        </div>
+      </section>
+      <div class="new-loss-heading-fields">
+        <label class="new-loss-field"><span>Template</span>
+          <select id="nl-loss_type">
+            <option value="water" data-kind="water">Water</option>
+            <option value="fire" data-kind="fire">Fire</option>
+            <option value="property" data-kind="property">Property management</option>
+          </select>
+        </label>
+        <label class="new-loss-field"><span>Job / card name</span>
+          <input id="nl-card_name" type="text" autocomplete="off" placeholder="Customer - Carrier" />
+        </label>
+      </div>
+      <div id="nl-folder-card" class="new-loss-folder hidden"></div>
+      <div class="new-loss-grid">${NEW_LOSS_GROUPS.map(renderGroup).join("")}</div>
+      <details class="new-loss-parent">
+        <summary>File under an existing client</summary>
+        <p>Use this for a unit, tenant, school, or another claim that belongs under an existing client.</p>
+        <input id="nl-parent-q" type="search" autocomplete="off" placeholder="Search client folders…" />
+        <div id="nl-parent-hits"></div>
+      </details>
+      <div class="new-loss-provisioning">
+        <strong>Creates and links</strong>
+        <span>OD job folder</span><span>Trello card</span><span>CompanyCam project</span>
+      </div>
+      <footer class="new-loss-footer">
+        <span id="nl-status" aria-live="polite"></span>
+        <button class="btn modal-close" type="button">Cancel</button>
+        <button class="btn btn-primary" id="nl-create" type="button">Create job</button>
+      </footer>`,
+  });
+
+  const find = (selector) => overlay.querySelector(selector);
+  const put = (key, value) => {
+    const field = find(`#nl-${key}`);
+    if (field) field.value = value || "";
+  };
+  let parent = "";
+  let parentSearchTimer = null;
+
+  async function refreshFolderPlan() {
+    const insured = (find("#nl-insured_name")?.value || "").trim();
+    const panel = find("#nl-folder-card");
+    if (!insured) { panel.classList.add("hidden"); return; }
+    const child = (find("#nl-child-name")?.value || "").trim();
+    const secondClaim = !!find("#nl-second-claim")?.checked;
+    let result;
+    try {
+      result = await pywebview.api.plan_new_loss_folder(
+        { insured_name: insured }, child, secondClaim, parent);
+    } catch (_) {
+      panel.classList.add("hidden");
+      return;
+    }
+    panel.classList.remove("hidden", "ok", "warn");
+    if (!result?.ok) {
+      panel.classList.add("warn");
+      panel.innerHTML = `<strong>Folder needs attention</strong><span>${escapeHtml(result?.error || "Folder unavailable")}</span>`;
+      return;
+    }
+    panel.classList.add("ok");
+    if (result.mode === "new_client") {
+      panel.innerHTML = `<strong>New client folder</strong><code>${escapeHtml(result.path || "")}</code>`;
+      return;
+    }
+    const promote = result.promote_first_claim || {};
+    panel.innerHTML = `
+      <strong>${escapeHtml(result.client || insured)} already exists</strong>
+      <span>This job will be filed inside that client.</span>
+      <div class="new-loss-folder-options">
+        <input id="nl-child-name" type="text" value="${escapeAttr(result.child || "")}" placeholder="Job subfolder name" />
+        <label><input id="nl-second-claim" type="checkbox" ${secondClaim ? "checked" : ""} /> New claim number</label>
+        ${promote.eligible ? `<label><input id="nl-promote" type="checkbox" /> Move existing loose files into 1st Claim</label>` : ""}
+      </div>
+      <code>${escapeHtml(result.path || "")}</code>`;
+    find("#nl-child-name")?.addEventListener("change", refreshFolderPlan);
+    find("#nl-second-claim")?.addEventListener("change", refreshFolderPlan);
+  }
+
+  async function searchParents(query) {
+    const hits = find("#nl-parent-hits");
+    hits.innerHTML = `<span class="muted">Searching…</span>`;
+    let result;
+    try { result = await pywebview.api.search_client_folders(query || "", 40); }
+    catch (_) { result = null; }
+    if (!hits.isConnected) return;
+    const rows = result?.clients || [];
+    hits.innerHTML = rows.length ? rows.map((row) => `
+      <button type="button" data-parent="${escapeAttr(row.name || "")}">
+        <strong>${escapeHtml(row.name || "")}</strong>
+        ${row.child_count ? `<span>${row.child_count} jobs</span>` : ""}
+      </button>`).join("") : `<span class="muted">No matching client folders.</span>`;
+    hits.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+      parent = button.dataset.parent || "";
+      find("#nl-parent-q").value = parent;
+      hits.innerHTML = `<span class="new-loss-parent-selected">Filing under <strong>${escapeHtml(parent)}</strong></span>`;
+      refreshFolderPlan();
+    }));
+  }
+
+  find(".new-loss-parent")?.addEventListener("toggle", (event) => {
+    if (event.currentTarget.open) searchParents("");
+  });
+  find("#nl-parent-q")?.addEventListener("input", (event) => {
+    parent = "";
+    clearTimeout(parentSearchTimer);
+    parentSearchTimer = setTimeout(() => searchParents(event.currentTarget.value), 180);
+  });
+
+  (async () => {
+    let result;
+    try { result = await pywebview.api.new_loss_templates(); }
+    catch (error) { result = { ok: false, error: String(error) }; }
+    const line = find("#nl-board-line");
+    if (!line) return;
+    if (!result?.ok) {
+      line.classList.add("warn");
+      line.textContent = result?.error || "The WIP templates are unavailable.";
+      return;
+    }
+    const templates = result.templates || [];
+    line.innerHTML = `<strong>${escapeHtml(result.board || "WIP")}</strong><span>${escapeHtml(result.intake || "Intake")}</span>`;
+    if (!templates.length) return;
+    const select = find("#nl-loss_type");
+    select.innerHTML = templates.map((template) => `
+      <option value="${escapeAttr(template.id || "")}" data-template-id="${escapeAttr(template.id || "")}" data-kind="${escapeAttr(template.kind || "water")}">${escapeHtml(template.name || "Template")}</option>`).join("");
+  })();
+
+  find("#nl-parse").addEventListener("click", async () => {
+    const raw = find("#nl-paste").value.trim();
+    if (!raw) { find("#nl-parse-status").textContent = "Paste the assignment first."; return; }
+    find("#nl-parse-status").textContent = "Reading assignment…";
+    let result;
+    try { result = await pywebview.api.parse_new_loss(raw); }
+    catch (error) { result = { ok: false, error: String(error) }; }
+    if (!result?.ok) { find("#nl-parse-status").textContent = result?.error || "Could not parse assignment."; return; }
+    const fields = result.fields || {};
+    NEW_LOSS_GROUPS.forEach(([, items]) => items.forEach(([key]) => put(key, fields[key])));
+    put("card_name", fields.card_name);
+    if (fields.loss_type) {
+      const option = Array.from(find("#nl-loss_type").options)
+        .find((item) => item.dataset.kind === fields.loss_type);
+      if (option) find("#nl-loss_type").value = option.value;
+    }
+    find("#nl-parse-status").textContent = "Assignment read. Review the highlighted job details.";
+    refreshFolderPlan();
+  });
+
+  find("#nl-insured_name")?.addEventListener("change", refreshFolderPlan);
+  find("#nl-insured_name")?.addEventListener("blur", refreshFolderPlan);
+  find("#nl-create").addEventListener("click", async () => {
+    const selected = find("#nl-loss_type").selectedOptions[0];
+    const fields = {
+      loss_type: selected?.dataset.kind || find("#nl-loss_type").value,
+      template_id: selected?.dataset.templateId || "",
+    };
+    NEW_LOSS_GROUPS.forEach(([, items]) => items.forEach(([key]) => {
+      fields[key] = (find(`#nl-${key}`)?.value || "").trim();
+    }));
+    fields.card_name = (find("#nl-card_name")?.value || "").trim();
+    const status = find("#nl-status");
+    if (!fields.card_name && !fields.insured_name) {
+      status.textContent = "Enter a customer name or job name.";
+      return;
+    }
+    const button = find("#nl-create");
+    button.disabled = true;
+    status.textContent = "Creating folder, Trello card, and CompanyCam project…";
+    let result;
+    try {
+      result = await pywebview.api.create_new_loss(
+        fields,
+        (find("#nl-child-name")?.value || "").trim(),
+        !!find("#nl-second-claim")?.checked,
+        !!find("#nl-promote")?.checked,
+        true, true, parent);
+    } catch (error) { result = { ok: false, error: String(error) }; }
+    if (!result?.ok) {
+      button.disabled = false;
+      status.textContent = result?.error || "The job could not be created.";
+      status.classList.add("error");
+      return;
+    }
+    window.closeModal("modal-overlay");
+    const provisioning = result.provisioning || {};
+    const incomplete = provisioning.complete === false;
+    setStatus(
+      incomplete
+        ? `Created ${result.name}, but ${((provisioning.failed || []).join(", ") || "part of setup")} needs attention.`
+        : `Created and linked ${result.name}.`,
+      incomplete ? "warn" : "ok");
+    await loadBoard(true);
+  });
+}
+
 function setStatus(msg, kind = "") {
   const el = $("#status-msg");
   el.textContent = msg || "";

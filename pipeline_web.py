@@ -652,6 +652,40 @@ class Api(JobSettingsApi):
             self._audit = audit_web.Api()
         return self._audit
 
+    # New Loss belongs to the Jobs surface. Keep one provisioning engine in
+    # audit_web while the Main/Trial UI migration is in progress, but expose
+    # that engine directly to Pipeline so opening intake never has to navigate
+    # through Daily Run.
+    def parse_new_loss(self, text: str) -> dict:
+        return self._audit_api().parse_new_loss(text)
+
+    def new_loss_templates(self) -> dict:
+        return self._audit_api().new_loss_templates()
+
+    def search_client_folders(self, query: str = "", limit: int = 40) -> dict:
+        return self._audit_api().search_client_folders(query, limit)
+
+    def plan_new_loss_folder(self, fields: dict, child: str = "",
+                             second_claim: bool = False,
+                             parent: str = "") -> dict:
+        return self._audit_api().plan_new_loss_folder(
+            fields, child, second_claim, parent)
+
+    def create_new_loss(self, fields: dict, child: str = "",
+                        second_claim: bool = False,
+                        promote_first: bool = False,
+                        make_folder: bool = True,
+                        make_companycam: bool = True,
+                        parent: str = "") -> dict:
+        result = self._audit_api().create_new_loss(
+            fields, child, second_claim, promote_first,
+            make_folder, make_companycam, parent)
+        if result.get("ok"):
+            self._board_view_cache = None
+            self._lifecycle_view_cache = None
+            self._old_jobs_cache.clear()
+        return result
+
     def audit_card(self, client: str) -> dict:
         """Run the single-job audit for this card's client and return a
         compact pass/fail summary for the card popover. Delegates to

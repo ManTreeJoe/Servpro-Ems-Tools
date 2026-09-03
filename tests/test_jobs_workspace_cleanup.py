@@ -68,6 +68,8 @@ def test_clients_use_division_views_and_new_loss_lives_in_jobs():
         encoding="utf-8")
     jobs_html = (ROOT / "pipeline_web_assets" / "index.html").read_text(
         encoding="utf-8")
+    jobs_js = (ROOT / "pipeline_web_assets" / "app.js").read_text(
+        encoding="utf-8")
     shell_js = (ROOT / "home_web_assets" / "app.js").read_text(
         encoding="utf-8")
 
@@ -78,6 +80,11 @@ def test_clients_use_division_views_and_new_loss_lives_in_jobs():
     assert 'id="new-loss-btn" class="btn"' in jobs_html
     assert 'id="view-daily-btn"' in jobs_html
     assert "linguar-open-new-loss" in shell_js
+    handler_start = jobs_js.index('$("#new-loss-btn").addEventListener')
+    handler = jobs_js[handler_start:handler_start + 220]
+    assert "openNewLossModal()" in handler
+    assert "postMessage" not in handler
+    assert "function openNewLossModal()" in jobs_js
 
 
 def test_jobs_search_can_surface_cards_outside_the_visible_board():
