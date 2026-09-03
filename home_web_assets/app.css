@@ -248,6 +248,7 @@ body { background: var(--bg); }
 .tool-workspace-close:hover { background: var(--border); }
 .tool-workspace-close:focus-visible { outline: 2px solid #8fc8a3; outline-offset: 2px; }
 .tool-workspace-frame { width: 100%; height: 100%; border: 0; background: var(--bg); }
+.shared-job-workspace { inset:0; border:0; border-radius:0; grid-template-rows:minmax(0,1fr); background:transparent; }
 
 @media (max-width: 720px) {
   .tool-workspace { inset: 0; border-radius: 0; border: 0; }

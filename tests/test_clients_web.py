@@ -22,8 +22,20 @@ def test_client_hierarchy_and_job_tabs_are_owned_by_clients_module():
                    "job_folders.is_child_job_folder", "def client_account"):
         assert marker in backend
     for marker in ("data-job-tab", "data-job-panel", "data-open-job",
-                   'emsNavigateTo("pipeline"'):
+                   'type: "linguar-open-job"'):
         assert marker in js
+
+
+def test_client_job_opens_shared_card_above_the_current_page():
+    clients = (ROOT / "clients_web_assets" / "app.js").read_text(encoding="utf-8")
+    shell = (ROOT / "home_web_assets" / "app.js").read_text(encoding="utf-8")
+    pipeline = (ROOT / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert 'window.parent.postMessage({ type: "linguar-open-job"' in clients
+    assert 'd.type === "linguar-open-job"' in shell
+    assert "function openJobWorkspace(" in shell
+    assert 'job_workspace: "1"' in shell
+    assert 'pipelineQuery.get("job_workspace") === "1"' in pipeline
+    assert "await onAuditCard(requestedFocus" in pipeline
 
 
 def test_audit_did_not_gain_client_account_rendering():

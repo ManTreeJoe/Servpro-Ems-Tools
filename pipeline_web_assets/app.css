@@ -931,6 +931,14 @@ button,input,select,textarea { font-family:var(--font-body); }
 .audit-card { position:relative;width:min(1240px,97vw);
   height:min(920px,calc(100vh - clamp(18px,5vh,58px)));
   border-top:3px solid var(--green); box-shadow:0 28px 80px rgba(0,0,0,.62); }
+.job-workspace-mode > .topbar,
+.job-workspace-mode > #board-view,
+.job-workspace-mode > #table-view,
+.job-workspace-mode > #job-shelf,
+.job-workspace-mode > .statusbar,
+.job-workspace-mode > .skip-link { display:none !important; }
+.job-workspace-mode .modal-scrim { background:var(--bg); backdrop-filter:none; }
+.job-workspace-mode .audit-card { width:min(1240px,100vw); height:100vh; max-height:100vh; border-radius:0; border-left:0; border-right:0; border-bottom:0; }
 .audit-card .modal-title { font-family:var(--font-display); }
 .job-card-activity { background:#151a17; }
 

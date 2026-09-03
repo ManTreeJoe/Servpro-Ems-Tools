@@ -89,7 +89,9 @@ function renderAccount(result) {
   document.querySelectorAll("[data-job-tab]").forEach((tab) => tab.addEventListener("click", () => selectJob(Number(tab.dataset.jobTab))));
   document.querySelectorAll("[data-open-job]").forEach((button) => button.addEventListener("click", () => {
     const job = jobs[Number(button.dataset.openJob)] || {};
-    if (window.emsNavigateTo) window.emsNavigateTo("pipeline", job.name === "Original claim" ? client.name : job.name);
+    const name = job.name === "Original claim" ? client.name : job.name;
+    window.parent.postMessage({ type: "linguar-open-job", focus: name,
+      cardId: job.card_id || "", division: (job.divisions || [])[0] || "EMS" }, "*");
   }));
   document.querySelectorAll("[data-open-folder]").forEach((button) => button.addEventListener("click", async () => showResult(await pywebview.api.open_folder(jobs[Number(button.dataset.openFolder)]?.path || ""))));
 }

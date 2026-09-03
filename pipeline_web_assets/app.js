@@ -12,6 +12,9 @@
  */
 "use strict";
 
+const pipelineQuery = new URLSearchParams(window.location.search);
+const jobWorkspaceMode = pipelineQuery.get("job_workspace") === "1";
+
 const state = {
   view: "board",            // "board" | "stages"
   // Board view
@@ -73,6 +76,17 @@ async function bootPipeline() {
   // Never let a restored search silently hide lanes while the input looks
   // empty. The visible control and the filter state must remain identical.
   $("#search-box").value = state.search;
+
+  // Cross-tool job opens use the exact same renderer and API as Jobs, but
+  // skip the board fetch. This makes the record appear immediately above
+  // Clients/Daily Run instead of navigating away or maintaining a duplicate.
+  if (jobWorkspaceMode) {
+    document.body.classList.add("job-workspace-mode");
+    const cardId = pipelineQuery.get("card_id") || "";
+    const division = pipelineQuery.get("division") || "EMS";
+    await onAuditCard(requestedFocus || "Job", cardId, "", division);
+    return;
+  }
 
   $("#view-board-btn").addEventListener("click", () => setView("board"));
   $("#view-stages-btn").addEventListener("click", () => setView("stages"));
@@ -1120,13 +1134,14 @@ function openAuditLoadingModal(client) {
       </div>
     </div>`;
   document.body.appendChild(w);
-  const keyClose = (event) => { if (event.key === "Escape") close(); };
+  const requestClose = () => { close(); notifyJobWorkspaceClosed(); };
+  const keyClose = (event) => { if (event.key === "Escape") requestClose(); };
   const close = () => {
     document.removeEventListener("keydown", keyClose);
     w.remove();
   };
-  w.querySelector("[data-close]").addEventListener("click", close);
-  w.addEventListener("click", (event) => { if (event.target === w) close(); });
+  w.querySelector("[data-close]").addEventListener("click", requestClose);
+  w.addEventListener("click", (event) => { if (event.target === w) requestClose(); });
   document.addEventListener("keydown", keyClose);
   return {
     element: w,
@@ -1137,7 +1152,7 @@ function openAuditLoadingModal(client) {
       if (label) label.textContent = "Could not load this job";
       const body = w.querySelector("[data-loading-body]");
       if (body) body.innerHTML = `<div class="job-card-load-error"><strong>Job workspace unavailable</strong><p>${escapeHtml(message)}</p><button class="btn" data-error-close>Close</button></div>`;
-      body?.querySelector("[data-error-close]")?.addEventListener("click", close);
+      body?.querySelector("[data-error-close]")?.addEventListener("click", requestClose);
     },
   };
 }
@@ -1412,14 +1427,16 @@ function openAuditModal(data, trelloUrl = "") {
     previousFocus?.focus?.();
     return true;
   };
-  w.querySelector("[data-close]").addEventListener("click", () => close());
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
-  const keyClose = (e) => { if (e.key === "Escape") close(); };
+  const requestClose = () => { if (close()) notifyJobWorkspaceClosed(); };
+  w.querySelector("[data-close]").addEventListener("click", requestClose);
+  w.addEventListener("click", (e) => { if (e.target === w) requestClose(); });
+  const keyClose = (e) => { if (e.key === "Escape") requestClose(); };
   document.addEventListener("keydown", keyClose);
   w.querySelector(".audit-card")?.focus();
   w.querySelector("[data-open-client-page]")?.addEventListener("click", () => {
     const client = data.client || res.client || "";
     close(true);
+    notifyJobWorkspaceClosed();
     if (window.emsNavigateTo) window.emsNavigateTo("clients", client);
   });
   w.querySelectorAll("[data-division-data]").forEach((button) => button.addEventListener("click", async () => {
@@ -1794,7 +1811,7 @@ function openAuditModal(data, trelloUrl = "") {
   });
   w.querySelector("[data-open-audit]").addEventListener("click", () => {
     if (window.emsNavigateTo) window.emsNavigateTo("clients", res.client || "");
-    close();
+    if (close()) notifyJobWorkspaceClosed();
   });
   return {
     element: w,
@@ -2406,6 +2423,12 @@ function onSearchInput(ev) {
     else renderTable();
     if (state.view === "board") void runGlobalCardSearch(state.search);
   }, 120);
+}
+
+function notifyJobWorkspaceClosed() {
+  if (jobWorkspaceMode) {
+    window.parent.postMessage({ type: "linguar-close-job-workspace" }, "*");
+  }
 }
 
 async function runGlobalCardSearch(rawQuery) {

@@ -208,6 +208,10 @@ window.addEventListener("message", async (ev) => {
     openSnapshotModal(d.focus || "");
   } else if (d.type === "linguar-open-daily-run") {
     openDailyRunWorkspace();
+  } else if (d.type === "linguar-open-job") {
+    openJobWorkspace(d.focus || d.client || "", d.cardId || "", d.division || "");
+  } else if (d.type === "linguar-close-job-workspace") {
+    closeJobWorkspace();
   }
 });
 
@@ -300,6 +304,37 @@ function openNewLossWorkspace() {
   const wrap = openToolWorkspace("new-loss", "Jobs", "New Loss",
     "../audit_web_assets/index.html?surface=daily&new_loss=1");
   openNewLossWhenReady(wrap.querySelector("iframe"));
+}
+
+// One shared job record above whichever tool the user is working in. The
+// iframe runs Pipeline's existing card renderer/API, so Clients, Daily Run,
+// search, and Jobs never grow competing copies of job information.
+function openJobWorkspace(focus, cardId = "", division = "") {
+  closeJobWorkspace();
+  const returnFocus = document.activeElement;
+  const params = new URLSearchParams({ job_workspace: "1", focus: focus || "Job" });
+  if (cardId) params.set("card_id", cardId);
+  if (division) params.set("division", division);
+  const wrap = document.createElement("div");
+  wrap.id = "job-workspace";
+  wrap.className = "tool-workspace shared-job-workspace";
+  wrap.setAttribute("role", "dialog");
+  wrap.setAttribute("aria-modal", "true");
+  wrap.setAttribute("aria-label", `Job · ${focus || "details"}`);
+  wrap.innerHTML = `<iframe class="tool-workspace-frame" title="${esc(focus || "Job details")}" src="../pipeline_web_assets/index.html?${esc(params.toString())}"></iframe>`;
+  wrap._returnFocus = returnFocus;
+  wrap._keyHandler = (event) => { if (event.key === "Escape") closeJobWorkspace(); };
+  document.body.appendChild(wrap);
+  document.addEventListener("keydown", wrap._keyHandler);
+}
+
+function closeJobWorkspace() {
+  const wrap = document.getElementById("job-workspace");
+  if (!wrap) return;
+  if (wrap._keyHandler) document.removeEventListener("keydown", wrap._keyHandler);
+  const returnFocus = wrap._returnFocus;
+  wrap.remove();
+  try { returnFocus?.focus?.(); } catch (_) { /* ignore */ }
 }
 
 function updateClock() {
