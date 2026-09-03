@@ -45,13 +45,12 @@ SHARE = {
     # Franchise identity used on generated paperwork.
     "franchise_name", "office_phone",
     # Department setup.
-    "multi_department_enabled", "active_department",
+    "multi_department_enabled",
     # Feature flags / UI defaults.
     "enable_workcenter_alpha", "workcenter_url",
     "show_sort_files", "show_new_job", "snapshot_auto_reconcile",
-    "appearance", "ui_scale",
+    "appearance",
     "graph_client_id", "graph_tenant_id",
-    "photos_extra_roots", "user_workbooks",
 }
 
 # Per-DEPARTMENT keys worth shipping. trello_token is deliberately absent:
@@ -68,12 +67,15 @@ PER_USER = {
     "trello_token",          # identifies a person; Settings → Connect Trello
     "companycam_api_token",  # per-account access token
     "ems_db_backend",        # each machine opts into cloud deliberately
+    "ui_scale",              # accessibility/personal display preference
+    "active_department",     # last franchise selected by this user
 }
 
 MACHINE_LOCAL = {
     "runs_dir", "photos_root", "snapshot_output",   # per-user OneDrive paths
     "pythonw", "scripts_dir", "dept_browsers", "preferred_browser",
     "global_hotkey", "global_hotkey_enabled", "wc_audit_dir",
+    "photos_extra_roots", "user_workbooks",
 }
 
 # Panel-visibility toggles are per-user taste; they're booleans named after
@@ -134,6 +136,10 @@ def build(live: dict) -> tuple[dict, list[str]]:
     # A release must follow each recipient's Windows theme on first launch,
     # not inherit whichever appearance the build machine happened to use.
     out["appearance"] = "system"
+    # A fresh install starts on the stable base franchise, not whichever
+    # office happened to be selected on the release builder's computer.
+    if out.get("multi_department_enabled") and out.get("departments"):
+        out["active_department"] = next(iter(out["departments"]))
     return out, unclassified
 
 

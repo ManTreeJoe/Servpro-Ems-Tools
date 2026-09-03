@@ -150,6 +150,8 @@ def test_trial_seeds_selected_state_once_without_sharing_main(tmp_path,
     assert json.load(open(p.data("config.json")))["audit_base"] == \
         "X:/IE_Public"
     assert not os.path.exists(os.path.join(p.DATA_DIR, "backups"))
+    assert not os.path.exists(p.data("supabase_session.json")), \
+        "a single-use Main refresh token must never be cloned into Trial"
 
     # Trial edits remain isolated and a later launch never reclobbers them.
     with open(p.data("config.json"), "w", encoding="utf-8") as fh:

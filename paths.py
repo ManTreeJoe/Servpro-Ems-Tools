@@ -192,7 +192,6 @@ _TRIAL_SEED_FILES = (
     "config.json",
     "state.json",
     "ems_jobs.db",
-    "supabase_session.json",
     ".configured",
 )
 
@@ -200,9 +199,11 @@ _TRIAL_SEED_FILES = (
 def _seed_trial_data_dir():
     """Create Trial's isolated local state from a one-time Main snapshot.
 
-    Only files needed to preserve machine setup, sign-in, preferences and the
-    offline job mirror are copied. Backups, logs and caches deliberately start
-    fresh so Trial health and experiments cannot be confused with Main.
+    Only files needed to preserve machine setup, preferences and the offline
+    job mirror are copied. Supabase refresh tokens are single-use, so cloning
+    Main's session into Trial makes the two apps invalidate one another.
+    Trial therefore requires its own sign-in. Backups, logs and caches also
+    start fresh so Trial health and experiments cannot be confused with Main.
     """
     if not IS_TRIAL or _has_state(DATA_DIR):
         return DATA_DIR

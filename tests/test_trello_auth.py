@@ -115,18 +115,31 @@ def test_authorize_times_out_cleanly_and_offers_the_url():
     assert res["authorize_url"].startswith("https://trello.com/1/authorize")
 
 
+def test_busy_callback_port_falls_back_immediately(monkeypatch):
+    """A random callback port cannot be in Trello's Allowed Origins. Do not
+    send the user into a flow that is guaranteed to wait and fail."""
+    monkeypatch.setattr(
+        trello_auth, "_Server",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("busy")))
+    res = trello_auth.authorize(open_browser=False, timeout=30)
+    assert not res["ok"]
+    assert res["manual"] is True
+    assert "return_url" not in res["manual_url"]
+    assert "in use" in res["error"].lower()
+
+
 # ── where the token is stored ───────────────────────────────────────────
 
 def test_token_saves_to_base_in_single_department_mode(_cfg):
-    assert trello_auth.save_token("TOK")["scope"] == "base"
+    assert trello_auth.save_token("TOK")["scope"] == "user"
     config._CACHE = None; config._CACHE_MTIME = None
     assert config.load_base()["trello_token"] == "TOK"
 
 
-def test_token_saves_to_the_ACTIVE_department(_cfg):
-    """trello_token is department-scoped. Writing it to the base would hand
-    one franchise's token to the other — the same class of bug that had IE
-    searching OC's workspace."""
+def test_token_saves_once_for_the_user_across_departments(_cfg):
+    """A Trello token identifies the signed-in person, not a franchise.
+    Board/workspace IDs remain department-scoped; requiring another token
+    after every franchise switch made setup look broken."""
     _cfg.write_text(json.dumps({
         "trello_api_key": "k",
         "multi_department_enabled": True,
@@ -136,11 +149,13 @@ def test_token_saves_to_the_ACTIVE_department(_cfg):
     }), encoding="utf-8")
     config._CACHE = None; config._CACHE_MTIME = None
 
-    assert trello_auth.save_token("OC-TOKEN")["scope"] == "OC"
+    assert trello_auth.save_token("USER-TOKEN")["scope"] == "user"
     config._CACHE = None; config._CACHE_MTIME = None
     base = config.load_base()
-    assert base["departments"]["OC"]["trello_token"] == "OC-TOKEN"
-    assert base["trello_token"] == "IE-TOKEN", "must not clobber the base"
+    assert base["trello_token"] == "USER-TOKEN"
+    assert "trello_token" not in base["departments"]["OC"]
+    assert config.load_for("IE")["trello_token"] == "USER-TOKEN"
+    assert config.load_for("OC")["trello_token"] == "USER-TOKEN"
 
 
 def test_empty_token_is_rejected():

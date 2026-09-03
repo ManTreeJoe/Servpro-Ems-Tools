@@ -1569,10 +1569,8 @@ async function renderFirstRunWizard() {
       ? `<button class="btn" type="button" data-scope-tab-jump="admin">Assign franchises</button>`
       : `<button class="btn" type="button" data-setup="refresh">Check again</button>`,
     trello: `<button class="btn btn-primary" type="button" data-setup="trello-auto">Connect Trello</button>
-      <button class="btn" type="button" data-setup="trello-page">Open token page</button>
-      <button class="btn" type="button" data-setup="trello-paste">I have a token</button>
       <div class="setup-token">
-        <div class="muted" style="font-size:11px;margin-bottom:6px;">Paste the long token Trello showed you. Do not email or share it.</div>
+        <div class="muted" style="font-size:12px;margin-bottom:6px;">Trello could not return to Linguar Hub. Click Allow in the Trello tab, then paste the token it shows here.</div>
         <div style="display:flex;gap:6px;">
           <input type="password" class="setup-token-input" placeholder="Paste Trello token" style="flex:1;min-width:0;"/>
           <button class="btn btn-primary" type="button" data-setup="trello-save">Save token</button>
@@ -1628,23 +1626,17 @@ function wireSetupGuide() {
     button.disabled = true; button.textContent = "Waiting for Trello…";
     const result = await pywebview.api.authorize_trello();
     button.disabled = false; button.textContent = "Connect Trello";
+    if (!result?.ok && result?.manual_url) {
+      await pywebview.api.open_url(result.manual_url);
+      const tokenBox = card.querySelector(".setup-token");
+      if (tokenBox) tokenBox.style.display = "block";
+      card.querySelector(".setup-token-input")?.focus();
+      guideStatus("Trello could not return automatically. Approve the new Trello tab, then paste its token here.");
+    } else {
+      guideStatus(result?.ok ? "Trello connected." : (result?.error || "Trello did not connect."), result?.ok ? "ok" : "error");
+    }
     setStatus(result?.ok ? "Trello connected ✓" : (result?.error || "Trello did not connect"), result?.ok ? "ok" : "error");
-    guideStatus(result?.ok ? "Trello connected." : (result?.error || "Trello did not connect."), result?.ok ? "ok" : "error");
-    await renderFirstRunWizard();
-  });
-  card.querySelector('[data-setup="trello-page"]')?.addEventListener("click", async () => {
-    const result = await pywebview.api.my_trello_token_page();
-    if (!result?.ok) { setStatus(result?.error || "Token page unavailable", "error"); return; }
-    await pywebview.api.open_url(result.url);
-    const tokenBox = card.querySelector(".setup-token");
-    if (tokenBox) tokenBox.style.display = "block";
-    guideStatus("Trello token page opened. Paste the token here when it appears.");
-  });
-  card.querySelector('[data-setup="trello-paste"]')?.addEventListener("click", () => {
-    const box = card.querySelector(".setup-token");
-    if (box) box.style.display = "block";
-    card.querySelector(".setup-token-input")?.focus();
-    guideStatus("Paste the long Trello token, then choose Save token.");
+    if (result?.ok) await renderFirstRunWizard();
   });
   card.querySelector('[data-setup="trello-save"]')?.addEventListener("click", async (event) => {
     const input = card.querySelector(".setup-token-input");

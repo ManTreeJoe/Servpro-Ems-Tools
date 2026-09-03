@@ -62,6 +62,26 @@ def test_cloud_snapshot_defers_cleanly_when_signed_out(data, monkeypatch):
                           force=True) == "skipped: sign-in required"
 
 
+def test_cloud_snapshot_never_raises_when_supabase_client_import_fails(
+        data, monkeypatch):
+    """A damaged optional dependency must report failure, not crash while
+    Python is still trying to resolve the exception classes."""
+    import builtins
+    import ems_db
+    monkeypatch.setattr(ems_db, "backend_name", lambda: "supabase")
+    real_import = builtins.__import__
+
+    def broken_import(name, *args, **kwargs):
+        if name == "supabase_client":
+            raise ImportError("missing dependency")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", broken_import)
+    result = db._cloud_once(str(data / "backups"), "20260903-010203",
+                            force=True)
+    assert result == "failed: ImportError"
+
+
 def test_the_copy_matches_the_original(data):
     db.run_once(force=True)
     src = (data / "state.json").read_text(encoding="utf-8")
@@ -169,6 +189,23 @@ def test_backup_health_reports_missing_rotation(data):
     status = db.health()
     assert status["ok"] is False
     assert all(c["state"] == "missing" for c in status["checks"])
+
+
+def test_backup_health_does_not_warn_about_cloud_while_offline(
+        data, monkeypatch):
+    """A local backup can be healthy while the shared database is offline.
+    Cloud freshness becomes actionable again after connectivity returns."""
+    import config
+    import supabase_client
+    monkeypatch.setattr(config, "load", lambda: {"ems_db_backend": "supabase"})
+    monkeypatch.setattr(supabase_client, "is_configured", lambda: True)
+    monkeypatch.setattr(supabase_client, "is_signed_in", lambda: True)
+    db.run_once(force=True)
+    with db._RUN_LOCK:
+        db._LAST_REPORT = {db.CLOUD_NAME:
+                           "deferred: shared database unavailable"}
+    status = db.health()
+    assert db.CLOUD_NAME not in {row["name"] for row in status["checks"]}
 
 
 def test_launch_wires_the_backup_in():

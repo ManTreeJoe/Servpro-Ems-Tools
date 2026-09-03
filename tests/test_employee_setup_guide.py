@@ -1,4 +1,5 @@
 from unittest.mock import patch
+from pathlib import Path
 
 import home_web
 import settings_web
@@ -69,3 +70,15 @@ def test_token_page_uses_the_configured_app_authorization_url():
         result = api.my_trello_token_page()
     assert result["ok"] is True
     assert result["url"].startswith("https://trello.com/1/authorize?")
+
+
+def test_first_run_trello_setup_has_one_primary_choice():
+    html = (Path(__file__).parents[1] / "settings_web_assets" /
+            "index.html").read_text(encoding="utf-8")
+    start = html.index('trello: `<button')
+    end = html.index('folders:', start)
+    setup = html[start:end]
+    assert setup.count('data-setup="trello-auto"') == 1
+    assert 'data-setup="trello-page"' not in setup
+    assert 'data-setup="trello-paste"' not in setup
+    assert 'data-setup="trello-save"' in setup

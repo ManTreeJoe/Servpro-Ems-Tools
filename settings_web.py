@@ -806,16 +806,15 @@ class Api:
         request failed. It also required copy-pasting the token back.
 
         Now: uses the configured key, catches the token on a loopback
-        listener, and writes it to the ACTIVE department (trello_token is
-        department-scoped — writing it to the base would hand one
-        franchise's token to the other).
+        listener, and stores one personal token across the user's assigned
+        franchises. Each franchise still keeps its own workspace/board IDs.
         """
         try:
             import trello_auth
             res = trello_auth.authorize()
             if res.get("ok"):
                 return {"ok": True,
-                        "message": f"Trello connected ({res.get('scope')})"}
+                        "message": "Trello connected"}
             return res
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}

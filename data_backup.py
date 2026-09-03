@@ -137,6 +137,10 @@ def _cloud_once(dest, stamp, force=False):
 
     try:
         import supabase_client
+    except Exception as ex:
+        _note_failure(CLOUD_NAME, ex)
+        return f"failed: {type(ex).__name__}"
+    try:
         supabase_client.access_token()
     except (supabase_client.NotSignedIn, supabase_client.NotConfigured):
         return "skipped: sign-in required"
@@ -290,6 +294,11 @@ def health() -> dict:
     for row in rows:
         latest.setdefault(row["name"], row)
 
+    with _RUN_LOCK:
+        pending = bool(_IN_PROGRESS)
+        attempted = _LAST_REPORT is not None
+        last_report = dict(_LAST_REPORT or {})
+
     try:
         import config
         cloud_required = ((config.load().get("ems_db_backend") or "sqlite")
@@ -298,6 +307,12 @@ def health() -> dict:
             import supabase_client
             cloud_required = (supabase_client.is_configured()
                               and supabase_client.is_signed_in())
+        # The local files remain fully backup-able during an outage. A cloud
+        # snapshot that explicitly deferred is not stale user data and must
+        # not keep a permanent amber banner on every screen.
+        cloud_result = str(last_report.get(CLOUD_NAME) or "")
+        if cloud_result.startswith(("deferred:", "skipped: sign-in")):
+            cloud_required = False
     except Exception:
         cloud_required = False
 
@@ -328,10 +343,6 @@ def health() -> dict:
             "age_hours": round(age_h, 1),
         })
     healthy = all(c["ok"] for c in checks)
-    with _RUN_LOCK:
-        pending = bool(_IN_PROGRESS)
-        attempted = _LAST_REPORT is not None
-        last_report = dict(_LAST_REPORT or {})
     # Startup already schedules a backup before health is rendered. Suppress
     # the stale banner while that real recovery attempt is still running;
     # after it finishes, any remaining failure becomes actionable.

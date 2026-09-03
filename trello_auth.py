@@ -1,8 +1,9 @@
 """Trello sign-in — click, approve in the browser, done.
 
-Replaces "go to this page, copy the token, paste it into Settings". The
-token never touches the clipboard: a one-shot loopback server catches it
-and writes it to config.
+The normal path is sign in, click Allow, done: a one-shot loopback server
+catches the token and writes it to config. Trello requires the fixed local
+origin to be registered once on Linguar Hub's API key; when it is not, the UI
+reveals a secure manual fallback instead of leaving the user stuck.
 
 Why a local server is needed
 ----------------------------
@@ -29,7 +30,7 @@ import config
 
 _SCOPE = "read,write,account"
 _APP_NAME = "Linguar Hub"
-_TIMEOUT_S = 240
+_TIMEOUT_S = 120
 
 # FIXED port, not an ephemeral one. Trello validates `return_url` against
 # the API key's Allowed Origins list, and an origin is scheme+host+PORT —
@@ -159,36 +160,33 @@ def manual_url() -> dict:
 
 
 def save_token(token: str) -> dict:
-    """Store the token where the ACTIVE department reads it from.
+    """Store one token for the signed-in person across their franchises.
 
-    `trello_token` is department-scoped, so writing it to the base config
-    would hand one franchise's token to the other — the same class of bug
-    that had IE searching OC's workspace.
+    The user token identifies a Trello member. Franchise separation comes
+    from each department's workspace/board IDs, not by making the same person
+    connect again after every franchise switch. Remove old profile overrides
+    so every department consistently inherits the newly authorized user.
     """
     token = (token or "").strip()
     if not token:
         return {"ok": False, "error": "empty token"}
     base = config.load_base()
-    dept = ""
-    if base.get("multi_department_enabled"):
-        dept = (base.get("active_department") or "").strip()
-        depts = base.get("departments") or {}
-        if dept and isinstance(depts.get(dept), dict):
-            prof = dict(depts[dept])
-            prof["trello_token"] = token
-            depts[dept] = prof
-            base["departments"] = depts
-        else:
-            dept = ""
-    if not dept:
-        base["trello_token"] = token
+    base["trello_token"] = token
+    depts = base.get("departments") or {}
+    for name, current in list(depts.items()):
+        if isinstance(current, dict) and "trello_token" in current:
+            prof = dict(current)
+            prof.pop("trello_token", None)
+            depts[name] = prof
+    if depts:
+        base["departments"] = depts
     config.save(base)
     try:
         import cache_bust
         cache_bust.invalidate_all("trello sign-in")
     except Exception:
         pass
-    return {"ok": True, "scope": dept or "base"}
+    return {"ok": True, "scope": "user"}
 
 
 def authorize(*, timeout=_TIMEOUT_S, open_browser=True) -> dict:
@@ -207,15 +205,18 @@ def authorize(*, timeout=_TIMEOUT_S, open_browser=True) -> dict:
     try:
         srv = _Server(("127.0.0.1", port))
     except OSError:
-        # Port in use — fall back so sign-in still works, but say so: the
-        # fallback port won't be in Allowed Origins, so Trello will reject
-        # the return_url.
-        try:
-            srv = _Server(("127.0.0.1", _free_port()))
-            port = srv.server_address[1]
-        except OSError as ex:
-            return {"ok": False,
-                    "error": f"couldn't start local listener: {ex}"}
+        # A random fallback port cannot be registered in Trello's Allowed
+        # Origins and is guaranteed to fail after a long wait. Send the UI
+        # straight to its secure copy/paste fallback instead.
+        return {
+            "ok": False,
+            "manual": True,
+            "manual_url": authorize_url(api_key),
+            "error": (
+                f"The Trello sign-in listener ({allowed_origin()}) is in "
+                "use. Use the fallback tab that Linguar Hub opens next."
+            ),
+        }
     # localhost (not 127.0.0.1): Trello compares origins as strings, and
     # "http://localhost:PORT" is what the Allowed Origins field expects.
     url = authorize_url(api_key, f"http://localhost:{port}/")

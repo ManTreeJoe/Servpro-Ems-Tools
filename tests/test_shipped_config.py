@@ -105,8 +105,42 @@ def test_no_user_profile_paths(cfg):
 
 def test_machine_local_keys_are_absent(cfg):
     for key in ("runs_dir", "photos_root", "snapshot_output",
-                "pythonw", "scripts_dir", "dept_browsers"):
+                "pythonw", "scripts_dir", "dept_browsers",
+                "photos_extra_roots", "user_workbooks"):
         assert not cfg.get(key), f"{key} is machine-local and must not ship"
+
+
+def test_personal_ui_scale_is_not_copied_from_the_build_machine():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_mkcfg_personal", os.path.join(_SCRIPTS, "_packaging",
+                                         "make_shipped_config.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out, unknown = mod.build({"ui_scale": 1.4,
+                              "appearance": "dark",
+                              "photos_extra_roots": ["X:/private"],
+                              "user_workbooks": {"me": "X:/mine.xlsx"}})
+    assert unknown == []
+    assert "ui_scale" not in out
+    assert "photos_extra_roots" not in out
+    assert "user_workbooks" not in out
+
+
+def test_build_machine_active_franchise_is_not_shipped():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_mkcfg_franchise", os.path.join(_SCRIPTS, "_packaging",
+                                          "make_shipped_config.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out, unknown = mod.build({
+        "multi_department_enabled": True,
+        "active_department": "OC",
+        "departments": {"IE": {"label": "IE"}, "OC": {"label": "OC"}},
+    })
+    assert unknown == []
+    assert out["active_department"] == "IE"
 
 
 # ── the generator itself ───────────────────────────────────────────────
