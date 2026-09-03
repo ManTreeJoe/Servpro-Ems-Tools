@@ -2141,8 +2141,8 @@ async function openApaItemCtxMenu(ev, itemEl) {
   // ── Open this job in another tool (flat buttons — no submenu, so
   // they're click-reliable; cross-tool nav goes via the home shell). ──
   sep();
-  btn("🔎 Open in Audit",
-      () => window.emsNavigateTo?.("audit", focusClient),
+  btn("▦ Open in Jobs",
+      () => window.emsNavigateTo?.("pipeline", focusClient),
       { bold: true });
   btn("📸 Open in Snapshot",
       () => window.emsNavigateTo?.("snapshot", focusClient));

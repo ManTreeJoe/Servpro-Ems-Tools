@@ -614,12 +614,12 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().reconcile_crm_trello_pin(*a, **k)
     def job_info_copy_data(self, *a, **k):
         return self._aw().job_info_copy_data(*a, **k)
-    def save_crm_job_log(self, client, entry):
-        return self._aw().save_crm_job_log(client, entry)
+    def save_crm_job_log(self, *a, **k):
+        return self._aw().save_crm_job_log(*a, **k)
     def crm_job_log_history(self, entry_id):
         return self._aw().crm_job_log_history(entry_id)
-    def delete_crm_job_log(self, client, entry_id):
-        return self._aw().delete_crm_job_log(client, entry_id)
+    def delete_crm_job_log(self, *a, **k):
+        return self._aw().delete_crm_job_log(*a, **k)
     def import_crm_job_log_from_trello(self, client, card_id=""):
         return self._aw().import_crm_job_log_from_trello(client, card_id)
     def job_summary_data(self, client, card_id=""):

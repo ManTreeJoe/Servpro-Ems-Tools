@@ -1306,6 +1306,16 @@ class Api(JobSettingsApi):
     def open_xa_link(self, client: str, card_id: str = "") -> bool:
         return self._audit_api().open_xa_link(client, card_id)
 
+    def post_xa_note(self, client: str, note: str, tag: str = "",
+                     card_id: str = "") -> dict:
+        result = self._audit_api().post_xa_note(client, note, tag, card_id)
+        if result.get("ok"):
+            self._invalidate_workspace(client, card_id)
+        return result
+
+    def import_initial_notes(self, client: str, card_id: str = "") -> dict:
+        return self._audit_api().import_initial_notes(client, card_id)
+
     def open_companycam_link(self, client: str) -> bool:
         return self._audit_api().open_companycam_link(client)
 
@@ -1495,8 +1505,9 @@ class Api(JobSettingsApi):
         self._invalidate_workspace(client=client)
         return {**result, "synced_trello": bool(trello_id)}
 
-    def save_job_log_update(self, client: str, entry: dict) -> dict:
-        result = self._audit_api().save_crm_job_log(client, entry)
+    def save_job_log_update(self, client: str, entry: dict,
+                            card_id: str = "") -> dict:
+        result = self._audit_api().save_crm_job_log(client, entry, card_id)
         if result.get("ok"):
             self._invalidate_workspace(client=client)
         return result
@@ -1508,8 +1519,9 @@ class Api(JobSettingsApi):
             self._invalidate_workspace(client, card_id)
         return result
 
-    def delete_job_log_update(self, client: str, entry_id: str) -> dict:
-        result = self._audit_api().delete_crm_job_log(client, entry_id)
+    def delete_job_log_update(self, client: str, entry_id: str,
+                              card_id: str = "") -> dict:
+        result = self._audit_api().delete_crm_job_log(client, entry_id, card_id)
         if result.get("ok"):
             self._invalidate_workspace(client=client)
         return result

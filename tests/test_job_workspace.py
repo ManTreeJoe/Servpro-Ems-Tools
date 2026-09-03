@@ -277,9 +277,61 @@ def test_job_log_entry_can_be_deleted_without_deleting_job(workspace):
     })
     entry_id = created["entry"]["entry_id"]
     result = api.delete_crm_job_log("Delete Log Test", entry_id)
-    assert result == {"ok": True, "deleted": True, "entries": []}
+    assert result == {"ok": True, "deleted": True,
+                      "deleted_trello": False, "entries": []}
     assert db.get_job(key) is not None
     assert db.job_log_history(entry_id) == []
+
+
+def test_job_log_create_edit_and_delete_control_one_trello_comment(workspace, monkeypatch):
+    db, api = workspace
+    db.upsert_job(display_name="Mirrored Log Test")
+    posted, updated, deleted = [], [], []
+    monkeypatch.setattr("trello_client.post_comment", lambda card, text: (
+        posted.append((card, text)) or {"id": "comment-42"}))
+    monkeypatch.setattr("trello_client.update_comment", lambda comment, text: (
+        updated.append((comment, text)) or True))
+    monkeypatch.setattr("trello_client.delete_comment", lambda comment: (
+        deleted.append(comment) or True))
+
+    created = api.save_crm_job_log("Mirrored Log Test", {
+        "work_date": "2026-09-03", "work_type": "Monitor",
+        "status": "completed", "technicians": "Marco",
+        "note": "Kitchen is dry", "equipment": "2 fans removed",
+    }, "card-9")
+    assert created["ok"] and created["synced_trello"]
+    assert created["entry"]["trello_comment_id"] == "comment-42"
+    assert posted[0][0] == "card-9"
+    assert "Job Log · 09/03/26 · Monitor · Completed" in posted[0][1]
+
+    edited = api.save_crm_job_log("Mirrored Log Test", {
+        **created["entry"], "note": "Kitchen and hall are dry",
+    }, "card-9")
+    assert edited["ok"] and edited["synced_trello"]
+    assert updated[0][0] == "comment-42"
+    assert "Kitchen and hall are dry" in updated[0][1]
+
+    removed = api.delete_crm_job_log(
+        "Mirrored Log Test", created["entry"]["entry_id"], "card-9")
+    assert removed["ok"] and removed["deleted_trello"]
+    assert deleted == ["comment-42"]
+    assert db.list_job_log_entries(db.canon_key("Mirrored Log Test")) == []
+
+
+def test_job_log_keeps_local_entry_when_trello_edit_is_rejected(workspace, monkeypatch):
+    db, api = workspace
+    key = db.upsert_job(display_name="Protected Log Test")
+    entry = db.save_job_log_entry(key, {
+        "work_date": "2026-09-03", "work_type": "Monitor",
+        "status": "completed", "note": "Original",
+        "trello_comment_id": "someone-elses-comment",
+    })
+    monkeypatch.setattr("trello_client.update_comment", lambda *_: False)
+    result = api.save_crm_job_log("Protected Log Test", {
+        **entry, "note": "Changed",
+    }, "card-9")
+    assert not result["ok"]
+    assert db.list_job_log_entries(key)[0]["note"] == "Original"
 
 
 def test_shared_workspace_ui_has_log_editor_and_trello_import():

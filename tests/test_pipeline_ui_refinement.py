@@ -73,6 +73,41 @@ def test_pipeline_keeps_primary_update_and_groups_shortcuts():
     assert "copy-quick-menu" not in header
 
 
+def test_job_workspace_owns_the_audit_and_keeps_daily_actions_visible():
+    js = _asset("app.js")
+    header_start = js.index('<header class="modal-head">',
+                            js.index("function openAuditModal"))
+    header_end = js.index('</header>\n      <div class="modal-body">',
+                          header_start)
+    header = js[header_start:header_end]
+    assert "Open full audit" not in js
+    for marker in ("data-open-xa", "data-xa-note", "data-initial-notes",
+                   "data-add-job-log", "data-open-trello",
+                   "data-open-companycam"):
+        assert marker in header
+
+
+def test_add_update_reveals_and_focuses_the_job_log_editor():
+    js = _asset("app.js")
+    start = js.index("const openJobLogEditor")
+    end = js.index('w.querySelectorAll("[data-add-job-log]")', start)
+    editor = js[start:end]
+    assert 'host.scrollIntoView({ behavior: "smooth", block: "start" })' in editor
+    assert 'host.querySelector(\'[data-log-field="work_type"]\')?.focus()' in editor
+
+
+def test_cross_tool_job_links_target_jobs_not_removed_audit_panel():
+    root = ROOT
+    apa = (root / "apa_web_assets" / "app.js").read_text(encoding="utf-8")
+    shared = (root / "web_shared" / "open_in.js").read_text(encoding="utf-8")
+    assert 'Open in Audit' not in apa
+    assert 'emsNavigateTo?.("audit"' not in apa
+    assert '{ key: "pipeline", label: "▦ Jobs" }' in shared
+    assert '{ key: "audit"' not in shared
+    home = (root / "home_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert 'const key = d.key === "audit" ? "pipeline" : d.key;' in home
+
+
 def test_pipeline_groups_companycam_actions_under_one_visible_menu():
     js = _asset("app.js")
     backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")

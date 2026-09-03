@@ -202,8 +202,11 @@ window.addEventListener("message", async (ev) => {
     // Cross-tool jump from a panel's "Open in…" right-click. Switch the
     // content frame to the target tool, handing it `focus` (a client
     // name) so it filters/selects the job on load.
-    const item = findItem(d.key);
-    if (item) navigate(d.key, item.src, d.focus || "");
+    // Audit was folded into the Jobs workspace. Keep this alias at the
+    // shell boundary so an older warm iframe can never send a dead route.
+    const key = d.key === "audit" ? "pipeline" : d.key;
+    const item = findItem(key);
+    if (item) navigate(key, item.src, d.focus || "");
   } else if (d.type === "ems-open-tool-modal" && d.key === "snapshot") {
     openSnapshotModal(d.focus || "");
   } else if (d.type === "linguar-open-daily-run") {

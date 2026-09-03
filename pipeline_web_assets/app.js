@@ -1517,6 +1517,8 @@ function openAuditModal(data, trelloUrl = "") {
               <button data-open-xa ${data.card_id ? "" : "disabled"}>Open XactAnalysis</button>
               <button data-stage-xa ${res.path ? "" : "disabled"}>Stage files for XA</button>
             </div></div>
+            <button class="action-btn" data-xa-note ${data.card_id ? "" : "disabled"}>🗒 XA note</button>
+            <button class="action-btn" data-initial-notes ${data.card_id ? "" : "disabled"}>📋 Initial notes</button>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/companycam.png" alt="">CompanyCam <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-companycam ${data.card_id ? "" : "disabled"}>Open project</button>
               <button data-pull-companycam ${data.card_id ? "" : "disabled"}>Pull photos</button>
@@ -1524,7 +1526,7 @@ function openAuditModal(data, trelloUrl = "") {
               <button data-quick-photo-report ${data.card_id ? "" : "disabled"}>Build quick PDF</button>
             </div></div>
             <div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu">
-              <button data-open-audit>Open full audit</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
+              <button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
             </div></div>
           </div>
         </div>
@@ -1609,6 +1611,24 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelector("[data-open-companycam]")?.addEventListener("click", async () => {
     const ok = await pywebview.api.open_companycam_link(data.client || res.client || "");
     if (!ok) setStatus("No CompanyCam project is linked to this job", "warn");
+  });
+  w.querySelector("[data-xa-note]")?.addEventListener("click", () =>
+    openXaNoteModal(data.client || res.client || "", data.card_id || ""));
+  w.querySelector("[data-initial-notes]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const prior = button.innerHTML;
+    button.disabled = true;
+    button.textContent = "Reading…";
+    const result = await pywebview.api.import_initial_notes(
+      data.client || res.client || "", data.card_id || "");
+    button.disabled = false;
+    button.innerHTML = prior;
+    if (!result?.ok || !result.summary) {
+      setStatus(result?.error || "No initial notes were found on this job", "warn");
+      return;
+    }
+    await pywebview.api.copy_to_clipboard(result.summary);
+    setStatus("Initial notes copied", "ok");
   });
   w.querySelector("[data-pull-companycam]")?.addEventListener("click", () =>
     openCompanyCamPullModal(data, res));
@@ -1937,11 +1957,14 @@ function openAuditModal(data, trelloUrl = "") {
       const payload = {entry_id: entry.entry_id || "", source: entry.source || "pc", source_id: entry.source_id || "", trello_comment_id: entry.trello_comment_id || ""};
       host.querySelectorAll("[data-log-field]").forEach((field) => { payload[field.dataset.logField] = field.value; });
       const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
-      const result = await pywebview.api.save_job_log_update(data.client || "", payload);
+      const result = await pywebview.api.save_job_log_update(
+        data.client || "", payload, data.card_id || "");
       if (!result?.ok) { button.disabled = false; button.textContent = "Save update"; setStatus(result?.error || "Job Log could not be saved", "error"); return; }
       clearDraftDirty("job-log");
       close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("Job Log updated", "ok");
     });
+    host.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => host.querySelector('[data-log-field="work_type"]')?.focus(), 250);
   };
   w.querySelectorAll("[data-add-job-log]").forEach((button) => button.addEventListener("click", () => openJobLogEditor({})));
   w.querySelector("[data-import-job-log]")?.addEventListener("click", async (event) => {
@@ -1965,7 +1988,8 @@ function openAuditModal(data, trelloUrl = "") {
     const entry = (crm.job_log || []).find((item) => item.entry_id === button.dataset.deleteJobLog) || {};
     if (!window.confirm(`Delete the ${entry.work_type || "Job Log"} update from ${entry.work_date || "this job"}?\n\nThis removes the Linguar Hub entry. It does not delete the original Trello comment.`)) return;
     button.disabled = true; button.textContent = "Deleting…";
-    const result = await pywebview.api.delete_job_log_update(data.client || "", entry.entry_id || "");
+    const result = await pywebview.api.delete_job_log_update(
+      data.client || "", entry.entry_id || "", data.card_id || "");
     if (!result?.ok) { button.disabled = false; button.textContent = "Delete"; setStatus(result?.error || "Job Log entry could not be deleted", "error"); return; }
     close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("Job Log entry deleted", "ok");
   }));
@@ -2013,10 +2037,6 @@ function openAuditModal(data, trelloUrl = "") {
       setStatus(result.warning || (source === "trello" || result.synced_trello ? "Comment deleted from Linguar Hub and Trello" : "Linguar Hub comment deleted"), result.warning ? "warn" : "ok");
     }
   });
-  w.querySelector("[data-open-audit]").addEventListener("click", () => {
-    if (window.emsNavigateTo) window.emsNavigateTo("clients", res.client || "");
-    if (close()) notifyJobWorkspaceClosed();
-  });
   return {
     element: w,
     close,
@@ -2034,6 +2054,44 @@ function openAuditModal(data, trelloUrl = "") {
       if (host) host.textContent = message;
     },
   };
+}
+
+function openXaNoteModal(client, cardId) {
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay xa-note-overlay";
+  modal.innerHTML = `<div class="modal-box compact-dialog" role="dialog" aria-modal="true" aria-label="XA note">
+    <header class="modal-head"><div><div class="modal-title">XA note</div><div class="modal-sub">${escapeHtml(client)} · posts to Trello, copies the note, and opens XA</div></div><button class="audit-close" data-close aria-label="Close XA note">×</button></header>
+    <div class="modal-body job-log-form">
+      <label class="wide">Note<textarea rows="6" data-xa-note-text placeholder="What needs to be recorded in XactAnalysis?"></textarea></label>
+      <label>Notify on Trello (optional)<input data-xa-note-tag placeholder="username"></label>
+      <div class="job-log-form-actions"><button class="btn btn-primary" data-submit-xa-note>Post, copy &amp; open XA</button><button class="btn" data-close>Cancel</button></div>
+    </div></div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
+  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+  const note = modal.querySelector("[data-xa-note-text]");
+  note.focus();
+  modal.querySelector("[data-submit-xa-note]").addEventListener("click", async (event) => {
+    const text = note.value.trim();
+    if (!text) { note.focus(); return; }
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Posting…";
+    const result = await pywebview.api.post_xa_note(
+      client, text, modal.querySelector("[data-xa-note-tag]").value.trim(), cardId);
+    if (!result?.ok) {
+      button.disabled = false;
+      button.textContent = "Post, copy & open XA";
+      setStatus(result?.error || "XA note could not be posted", "error");
+      return;
+    }
+    await pywebview.api.copy_to_clipboard(result.comment || text);
+    close();
+    setStatus(result.xa_opened
+      ? "XA note posted to Trello, copied, and XA opened"
+      : "XA note posted and copied · no XA link was found", result.xa_opened ? "ok" : "warn");
+  });
 }
 
 function openJobLogHistoryModal(history) {

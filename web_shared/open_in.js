@@ -23,7 +23,7 @@
   // Tools the "Open in ▸" submenu can jump to. key = sidebar/nav key
   // the shell understands; label carries the tool's icon.
   const NAV_TARGETS = [
-    { key: "audit",    label: "🔎 Audit" },
+    { key: "pipeline", label: "▦ Jobs" },
     { key: "snapshot", label: "📸 Snapshot" },
   ];
 

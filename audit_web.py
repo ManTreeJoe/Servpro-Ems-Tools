@@ -2197,8 +2197,28 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return {"ok": True, "divisions": results,
                 "has_conflict": any(r["state"] == "conflict" for r in results)}
 
-    def save_crm_job_log(self, client: str, entry: dict) -> dict:
-        """Create/edit an ongoing structured job-log entry."""
+    @staticmethod
+    def _trello_job_log_text(entry: dict) -> str:
+        """Stable Trello mirror for one Linguar Hub Job Log entry."""
+        raw_date = str(entry.get("work_date") or "").strip()
+        try:
+            shown_date = _dt.datetime.strptime(raw_date, "%Y-%m-%d").strftime("%m/%d/%y")
+        except ValueError:
+            shown_date = raw_date
+        activity = str(entry.get("work_type") or "Job update").strip()
+        status = str(entry.get("status") or "completed").replace("_", " ").title()
+        lines = [f"🗒 Job Log · {shown_date} · {activity} · {status}"]
+        if str(entry.get("technicians") or "").strip():
+            lines.append(f"Crew: {str(entry['technicians']).strip()}")
+        if str(entry.get("note") or "").strip():
+            lines.append(str(entry["note"]).strip())
+        if str(entry.get("equipment") or "").strip():
+            lines.append(f"Equipment / readings: {str(entry['equipment']).strip()}")
+        return "\n".join(lines)
+
+    def save_crm_job_log(self, client: str, entry: dict,
+                         card_id: str = "") -> dict:
+        """Create/edit the structured log and mirror its controlled comment."""
         try:
             import ems_db
             import supabase_client as sb
@@ -2206,11 +2226,41 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             if not job:
                 return {"ok": False, "error": "job not found"}
             entry = dict(entry or {})
+            existing = next((row for row in ems_db.list_job_log_entries(
+                job["canon_key"]) if row.get("entry_id") == entry.get("entry_id")), {})
+            comment_id = str(entry.get("trello_comment_id") or
+                             existing.get("trello_comment_id") or "").strip()
+            cid = str(card_id or "").strip()
+            if not cid:
+                try:
+                    cid = persistence.get_trello_card_id(client) or ""
+                except Exception:
+                    cid = ""
+            synced_trello = False
+            if comment_id or cid:
+                import trello_client as tc
+                mirror = self._trello_job_log_text(entry)
+                if comment_id:
+                    if not tc.update_comment(comment_id, mirror):
+                        return {"ok": False, "error":
+                                "Trello would not update this Job Log comment. "
+                                "Only the Trello comment author may be able to edit it."}
+                    synced_trello = True
+                else:
+                    posted = tc.post_comment(cid, mirror)
+                    comment_id = str(posted.get("id") or "") if isinstance(
+                        posted, dict) else ""
+                    if not comment_id:
+                        return {"ok": False, "error":
+                                "Trello did not create the Job Log comment. Nothing was saved."}
+                    synced_trello = True
+                entry["trello_comment_id"] = comment_id
             user = sb.current_user() or {}
             entry["updated_by"] = (user.get("display_name") or user.get("email")
                                    or entry.get("updated_by") or "")
             saved = ems_db.save_job_log_entry(job["canon_key"], entry)
             return {"ok": True, "entry": saved,
+                    "synced_trello": synced_trello,
                     "entries": ems_db.list_job_log_entries(job["canon_key"])}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
@@ -2222,15 +2272,28 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
-    def delete_crm_job_log(self, client: str, entry_id: str) -> dict:
-        """Delete one Linguar Hub Job Log entry without touching Trello."""
+    def delete_crm_job_log(self, client: str, entry_id: str,
+                           card_id: str = "") -> dict:
+        """Delete one log entry and its exact mirrored Trello comment."""
         try:
             import ems_db
             job = ems_db.find_job_by_name(client)
             if not job:
                 return {"ok": False, "error": "job not found"}
+            existing = next((row for row in ems_db.list_job_log_entries(
+                job["canon_key"]) if row.get("entry_id") == entry_id), {})
+            comment_id = str(existing.get("trello_comment_id") or "").strip()
+            deleted_trello = False
+            if comment_id:
+                import trello_client as tc
+                if not tc.delete_comment(comment_id):
+                    return {"ok": False, "error":
+                            "Trello would not delete this Job Log comment. "
+                            "Only the Trello comment author may be able to delete it."}
+                deleted_trello = True
             deleted = ems_db.delete_job_log_entry(job["canon_key"], entry_id)
             return {"ok": True, "deleted": deleted,
+                    "deleted_trello": deleted_trello,
                     "entries": ems_db.list_job_log_entries(job["canon_key"])}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}

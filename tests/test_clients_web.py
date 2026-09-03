@@ -48,7 +48,7 @@ def test_audit_did_not_gain_client_account_rendering():
 def test_job_cards_route_to_new_client_workspace():
     js = (ROOT / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     assert 'emsNavigateTo("clients", client)' in js
-    assert 'emsNavigateTo("clients", res.client || "")' in js
+    assert "Open full audit" not in js
 
 
 def test_management_job_title_resolves_to_real_parent_client(monkeypatch):
