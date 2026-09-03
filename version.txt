@@ -1,6 +1,6 @@
 {
-  "version": "1.8.3",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.3",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.3/Linguar-Hub-Setup-1.8.3.exe",
-  "notes": "Main Jobs board hotfix: restores the saved search into the visible search box so an invisible old filter can no longer hide nearly every Trello lane."
+  "version": "1.8.4",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.4",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.4/Linguar-Hub-Setup-1.8.4.exe",
+  "notes": "Main workflow update: restores the in-page New Loss flow, provisions Trello, CompanyCam, and job folders together, improves shared job tools and checklists, and applies the restrained graphite visual system across Jobs, Clients, Dispatch, Snapshot, Audit, APA, Run Doc, and Settings."
 }
