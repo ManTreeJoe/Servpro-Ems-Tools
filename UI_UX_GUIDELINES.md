@@ -63,12 +63,19 @@ Rules:
 ## Copy actions
 
 - Copy values must come from the saved Job Info record, not a card title or loosely parsed label.
-- A combined Copy menu should use the standard action-button appearance.
-- Copy is a frequent action. Keep it beside the primary job action and never place it beyond a horizontally scrolling action rail.
-- The menu must show the field label and a preview of the exact value that will be copied.
+- In the Job Workspace, populated Job Info fields are the primary copy controls. Hover identifies them as clickable; clicking copies the exact displayed value.
+- Keep `Copy job summary` in the compact More menu for the less-common multi-field copy.
 - Include a clear `Job summary` option for copying all available fields.
-- Close the menu and show a short confirmation after copying.
+- Show a short confirmation after copying.
 - Never hide essential copy actions behind a right-click.
+
+## Save behavior
+
+- Use an explicit Save button for multi-field records such as Job Info and Job Log entries.
+- Autosave compact operational controls such as division status, assignment, requirements, and checklist completion.
+- Autosaved sections must show `Saving`, `Saved`, or `Not saved`; never leave the user guessing whether a change persisted.
+- A close warning appears only for a true unsaved draft. Never warn after an autosaved action has succeeded.
+- Preserve a failed draft in place and explain which action failed.
 
 ## Cards and overlays
 

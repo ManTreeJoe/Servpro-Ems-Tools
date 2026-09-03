@@ -678,6 +678,16 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .job-info-field:hover,.job-info-field:focus-visible { border-color:var(--green); background:var(--green-soft); outline:0; }
 .job-info-field:hover>i,.job-info-field:focus-visible>i { opacity:1; }
 .job-info-field.copied { border-color:var(--green-light); transform:translateY(-1px); }
+.job-save-mode { color:var(--text-dim); font-size:10px; }
+.job-info-edit-card { width:min(820px,94vw); max-height:min(820px,92vh); }
+.job-info-edit-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.job-info-edit-field { display:grid; gap:4px; min-width:0; color:var(--text-muted); font-size:10px; font-weight:650; }
+.job-info-edit-field input { width:100%; min-height:36px; padding:7px 9px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--text); font:inherit; font-size:12px; }
+.job-info-edit-field input:focus { border-color:var(--green); outline:2px solid color-mix(in srgb,var(--green) 30%,transparent); }
+.job-info-more { margin-top:13px; border-top:1px solid var(--border); padding-top:11px; }
+.job-info-more>summary { margin-bottom:10px; color:var(--text-muted); font-size:11px; cursor:pointer; }
+.job-info-edit-actions { position:sticky; bottom:0; display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:15px; padding-top:11px; background:var(--bg); }
+.job-info-edit-actions span { margin-right:auto; color:var(--text-muted); font-size:11px; }
 .aud-chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .aud-chips span { padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-muted); font-size: 12px; }
 .aud-empty { color: var(--text-dim); font-size: 12px; }
@@ -1166,6 +1176,7 @@ button,input,select,textarea { font-family:var(--font-body); }
   .background-presets { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .lane { flex-basis:min(282px,82vw); width:min(282px,82vw); }
   .job-info-grid { grid-template-columns:1fr; }
+  .job-info-edit-grid { grid-template-columns:1fr; }
 }
 
 /* Trello-style lane management */

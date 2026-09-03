@@ -1184,6 +1184,74 @@ function onCardContext(ev) {
   openCardMenu(ev, ev.currentTarget);
 }
 
+async function openJobInfoEditor(data, audit, onSaved) {
+  const client = data.client || audit.client || "";
+  let schema;
+  let loaded;
+  try {
+    [schema, loaded] = await Promise.all([
+      pywebview.api.job_settings_schema(),
+      pywebview.api.job_settings_load(client, ""),
+    ]);
+  } catch (error) {
+    setStatus(`Job info could not load: ${error}`, "error");
+    return;
+  }
+  if (!schema?.ok || !loaded?.ok) {
+    setStatus(loaded?.error || schema?.error || "Job info could not load", "error");
+    return;
+  }
+  const values = loaded.values || {};
+  const inherited = new Set(loaded.inherited || []);
+  const fields = schema.fields || [];
+  const renderFields = (items) => items.map((field) => {
+    const listId = field.options?.length ? `pipeline-job-info-${field.id}` : "";
+    return `<label class="job-info-edit-field"><span>${escapeHtml(field.label)}${inherited.has(field.id) ? " · from client" : ""}</span>
+      <input data-job-info-input="${escapeAttr(field.id)}" value="${escapeAttr(values[field.id] || "")}" ${listId ? `list="${escapeAttr(listId)}"` : ""}>
+      ${listId ? `<datalist id="${escapeAttr(listId)}">${field.options.map((option) => `<option value="${escapeAttr(option.value)}"></option>`).join("")}</datalist>` : ""}</label>`;
+  }).join("");
+  const core = fields.filter((field) => field.core);
+  const more = fields.filter((field) => !field.core);
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay job-info-edit-overlay";
+  modal.innerHTML = `<div class="modal-box job-info-edit-card" role="dialog" aria-modal="true" aria-label="Edit job info">
+    <header class="modal-head"><div><div class="modal-title">Edit job info</div><div class="modal-sub">${escapeHtml(client)}</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
+    <div class="modal-body"><div class="job-info-edit-grid">${renderFields(core)}</div>
+      ${more.length ? `<details class="job-info-more"><summary>More fields (${more.length})</summary><div class="job-info-edit-grid">${renderFields(more)}</div></details>` : ""}
+      <footer class="job-info-edit-actions"><span data-job-info-status></span><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-save>Save job info</button></footer>
+    </div></div>`;
+  document.body.appendChild(modal);
+  let dirty = false;
+  modal.querySelectorAll("[data-job-info-input]").forEach((input) =>
+    input.addEventListener("input", () => { dirty = true; }));
+  const closeEditor = () => {
+    if (dirty && !window.confirm("Discard your unsaved job-info changes?")) return;
+    modal.remove();
+  };
+  modal.querySelector("[data-close]").addEventListener("click", closeEditor);
+  modal.querySelector("[data-cancel]").addEventListener("click", closeEditor);
+  modal.addEventListener("click", (event) => { if (event.target === modal) closeEditor(); });
+  modal.querySelector("[data-save]").addEventListener("click", async (event) => {
+    const output = {};
+    modal.querySelectorAll("[data-job-info-input]").forEach((input) => { output[input.dataset.jobInfoInput] = input.value; });
+    const button = event.currentTarget;
+    const status = modal.querySelector("[data-job-info-status]");
+    button.disabled = true;
+    status.textContent = "Saving…";
+    const result = await pywebview.api.job_settings_save(client, output, "", loaded.card_desc || "");
+    if (!result?.ok) {
+      button.disabled = false;
+      status.textContent = result?.error || "Job info could not be saved";
+      return;
+    }
+    dirty = false;
+    modal.remove();
+    setStatus(result.pending_push ? "Job info saved · Trello sync pending" : "Job info saved", result.pending_push ? "warn" : "ok");
+    await onSaved?.();
+  });
+  modal.querySelector("[data-job-info-input]")?.focus();
+}
+
 // ── Audit result modal (compact summary) ─────────────────────────
 function openAuditModal(data, trelloUrl = "") {
   const res = data.audit || {};
@@ -1385,13 +1453,13 @@ function openAuditModal(data, trelloUrl = "") {
   const body = `<div class="job-card-layout">
     <div class="job-card-main">
       ${divisionConflictBanner}
-      <section class="aud-section job-info-section"><div class="section-title-row"><h3>Job info</h3><small>Click any field to copy</small></div>
+      <section class="aud-section job-info-section"><div class="section-title-row"><div><h3>Job info</h3><small>Click any field to copy</small></div><button type="button" class="btn compact" data-edit-job-info>Edit</button></div>
         ${facts || `<div class="aud-empty">No saved job information yet.</div>`}</section>
       <section class="aud-section audit-summary"><div class="section-title-row"><h3>Current audit</h3>${!data.deferred_loading && issues.length ? `<span class="audit-missing-count">${issues.length} missing</span>` : ""}</div>${missing}${misplacedHtml}</section>
       <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
         <span class="progress-label">${progress.counts?.overdue || 0} overdue · ${progress.counts?.blocked || 0} blocked · ${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
-      <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div></div><div class="work-types">${workTypes}</div></section>
+      <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div><span class="job-save-mode" data-job-save-state>Changes save automatically</span></div><div class="work-types">${workTypes}</div></section>
       <section class="aud-section checklist-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} card · stored in Linguar Hub · Trello sync is temporary</small></div>${checklistDivisionTabs}</div>${checklistGroups}</section>
       ${oldJobsSection}
       <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
@@ -1449,11 +1517,14 @@ function openAuditModal(data, trelloUrl = "") {
     </div>`;
   document.body.appendChild(w);
   const previousFocus = document.activeElement;
-  let userDirty = false;
-  w.addEventListener("input", () => { userDirty = true; });
-  w.addEventListener("change", () => { userDirty = true; });
+  const dirtyDrafts = new Set();
+  const markDraftDirty = (key, dirty = true) => {
+    if (dirty) dirtyDrafts.add(key);
+    else dirtyDrafts.delete(key);
+  };
+  const clearDraftDirty = (key) => dirtyDrafts.delete(key);
   const close = (force = false) => {
-    if (!force && userDirty && !window.confirm("Discard unsaved changes to this job?")) return false;
+    if (!force && dirtyDrafts.size && !window.confirm("Discard your unsaved draft? Saved job changes will not be lost.")) return false;
     document.removeEventListener("keydown", keyClose);
     w.remove();
     previousFocus?.focus?.();
@@ -1551,6 +1622,10 @@ function openAuditModal(data, trelloUrl = "") {
     button.classList.add("copied");
     window.setTimeout(() => button.classList.remove("copied"), 900);
     setStatus(`Copied ${button.dataset.copyJobLabel || "job info"}`, "ok");
+  }));
+  w.querySelector("[data-edit-job-info]")?.addEventListener("click", () => openJobInfoEditor(data, res, async () => {
+    close(true);
+    await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS");
   }));
   w.querySelector("[data-copy-summary]")?.addEventListener("click", async (event) => {
     const summary = copyOptions.map(([label, value]) => `${label}: ${value}`).join("\n");
@@ -1720,26 +1795,35 @@ function openAuditModal(data, trelloUrl = "") {
     }));
   const saveWorkType = async (select) => {
     const name = select.dataset.workEnv;
+    const ownerDraftKey = `work-owner-${name}`;
     const tile = select.closest("[data-work-type-card]");
     const owner = tile?.querySelector(`[data-work-env-owner="${name}"]`)?.value || "";
+    const saveState = w.querySelector("[data-job-save-state]");
+    if (saveState) saveState.textContent = "Saving…";
     select.disabled = true;
     const result = await pywebview.api.save_crm_work_environment(
       data.client || res.client || "", name, select.value, owner);
     select.disabled = false;
     if (!result?.ok) {
+      if (saveState) saveState.textContent = "Not saved";
       setStatus(`Could not update ${name}: ${result?.error || "unknown error"}`, "error");
       return;
     }
+    clearDraftDirty(ownerDraftKey);
+    if (saveState) saveState.textContent = "Saved";
     tile?.classList.toggle("has-stage", select.value !== "not_applicable");
     setStatus(`${name} updated for this job`, "ok");
   };
   w.querySelectorAll("[data-work-env]").forEach((select) =>
     select.addEventListener("change", () => saveWorkType(select)));
   w.querySelectorAll("[data-work-env-owner]").forEach((input) =>
-    input.addEventListener("change", () => {
+    {
+      input.addEventListener("input", () => markDraftDirty(`work-owner-${input.dataset.workEnvOwner}`, true));
+      input.addEventListener("change", () => {
       const select = w.querySelector(`[data-work-env="${input.dataset.workEnvOwner}"]`);
       if (select) saveWorkType(select);
-    }));
+      });
+    });
   const pinDivisionCard = async (division, value) => {
     const result = await pywebview.api.pin_crm_division_trello(
       data.client || res.client || "", division, value || "");
@@ -1825,13 +1909,18 @@ function openAuditModal(data, trelloUrl = "") {
       <label class="wide">Work completed / update<textarea rows="3" data-log-field="note" placeholder="Areas worked, findings, what was completed, and the next step">${escapeHtml(entry.note || "")}</textarea></label>
       <label class="wide">Equipment / readings<input data-log-field="equipment" value="${escapeAttr(entry.equipment || "")}" placeholder="Equipment placed, moved, readings, or pickup"></label>
       <div class="job-log-form-actions"><button class="btn btn-primary" data-save-job-log>Save update</button><button class="btn" data-cancel-job-log>Cancel</button></div></div>`;
-    host.querySelector("[data-cancel-job-log]").addEventListener("click", () => { host.hidden = true; host.innerHTML = ""; });
+    host.querySelectorAll("[data-log-field]").forEach((field) =>
+      field.addEventListener("input", () => markDraftDirty("job-log", true)));
+    host.querySelector("[data-cancel-job-log]").addEventListener("click", () => {
+      clearDraftDirty("job-log"); host.hidden = true; host.innerHTML = "";
+    });
     host.querySelector("[data-save-job-log]").addEventListener("click", async (event) => {
       const payload = {entry_id: entry.entry_id || "", source: entry.source || "pc", source_id: entry.source_id || "", trello_comment_id: entry.trello_comment_id || ""};
       host.querySelectorAll("[data-log-field]").forEach((field) => { payload[field.dataset.logField] = field.value; });
       const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
       const result = await pywebview.api.save_job_log_update(data.client || "", payload);
       if (!result?.ok) { button.disabled = false; button.textContent = "Save update"; setStatus(result?.error || "Job Log could not be saved", "error"); return; }
+      clearDraftDirty("job-log");
       close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("Job Log updated", "ok");
     });
   };
@@ -1861,8 +1950,10 @@ function openAuditModal(data, trelloUrl = "") {
     if (!result?.ok) { button.disabled = false; button.textContent = "Delete"; setStatus(result?.error || "Job Log entry could not be deleted", "error"); return; }
     close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("Job Log entry deleted", "ok");
   }));
+  const commentInput = w.querySelector("[data-comment-input]");
+  commentInput?.addEventListener("input", () => markDraftDirty("comment", Boolean(commentInput.value.trim())));
   w.querySelector("[data-post-comment]")?.addEventListener("click", async () => {
-    const input = w.querySelector("[data-comment-input]");
+    const input = commentInput;
     const stateEl = w.querySelector("[data-comment-state]");
     const text = input.value.trim();
     if (!text) return;
@@ -1871,6 +1962,7 @@ function openAuditModal(data, trelloUrl = "") {
     if (!result?.ok) { stateEl.textContent = result?.error || "Could not save"; return; }
     w.querySelector("[data-comment-stream]").insertAdjacentHTML("afterbegin", renderJobComment(result.comment));
     input.value = "";
+    clearDraftDirty("comment");
     stateEl.textContent = result.posted_trello ? "Saved · Trello synced" : (result.warning || "Saved in Linguar Hub");
   });
   w.querySelector("[data-comment-stream]")?.addEventListener("click", async (event) => {
@@ -1910,7 +2002,7 @@ function openAuditModal(data, trelloUrl = "") {
     element: w,
     close,
     hasUserInput() {
-      return userDirty;
+      return dirtyDrafts.size > 0;
     },
     setDeferredReady(load) {
       const host = w.querySelector("[data-workspace-load-state]");

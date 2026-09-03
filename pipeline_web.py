@@ -35,6 +35,7 @@ if _HERE not in sys.path:
 import ems_db
 import pipeline_stages as ps
 import pipeline_store
+from job_settings_api import JobSettingsApi
 from web_helpers import run_bg as _wh_run_bg
 
 
@@ -331,7 +332,7 @@ def _trello_board_payload():
     return {"ok": True, "boards": out, "source": "trello"}
 
 
-class Api:
+class Api(JobSettingsApi):
     """Methods exposed to JS via `pywebview.api`.
 
     Every call is async on the JS side; pywebview marshals across the

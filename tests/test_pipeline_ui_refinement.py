@@ -126,6 +126,27 @@ def test_tool_menus_open_on_hover_and_do_not_latch_for_mouse_users():
     assert 'setOpen(false)' in js
 
 
+def test_autosaved_job_controls_do_not_trigger_discard_warning():
+    js = _asset("app.js")
+    assert 'w.addEventListener("input", () => { userDirty = true; });' not in js
+    assert 'w.addEventListener("change", () => { userDirty = true; });' not in js
+    assert 'markDraftDirty("job-log"' in js
+    assert 'markDraftDirty("comment"' in js
+    assert 'markDraftDirty(`work-owner-' in js
+    assert "clearDraftDirty(ownerDraftKey)" in js
+
+
+def test_job_info_is_editable_with_one_explicit_save():
+    js = _asset("app.js")
+    py = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
+    for marker in ("data-edit-job-info", "function openJobInfoEditor",
+                   "data-job-info-input", "Save job info",
+                   "job_settings_load", "job_settings_save"):
+        assert marker in js
+    assert "class Api(JobSettingsApi):" in py
+    assert "from job_settings_api import JobSettingsApi" in py
+
+
 def test_pipeline_checklists_use_daily_run_role_tabs_inside_division():
     js = _asset("app.js")
     css = _asset("app.css")
