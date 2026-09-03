@@ -2959,10 +2959,9 @@ function openNewLossModal() {
 
   const overlay = window.openModal({
     title: "New Loss",
-    sub: "Create the job without leaving the Jobs board.",
     width: 860,
     body: `
-      <div id="nl-board-line" class="new-loss-board-line">Finding live templates…</div>
+      <div id="nl-board-line" class="new-loss-board-line">Loading templates…</div>
       <section class="new-loss-paste">
         <label for="nl-paste">Paste assignment</label>
         <textarea id="nl-paste" rows="8" placeholder="Paste the carrier assignment email here…" autofocus></textarea>

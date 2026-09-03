@@ -10,27 +10,9 @@
  * needed. Same Ctrl + - for shrink, Ctrl + 0 for reset.
  */
 :root {
-  --bg:           #0E1112;
-  --surface:      #161A1B;
-  --surface-2:    #1E2324;
-  --border:       #333B3D;
-  --border-strong:#465053;
-  --text:         #F0EEE8;
-  --text-muted:   #A5ADAA;
-  --text-dim:     #717C79;
-  --green:        #58B77D;
-  --green-hover:  #69C98E;
-  --green-light:  #8AD7A5;
-  --green-soft:   rgba(88,183,125,.14);
-  --amber:        #E8A64B;
-  --red:          #D96861;
-  --cobalt:       #647FCD;
-  --danger:      #E77970;
-  --link:        #4A9EFF;
-  --chip-bg:     #353535;
-  --chip-active: #3D6549;
-  --shadow-1:    0 1px 3px rgba(0,0,0,0.4);
-  --radius:      6px;
+  /* Panel-only aliases. The actual palette belongs to theme.css. */
+  --green-light: #86B598;
+  --danger: var(--red);
 }
 
 * { box-sizing: border-box; }
@@ -165,7 +147,7 @@ a:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visib
 .btn-primary {
   background: var(--green);
   border-color: var(--green);
-  color: #101713;
+  color: var(--on-accent);
 }
 .btn-primary:hover { background: var(--green-hover); border-color: var(--green-hover); }
 .btn:disabled {
@@ -1019,18 +1001,14 @@ button,input,select,textarea { font-family:var(--font-body); }
 .topbar .btn { min-height: 36px; border-radius: 9px; }
 
 .board-wrap {
-  --board-overlay: linear-gradient(180deg,rgba(8,13,10,.18),rgba(8,13,10,.38));
+  --board-overlay: linear-gradient(180deg,rgba(8,10,11,.16),rgba(8,10,11,.3));
   position: relative;
   isolation: isolate;
   gap: 9px;
   padding: 12px 14px 14px;
-  background-color: #172019;
-  background-image:
-    var(--board-overlay),
-    linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px),
-    radial-gradient(circle at 16% 12%,rgba(57,169,107,.22),transparent 36%);
-  background-size: auto,32px 32px,32px 32px,auto;
+  background-color: #121617;
+  background-image: var(--board-overlay);
+  background-size: auto;
   background-position: center;
   transition: background-color 180ms ease;
 }
@@ -1077,17 +1055,15 @@ button,input,select,textarea { font-family:var(--font-body); }
 .pipeline-summary {
   min-height: 42px;
   border-color: rgba(255,255,255,.18);
-  background: rgba(18,24,20,.74);
-  box-shadow: 0 8px 24px rgba(0,0,0,.14);
-  backdrop-filter: blur(18px) saturate(115%);
+  background: rgba(22,26,27,.94);
+  box-shadow: none;
 }
 .summary-primary,.summary-item { padding-block: 7px; }
 .board-tabs { min-height: 38px; padding: 0 2px; }
 .board-tab {
   border-color: rgba(255,255,255,.17);
-  background: rgba(18,24,20,.68);
+  background: rgba(22,26,27,.94);
   color: #d8e1da;
-  backdrop-filter: blur(14px);
 }
 .board-tab.active { background:#f4f1e8; border-color:#f4f1e8; color:#19211c; box-shadow:0 4px 16px rgba(0,0,0,.18); }
 .board-tab.active .board-tab-count { color:#68766d; }
@@ -1108,9 +1084,8 @@ button,input,select,textarea { font-family:var(--font-body); }
   width: 286px;
   border-color: rgba(255,255,255,.14);
   border-radius: 12px;
-  background: rgba(17,22,19,.76);
-  box-shadow: 0 12px 28px rgba(0,0,0,.18);
-  backdrop-filter: blur(18px) saturate(110%);
+  background: rgba(23,27,28,.96);
+  box-shadow: 0 3px 10px rgba(0,0,0,.18);
 }
 .lane-head {
   min-height: 42px;
@@ -1131,8 +1106,10 @@ button,input,select,textarea { font-family:var(--font-body); }
   color:#182019;
   box-shadow:0 2px 5px rgba(0,0,0,.18),0 7px 16px rgba(0,0,0,.08);
 }
-.kcard::before { background:#39a96b; opacity:.9; }
-.kcard:hover,.kcard:focus-visible { background:#fffdf6; border-color:rgba(33,78,50,.32); box-shadow:0 8px 20px rgba(0,0,0,.2); }
+.kcard::before { background:#7A837D; opacity:.72; }
+.kcard.stall-border-warn::before { background:var(--amber); opacity:.9; }
+.kcard.stall-border-bad::before { background:var(--red); opacity:.9; }
+.kcard:hover,.kcard:focus-visible { background:#fffdf6; border-color:rgba(45,55,49,.4); box-shadow:0 7px 18px rgba(0,0,0,.18); }
 .kcard-title { color:#172019; font-family:var(--font-display); font-size:13px; font-weight:700; }
 .kcard .chip-mini,.kcard .chip-loss { border:1px solid rgba(20,31,23,.1); }
 .kcard .chip-mini:not(.due-over):not(.sync-conflict),.kcard .chip-loss:not(.loss-water):not(.loss-mold):not(.loss-fire):not(.loss-smoke):not(.loss-wind) { background:#e5e6df; color:#4f5c53; }
@@ -1235,7 +1212,7 @@ button,input,select,textarea { font-family:var(--font-body); }
 .new-loss-board-line span::before { content:"/"; margin-right:8px; color:var(--text-dim); }
 .new-loss-board-line.warn { color:var(--amber); }
 .new-loss-paste { display:grid; gap:7px; }
-.new-loss-paste>label,.new-loss-field>span { color:var(--text-muted); font:700 11px/1.2 var(--font-utility); letter-spacing:.025em; }
+.new-loss-paste>label,.new-loss-field>span { color:var(--text-muted); font:650 12px/1.25 var(--font-body); letter-spacing:0; }
 .new-loss-paste textarea,.new-loss-field input,.new-loss-field textarea,.new-loss-field select,
 .new-loss-parent input,.new-loss-folder-options input {
   width:100%; box-sizing:border-box; border:1px solid var(--border); border-radius:7px;
@@ -1249,7 +1226,7 @@ button,input,select,textarea { font-family:var(--font-body); }
 .new-loss-field textarea { resize:vertical; }
 .new-loss-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start; }
 .new-loss-group { min-width:0; padding:13px; border:1px solid var(--border); border-radius:9px; background:var(--surface); }
-.new-loss-group h3 { margin:0 0 10px; color:var(--text); font:750 12px/1 var(--font-utility); letter-spacing:.055em; text-transform:uppercase; }
+.new-loss-group h3 { margin:0 0 10px; color:var(--text); font:700 13px/1.2 var(--font-body); letter-spacing:0; }
 .new-loss-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .new-loss-group:last-child .new-loss-fields { grid-template-columns:1fr; }
 .new-loss-folder { display:grid; gap:5px; padding:11px 12px; border:1px solid var(--border); border-left:3px solid var(--green); border-radius:7px; background:var(--surface-2); font-size:12px; }
