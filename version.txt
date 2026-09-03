@@ -1,6 +1,6 @@
 {
-  "version": "1.8.2",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.2",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.2/Linguar-Hub-Setup-1.8.2.exe",
-  "notes": "Stability release for Main: repairs repeated Supabase sign-in and refresh failures, keeps offline jobs usable without false cloud-backup warnings, prevents Main and Trial from cloning the same refresh token, improves first-run configuration portability, and simplifies Trello connection to one personal sign-in shared across assigned franchises with a reliable fallback."
+  "version": "1.8.3",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.3",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.3/Linguar-Hub-Setup-1.8.3.exe",
+  "notes": "Main Jobs board hotfix: restores the saved search into the visible search box so an invisible old filter can no longer hide nearly every Trello lane."
 }

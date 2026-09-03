@@ -113,6 +113,16 @@ def test_pipeline_status_and_search_are_accessible():
     assert 'aria-label="Search Jobs"' in html
     assert 'aria-live="polite"' in html
     assert 'class="skip-link"' in html
+
+
+def test_restored_job_search_is_never_an_invisible_lane_filter():
+    """A persisted search must appear in the input that is filtering lanes."""
+    js = _asset("app.js")
+    restored = 'state.search         = PanelState.get("search", "");'
+    reflected = '$("#search-box").value = state.search;'
+    assert restored in js
+    assert reflected in js
+    assert js.index(restored) < js.index(reflected) < js.index("const initialView")
 def test_jobs_board_zoom_is_visible_persistent_and_board_scoped():
     html = _asset("index.html")
     js = _asset("app.js")

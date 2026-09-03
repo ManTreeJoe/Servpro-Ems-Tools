@@ -65,6 +65,9 @@ async function bootPipeline() {
       })) : [];
   state.active_stage   = PanelState.get("active_stage", state.active_stage);
   state.search         = PanelState.get("search", "");
+  // Never let a restored search silently hide lanes while the input looks
+  // empty. The visible control and the filter state must remain identical.
+  $("#search-box").value = state.search;
 
   $("#view-board-btn").addEventListener("click", () => setView("board"));
   $("#view-stages-btn").addEventListener("click", () => setView("stages"));
