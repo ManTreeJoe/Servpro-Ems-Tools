@@ -64,3 +64,14 @@ def test_daily_run_has_a_bounded_startup_and_audit_watchdog():
     assert "function withAuditTimeout(" in source
     assert "armAuditWatchdog" in source
     assert "clearAuditLoading" in source
+
+
+def test_primary_daily_run_button_uses_plain_language_and_cannot_stay_loading():
+    source = (ROOT / "audit_web_assets" / "app.js").read_text(encoding="utf-8")
+    start = source.index("async function runAudit(useCache)")
+    end = source.index("function onAuditProgress", start)
+    run_source = source[start:end]
+    assert "Running audit (cached)" not in run_source
+    assert "Checking today's jobs" in run_source
+    assert "armAuditWatchdog()" in run_source
+    assert "clearAuditLoading()" in run_source

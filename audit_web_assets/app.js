@@ -1871,28 +1871,25 @@ function showCtxMenu(ev, row, customItems) {
 async function runAudit(useCache) {
   if (state.loading) return;
   state.loading = true;
+  state.auditForDay = state.dayOffset || 0;
   $("#run-btn").disabled = true;
   $("#rerun-btn").disabled = true;
   $("#loading-label").textContent = useCache
-    ? "Running audit (cached)…"
-    : "Full re-scan in progress…";
+    ? "Checking today's jobs…"
+    : "Rechecking every job…";
   $("#loading-state").classList.remove("hidden");
   setStatus("");
   try {
     const res = await pywebview.api.run_audit(useCache);
     if (!res || !res.started) {
       setStatus(res?.reason || "Couldn't start audit", "warn");
-      $("#loading-state").classList.add("hidden");
-      state.loading = false;
-      $("#run-btn").disabled = false;
-      $("#rerun-btn").disabled = false;
+      clearAuditLoading();
+    } else {
+      armAuditWatchdog();
     }
   } catch (ex) {
     setStatus(`Audit error: ${ex}`, "error");
-    state.loading = false;
-    $("#loading-state").classList.add("hidden");
-    $("#run-btn").disabled = false;
-    $("#rerun-btn").disabled = false;
+    clearAuditLoading();
   }
 }
 
