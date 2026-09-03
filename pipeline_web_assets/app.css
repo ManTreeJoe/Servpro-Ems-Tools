@@ -563,9 +563,10 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .card-quick-actions .action-btn.quiet { color:var(--text); }
 .quick-action-icon { font-size:16px; line-height:1; }
 .tool-quick-menu { position:relative; flex:0 0 auto; }
-.tool-quick-menu>summary { list-style:none; cursor:pointer; }
-.tool-quick-menu>summary::-webkit-details-marker { display:none; }
-.tool-menu-panel { position:absolute; z-index:245; top:calc(100% + 7px); left:0; width:210px; padding:7px; border:1px solid var(--border-strong); border-radius:10px; background:#1b211e; box-shadow:0 18px 46px rgba(0,0,0,.55); }
+.tool-menu-trigger { cursor:default; }
+.tool-menu-panel { position:absolute; z-index:245; top:calc(100% - 1px); left:0; display:none; width:210px; padding:7px; border:1px solid var(--border-strong); border-radius:0 10px 10px 10px; background:#1b211e; box-shadow:0 18px 46px rgba(0,0,0,.55); }
+.tool-quick-menu:hover>.tool-menu-panel,.tool-quick-menu:focus-within>.tool-menu-panel,.tool-quick-menu.is-open>.tool-menu-panel { display:block; }
+.tool-quick-menu:hover>.tool-menu-trigger,.tool-quick-menu:focus-within>.tool-menu-trigger,.tool-quick-menu.is-open>.tool-menu-trigger { border-color:var(--green); background:var(--green-soft); }
 .more-quick-menu .tool-menu-panel { left:auto; right:0; }
 .tool-menu-panel button { display:flex; align-items:center; gap:7px; width:100%; min-height:34px; padding:8px 9px; border:0; border-radius:7px; background:transparent; color:var(--text); text-align:left; font:inherit; font-size:11px; cursor:pointer; }
 .tool-menu-panel button:hover { background:var(--green-soft); }

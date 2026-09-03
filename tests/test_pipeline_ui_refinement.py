@@ -76,8 +76,8 @@ def test_pipeline_keeps_primary_update_and_groups_shortcuts():
 def test_pipeline_groups_companycam_actions_under_one_visible_menu():
     js = _asset("app.js")
     backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
-    header_start = js.index('<details class="tool-quick-menu"><summary class="action-btn destination"><img src="../web_shared/companycam.png"')
-    header_end = js.index('</details>', header_start)
+    header_start = js.index('<div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/companycam.png"')
+    header_end = js.index('</div></div>', header_start)
     header = js[header_start:header_end]
     assert "tool-menu-panel" in header
     assert "data-open-companycam" in header
@@ -101,8 +101,8 @@ def test_pipeline_job_actions_match_the_audit_button_language():
                    "background:var(--green)",
                    "background:var(--green-hover)"):
         assert marker in css
-    assert '>CompanyCam <small>⌄</small>' in js
-    assert '>XA <small>⌄</small>' in js
+    assert 'CompanyCam <small>⌄</small></button>' in js
+    assert 'XA <small>⌄</small></button>' in js
     assert "quick-action-group" not in js
 
 
@@ -114,6 +114,16 @@ def test_tool_menus_stay_inside_card_and_job_info_is_click_to_copy():
     assert "left:0" in menu_rule
     assert 'data-copy-job-field="${escapeAttr(field.value)}"' in js
     assert 'closest(".tool-quick-menu")' in js
+
+
+def test_tool_menus_open_on_hover_and_do_not_latch_for_mouse_users():
+    css = _asset("app.css")
+    js = _asset("app.js")
+    assert ".tool-quick-menu:hover>.tool-menu-panel" in css
+    assert ".tool-quick-menu:focus-within>.tool-menu-panel" in css
+    assert 'menu.addEventListener("pointerleave"' in js
+    assert 'event.pointerType !== "touch"' in js
+    assert 'setOpen(false)' in js
 
 
 def test_pipeline_checklists_use_daily_run_role_tabs_inside_division():

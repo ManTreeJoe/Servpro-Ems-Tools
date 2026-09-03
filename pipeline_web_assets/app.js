@@ -1426,19 +1426,19 @@ function openAuditModal(data, trelloUrl = "") {
             <button class="action-btn primary" data-add-job-log><span class="quick-action-icon">＋</span>Add update</button>
             <button class="action-btn" ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 Folder" : "🔗 Link folder"}</button>
             <button class="action-btn destination" data-open-trello ${trelloUrl ? "" : "disabled"}><img src="../web_shared/trello.png" alt="">Trello</button>
-            <details class="tool-quick-menu"><summary class="action-btn destination"><img src="../web_shared/xactanalysis.png" alt="">XA <small>⌄</small></summary><div class="tool-menu-panel">
+            <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/xactanalysis.png" alt="">XA <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-xa ${data.card_id ? "" : "disabled"}>Open XactAnalysis</button>
               <button data-stage-xa ${res.path ? "" : "disabled"}>Stage files for XA</button>
-            </div></details>
-            <details class="tool-quick-menu"><summary class="action-btn destination"><img src="../web_shared/companycam.png" alt="">CompanyCam <small>⌄</small></summary><div class="tool-menu-panel">
+            </div></div>
+            <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/companycam.png" alt="">CompanyCam <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-companycam ${data.card_id ? "" : "disabled"}>Open project</button>
               <button data-pull-companycam ${data.card_id ? "" : "disabled"}>Pull photos</button>
               <button data-companycam-report ${data.card_id ? "" : "disabled"}>Create report</button>
               <button data-quick-photo-report ${data.card_id ? "" : "disabled"}>Build quick PDF</button>
-            </div></details>
-            <details class="tool-quick-menu more-quick-menu"><summary class="action-btn quiet">More <small>⌄</small></summary><div class="tool-menu-panel">
+            </div></div>
+            <div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-audit>Open full audit</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
-            </div></details>
+            </div></div>
           </div>
         </div>
       </header>
@@ -1465,6 +1465,34 @@ function openAuditModal(data, trelloUrl = "") {
   const keyClose = (e) => { if (e.key === "Escape") requestClose(); };
   document.addEventListener("keydown", keyClose);
   w.querySelector(".audit-card")?.focus();
+  w.querySelectorAll(".tool-quick-menu").forEach((menu) => {
+    const trigger = menu.querySelector(".tool-menu-trigger");
+    const setOpen = (open) => {
+      menu.classList.toggle("is-open", open);
+      trigger?.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    trigger?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const opening = !menu.classList.contains("is-open");
+      w.querySelectorAll(".tool-quick-menu.is-open").forEach((other) => {
+        other.classList.remove("is-open");
+        other.querySelector(".tool-menu-trigger")?.setAttribute("aria-expanded", "false");
+      });
+      setOpen(opening);
+    });
+    menu.addEventListener("pointerleave", (event) => {
+      if (event.pointerType !== "touch") setOpen(false);
+    });
+    menu.querySelectorAll(".tool-menu-panel button").forEach((button) =>
+      button.addEventListener("click", () => setOpen(false)));
+  });
+  w.addEventListener("click", (event) => {
+    if (event.target.closest(".tool-quick-menu")) return;
+    w.querySelectorAll(".tool-quick-menu.is-open").forEach((menu) => {
+      menu.classList.remove("is-open");
+      menu.querySelector(".tool-menu-trigger")?.setAttribute("aria-expanded", "false");
+    });
+  });
   w.querySelector("[data-open-client-page]")?.addEventListener("click", () => {
     const client = data.client || res.client || "";
     close(true);
@@ -1527,7 +1555,7 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelector("[data-copy-summary]")?.addEventListener("click", async (event) => {
     const summary = copyOptions.map(([label, value]) => `${label}: ${value}`).join("\n");
     await pywebview.api.copy_to_clipboard(summary);
-    event.currentTarget.closest(".tool-quick-menu")?.removeAttribute("open");
+    event.currentTarget.closest(".tool-quick-menu")?.classList.remove("is-open");
     setStatus("Copied formatted job summary", "ok");
   });
   w.querySelectorAll("[data-checklist-role]").forEach((button) => button.addEventListener("click", () => {
