@@ -1,6 +1,6 @@
 {
-  "version": "1.8.4",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.4",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.4/Linguar-Hub-Setup-1.8.4.exe",
-  "notes": "Main workflow update: restores the in-page New Loss flow, provisions Trello, CompanyCam, and job folders together, improves shared job tools and checklists, and applies the restrained graphite visual system across Jobs, Clients, Dispatch, Snapshot, Audit, APA, Run Doc, and Settings."
+  "version": "1.8.5",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.5",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.5/Linguar-Hub-Setup-1.8.5.exe",
+  "notes": "Orange County stability update: keeps OC and IE board data separate, clears stale job caches immediately when switching franchises, supports both OC Daily Run folder layouts, and restores OC Old Jobs from THE LOGS 1234."
 }
