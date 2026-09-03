@@ -17,6 +17,7 @@ const state = {
   activeFrame: null,
 };
 const MAX_WARM_PANELS = 6;
+let countsRefreshPromise = null;
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -524,6 +525,13 @@ async function reloadEverything() {
 }
 
 async function refreshCounts(force = false) {
+  if (countsRefreshPromise) return countsRefreshPromise;
+  countsRefreshPromise = refreshCountsOnce(force);
+  try { return await countsRefreshPromise; }
+  finally { countsRefreshPromise = null; }
+}
+
+async function refreshCountsOnce(force = false) {
   // Mark all badges loading
   $$(".sb-badge").forEach((b) => { b.textContent = "…"; b.className = "sb-badge loading"; });
   const counts = await pywebview.api.counts(Boolean(force));

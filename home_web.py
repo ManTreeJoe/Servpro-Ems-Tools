@@ -17,7 +17,7 @@ This file replaces the Tk launcher as the default entry point.
 """
 from __future__ import annotations
 import datetime as _dt
-import os, sys, time
+import os, sys, time, threading
 from pathlib import Path as _Path
 import webview
 
@@ -241,6 +241,7 @@ class HomeApi:
         self._sidebar_active = None
         self._hotkey = None
         self._counts_cache = None
+        self._counts_lock = threading.Lock()
         # Instantiate every sub-Api at startup so state caches
         # survive across iframe navigations (e.g. audit's last-run
         # results aren't wiped when the user clicks APA Monitor then
@@ -794,6 +795,15 @@ class HomeApi:
             cached_at, cached = self._counts_cache
             if now - cached_at < 60:
                 return dict(cached)
+        if not self._counts_lock.acquire(blocking=False):
+            return dict(self._counts_cache[1]) if self._counts_cache else {}
+        try:
+            return self._compute_counts()
+        finally:
+            self._counts_lock.release()
+
+    def _compute_counts(self):
+        """One serialized sidebar-count pass. See :meth:`counts`."""
         out = {}
         try:
             import run_doc as _rag

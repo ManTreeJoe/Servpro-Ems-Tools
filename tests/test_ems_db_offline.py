@@ -23,6 +23,8 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(off, "QUEUE_PATH", str(tmp_path / "queue.jsonl"))
     monkeypatch.setattr(off, "FALLBACK_ENABLED", True)
     monkeypatch.setattr(off, "_degraded", False)
+    monkeypatch.setattr(off, "_retry_after", 0.0)
+    monkeypatch.setattr(off, "_failure_count", 0)
     monkeypatch.setattr(off, "_schema_fallbacks", set())
     ems_db_sqlite.reset_db_path(str(tmp_path / "jobs.db"))
     return tmp_path
@@ -96,6 +98,18 @@ def test_read_falls_back_to_the_local_mirror(sandbox, monkeypatch):
     got = off.get_job(key)
     assert got and got["display_name"] == "Offline Test Client"
     assert off.status()["degraded"] is True
+
+
+def test_degraded_cooldown_skips_repeated_remote_calls(sandbox, monkeypatch):
+    key = ems_db_sqlite.upsert_job(display_name="Cached Client")
+    calls = []
+    def down(*_a, **_k):
+        calls.append("remote")
+        return _unreachable()
+    monkeypatch.setattr(ems_db_supabase, "get_job", down)
+    assert off.get_job(key)
+    assert off.get_job(key)
+    assert calls == ["remote"]
 
 
 def test_fallback_can_be_disabled(sandbox, monkeypatch):
@@ -216,6 +230,7 @@ def test_successful_call_clears_degraded_and_drains(sandbox, monkeypatch):
     monkeypatch.setattr(ems_db_supabase, "upsert_job",
                         lambda **kw: sent.append(kw["display_name"]))
     monkeypatch.setattr(ems_db_supabase, "get_job", lambda k: {"canon_key": k})
+    monkeypatch.setattr(off, "_retry_after", 0.0)
 
     off.get_job("anything")            # first call that reaches the server
     assert off.status()["degraded"] is False

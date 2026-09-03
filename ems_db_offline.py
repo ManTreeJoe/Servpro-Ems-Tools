@@ -51,6 +51,9 @@ _LOCK = threading.RLock()
 _last_error = ""
 _degraded = False
 _schema_fallbacks = set()
+_retry_after = 0.0
+_failure_count = 0
+_RETRY_DELAYS_S = (5.0, 15.0, 30.0, 60.0, 120.0)
 
 # ── which calls change data ────────────────────────────────────────────
 # `tests/test_ems_db_offline.py` asserts these two sets together cover
@@ -223,10 +226,19 @@ def status() -> dict:
 # ── delegation ─────────────────────────────────────────────────────────
 
 def _mark(degraded, error=""):
-    global _degraded, _last_error
+    global _degraded, _last_error, _retry_after, _failure_count
+    was_degraded = _degraded
+    previous_error = _last_error
     _degraded = degraded
     _last_error = error
     if not degraded:
+        _failure_count = 0
+        _retry_after = 0.0
+        return
+    delay = _RETRY_DELAYS_S[min(_failure_count, len(_RETRY_DELAYS_S) - 1)]
+    _failure_count += 1
+    _retry_after = time.monotonic() + delay
+    if was_degraded and previous_error == error:
         return
     try:
         import ems_log
@@ -238,6 +250,10 @@ def _mark(degraded, error=""):
 
 def _call(name, *args, **kwargs):
     remote = getattr(ems_db_supabase, name)
+    if (FALLBACK_ENABLED and _degraded
+            and time.monotonic() < _retry_after):
+        return _fallback(name, _last_error or "shared database unavailable",
+                         *args, **kwargs)
     try:
         out = remote(*args, **kwargs)
     except Exception as ex:

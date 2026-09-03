@@ -73,6 +73,7 @@ PER_USER = {
 MACHINE_LOCAL = {
     "runs_dir", "photos_root", "snapshot_output",   # per-user OneDrive paths
     "pythonw", "scripts_dir", "dept_browsers", "preferred_browser",
+    "global_hotkey", "global_hotkey_enabled", "wc_audit_dir",
 }
 
 # Panel-visibility toggles are per-user taste; they're booleans named after
@@ -130,6 +131,9 @@ def build(live: dict) -> tuple[dict, list[str]]:
         out[key] = ""
     for prof in out.get("departments", {}).values():
         prof["trello_token"] = ""
+    # A release must follow each recipient's Windows theme on first launch,
+    # not inherit whichever appearance the build machine happened to use.
+    out["appearance"] = "system"
     return out, unclassified
 
 

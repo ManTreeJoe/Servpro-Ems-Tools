@@ -96,11 +96,30 @@ def _read_session() -> dict:
 
 
 def _write_session(sess: dict) -> None:
-    tmp = _SESSION_PATH + ".tmp"
+    # Multiple Hub windows can overlap briefly during update/recovery. A
+    # shared .tmp name lets one process replace the other's staged token.
+    tmp = (_SESSION_PATH + f".tmp-{os.getpid()}-"
+           f"{threading.get_ident()}-{time.time_ns()}")
     os.makedirs(os.path.dirname(_SESSION_PATH), exist_ok=True)
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(sess or {}, f, indent=2)
-    os.replace(tmp, _SESSION_PATH)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(sess or {}, f, indent=2)
+        last = None
+        for delay in (0.0, 0.03, 0.08, 0.20, 0.50, 1.0):
+            if delay:
+                time.sleep(delay)
+            try:
+                os.replace(tmp, _SESSION_PATH)
+                return
+            except OSError as ex:
+                last = ex
+        raise last
+    finally:
+        try:
+            if os.path.isfile(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
 
 
 @contextmanager
@@ -166,17 +185,16 @@ def _store_session(payload: dict) -> dict:
 
 def sign_out() -> None:
     """Drop the local session. Best-effort server revoke."""
-    sess = _read_session()
-    tok = sess.get("access_token")
+    with _LOCK:
+        with _cross_process_session_lock():
+            sess = _read_session()
+            tok = sess.get("access_token")
+            _write_session({})
     if tok:
         try:
             _raw("POST", "/auth/v1/logout", token=tok)
         except Exception:
             pass
-    try:
-        os.remove(_SESSION_PATH)
-    except OSError:
-        pass
 
 
 def current_user() -> dict | None:
@@ -203,9 +221,11 @@ def update_display_name(display_name: str) -> dict:
     if not isinstance(user, dict) or not user.get("id"):
         raise SupabaseError(500, "Supabase did not return the updated user")
     with _LOCK:
-        sess = _read_session()
-        sess["user"] = user
-        _write_session(sess)
+        with _cross_process_session_lock():
+            sess = _read_session()
+            if sess.get("access_token"):
+                sess["user"] = user
+                _write_session(sess)
     return current_user() or {}
 
 
@@ -292,7 +312,9 @@ def sign_in_with_password(email: str, password: str) -> dict:
                    body={"email": email, "password": password})
     if not (payload or {}).get("access_token"):
         raise SupabaseError(401, "no access_token in password response")
-    _store_session(payload)
+    with _LOCK:
+        with _cross_process_session_lock():
+            _store_session(payload)
     return current_user() or {}
 
 def send_login_code(email: str) -> dict:
@@ -321,7 +343,9 @@ def verify_login_code(email: str, code: str) -> dict:
                    body={"type": "email", "email": email, "token": code})
     if not (payload or {}).get("access_token"):
         raise SupabaseError(401, "no access_token in verify response")
-    _store_session(payload)
+    with _LOCK:
+        with _cross_process_session_lock():
+            _store_session(payload)
     return current_user() or {}
 
 
@@ -355,7 +379,9 @@ def verify_magic_link(url_or_token: str, email: str = "") -> dict:
             "token_type": (fragment.get("token_type") or ["bearer"])[0],
             "expires_in": int((fragment.get("expires_in") or [3600])[0]),
         }
-        _store_session(payload)
+        with _LOCK:
+            with _cross_process_session_lock():
+                _store_session(payload)
         return current_user() or {}
     token = raw
     if "://" in raw or raw.startswith("?") or "token" in raw:
@@ -382,7 +408,9 @@ def verify_magic_link(url_or_token: str, email: str = "") -> dict:
             last = ex
             continue
         if (payload or {}).get("access_token"):
-            _store_session(payload)
+            with _LOCK:
+                with _cross_process_session_lock():
+                    _store_session(payload)
             return current_user() or {}
     raise last or SupabaseError(401, "token not accepted")
 

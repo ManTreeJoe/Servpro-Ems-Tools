@@ -1,8 +1,40 @@
 import time
+from contextlib import nullcontext
 
 import pytest
 
 import supabase_client
+
+
+def test_session_write_retries_windows_file_lock(tmp_path, monkeypatch):
+    target = tmp_path / "session.json"
+    monkeypatch.setattr(supabase_client, "_SESSION_PATH", str(target))
+    real_replace = supabase_client.os.replace
+    attempts = []
+    def briefly_locked(src, dst):
+        attempts.append((src, dst))
+        if len(attempts) < 3:
+            raise PermissionError("locked")
+        return real_replace(src, dst)
+    monkeypatch.setattr(supabase_client.os, "replace", briefly_locked)
+    monkeypatch.setattr(supabase_client.time, "sleep", lambda _n: None)
+    supabase_client._write_session({"access_token": "safe"})
+    assert supabase_client._read_session()["access_token"] == "safe"
+    assert len(attempts) == 3
+
+
+def test_sign_out_clears_before_server_revoke(monkeypatch):
+    current = {"access_token": "old", "refresh_token": "old-r"}
+    writes, observed = [], []
+    monkeypatch.setattr(supabase_client, "_read_session", lambda: current)
+    monkeypatch.setattr(supabase_client, "_write_session", writes.append)
+    monkeypatch.setattr(supabase_client, "_cross_process_session_lock",
+                        nullcontext)
+    monkeypatch.setattr(supabase_client, "_raw",
+                        lambda *_a, **_k: observed.append(writes[-1]))
+    supabase_client.sign_out()
+    assert writes == [{}]
+    assert observed == [{}]
 
 
 def test_refresh_reuses_session_rotated_by_another_instance(monkeypatch):

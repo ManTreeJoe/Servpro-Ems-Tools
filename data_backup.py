@@ -135,6 +135,17 @@ def _cloud_once(dest, stamp, force=False):
                                          hours=_CLOUD_INTERVAL_H):
         return "recent"
 
+    try:
+        import supabase_client
+        supabase_client.access_token()
+    except (supabase_client.NotSignedIn, supabase_client.NotConfigured):
+        return "skipped: sign-in required"
+    except supabase_client.SupabaseError as ex:
+        if getattr(ex, "status", None) == 0:
+            return "deferred: shared database unavailable"
+        _note_failure(CLOUD_NAME, ex)
+        return f"failed: HTTP {getattr(ex, 'status', '?')}"
+
     final = os.path.join(dest, f"{CLOUD_NAME}.{stamp}")
     # Leading dot, like the local copies above. Both _prune and
     # _recent_copy_exists glob on "cloud.json.", so a temp named
@@ -283,6 +294,10 @@ def health() -> dict:
         import config
         cloud_required = ((config.load().get("ems_db_backend") or "sqlite")
                           .strip().lower() == "supabase")
+        if cloud_required:
+            import supabase_client
+            cloud_required = (supabase_client.is_configured()
+                              and supabase_client.is_signed_in())
     except Exception:
         cloud_required = False
 

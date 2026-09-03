@@ -51,6 +51,17 @@ def test_cloud_snapshot_is_skipped_on_the_local_backend(data):
     assert _copies(data, db.CLOUD_NAME) == []
 
 
+def test_cloud_snapshot_defers_cleanly_when_signed_out(data, monkeypatch):
+    import ems_db
+    import supabase_client
+    monkeypatch.setattr(ems_db, "backend_name", lambda: "supabase")
+    monkeypatch.setattr(
+        supabase_client, "access_token",
+        lambda: (_ for _ in ()).throw(supabase_client.NotSignedIn("no")))
+    assert db._cloud_once(str(data / "backups"), "20260903-010203",
+                          force=True) == "skipped: sign-in required"
+
+
 def test_the_copy_matches_the_original(data):
     db.run_once(force=True)
     src = (data / "state.json").read_text(encoding="utf-8")
