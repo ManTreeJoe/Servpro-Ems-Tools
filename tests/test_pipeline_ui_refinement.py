@@ -57,7 +57,7 @@ def test_pipeline_authors_visible_focus_and_reduced_motion():
     assert "content-visibility: auto" in css
 
 
-def test_pipeline_keeps_primary_copy_and_xa_actions_visible():
+def test_pipeline_keeps_primary_update_and_groups_shortcuts():
     js = _asset("app.js")
     modal_start = js.index('w.className = "modal-scrim audit-overlay";',
                            js.index("function openAuditModal"))
@@ -65,11 +65,30 @@ def test_pipeline_keeps_primary_copy_and_xa_actions_visible():
     header_end = js.index('</header>\n      <div class="modal-body">',
                           header_start)
     header = js[header_start:header_end]
-    for marker in ("card-quick-actions", "visibleCopyOptions.map",
+    for marker in ("card-quick-actions", "job-actions-menu",
                    "data-copy-summary", "data-stage-xa",
                    "data-add-job-log", "data-open-docs-folder",
                    "data-open-trello"):
         assert marker in header
+    assert "copy-quick-menu" not in header
+
+
+def test_pipeline_groups_companycam_actions_under_one_visible_menu():
+    js = _asset("app.js")
+    backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
+    header_start = js.index('<details class="job-actions-menu"')
+    header_end = js.index('</details>', header_start)
+    header = js[header_start:header_end]
+    assert "job-action-group" in header
+    assert "data-open-companycam" in header
+    assert "data-pull-companycam" in header
+    assert "Pull photos" in header
+    assert "data-companycam-report" in header
+    assert "data-quick-photo-report" in header
+    assert 'class="aud-section photo-report-section"' not in js
+    assert "function openCompanyCamPullModal" in js
+    assert "companycam_plan_pull" in backend
+    assert "companycam_pull_assigned_bg" in backend
 
 
 def test_pipeline_job_actions_match_the_audit_button_language():
@@ -82,18 +101,31 @@ def test_pipeline_job_actions_match_the_audit_button_language():
                    "background:var(--green)",
                    "background:var(--green-hover)"):
         assert marker in css
-    assert '>📋 Copy <small>⌄</small>' in js
+    assert '>Actions <small>⌄</small>' in js
     assert "quick-action-group" not in js
 
 
-def test_copy_menu_stays_inside_card_and_closes_after_copy():
+def test_job_actions_stay_inside_card_and_job_info_is_click_to_copy():
     css = _asset("app.css")
     js = _asset("app.js")
-    menu_rule = css[css.index(".copy-quick-menu>.copy-menu-panel"):
-                    css.index(".copy-menu-panel header")]
-    assert "left:0" in menu_rule and "right:auto" in menu_rule
+    menu_rule = css[css.index(".job-actions-panel"):
+                    css.index(".job-action-group", css.index(".job-actions-panel"))]
+    assert "left:0" in menu_rule
     assert "calc(100vw - 72px)" in menu_rule
-    assert 'closest(".copy-quick-menu")' in js
+    assert 'data-copy-job-field="${escapeAttr(field.value)}"' in js
+    assert 'closest(".job-actions-menu")' in js
+
+
+def test_pipeline_checklists_use_daily_run_role_tabs_inside_division():
+    js = _asset("app.js")
+    css = _asset("app.css")
+    for marker in ("checklist-division-tabs", "checklist-role-tabs",
+                   "data-checklist-role", "data-checklist-pane",
+                   '["intake", "Intake"]', '["field", "Field"]',
+                   '["est", "Estimating"]'):
+        assert marker in js
+    assert ".checklist-role-tabs" in css
+    assert ".checklist-role-pane[hidden]" in css
 
 
 def test_current_audit_labels_missing_and_requirement_states_explicitly():

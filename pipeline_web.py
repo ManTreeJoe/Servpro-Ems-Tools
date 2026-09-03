@@ -1250,6 +1250,18 @@ class Api:
     def open_companycam_link(self, client: str) -> bool:
         return self._audit_api().open_companycam_link(client)
 
+    def companycam_plan_pull(self, client: str, tech: str = "",
+                             card_id: str = "",
+                             dest_subfolder: str = "") -> dict:
+        return self._audit_api().companycam_plan_pull(
+            client, tech, card_id, dest_subfolder)
+
+    def companycam_pull_assigned_bg(self, client: str, assignments: list,
+                                    tech: str = "",
+                                    card_id: str = "") -> dict:
+        return self._audit_api().companycam_pull_assigned_bg(
+            client, assignments, tech, card_id)
+
     def open_document(self, path: str) -> dict:
         path = os.path.abspath(path or "")
         if not path or not os.path.isfile(path):

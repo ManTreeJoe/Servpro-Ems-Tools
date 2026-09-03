@@ -1201,11 +1201,17 @@ function openAuditModal(data, trelloUrl = "") {
       ? `<div class="aud-ok">✓ All required forms &amp; photos present.</div>`
       : `<div class="audit-missing-summary"><strong>${issues.length} missing item${issues.length === 1 ? "" : "s"}</strong><span>Complete these before this job can move forward.</span></div><ul class="aud-list missing-audit-list">${issues.map((i) =>
           `<li><span class="aud-tag aud-missing">Missing ${escapeHtml(i.kind.toLowerCase())}</span> ${escapeHtml(i.text)}</li>`).join("")}</ul>`;
-  const facts = (data.info_sections || []).map((section) => `
-    <section class="aud-section info-section"><h3>${escapeHtml(section.name)}</h3>
-      <dl class="aud-facts">${(section.fields || []).map((f) =>
-        `<div><dt>${escapeHtml(f.label)}</dt><dd>${escapeHtml(f.value)}</dd></div>`).join("")}</dl>
-    </section>`).join("");
+  const populatedInfoSections = (data.info_sections || []).map((section) => ({
+    ...section,
+    fields: (section.fields || []).filter((field) => String(field.value || "").trim()),
+  })).filter((section) => section.fields.length);
+  const facts = populatedInfoSections.map((section) => `
+    <div class="job-info-group"><h4>${escapeHtml(section.name)}</h4>
+      <div class="job-info-grid">${section.fields.map((field) =>
+        `<button type="button" class="job-info-field" data-copy-job-field="${escapeAttr(field.value)}" data-copy-job-label="${escapeAttr(field.label)}" title="Copy ${escapeAttr(field.label)}">
+          <span>${escapeHtml(field.label)}</span><strong>${escapeHtml(field.value)}</strong><i aria-hidden="true">Copy</i>
+        </button>`).join("")}</div>
+    </div>`).join("");
   const oldJobs = (data.old_jobs || []).map((job) => `<article class="old-job-row">
     <div><strong>${escapeHtml(job.name || "Previous EMS job")}</strong><small>${escapeHtml([
       job.claim_number ? `Claim ${job.claim_number}` : "",
@@ -1229,7 +1235,6 @@ function openAuditModal(data, trelloUrl = "") {
     ["Job folder path", res.path || ""],
     ["Trello link", trelloUrl],
   ].filter((item) => item[1]);
-  const visibleCopyOptions = copyOptions.filter(([label]) => label !== "Trello link");
   const claimNumber = copyField("claim_number");
   const activity = (res.activity || []).length
     ? `<div class="aud-chips">${res.activity.map((a) => `<span>${escapeHtml(a)}</span>`).join("")}</div>`
@@ -1309,12 +1314,46 @@ function openAuditModal(data, trelloUrl = "") {
         </div>
       </div>`;
     }).join("");
-  const checklistGroups = (data.checklists || []).map((list) => `
-    <div class="trello-checklist"><h4>${escapeHtml(list.name || "Checklist")}</h4>
-      ${(list.items || []).map((item) => `<label class="check-row ${item.complete ? "checked" : ""}">
+  const checklistRoles = [
+    ["intake", "Intake"], ["admin", "Admin"], ["coord", "Coordinator"],
+    ["field", "Field"], ["est", "Estimating"], ["misc", "Misc"],
+  ];
+  const checklistRole = (name) => {
+    const normalized = String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (normalized === "intake") return "intake";
+    if (normalized === "estimating" || /\s-\s*estimating$/.test(normalized)) return "est";
+    if (/\s-\s*admin$/.test(normalized) || ["initial", "in progress", "close out", "closeout"].includes(normalized)) return "admin";
+    if (/\s-\s*coordinator$/.test(normalized) || normalized === "contents") return "coord";
+    if (/\s-\s*field(\s+leads?)?$/.test(normalized) || /\bfield\s+leads?\b/.test(normalized)) return "field";
+    return "misc";
+  };
+  const checklistByRole = Object.fromEntries(checklistRoles.map(([key]) => [key, []]));
+  (data.checklists || []).forEach((list) => checklistByRole[checklistRole(list?.name)].push(list));
+  const visibleChecklistRoles = checklistRoles.filter(([key]) => checklistByRole[key].length);
+  const firstChecklistRole = visibleChecklistRoles[0]?.[0] || "intake";
+  const renderChecklist = (list) => {
+    const items = list.items || [];
+    const done = items.filter((item) => item.complete).length;
+    return `<div class="trello-checklist"><div class="checklist-title"><h4>${escapeHtml(list.name || "Checklist")}</h4><span>${done}/${items.length}</span></div>
+      <div class="checklist-progress"><i style="width:${items.length ? Math.round((done / items.length) * 100) : 0}%"></i></div>
+      ${items.map((item) => `<label class="check-row ${item.complete ? "checked" : ""}">
         <input type="checkbox" data-check-item="${escapeAttr(item.id)}" ${item.complete ? "checked" : ""}/>
         <span>${escapeHtml(item.name || "")}</span></label>`).join("") || `<div class="aud-empty">No items</div>`}
-    </div>`).join("") || `<div class="aud-empty">No checklist has been added to this job.</div>`;
+    </div>`;
+  };
+  const checklistGroups = visibleChecklistRoles.length ? `
+    <div class="checklist-role-tabs" role="tablist" aria-label="Checklist responsibility">
+      ${visibleChecklistRoles.map(([key, label]) => {
+        const lists = checklistByRole[key];
+        const total = lists.reduce((sum, list) => sum + (list.items || []).length, 0);
+        const done = lists.reduce((sum, list) => sum + (list.items || []).filter((item) => item.complete).length, 0);
+        return `<button type="button" role="tab" data-checklist-role="${key}" aria-selected="${key === firstChecklistRole ? "true" : "false"}" class="${key === firstChecklistRole ? "active" : ""}">${label}<span>${done}/${total}</span></button>`;
+      }).join("")}
+    </div>
+    <div class="checklist-role-panes">${visibleChecklistRoles.map(([key]) => `
+      <div class="checklist-role-pane ${key === firstChecklistRole ? "active" : ""}" data-checklist-pane="${key}" ${key === firstChecklistRole ? "" : "hidden"}>
+        ${checklistByRole[key].map(renderChecklist).join("")}
+      </div>`).join("")}</div>` : `<div class="aud-empty">No checklist has been added to this job.</div>`;
   const logs = (crm.job_log || []).slice().reverse().slice(0, 40).map((entry) => `
     <article class="job-log-row snapshot-log-row" data-job-log-id="${escapeAttr(entry.entry_id || "")}">
       <div class="job-log-date"><time>${escapeHtml(formatAppDate(entry.work_date || ""))}</time><span>${escapeHtml((entry.status || "completed").replaceAll("_", " "))}</span></div><div class="job-log-copy">
@@ -1346,13 +1385,14 @@ function openAuditModal(data, trelloUrl = "") {
   const body = `<div class="job-card-layout">
     <div class="job-card-main">
       ${divisionConflictBanner}
+      <section class="aud-section job-info-section"><div class="section-title-row"><h3>Job info</h3><small>Click any field to copy</small></div>
+        ${facts || `<div class="aud-empty">No saved job information yet.</div>`}</section>
       <section class="aud-section audit-summary"><div class="section-title-row"><h3>Current audit</h3>${!data.deferred_loading && issues.length ? `<span class="audit-missing-count">${issues.length} missing</span>` : ""}</div>${missing}${misplacedHtml}</section>
       <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
         <span class="progress-label">${progress.counts?.overdue || 0} overdue · ${progress.counts?.blocked || 0} blocked · ${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div></div><div class="work-types">${workTypes}</div></section>
       <section class="aud-section checklist-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} card · stored in Linguar Hub · Trello sync is temporary</small></div>${checklistDivisionTabs}</div>${checklistGroups}</section>
-      ${facts || `<section class="aud-section"><h3>Job information</h3><div class="aud-empty">No saved job information yet.</div></section>`}
       ${oldJobsSection}
       <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
         <div class="signature-flow"><span class="${dsRequest.requested ? "done" : "active"}">1 Prepare</span><i></i><span class="${dsRequest.requested ? "active" : ""}">2 Send</span><i></i><span class="${(docs.files || []).some((file) => file.signed) ? "done" : ""}">3 Signed copy</span></div>
@@ -1360,12 +1400,6 @@ function openAuditModal(data, trelloUrl = "") {
         ${!docs.connected ? `<div class="signature-connection"><span><strong>Direct DocuSign connection is next</strong><small>For now, open DocuSign and mark the request sent after the envelope is actually sent.</small></span></div>` : ""}
         <div class="signature-actions"><button class="btn btn-primary" data-open-docusign>Open DocuSign ↗</button><button class="btn" data-mark-docusign-sent ${dsRequest.state ? "disabled" : ""}>Mark envelope sent</button><button class="btn" data-open-docs-folder ${res.path ? "" : "disabled"}>Open job folder</button></div>
         <div class="signature-files">${documentRows}</div></section>
-      <section class="aud-section photo-report-section"><div class="section-title-row"><div><h3>Photo reports</h3><small>Build in CompanyCam or generate a standardized report from job photos</small></div><span class="report-division">${escapeHtml(selectedDivision)}</span></div>
-        <div class="photo-report-route"><div class="report-route-mark">CC</div><div><strong>CompanyCam editor</strong><small>Opens the matched project in a Linguar Hub window. In CompanyCam, choose Documents → Reports.</small></div>
-          <button class="btn btn-primary" data-companycam-report>Create in CompanyCam</button></div>
-        <div class="photo-report-route is-quick"><div class="report-route-mark">PDF</div><div><strong>Quick Photo Report</strong><small>Choose stage, dates, and photos; the finished PDF files into this job’s DOCS folder.</small></div>
-          <button class="btn" data-quick-photo-report>Build quick report</button></div>
-        <div class="photo-report-status" data-photo-report-status></div></section>
       <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
         <div class="section-actions">${data.card_id ? `<button class="btn compact" data-import-job-log>Refresh from ${escapeHtml(selectedDivision)} Trello</button>` : ""}<button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div></div>
         <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div></section>
@@ -1390,29 +1424,27 @@ function openAuditModal(data, trelloUrl = "") {
         <div class="card-quick-actions" aria-label="Job actions">
           <div class="quick-primary-actions">
             <button class="action-btn primary" data-add-job-log><span class="quick-action-icon">＋</span>Add update</button>
-            <details class="copy-quick-menu"><summary class="action-btn copy-trigger">📋 Copy <small>⌄</small></summary><div class="copy-menu-panel"><header><strong>Copy job details</strong><small>Uses the saved Job Info record</small></header>${visibleCopyOptions.map(([label, value]) => `<button data-copy-value="${escapeAttr(value)}"><span>${escapeHtml(label.replace("Customer ", ""))}</span><small>${escapeHtml(value)}</small></button>`).join("")}<button class="copy-summary-row" data-copy-summary><span>Job summary</span><small>Copy all available details</small></button></div></details>
-            <button class="action-btn" data-quick-photo-report>Photo report</button>
-          </div>
-          <div class="quick-destination-actions" aria-label="Open job in">
-            <button class="action-btn" ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 Folder" : "🔗 Link folder"}</button>
-            <button class="action-btn destination" data-open-trello ${trelloUrl ? "" : "disabled"}><img src="../web_shared/trello.png" alt="">Trello</button>
-            <button class="action-btn destination" data-open-xa ${data.card_id ? "" : "disabled"}><img src="../web_shared/xactanalysis.png" alt="">XA</button>
-            <button class="action-btn destination" data-open-companycam ${data.card_id ? "" : "disabled"}><img src="../web_shared/companycam.png" alt="">CompanyCam</button>
-          </div>
-          <div class="quick-utility-actions">
-            <button class="action-btn quiet" data-stage-xa ${res.path ? "" : "disabled"}>Stage for XA</button>
-            <button class="action-btn quiet" data-open-audit>All actions</button>
+            <details class="job-actions-menu"><summary class="action-btn">Actions <small>⌄</small></summary><div class="job-actions-panel">
+              <div class="job-action-group"><strong>Job</strong>
+                <button ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 Open folder" : "🔗 Link folder"}</button>
+                <button data-open-trello ${trelloUrl ? "" : "disabled"}><img src="../web_shared/trello.png" alt="">Open Trello</button>
+                <button data-open-xa ${data.card_id ? "" : "disabled"}><img src="../web_shared/xactanalysis.png" alt="">Open XA</button>
+                <button data-stage-xa ${res.path ? "" : "disabled"}>Stage for XA</button>
+              </div>
+              <div class="job-action-group"><strong>CompanyCam</strong>
+                <button data-open-companycam ${data.card_id ? "" : "disabled"}><img src="../web_shared/companycam.png" alt="">Open project</button>
+                <button data-pull-companycam ${data.card_id ? "" : "disabled"}>Pull photos</button>
+                <button data-companycam-report ${data.card_id ? "" : "disabled"}>Create report</button>
+                <button data-quick-photo-report ${data.card_id ? "" : "disabled"}>Build quick PDF</button>
+              </div>
+              <div class="job-action-group"><strong>More</strong><button data-open-audit>Open full audit</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button></div>
+            </div></details>
           </div>
         </div>
       </header>
       <div class="modal-body">${body}</div>
       <footer class="modal-foot">
         <div class="visible-job-actions"><span class="footer-job-context">${escapeHtml(selectedDivision)} · ${claimNumber ? `Claim ${escapeHtml(claimNumber)}` : "Job workspace"}</span></div>
-        <details class="modal-more-menu"><summary class="btn">More ▾</summary><div>
-          <button data-flag-job>🚩 Flag missing item</button>
-          <button data-open-trello>Open in Trello ↗</button>
-          <button data-open-audit>Open full Audit ▸</button>
-        </div></details>
       </footer>
     </div>`;
   document.body.appendChild(w);
@@ -1460,6 +1492,8 @@ function openAuditModal(data, trelloUrl = "") {
     const ok = await pywebview.api.open_companycam_link(data.client || res.client || "");
     if (!ok) setStatus("No CompanyCam project is linked to this job", "warn");
   });
+  w.querySelector("[data-pull-companycam]")?.addEventListener("click", () =>
+    openCompanyCamPullModal(data, res));
   w.querySelector("[data-link-job-folder]")?.addEventListener("click", () =>
     openJobFolderLinkModal(data, close));
   w.querySelector("[data-refresh-workspace]")?.addEventListener("click", async (event) => {
@@ -1484,26 +1518,59 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelector("[data-stage-xa]")?.addEventListener("click", () => {
     openXaStageModal(data.client || res.client || "");
   });
-  w.querySelectorAll("[data-copy-value]").forEach((button) => button.addEventListener("click", async () => {
-    await pywebview.api.copy_to_clipboard(button.dataset.copyValue || "");
-    button.closest(".copy-quick-menu")?.removeAttribute("open");
-    setStatus(`Copied ${button.textContent}`, "ok");
+  w.querySelectorAll("[data-copy-job-field]").forEach((button) => button.addEventListener("click", async () => {
+    await pywebview.api.copy_to_clipboard(button.dataset.copyJobField || "");
+    button.classList.add("copied");
+    window.setTimeout(() => button.classList.remove("copied"), 900);
+    setStatus(`Copied ${button.dataset.copyJobLabel || "job info"}`, "ok");
   }));
   w.querySelector("[data-copy-summary]")?.addEventListener("click", async (event) => {
     const summary = copyOptions.map(([label, value]) => `${label}: ${value}`).join("\n");
     await pywebview.api.copy_to_clipboard(summary);
-    event.currentTarget.closest(".copy-quick-menu")?.removeAttribute("open");
+    event.currentTarget.closest(".job-actions-menu")?.removeAttribute("open");
     setStatus("Copied formatted job summary", "ok");
   });
+  w.querySelectorAll("[data-checklist-role]").forEach((button) => button.addEventListener("click", () => {
+    w.querySelectorAll("[data-checklist-role]").forEach((tab) => {
+      const active = tab === button;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    w.querySelectorAll("[data-checklist-pane]").forEach((pane) => {
+      const active = pane.dataset.checklistPane === button.dataset.checklistRole;
+      pane.classList.toggle("active", active);
+      pane.hidden = !active;
+    });
+  }));
+  const refreshChecklistProgress = () => {
+    w.querySelectorAll(".trello-checklist").forEach((checklist) => {
+      const boxes = [...checklist.querySelectorAll("[data-check-item]")];
+      const done = boxes.filter((box) => box.checked).length;
+      const count = checklist.querySelector(".checklist-title span");
+      const fill = checklist.querySelector(".checklist-progress i");
+      if (count) count.textContent = `${done}/${boxes.length}`;
+      if (fill) fill.style.width = `${boxes.length ? Math.round((done / boxes.length) * 100) : 0}%`;
+    });
+    w.querySelectorAll("[data-checklist-role]").forEach((tab) => {
+      const pane = w.querySelector(`[data-checklist-pane="${cssEsc(tab.dataset.checklistRole)}"]`);
+      const boxes = pane ? [...pane.querySelectorAll("[data-check-item]")] : [];
+      const done = boxes.filter((box) => box.checked).length;
+      const count = tab.querySelector("span");
+      if (count) count.textContent = `${done}/${boxes.length}`;
+      tab.classList.toggle("complete", boxes.length > 0 && done === boxes.length);
+    });
+  };
   w.querySelectorAll("[data-attachment-url]").forEach((button) => button.addEventListener("click", () => {
     if (button.dataset.attachmentUrl) pywebview.api.open_url(button.dataset.attachmentUrl);
   }));
   w.querySelectorAll("[data-check-item]").forEach((box) => box.addEventListener("change", async () => {
     const row = box.closest(".check-row");
     row?.classList.toggle("checked", box.checked);
+    refreshChecklistProgress();
     const result = await pywebview.api.set_job_check_item(data.card_id || "", box.dataset.checkItem, box.checked);
     if (!result?.ok) {
       box.checked = !box.checked; row?.classList.toggle("checked", box.checked);
+      refreshChecklistProgress();
       setStatus(`Checklist update failed: ${result?.error || "Trello unavailable"}`, "error");
     } else if (result.warning) {
       setStatus(`Saved in Linguar Hub · Trello sync needs attention`, "warn");
@@ -1685,26 +1752,24 @@ function openAuditModal(data, trelloUrl = "") {
       setStatus(`${division} Trello card removed`, "ok");
     }));
   w.querySelector("[data-open-docusign]")?.addEventListener("click", () => pywebview.api.open_docusign());
-  w.querySelector("[data-companycam-report]")?.addEventListener("click", async (event) => {
+  w.querySelectorAll("[data-companycam-report]").forEach((control) => control.addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    const status = w.querySelector("[data-photo-report-status]");
+    const originalHtml = button.innerHTML;
     button.disabled = true; button.textContent = "Finding project…";
-    status.textContent = "Matching this job to CompanyCam…";
+    setStatus("Matching this job to CompanyCam…");
     const result = await pywebview.api.open_companycam_report_editor(
       data.client || res.client || "", res.path || "", selectedDivision);
-    button.disabled = false; button.textContent = "Create in CompanyCam";
+    button.disabled = false; button.innerHTML = originalHtml;
     if (!result?.ok) {
-      status.textContent = result?.error || "CompanyCam could not be opened.";
-      status.className = "photo-report-status error";
+      setStatus(result?.error || "CompanyCam could not be opened.", "error");
       return;
     }
-    status.textContent = result.docs_folder
+    setStatus(result.docs_folder
       ? `CompanyCam opened · finished PDF belongs in ${result.docs_folder}`
-      : "CompanyCam opened · choose Documents → Reports to build the report.";
-    status.className = "photo-report-status ok";
-  });
-  w.querySelector("[data-quick-photo-report]")?.addEventListener("click", () =>
-    openQuickPhotoReportModal(data.client || res.client || "", res.path || "", selectedDivision));
+      : "CompanyCam opened · choose Documents → Reports to build the report.", "ok");
+  }));
+  w.querySelectorAll("[data-quick-photo-report]").forEach((control) => control.addEventListener("click", () =>
+    openQuickPhotoReportModal(data.client || res.client || "", res.path || "", selectedDivision)));
   w.querySelectorAll("[data-open-docs-folder]").forEach((button) => button.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || "")));
   w.querySelectorAll("[data-open-old-job]").forEach((button) => button.addEventListener("click", () => pywebview.api.open_url(button.dataset.openOldJob)));
   w.querySelectorAll("[data-document-path]").forEach((button) => button.addEventListener("click", () => {
@@ -2429,6 +2494,117 @@ function notifyJobWorkspaceClosed() {
   if (jobWorkspaceMode) {
     window.parent.postMessage({ type: "linguar-close-job-workspace" }, "*");
   }
+}
+
+const companyCamPullWatchers = new Set();
+
+async function openCompanyCamPullModal(data, audit) {
+  const client = data.client || audit.client || "";
+  const cardId = data.card_id || "";
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay cc-pull-overlay";
+  modal.innerHTML = `<div class="modal-box cc-pull-card" role="dialog" aria-modal="true" aria-label="Pull CompanyCam photos">
+    <header class="modal-head"><div><div class="modal-title">Pull CompanyCam photos</div><div class="modal-sub">${escapeHtml(client)}</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
+    <div class="modal-body cc-pull-body"><div class="aud-loading-inline">Checking CompanyCam and the job folder…</div></div>
+  </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector("[data-close]").addEventListener("click", close);
+  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+
+  let plan;
+  try {
+    plan = await pywebview.api.companycam_plan_pull(client, "", cardId, "");
+  } catch (error) {
+    plan = {ok:false, error:String(error)};
+  }
+  if (!modal.isConnected) return;
+  const body = modal.querySelector(".cc-pull-body");
+  if (!plan?.ok) {
+    body.innerHTML = `<div class="job-card-load-error"><strong>CompanyCam import is unavailable</strong><p>${escapeHtml(plan?.error || "The project could not be matched.")}</p><button class="btn" data-open-cc-project>Open CompanyCam</button></div>`;
+    body.querySelector("[data-open-cc-project]")?.addEventListener("click", () => pywebview.api.open_companycam_link(client));
+    return;
+  }
+  if (!plan.missing) {
+    body.innerHTML = `<div class="cc-pull-ready"><strong>All ${Number(plan.total || 0)} photos are already filed.</strong><span>Nothing new needs to be imported from CompanyCam.</span></div>`;
+    return;
+  }
+
+  const groups = plan.groups || [];
+  const stages = ["Initial", "Monitor", "Demo", "Final", "Equipment", "Contents", "Scope"];
+  body.innerHTML = `<div class="cc-pull-summary"><strong>${Number(plan.missing || 0)} photos to import</strong><span>${groups.length} shoot${groups.length === 1 ? "" : "s"} · choose where each untagged shoot belongs</span></div>
+    <div class="cc-pull-groups">${groups.map((group, index) => {
+      const tagged = group.stage && group.stage !== "(no stage tag)";
+      const suggested = group.suggested_stage || "";
+      return `<article class="cc-pull-group">
+        <input type="checkbox" data-cc-group="${index}" checked aria-label="Import this shoot">
+        <div class="cc-pull-shoot"><strong>${escapeHtml(formatAppDate(group.date || "") || group.date || "Unknown date")}</strong><small>${Number(group.count || (group.photo_ids || []).length)} photos${group.rooms?.length ? ` · ${escapeHtml(group.rooms.slice(0, 3).map((room) => room[0]).join(", "))}` : ""}</small></div>
+        <label><span>Stage</span>${tagged
+          ? `<strong>${escapeHtml(group.stage)}</strong>`
+          : `<select data-cc-stage="${index}"><option value="">Choose stage…</option>${stages.map((stage) => `<option value="${escapeAttr(stage)}" ${stage === suggested ? "selected" : ""}>${escapeHtml(stage)}</option>`).join("")}</select>`}</label>
+        <label><span>Tech</span><input data-cc-tech="${index}" value="${escapeAttr(group.tech || "")}" placeholder="Technician"></label>
+        <div class="cc-pull-target"><span>Files to</span><strong>${escapeHtml(group.target || "Job photos")}</strong></div>
+      </article>`;
+    }).join("")}</div>
+    <footer class="cc-pull-actions"><span data-cc-pull-status></span><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-start-pull>Pull selected photos</button></footer>`;
+
+  body.querySelector("[data-cancel]").addEventListener("click", close);
+  const selectedAssignments = () => Array.from(body.querySelectorAll("[data-cc-group]:checked")).map((box) => {
+    const index = Number(box.dataset.ccGroup);
+    const group = groups[index] || {};
+    return {photo_ids: group.photo_ids || [],
+      stage: body.querySelector(`[data-cc-stage="${index}"]`)?.value || "",
+      tech: body.querySelector(`[data-cc-tech="${index}"]`)?.value.trim() || ""};
+  });
+  const refresh = () => {
+    const assignments = selectedAssignments();
+    const missingStage = Array.from(body.querySelectorAll("[data-cc-group]:checked")).some((box) => {
+      const select = body.querySelector(`[data-cc-stage="${box.dataset.ccGroup}"]`);
+      return select && !select.value;
+    });
+    const total = assignments.reduce((sum, item) => sum + item.photo_ids.length, 0);
+    const button = body.querySelector("[data-start-pull]");
+    button.disabled = !total || missingStage;
+    button.textContent = missingStage ? "Choose a stage" : `Pull ${total} photo${total === 1 ? "" : "s"}`;
+  };
+  body.querySelectorAll("[data-cc-group], [data-cc-stage]").forEach((control) => control.addEventListener("change", refresh));
+  refresh();
+  body.querySelector("[data-start-pull]").addEventListener("click", async (event) => {
+    const assignments = selectedAssignments();
+    event.currentTarget.disabled = true;
+    body.querySelector("[data-cc-pull-status]").textContent = "Starting import…";
+    const started = await pywebview.api.companycam_pull_assigned_bg(client, assignments, "", cardId);
+    if (!started?.ok) {
+      body.querySelector("[data-cc-pull-status]").textContent = started?.error || "Import could not start.";
+      refresh();
+      return;
+    }
+    watchCompanyCamPull(client);
+    close();
+    setStatus(`Pulling ${started.total || 0} CompanyCam photos in the background…`, "ok");
+  });
+}
+
+function watchCompanyCamPull(client) {
+  if (companyCamPullWatchers.has(client)) return;
+  companyCamPullWatchers.add(client);
+  const progress = (event) => {
+    const detail = event.detail || {};
+    if (detail.client !== client) return;
+    setStatus(`CompanyCam · ${detail.stage || "photos"} · shoot ${detail.i || 0}/${detail.n || 0}`, "");
+  };
+  const done = (event) => {
+    const result = event.detail || {};
+    if (result.client !== client) return;
+    window.removeEventListener("companycam:pull-progress", progress);
+    window.removeEventListener("companycam:pull-done", done);
+    companyCamPullWatchers.delete(client);
+    setStatus(result.ok
+      ? `CompanyCam import complete · ${result.pulled || 0} pulled${result.error ? ` · ${result.error}` : ""}`
+      : `CompanyCam import failed · ${result.error || "Unknown error"}`, result.ok && !result.error ? "ok" : "warn");
+  };
+  window.addEventListener("companycam:pull-progress", progress);
+  window.addEventListener("companycam:pull-done", done);
 }
 
 async function runGlobalCardSearch(rawQuery) {
