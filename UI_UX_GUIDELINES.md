@@ -134,6 +134,8 @@ Linguar Hub must look like a restoration operations tool, not a generated SaaS d
 - Every visible control must perform its labeled action. Hide unfinished controls; never use decorative `•••`, fake filters, or placeholder mode switches.
 - Use the established Hub logo and real provider marks. Do not substitute emoji, letter tiles, blank gradient squares, or invented icons when an approved asset exists.
 - Keep SERVPRO green as a functional brand/status color. Do not add neon glow, decorative gradients, glass panels, grid-paper backgrounds, or ambient animation without an operational reason.
+- Graphite surfaces are the visual default across every workspace, including Clients, Jobs, Dispatch, Snapshot, Audit, APA, and Settings. Green is reserved for the primary action, success/status meaning, focus, and a slim active-navigation indicator; it is not a panel background or decorative atmosphere.
+- Custom job-board backgrounds are the explicit exception because they are user-selected workspace customization. They must not reduce card contrast or readability.
 - Headings name the work directly: `Jobs needing action`, `Today’s schedule`, and `Jobs by lane`. Avoid slogan-like eyebrow triplets and vague labels such as `Control room`, `Pulse`, `Exposure`, or `Pressure`.
 - Metrics must answer a current workflow question and open the records behind the number. Do not add generic KPI cards merely to fill space.
 - Empty and loading states explain what is happening or what action comes next. They are not decorative mood content.

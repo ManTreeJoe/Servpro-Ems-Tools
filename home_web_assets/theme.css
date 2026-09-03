@@ -17,20 +17,20 @@
   --text:        #E8E8E8;
   --text-muted:  #9A9A9A;
   --text-dim:    #6E6E6E;
-  --green:       #58B77D;
-  --green-hover: #69C98E;
-  --green-dark:  #347A54;
-  --green-soft:  rgba(88,183,125,.14);
+  --green:       #2F7750;
+  --green-hover: #3B8960;
+  --green-dark:  #245D3E;
+  --green-soft:  rgba(47,119,80,.11);
   --amber:       #E8A64B;
   --red:         #D96861;
   --link:        #83A9FF;
   --chip-bg:     #353535;
-  --chip-active: #3D6549;
+  --chip-active: #2A2F2D;
   --highlight:   #FAEB6B;
   --highlight-fg: #2A2410;
   --extended:    #FF6B6B;
   --row-hover:   #2B2B2B;
-  --row-active:  #2F3F36;
+  --row-active:  #242A27;
 
   /* Activity palette (used by audit + APA web) */
   --act-demo:       #4F8E45;
@@ -51,11 +51,11 @@
 :root {
   --bg:#0e1112; --surface:#161a1b; --surface-2:#1e2324;
   --surface-3:#282e2f; --border:#333b3d; --border-strong:#465053; --text:#f0eee8;
-  --text-muted:#a5adaa; --text-dim:#717c79; --green:#58b77d;
-  --green-hover:#69c98e; --green-dark:#347a54; --green-soft:rgba(88,183,125,.14);
+  --text-muted:#a5adaa; --text-dim:#717c79; --green:#2F7750;
+  --green-hover:#3B8960; --green-dark:#245D3E; --green-soft:rgba(47,119,80,.11);
   --amber:#e8a64b; --amber-soft:rgba(232,166,75,.14);
   --red:#d96861; --link:#83a9ff; --cobalt:#647fcd; --violet:#8a74b8; --chip-bg:#282e2f;
-  --chip-active:#294638; --row-hover:#202627; --row-active:#23332a;
+  --chip-active:#2A2F2D; --row-hover:#202627; --row-active:#242A27;
   --shadow-1:0 1px 2px rgba(0,0,0,.36),0 8px 24px rgba(0,0,0,.12);
   --radius:7px; --radius-lg:10px;
   --font-display:"Bahnschrift","Arial Narrow","Segoe UI Variable",sans-serif;

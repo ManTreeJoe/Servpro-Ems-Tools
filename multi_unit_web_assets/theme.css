@@ -17,20 +17,20 @@
   --text:        #E8E8E8;
   --text-muted:  #9A9A9A;
   --text-dim:    #6E6E6E;
-  --green:       #58B77D;
-  --green-hover: #69C98E;
-  --green-soft:  rgba(88,183,125,.14);
+  --green:       #2F7750;
+  --green-hover: #3B8960;
+  --green-soft:  rgba(47,119,80,.11);
   --green-dark:  #25734A;
   --amber:       #C58820;
   --red:         #C0392B;
   --link:        #4A9EFF;
   --chip-bg:     #353535;
-  --chip-active: #3D6549;
+  --chip-active: #2A2F2D;
   --highlight:   #FAEB6B;
   --highlight-fg: #2A2410;
   --extended:    #FF6B6B;
   --row-hover:   #2B2B2B;
-  --row-active:  #2F3F36;
+  --row-active:  #242A27;
 
   /* Activity palette (used by audit + APA web) */
   --act-demo:       #4F8E45;

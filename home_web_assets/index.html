@@ -99,7 +99,8 @@
     padding: 5px 8px; border-radius: 6px; color: var(--text-muted, #9aa5ae);
     border: none; background: transparent; transition: background .12s, color .12s; }
   .dept-seg:hover { color: var(--text, #e8e8ea); }
-  .dept-seg.active { background: var(--green, #2f9e69); color: #fff; }
+  .dept-seg.active { background: var(--surface-3, #282e2f); color: var(--text, #f0eee8);
+    box-shadow: inset 0 -2px 0 var(--green, #2f7750); }
   .dept-seg:disabled { cursor: default; }
   .dept-splash {
     position: fixed; inset: 0; z-index: 2000;
@@ -111,7 +112,7 @@
   .dept-splash-spin {
     width: 40px; height: 40px; margin: 0 auto 16px;
     border: 3px solid var(--border, #34353b);
-    border-top-color: var(--green, #2f9e69); border-radius: 50%;
+    border-top-color: var(--green, #2f7750); border-radius: 50%;
     animation: dept-spin .8s linear infinite;
   }
   @keyframes dept-spin { to { transform: rotate(360deg); } }
@@ -147,7 +148,7 @@
     color: var(--text, #e8e8ea);
   }
   .fr-primary {
-    background: var(--accent, #3b82f6); border-color: var(--accent, #3b82f6);
+    background: var(--green, #2f7750); border-color: var(--green, #2f7750);
     color: #fff; font-weight: 600;
   }
   .fr-secondary:hover { background: rgba(255,255,255,.06); }

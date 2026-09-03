@@ -598,7 +598,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .photo-report-route.is-quick .report-route-mark { background:#4b3512; border-color:#9c6b1b; color:#ffd98d; }
 .photo-report-route strong,.photo-report-route small { display:block; }
 .photo-report-route small { margin-top:3px; color:var(--text-muted); line-height:1.35; }
-.report-division { padding:3px 8px; border-radius:999px; background:#3d6549; color:#e6f6eb; font-size:10px; font-weight:700; text-transform:uppercase; }
+.report-division { padding:3px 8px; border-radius:999px; background:#2A2F2D; color:#e6f6eb; font-size:10px; font-weight:700; text-transform:uppercase; }
 .photo-report-status { min-height:18px; color:var(--text-muted); font-size:11px; }
 .photo-report-status.ok { color:#7bd69c; }
 .photo-report-status.error { color:#ff8e83; }
@@ -923,9 +923,9 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 :root {
   --bg:#0e1112; --surface:#161a1b; --surface-2:#1e2324;
   --border:#333b3d; --text:#f0eee8; --text-muted:#a5adaa;
-  --text-dim:#717c79; --green:#58b77d; --green-hover:#69c98e;
+  --text-dim:#717c79; --green:#2F7750; --green-hover:#3B8960;
   --amber:#e8a64b; --red:#d96861; --link:#83a9ff;
-  --chip-bg:#282e2f; --chip-active:#294638;
+  --chip-bg:#282e2f; --chip-active:#2A2F2D;
   --shadow-1:0 1px 2px rgba(0,0,0,.36),0 10px 30px rgba(0,0,0,.16);
   --font-display:"Bahnschrift","Arial Narrow","Segoe UI Variable",sans-serif;
   --font-body:"Segoe UI Variable","Segoe UI",system-ui,sans-serif;
