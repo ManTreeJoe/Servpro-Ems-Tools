@@ -65,7 +65,7 @@ def test_pipeline_keeps_primary_update_and_groups_shortcuts():
     header_end = js.index('</header>\n      <div class="modal-body">',
                           header_start)
     header = js[header_start:header_end]
-    for marker in ("card-quick-actions", "job-actions-menu",
+    for marker in ("card-quick-actions", "tool-quick-menu",
                    "data-copy-summary", "data-stage-xa",
                    "data-add-job-log", "data-open-docs-folder",
                    "data-open-trello"):
@@ -76,10 +76,10 @@ def test_pipeline_keeps_primary_update_and_groups_shortcuts():
 def test_pipeline_groups_companycam_actions_under_one_visible_menu():
     js = _asset("app.js")
     backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
-    header_start = js.index('<details class="job-actions-menu"')
+    header_start = js.index('<details class="tool-quick-menu"><summary class="action-btn destination"><img src="../web_shared/companycam.png"')
     header_end = js.index('</details>', header_start)
     header = js[header_start:header_end]
-    assert "job-action-group" in header
+    assert "tool-menu-panel" in header
     assert "data-open-companycam" in header
     assert "data-pull-companycam" in header
     assert "Pull photos" in header
@@ -101,19 +101,19 @@ def test_pipeline_job_actions_match_the_audit_button_language():
                    "background:var(--green)",
                    "background:var(--green-hover)"):
         assert marker in css
-    assert '>Actions <small>⌄</small>' in js
+    assert '>CompanyCam <small>⌄</small>' in js
+    assert '>XA <small>⌄</small>' in js
     assert "quick-action-group" not in js
 
 
-def test_job_actions_stay_inside_card_and_job_info_is_click_to_copy():
+def test_tool_menus_stay_inside_card_and_job_info_is_click_to_copy():
     css = _asset("app.css")
     js = _asset("app.js")
-    menu_rule = css[css.index(".job-actions-panel"):
-                    css.index(".job-action-group", css.index(".job-actions-panel"))]
+    menu_rule = css[css.index(".tool-menu-panel"):
+                    css.index(".more-quick-menu", css.index(".tool-menu-panel"))]
     assert "left:0" in menu_rule
-    assert "calc(100vw - 72px)" in menu_rule
     assert 'data-copy-job-field="${escapeAttr(field.value)}"' in js
-    assert 'closest(".job-actions-menu")' in js
+    assert 'closest(".tool-quick-menu")' in js
 
 
 def test_pipeline_checklists_use_daily_run_role_tabs_inside_division():

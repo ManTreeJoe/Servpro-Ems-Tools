@@ -368,7 +368,7 @@ def test_daily_copy_and_xa_actions_stay_visible_on_job_card():
     js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     assert 'class="visible-job-actions"' in js
     assert "data-copy-job-field" in js
-    assert 'class="job-actions-menu"' in js
+    assert 'class="tool-quick-menu"' in js
     assert "data-stage-xa" in js
     assert "openXaStageModal" in js
     assert "def list_pics_stages" in py

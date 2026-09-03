@@ -1424,20 +1424,20 @@ function openAuditModal(data, trelloUrl = "") {
         <div class="card-quick-actions" aria-label="Job actions">
           <div class="quick-primary-actions">
             <button class="action-btn primary" data-add-job-log><span class="quick-action-icon">＋</span>Add update</button>
-            <details class="job-actions-menu"><summary class="action-btn">Actions <small>⌄</small></summary><div class="job-actions-panel">
-              <div class="job-action-group"><strong>Job</strong>
-                <button ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 Open folder" : "🔗 Link folder"}</button>
-                <button data-open-trello ${trelloUrl ? "" : "disabled"}><img src="../web_shared/trello.png" alt="">Open Trello</button>
-                <button data-open-xa ${data.card_id ? "" : "disabled"}><img src="../web_shared/xactanalysis.png" alt="">Open XA</button>
-                <button data-stage-xa ${res.path ? "" : "disabled"}>Stage for XA</button>
-              </div>
-              <div class="job-action-group"><strong>CompanyCam</strong>
-                <button data-open-companycam ${data.card_id ? "" : "disabled"}><img src="../web_shared/companycam.png" alt="">Open project</button>
-                <button data-pull-companycam ${data.card_id ? "" : "disabled"}>Pull photos</button>
-                <button data-companycam-report ${data.card_id ? "" : "disabled"}>Create report</button>
-                <button data-quick-photo-report ${data.card_id ? "" : "disabled"}>Build quick PDF</button>
-              </div>
-              <div class="job-action-group"><strong>More</strong><button data-open-audit>Open full audit</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button></div>
+            <button class="action-btn" ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 Folder" : "🔗 Link folder"}</button>
+            <button class="action-btn destination" data-open-trello ${trelloUrl ? "" : "disabled"}><img src="../web_shared/trello.png" alt="">Trello</button>
+            <details class="tool-quick-menu"><summary class="action-btn destination"><img src="../web_shared/xactanalysis.png" alt="">XA <small>⌄</small></summary><div class="tool-menu-panel">
+              <button data-open-xa ${data.card_id ? "" : "disabled"}>Open XactAnalysis</button>
+              <button data-stage-xa ${res.path ? "" : "disabled"}>Stage files for XA</button>
+            </div></details>
+            <details class="tool-quick-menu"><summary class="action-btn destination"><img src="../web_shared/companycam.png" alt="">CompanyCam <small>⌄</small></summary><div class="tool-menu-panel">
+              <button data-open-companycam ${data.card_id ? "" : "disabled"}>Open project</button>
+              <button data-pull-companycam ${data.card_id ? "" : "disabled"}>Pull photos</button>
+              <button data-companycam-report ${data.card_id ? "" : "disabled"}>Create report</button>
+              <button data-quick-photo-report ${data.card_id ? "" : "disabled"}>Build quick PDF</button>
+            </div></details>
+            <details class="tool-quick-menu more-quick-menu"><summary class="action-btn quiet">More <small>⌄</small></summary><div class="tool-menu-panel">
+              <button data-open-audit>Open full audit</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
             </div></details>
           </div>
         </div>
@@ -1527,7 +1527,7 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelector("[data-copy-summary]")?.addEventListener("click", async (event) => {
     const summary = copyOptions.map(([label, value]) => `${label}: ${value}`).join("\n");
     await pywebview.api.copy_to_clipboard(summary);
-    event.currentTarget.closest(".job-actions-menu")?.removeAttribute("open");
+    event.currentTarget.closest(".tool-quick-menu")?.removeAttribute("open");
     setStatus("Copied formatted job summary", "ok");
   });
   w.querySelectorAll("[data-checklist-role]").forEach((button) => button.addEventListener("click", () => {
