@@ -65,13 +65,43 @@ window.addEventListener("import:progress", (e) => {
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+let auditWatchdog = null;
+
+function withAuditTimeout(promise, milliseconds, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out`)), milliseconds);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function clearAuditLoading() {
+  if (auditWatchdog) clearTimeout(auditWatchdog);
+  auditWatchdog = null;
+  state.loading = false;
+  $("#loading-state")?.classList.add("hidden");
+  if ($("#run-btn")) $("#run-btn").disabled = false;
+  if ($("#rerun-btn")) $("#rerun-btn").disabled = false;
+}
+
+function armAuditWatchdog() {
+  if (auditWatchdog) clearTimeout(auditWatchdog);
+  auditWatchdog = setTimeout(() => {
+    clearAuditLoading();
+    setStatus("The file scan is still running in the background. Daily Run is usable; refresh when it completes.", "warn");
+  }, 120000);
+}
 
 // ── Boot ─────────────────────────────────────────────────────────
 window.addEventListener("pywebviewready", async () => {
+  const requestedNewLoss = new URLSearchParams(window.location.search).get("new_loss") === "1";
+  $("#new-loss-btn")?.addEventListener("click", () => openNewLossModal());
+  if (requestedNewLoss) setTimeout(openNewLossModal, 0);
   // Load starred-clients list once on boot — used by ⭐ buttons +
   // the Starred filter. Updates push back via toggleStarred.
   try {
-    state.starred_clients = await pywebview.api.get_starred_clients() || [];
+    state.starred_clients = await withAuditTimeout(
+      pywebview.api.get_starred_clients(), 8000, "Saved jobs") || [];
   } catch (_) { state.starred_clients = []; }
   $("#run-btn").addEventListener("click", () => runAudit(true));
   $("#rerun-btn").addEventListener("click", () => runAudit(false));
@@ -93,7 +123,6 @@ window.addEventListener("pywebviewready", async () => {
   });
   $("#open-doc-btn").addEventListener("click",
     () => pywebview.api.open_run_doc(state.dayOffset || 0));
-  $("#new-loss-btn")?.addEventListener("click", () => openNewLossModal());
   $("#usage-btn")?.addEventListener("click", () => openUsagePanel());
   $("#overview-btn")?.addEventListener("click", () => openOverviewPanel());
   $("#name-issues-btn")?.addEventListener("click", () => openNameIssuesPanel());
@@ -275,7 +304,7 @@ window.addEventListener("pywebviewready", async () => {
     try {
       // PanelState caches the whole panel record, so the filter restore
       // below costs no extra round trip.
-      const st = await PanelState.init("audit");
+      const st = await withAuditTimeout(PanelState.init("audit"), 8000, "Daily Run settings");
       if (!fixedSurface && st && ["search", "daily", "starred"].includes(st.mode)) {
         landing = st.mode;
       }
@@ -293,7 +322,7 @@ window.addEventListener("pywebviewready", async () => {
   }
 
   try {
-    const cached = await pywebview.api.last_audit();
+    const cached = await withAuditTimeout(pywebview.api.last_audit(), 12000, "Saved Daily Run");
     if (cached && cached.rows && cached.rows.length) {
       state.rows = cached.rows;
       state.meta = cached.meta || {};
@@ -311,7 +340,7 @@ window.addEventListener("pywebviewready", async () => {
         runAudit(true);
       }
     } else if (!_focus) {
-      const meta = await pywebview.api.today_meta();
+      const meta = await withAuditTimeout(pywebview.api.today_meta(), 12000, "Daily Run summary");
       state.meta = {
         ...meta,
         ran_at: "—",
@@ -330,6 +359,8 @@ window.addEventListener("pywebviewready", async () => {
     $("#run-btn").disabled = false;
   } catch (ex) {
     setStatus(`Failed to load: ${ex}`, "error");
+  } finally {
+    $("#run-btn").disabled = false;
   }
 
   // A deep-link pulls up that ONE job in one-off mode (audit it on the
@@ -726,22 +757,18 @@ async function runAuditFiltered(useCache) {
     // Without this branch the loading overlay stays visible forever
     // because audit:done never fires for the request we didn't start.
     if (res && res.started === false) {
-      state.loading = false;
-      $("#loading-state").classList.add("hidden");
-      $("#run-btn").disabled = false;
-      $("#rerun-btn").disabled = false;
+      clearAuditLoading();
       // The backend refuses while its own run is in flight. Retry rather
       // than strand the day: without this the request is lost the same way
       // the old client-side guard lost it.
       if (_drainQueuedAudit()) return;
       setStatus(res.reason || "Couldn't start audit", "warn");
+    } else {
+      armAuditWatchdog();
     }
   } catch (ex) {
     setStatus(`Audit error: ${ex}`, "error");
-    state.loading = false;
-    $("#loading-state").classList.add("hidden");
-    $("#run-btn").disabled = false;
-    $("#rerun-btn").disabled = false;
+    clearAuditLoading();
     _drainQueuedAudit();
   }
 }
@@ -1916,10 +1943,7 @@ function onSpDone() {
 
 function onAuditDone(ev) {
   const { ok, rows, meta, error } = ev.detail || {};
-  state.loading = false;
-  $("#loading-state").classList.add("hidden");
-  $("#run-btn").disabled = false;
-  $("#rerun-btn").disabled = false;
+  clearAuditLoading();
   // You changed day while this was running: these rows are for the day you
   // left. Drop them and run the day now on screen — rendering them first
   // would flash the wrong day's jobs.
@@ -5559,9 +5583,9 @@ function openNewLossModal() {
         <div style="flex:1;">
           <label class="modal-lbl" style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:2px;">Loss type / template</label>
           <select id="nl-loss_type" class="search" style="width:100%;">
-            <option value="water">Water</option>
-            <option value="fire">Fire</option>
-            <option value="property">Property Mgmt</option>
+            <option value="water" data-kind="water">Water</option>
+            <option value="fire" data-kind="fire">Fire</option>
+            <option value="property" data-kind="property">Property management</option>
           </select>
         </div>
         <div style="flex:2;">
@@ -5756,13 +5780,15 @@ function openNewLossModal() {
       const t = await pywebview.api.new_loss_templates();
       const line = $$("#nl-board-line");
       if (t?.ok) {
-        const avail = ["water", "fire", "property"].filter((k) => t[k]);
-        line.innerHTML = `Board: <b>${escapeHtml(t.board || "?")}</b> · Intake: <b>${escapeHtml(t.intake || "?")}</b> · Templates: ${avail.join(", ") || "none"}`;
-        // grey unavailable options
-        ["water", "fire", "property"].forEach((k) => {
-          const opt = overlay.querySelector(`#nl-loss_type option[value="${k}"]`);
-          if (opt && !t[k]) { opt.disabled = true; opt.textContent += " (no template)"; }
-        });
+        const templates = t.templates || [];
+        line.innerHTML = `Board: <b>${escapeHtml(t.board || "?")}</b> · Intake: <b>${escapeHtml(t.intake || "?")}</b> · ${templates.length} live template${templates.length === 1 ? "" : "s"}`;
+        if (templates.length) {
+          const select = $$("#nl-loss_type");
+          const priorKind = select.selectedOptions[0]?.dataset.kind || select.value || "water";
+          select.innerHTML = templates.map((template) => `<option value="${escapeAttr(template.id)}" data-template-id="${escapeAttr(template.id)}" data-kind="${escapeAttr(template.kind || "water")}">${escapeHtml(template.name)}</option>`).join("");
+          const matching = Array.from(select.options).find((option) => option.dataset.kind === priorKind);
+          if (matching) select.value = matching.value;
+        }
       } else {
         line.innerHTML = `<span style="color:var(--amber);">⚠ ${escapeHtml(t?.error || "No WIP board found for this department")}</span>`;
       }
@@ -5789,7 +5815,11 @@ function openNewLossModal() {
     if (!res?.ok) { $$("#nl-parse-status").textContent = res?.error || "Parse failed"; return; }
     const f = res.fields || {};
     NL_FIELD_GROUPS.forEach((g) => g.items.forEach(([key]) => setVal(key, f[key])));
-    if (f.loss_type) $$("#nl-loss_type").value = f.loss_type;
+    if (f.loss_type) {
+      const select = $$("#nl-loss_type");
+      const matching = Array.from(select.options).find((option) => option.dataset.kind === f.loss_type);
+      if (matching) select.value = matching.value;
+    }
     setVal("card_name", f.card_name);
     const got = Object.keys(f).filter((k) => f[k] && k !== "loss_type").length;
     $$("#nl-parse-status").innerHTML = `<span style="color:var(--green);">✓ Parsed ${got} field${got === 1 ? "" : "s"} — review below</span>`;
@@ -5802,7 +5832,11 @@ function openNewLossModal() {
   $$("#nl-insured_name")?.addEventListener("blur", refreshFolderPlan);
 
   $$("#nl-create").addEventListener("click", async () => {
-    const fields = { loss_type: $$("#nl-loss_type").value };
+    const templateOption = $$("#nl-loss_type").selectedOptions[0];
+    const fields = {
+      loss_type: templateOption?.dataset.kind || $$("#nl-loss_type").value,
+      template_id: templateOption?.dataset.templateId || "",
+    };
     NL_FIELD_GROUPS.forEach((g) => g.items.forEach(([key]) => {
       fields[key] = ($$(`#nl-${key}`)?.value || "").trim();
     }));

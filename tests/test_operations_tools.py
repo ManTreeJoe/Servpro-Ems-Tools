@@ -15,7 +15,7 @@ def test_every_operations_tool_has_a_real_browser_asset():
 
 def test_new_loss_routes_to_mature_intake_in_both_shells():
     routes = operations_tools.browser_routes()
-    assert routes["new_job"] == "/tools/?panel=daily_run&new_loss=1"
+    assert routes["new_job"] == "/tools/?panel=pipeline&new_loss=1"
     calls = []
     result = operations_tools.launch_desktop(
         "new_job", lambda tool, *args: calls.append((tool, args)))
@@ -44,14 +44,23 @@ def test_operations_desktop_exposes_field_notes_and_launch_interface():
     assert callable(Api.save_field_note)
 
 
-def test_home_shell_retries_new_loss_until_daily_run_is_ready():
+def test_home_shell_opens_new_loss_without_navigating_to_daily_run():
     source = (ROOT / "home_web_assets" / "app.js").read_text(encoding="utf-8")
-    assert "function openNewLossWhenReady(frame)" in source
+    assert "function openNewLossWorkspace()" in source
+    assert 'openToolWorkspace("new-loss"' in source
     assert "Date.now() - started < 10000" in source
-    assert source.count("openNewLossWhenReady(") >= 3
+    handler = source[source.index('event.data?.type !== "linguar-open-new-loss"'):]
+    assert 'findItem("daily_run")' not in handler[:700]
 
 
 def test_standalone_audit_accepts_direct_new_loss_request():
     source = (ROOT / "audit_web.py").read_text(encoding="utf-8")
     assert '"--new-loss" in _argv' in source
     assert "openNewLossModal()" in source
+
+
+def test_daily_run_has_a_bounded_startup_and_audit_watchdog():
+    source = (ROOT / "audit_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert "function withAuditTimeout(" in source
+    assert "armAuditWatchdog" in source
+    assert "clearAuditLoading" in source

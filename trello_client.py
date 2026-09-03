@@ -288,7 +288,8 @@ def find_cards_by_name(query, *, max_results=20, with_lists=True):
     return out
 
 
-def find_accessible_cards_by_name(query, *, max_results=20):
+def find_accessible_cards_by_name(query, *, max_results=20,
+                                  include_closed=False):
     """Find strong name matches on any Trello board the user can access.
 
     The normal search is intentionally scoped to the configured workspace.
@@ -329,7 +330,9 @@ def find_accessible_cards_by_name(query, *, max_results=20):
         cards = (raw or {}).get("cards", []) if isinstance(raw, dict) else []
         for card in cards:
             cid = card.get("id") or ""
-            if not cid or cid in seen or card.get("closed") or not title_match(card.get("name")):
+            if (not cid or cid in seen or
+                    (card.get("closed") and not include_closed) or
+                    not title_match(card.get("name"))):
                 continue
             seen.add(cid)
             candidates.append(card)
@@ -348,6 +351,7 @@ def find_accessible_cards_by_name(query, *, max_results=20):
             "board": board_names[bid], "card_id": card.get("id") or "",
             "name": card.get("name") or "", "url": card.get("shortUrl") or "",
             "list_id": card.get("idList") or "", "list_name": "",
+            "closed": bool(card.get("closed")),
         })
     return out
 

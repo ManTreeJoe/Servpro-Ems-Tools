@@ -506,6 +506,48 @@ class Api:
         return {"ok": True, "board": board, "source": "trello",
                 "mirrored": bool(mirrored.get("ok"))}
 
+    def global_card_search(self, query: str, limit: int = 24) -> dict:
+        """Search beyond the three board projections shown on Jobs.
+
+        The local lifecycle mirror supplies closed/archive history instantly;
+        Trello supplies open cards on any board the signed-in user can access.
+        Results open in the same job workspace as an on-board card.
+        """
+        query = str(query or "").strip()
+        if len(query) < 2:
+            return {"ok": True, "cards": []}
+        limit = max(1, min(int(limit or 24), 60))
+        try:
+            import card_search
+            import trello_client as tc
+
+            local = card_search.search_local(query, limit=limit * 2)
+            try:
+                remote = tc.find_accessible_cards_by_name(
+                    query, max_results=limit * 2, include_closed=True)
+            except Exception:
+                remote = []
+            merged = card_search.merge(local, remote, query)
+            merged.sort(key=lambda row: (-float(row.get("_score") or 0),
+                                         str(row.get("name") or "").casefold()))
+            cards = []
+            for row in merged[:limit]:
+                card_id = row.get("card_id") or row.get("id") or ""
+                cards.append({
+                    "card_id": card_id,
+                    "name": row.get("name") or "",
+                    "url": row.get("url") or tc.card_url_from_id(card_id),
+                    "board": row.get("board") or "",
+                    "list_name": row.get("list_name") or "",
+                    "source_label": ("Job history" if row.get("_source") == "local"
+                                     else "Archived Trello card" if row.get("closed")
+                                     else "Trello"),
+                })
+            return {"ok": True, "cards": cards, "count": len(cards)}
+        except Exception as ex:
+            return {"ok": False, "cards": [],
+                    "error": f"{type(ex).__name__}: {ex}"}
+
     def move_card(self, card_id: str, list_id: str) -> dict:
         """Move a card to another lane on the REAL Trello board. The
         frontend confirms before calling this (drag-to-move with a

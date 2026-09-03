@@ -13,8 +13,7 @@ def test_pipeline_is_the_primary_jobs_workspace_and_reporting_is_grouped():
 
     assert list(work)[0] == "pipeline"
     assert work["pipeline"] == "Jobs"
-    assert list(work)[1] == "daily_run"
-    assert work["daily_run"] == "Daily Run"
+    assert "daily_run" not in work
     assert home_web._asset_folder_for("daily_run").endswith(
         "audit_web_assets/index.html?surface=daily")
     assert work["clients"] == "Clients"
@@ -77,4 +76,14 @@ def test_clients_use_division_views_and_new_loss_lives_in_jobs():
     assert 'id="new-loss-btn"' not in clients_html
     assert "divisionText" in clients_js
     assert 'id="new-loss-btn" class="btn"' in jobs_html
+    assert 'id="view-daily-btn"' in jobs_html
     assert "linguar-open-new-loss" in shell_js
+
+
+def test_jobs_search_can_surface_cards_outside_the_visible_board():
+    jobs_js = (ROOT / "pipeline_web_assets" / "app.js").read_text(
+        encoding="utf-8")
+    backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
+    assert "globalSearchResults" in jobs_js
+    assert "global_card_search" in jobs_js
+    assert "def global_card_search" in backend

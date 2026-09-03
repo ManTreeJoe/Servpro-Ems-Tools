@@ -32,6 +32,9 @@ const state = {
   sort_key: "days_in_stage",
   sort_dir: "desc",
   selected_card_id: null,
+  globalSearchResults: [],
+  globalSearchLoading: false,
+  globalSearchQuery: "",
   board_loaded: false,
   stage_render_limit: 350,
 };
@@ -65,12 +68,17 @@ async function bootPipeline() {
       })) : [];
   state.active_stage   = PanelState.get("active_stage", state.active_stage);
   state.search         = PanelState.get("search", "");
+  const requestedFocus = window.emsDeepLinkFocus ? window.emsDeepLinkFocus() : "";
+  if (requestedFocus) state.search = requestedFocus;
   // Never let a restored search silently hide lanes while the input looks
   // empty. The visible control and the filter state must remain identical.
   $("#search-box").value = state.search;
 
   $("#view-board-btn").addEventListener("click", () => setView("board"));
   $("#view-stages-btn").addEventListener("click", () => setView("stages"));
+  $("#view-daily-btn").addEventListener("click", () => {
+    window.parent.postMessage({ type: "linguar-open-daily-run" }, "*");
+  });
   $("#new-loss-btn").addEventListener("click", () => {
     window.parent.postMessage({ type: "linguar-open-new-loss" }, "*");
   });
@@ -123,6 +131,7 @@ async function bootPipeline() {
   state.view = "";
   setView(initialView, false);
   if (initialView === "board") await loadBoard();
+  if (requestedFocus) await openFocusedJob(requestedFocus);
   // A custom board photo is decoration, not job data. Load it only after
   // the lanes are usable so a slow OneDrive path or missing image can never
   // hold the Jobs board on its skeleton.
@@ -351,6 +360,7 @@ function renderBoard() {
   const countFor = (b) =>
     (b.lanes || []).reduce((s, l) => s + laneMatches(l, q).length, 0);
   const summary = boardSummary(boards);
+  const globalResults = renderGlobalSearchResults(q);
 
   const tabs = boards.map((b) =>
     `<button class="board-tab ${b.key === active.key ? "active" : ""}" data-board-tab="${escapeAttr(b.key)}">
@@ -374,6 +384,7 @@ function renderBoard() {
       ${summary.waiting ? `<button class="summary-item ${state.boardFilter === "sync" ? "active" : ""}" data-board-filter="sync"><strong>${summary.waiting}</strong><span>Waiting to sync</span></button>` : ""}
       <div class="summary-help">Click to open · drag to move</div>
     </section>
+    ${globalResults}
     <div class="board-tabs">
       ${tabs}
       <span class="board-tabs-spacer"></span>
@@ -389,6 +400,10 @@ function renderBoard() {
       renderBoard();
     }));
   root.querySelector("[data-load-archive]")?.addEventListener("click", loadArchiveBoard);
+  root.querySelectorAll("[data-global-card]").forEach((card) =>
+    card.addEventListener("click", () => onAuditCard(
+      card.dataset.client || "", card.dataset.cardId || "",
+      card.dataset.url || "", card.dataset.division || "")));
   root.querySelectorAll("[data-board-filter]").forEach((button) =>
     button.addEventListener("click", () => {
       state.boardFilter = button.dataset.boardFilter || "all";
@@ -423,6 +438,47 @@ function renderBoard() {
       event.stopPropagation(); openLaneMenu(event, button.closest(".lane"));
     }));
   root.querySelector("[data-add-lane]")?.addEventListener("click", openAddLaneComposer);
+}
+
+async function openFocusedJob(name) {
+  const normalized = String(name || "").trim().toLowerCase();
+  if (!normalized) return;
+  for (const board of state.board.boards || []) {
+    for (const lane of board.lanes || []) {
+      const card = (lane.cards || []).find((item) =>
+        String(item.client || item.name || "").trim().toLowerCase() === normalized);
+      if (card) {
+        onAuditCard(card.client || card.name || name, card.card_id || "",
+          card.url || "", board.key === "contents" ? "CONTENTS" : "EMS");
+        return;
+      }
+    }
+  }
+  const result = await withTimeout(pywebview.api.global_card_search(name, 24), 12000,
+    "Job lookup took too long").catch(() => null);
+  state.globalSearchQuery = normalized;
+  state.globalSearchResults = result?.cards || [];
+  renderBoard();
+  const card = state.globalSearchResults[0];
+  if (card) onAuditCard(card.name || name, card.card_id || "", card.url || "", card.division || "");
+  else setStatus(`No job matched “${name}”`, "warn");
+}
+
+function renderGlobalSearchResults(query) {
+  if (!query || query.length < 2) return "";
+  if (state.globalSearchLoading && state.globalSearchQuery === query) {
+    return `<section class="global-search-results" aria-live="polite"><div class="global-search-head"><strong>All jobs</strong><span>Searching every board…</span></div></section>`;
+  }
+  if (state.globalSearchQuery !== query || !state.globalSearchResults.length) return "";
+  return `<section class="global-search-results" aria-label="Jobs found outside the visible board">
+    <div class="global-search-head"><strong>All jobs</strong><span>${state.globalSearchResults.length} result${state.globalSearchResults.length === 1 ? "" : "s"} across Trello and job history</span></div>
+    <div class="global-search-list">${state.globalSearchResults.map((card) => `
+      <button type="button" class="global-search-card" data-global-card
+        data-card-id="${escapeAttr(card.card_id || "")}" data-client="${escapeAttr(card.name || "Job")}" data-url="${escapeAttr(card.url || "")}" data-division="${escapeAttr(card.division || "")}">
+        <strong>${escapeHtml(card.name || "Job")}</strong>
+        <span>${escapeHtml([card.board, card.list_name, card.source_label].filter(Boolean).join(" · ") || "Job history")}</span>
+      </button>`).join("")}</div>
+  </section>`;
 }
 
 function activeBoardLook() {
@@ -1213,9 +1269,13 @@ function openAuditModal(data, trelloUrl = "") {
   const divisionDataTabs = pinnedDivisionCards.length > 1 ? `<div class="division-data-tabs" role="tablist" aria-label="Trello card data">
     ${pinnedDivisionCards.map((card) => `<button type="button" role="tab" data-division-data="${escapeAttr(card.division)}" aria-selected="${card.division === selectedDivision ? "true" : "false"}" class="${card.division === selectedDivision ? "active" : ""}">${card.division === "EMS" ? "💧 EMS" : card.division === "CONTENTS" ? "▣ Contents" : "🔨 Recon"}</button>`).join("")}
   </div>` : "";
-  const checklistDivisionTabs = pinnedDivisionCards.length > 1 ? `<div class="checklist-division-tabs" role="tablist" aria-label="Checklist division">
-    ${pinnedDivisionCards.map((card) => `<button type="button" role="tab" data-checklist-division="${escapeAttr(card.division)}" aria-selected="${card.division === selectedDivision ? "true" : "false"}" class="${card.division === selectedDivision ? "active" : ""}">${card.division === "EMS" ? "💧 EMS" : card.division === "CONTENTS" ? "▣ Contents" : "🔨 Recon"}</button>`).join("")}
-  </div>` : "";
+  const checklistDivisionTabs = `<div class="checklist-division-tabs" role="tablist" aria-label="Checklist division">
+    ${["EMS", "CONTENTS", "RECON"].map((division) => {
+      const linked = pinnedDivisionCards.some((card) => card.division === division);
+      const label = division === "EMS" ? "💧 EMS" : division === "CONTENTS" ? "▣ Contents" : "🔨 Recon";
+      return `<button type="button" role="tab" data-checklist-division="${division}" data-linked="${linked}" aria-selected="${division === selectedDivision ? "true" : "false"}" class="${division === selectedDivision ? "active" : ""}" title="${linked ? `Open ${label} checklist` : `${label} checklist · no Trello card linked yet`}">${label}${linked ? "" : " ·"}</button>`;
+    }).join("")}
+  </div>`;
   const workTypes = [["EMS", "💧", "Mitigation"], ["Contents", "▣", "Contents"], ["Recon", "🔨", "Reconstruction"]]
     .map(([name, icon, label]) => {
       const env = workTypeState[name.toLowerCase()] || {};
@@ -2335,6 +2395,7 @@ function renderRow(r) {
 
 // ── Search routes to the active view ─────────────────────────────
 let searchTimer = null;
+let globalSearchSequence = 0;
 function onSearchInput(ev) {
   state.search = ev.target.value;
   state.stage_render_limit = 350;
@@ -2343,7 +2404,36 @@ function onSearchInput(ev) {
   searchTimer = setTimeout(() => {
     if (state.view === "board") renderBoard();
     else renderTable();
+    if (state.view === "board") void runGlobalCardSearch(state.search);
   }, 120);
+}
+
+async function runGlobalCardSearch(rawQuery) {
+  const query = String(rawQuery || "").trim();
+  const sequence = ++globalSearchSequence;
+  if (query.length < 2) {
+    state.globalSearchQuery = "";
+    state.globalSearchResults = [];
+    state.globalSearchLoading = false;
+    renderBoard();
+    return;
+  }
+  state.globalSearchQuery = query.toLowerCase();
+  state.globalSearchLoading = true;
+  renderBoard();
+  try {
+    const result = await withTimeout(pywebview.api.global_card_search(query, 24), 12000,
+      "All-board search took too long");
+    if (sequence !== globalSearchSequence || state.search.trim().toLowerCase() !== state.globalSearchQuery) return;
+    state.globalSearchResults = result?.cards || [];
+  } catch (error) {
+    if (sequence === globalSearchSequence) setStatus(`All-board search unavailable: ${error.message || error}`, "warn");
+  } finally {
+    if (sequence === globalSearchSequence) {
+      state.globalSearchLoading = false;
+      renderBoard();
+    }
+  }
 }
 
 function onSortClick(key) {

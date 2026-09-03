@@ -145,7 +145,6 @@ def _ensure_root_index():
 NAV_GROUPS = [
     ("Work", [
         ("pipeline",    "▦", "Jobs"),
-        ("daily_run",   "📋", "Daily Run"),
         ("clients",     "👥", "Clients"),
         ("snapshot",    "📸", "Snapshot"),
         ("run_doc_editor", "📋", "Daily Run Editor"),
@@ -193,9 +192,8 @@ def _asset_folder_for(key: str) -> str:
     origin restriction when an iframe at file://.../audit_web_assets/
     tries to access window.parent.pywebview at file://.../home_web_assets/.)
     """
-    # Daily Run retains the mature audit workspace. Clients is a separate
-    # module because client identity/history and a daily operational audit
-    # are different workflows with different navigation needs.
+    # Daily Run is launched as a Jobs subview, but its mature audit workspace
+    # remains addressable for browser deep links and the embedded workspace.
     if key == "daily_run":
         return "../audit_web_assets/index.html?surface=daily"
     folder = ASSET_FOLDER.get(key, f"{key}_web_assets")
@@ -544,10 +542,11 @@ class HomeApi:
             key = (persistence.get("home_last_panel") or "").strip()
         except Exception:
             return ""
-        # Audit became Daily Run when Clients received its own page. Preserve
-        # the user's last location across that navigation rename.
-        if key == "audit":
-            key = "daily_run"
+        # Daily Run now lives inside Jobs. Migrate either historic panel key
+        # to Jobs so an upgrade cannot restore a sidebar destination that no
+        # longer exists; the Daily Run workspace remains available from Jobs.
+        if key in {"audit", "daily_run"}:
+            key = "pipeline"
         if not key:
             return ""
         if key in getattr(self, "_failed_subs", {}):

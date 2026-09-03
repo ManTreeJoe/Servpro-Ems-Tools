@@ -177,18 +177,27 @@ def list_templates():
             intake = l
             break
     cards = tc._call(f"/boards/{bid}/cards",
-                     params={"fields": "id,name,isTemplate", "filter": "all"}) or []
-    out = {"_board": board, "_intake": intake}
+                     params={"fields": "id,name,isTemplate,closed,idList",
+                             "filter": "all"}) or []
+    list_names = {item.get("id"): item.get("name") or "" for item in lists}
+    out = {"_board": board, "_intake": intake, "_all": []}
     for c in cards:
-        if not c.get("isTemplate"):
+        if not c.get("isTemplate") or c.get("closed"):
             continue
         nm = (c.get("name") or "").lower()
-        if "water" in nm:
-            out.setdefault("water", {"id": c["id"], "name": c["name"]})
+        kind = ("fire" if "fire" in nm or "smoke" in nm else
+                "property" if "property" in nm or "apartment" in nm or
+                "school" in nm or "stater" in nm else "water")
+        item = {"id": c["id"], "name": c["name"], "kind": kind,
+                "lane": list_names.get(c.get("idList"), "")}
+        out["_all"].append(item)
+        if "water" in nm or nm.startswith("ems - residential"):
+            out.setdefault("water", item)
         elif "fire" in nm or "smoke" in nm:
-            out.setdefault("fire", {"id": c["id"], "name": c["name"]})
+            out.setdefault("fire", item)
         elif "property" in nm:
-            out.setdefault("property", {"id": c["id"], "name": c["name"]})
+            out.setdefault("property", item)
+    out["_all"].sort(key=lambda item: item["name"].casefold())
     return out
 
 
@@ -445,7 +454,10 @@ def create_new_loss(fields, loss_type=None, *, pin=True):
     if not tmpls:
         return {"ok": False, "error": "No WORK IN PROGRESS board / templates "
                                       "found for the active department."}
-    src = tmpls.get(loss_type)
+    template_id = str(fields.get("template_id") or "").strip()
+    src = next((item for item in (tmpls.get("_all") or [])
+                if item.get("id") == template_id), None) if template_id else None
+    src = src or tmpls.get(loss_type)
     if not src:
         return {"ok": False,
                 "error": f"No '{loss_type}' template on the board."}

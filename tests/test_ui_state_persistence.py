@@ -50,20 +50,25 @@ def test_no_last_panel_on_a_fresh_install(api):
 
 
 def test_last_panel_round_trips(api):
-    assert api.set_last_panel("daily_run")["ok"]
-    assert api.get_last_panel() == "daily_run"
+    assert api.set_last_panel("pipeline")["ok"]
+    assert api.get_last_panel() == "pipeline"
 
 
 def test_last_panel_rides_in_on_header(api):
     """It must ship inside header(), not as its own call — a second round
     trip is the window where a late restore steals the user's click."""
-    api.set_last_panel("daily_run")
-    assert api.header()["last_panel"] == "daily_run"
+    api.set_last_panel("pipeline")
+    assert api.header()["last_panel"] == "pipeline"
 
 
-def test_legacy_audit_last_panel_migrates_to_daily_run(api):
+def test_legacy_audit_last_panel_migrates_to_jobs(api):
     api.set_last_panel("audit")
-    assert api.get_last_panel() == "daily_run"
+    assert api.get_last_panel() == "pipeline"
+
+
+def test_legacy_daily_run_last_panel_migrates_to_jobs(api):
+    api.set_last_panel("daily_run")
+    assert api.get_last_panel() == "pipeline"
 
 
 def test_hidden_panel_is_not_restored(api, monkeypatch):
@@ -165,7 +170,7 @@ def test_audit_tab_is_resolved_before_the_first_paint():
     The tab must now be applied before the data load that paints."""
     js = _asset("audit_web_assets", "app.js")
     chrome = js.index("if (!state.userSwitchedMode) applyModeChrome(landing)")
-    paint = js.index("const cached = await pywebview.api.last_audit()")
+    paint = js.index("const cached = await withAuditTimeout(pywebview.api.last_audit()")
     assert chrome < paint, "tab must be set before the first render"
 
 

@@ -90,9 +90,8 @@ const BROWSER_PANEL_FALLBACKS = {
   settings: ["⚙", "Settings", "../settings_web_assets/index.html"],
 };
 
-// New Loss lives inside the mature Daily Run workspace.  A one-shot click
-// races the iframe navigation (about:blank can still report `complete` after
-// its real URL is assigned), so retry until the intake button actually exists.
+// New Loss reuses the mature intake form without navigating away from Jobs.
+// Retry until the iframe has installed the intake button handler.
 function openNewLossWhenReady(frame) {
   if (!frame) return;
   const started = Date.now();
@@ -125,8 +124,8 @@ function openRequestedBrowserPanel() {
     renderSidebar();
   }
   navigate(key, item.src, query.get("focus") || "");
-  if (query.get("new_loss") === "1" && key === "daily_run") {
-    openNewLossWhenReady(state.frames.get(key));
+  if (query.get("new_loss") === "1") {
+    setTimeout(openNewLossWorkspace, 0);
   }
   return true;
 }
@@ -207,6 +206,8 @@ window.addEventListener("message", async (ev) => {
     if (item) navigate(d.key, item.src, d.focus || "");
   } else if (d.type === "ems-open-tool-modal" && d.key === "snapshot") {
     openSnapshotModal(d.focus || "");
+  } else if (d.type === "linguar-open-daily-run") {
+    openDailyRunWorkspace();
   }
 });
 
@@ -251,6 +252,54 @@ function closeSnapshotModal() {
   const returnFocus = wrap._returnFocus;
   wrap.remove();
   try { returnFocus?.focus?.(); } catch (_) { /* ignore */ }
+}
+
+function openToolWorkspace(key, kicker, title, url) {
+  closeToolWorkspace(key);
+  const returnFocus = document.activeElement;
+  const wrap = document.createElement("div");
+  wrap.id = `${key}-workspace`;
+  wrap.className = "tool-workspace";
+  wrap.setAttribute("role", "dialog");
+  wrap.setAttribute("aria-modal", "true");
+  wrap.setAttribute("aria-labelledby", `${key}-workspace-title`);
+  wrap.innerHTML = `
+    <header class="tool-workspace-head">
+      <div>
+        <div class="tool-workspace-kicker">${esc(kicker)}</div>
+        <div class="tool-workspace-title" id="${esc(key)}-workspace-title">${esc(title)}</div>
+      </div>
+      <button class="tool-workspace-close" type="button" aria-label="Close ${esc(title)}">✕</button>
+    </header>
+    <iframe class="tool-workspace-frame" title="${esc(title)}" src="${esc(url)}"></iframe>`;
+  wrap._returnFocus = returnFocus;
+  document.body.appendChild(wrap);
+  const close = () => closeToolWorkspace(key);
+  wrap.querySelector(".tool-workspace-close").addEventListener("click", close);
+  wrap._keyHandler = (event) => { if (event.key === "Escape") close(); };
+  document.addEventListener("keydown", wrap._keyHandler);
+  setTimeout(() => wrap.querySelector(".tool-workspace-close")?.focus(), 0);
+  return wrap;
+}
+
+function closeToolWorkspace(key) {
+  const wrap = document.getElementById(`${key}-workspace`);
+  if (!wrap) return;
+  if (wrap._keyHandler) document.removeEventListener("keydown", wrap._keyHandler);
+  const returnFocus = wrap._returnFocus;
+  wrap.remove();
+  try { returnFocus?.focus?.(); } catch (_) { /* ignore */ }
+}
+
+function openDailyRunWorkspace() {
+  openToolWorkspace("daily-run", "Jobs", "Daily Run",
+    "../audit_web_assets/index.html?surface=daily");
+}
+
+function openNewLossWorkspace() {
+  const wrap = openToolWorkspace("new-loss", "Jobs", "New Loss",
+    "../audit_web_assets/index.html?surface=daily&new_loss=1");
+  openNewLossWhenReady(wrap.querySelector("iframe"));
 }
 
 function updateClock() {
@@ -409,11 +458,7 @@ function findItem(key) {
 // not an implementation detour through Clients.
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "linguar-open-new-loss") return;
-  const item = findItem("daily_run");
-  if (!item) return;
-  navigate(item.key, item.src);
-  const frame = state.frames.get("daily_run");
-  openNewLossWhenReady(frame);
+  openNewLossWorkspace();
 });
 
 // ── First-run welcome modal ──────────────────────────────────────

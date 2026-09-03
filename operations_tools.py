@@ -12,7 +12,7 @@ from pathlib import Path
 _TOOLS = {
     "new_job": {
         "label": "New loss",
-        "browser_url": "/tools/?panel=daily_run&new_loss=1",
+        "browser_url": "/tools/?panel=pipeline&new_loss=1",
         "desktop_tool": "audit_web",
         "desktop_args": ("--new-loss",),
     },
@@ -66,6 +66,7 @@ def asset_health(root: str | Path) -> list[dict]:
     """Check that every browser destination resolves to a shipped panel."""
     root = Path(root)
     panel_folders = {
+        "pipeline": "pipeline_web_assets",
         "daily_run": "audit_web_assets",
         "run_doc_editor": "run_doc_editor_web_assets",
         "snapshot": "snapshot_web_assets",

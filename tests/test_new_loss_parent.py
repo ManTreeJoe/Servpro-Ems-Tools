@@ -25,6 +25,28 @@ import job_folders as jf
 import new_loss_intake as nli
 
 
+def test_wip_templates_are_live_and_not_a_fixed_three_item_list(monkeypatch):
+    import trello_client as tc
+
+    monkeypatch.setattr(tc, "list_boards", lambda: [{"id": "b1", "name": "WORK IN PROGRESS"}])
+
+    def call(path, params=None, **_kwargs):
+        if path.endswith("/lists"):
+            return [{"id": "new", "name": "NEW LOSS"},
+                    {"id": "templates", "name": "TEMPLATES"}]
+        return [
+            {"id": "t1", "name": "EMS - Residential Template", "idList": "templates", "isTemplate": True, "closed": False},
+            {"id": "t2", "name": "PCM - (Property/Site - Unit or Work Order) - Date Received", "idList": "templates", "isTemplate": True, "closed": False},
+            {"id": "old", "name": "Old Template", "idList": "templates", "isTemplate": True, "closed": True},
+        ]
+
+    monkeypatch.setattr(tc, "_call", call)
+    templates = nli.list_templates()
+    assert [item["id"] for item in templates["_all"]] == ["t1", "t2"]
+    assert templates["water"]["id"] == "t1"
+    assert templates["property"]["id"] == "t2"
+
+
 @pytest.fixture
 def share(tmp_path, monkeypatch):
     """A stand-in share shaped like the real one."""

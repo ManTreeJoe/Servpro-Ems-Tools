@@ -3203,6 +3203,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "property": "property" in t,
                 "board":   (t.get("_board") or {}).get("name", ""),
                 "intake":  (t.get("_intake") or {}).get("name", ""),
+                "templates": t.get("_all") or [],
             }
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
