@@ -61,13 +61,15 @@ def _card(provider, name, icon, state, status, detail, *, identity="",
     }
 
 
-def statuses(*, access=None, cfg=None, platform_name=None) -> list[dict]:
+def statuses(*, access=None, cfg=None, platform_name=None,
+             connection_status=None) -> list[dict]:
     """Return fast, side-effect-free connection cards for My Settings.
 
     This deliberately does not call provider APIs or launch Outlook.  A
     Settings render must stay responsive even when a provider is offline.
     Explicit Test/Open actions can perform slower work afterward.
     """
+    use_live_status = access is None and cfg is None and connection_status is None
     access = _access(access)
     cfg = _config(cfg)
     signed_in = bool(access.get("signed_in"))
@@ -96,6 +98,15 @@ def statuses(*, access=None, cfg=None, platform_name=None) -> list[dict]:
     except Exception:
         companycam_cloud = False
     companycam_ready = companycam_local or companycam_cloud
+    personal_cc = connection_status or {}
+    if use_live_status and signed_in and franchise not in ("", "this franchise"):
+        try:
+            import supabase_client
+            personal_cc = supabase_client.external_connection_status(
+                "companycam", franchise)
+        except Exception:
+            personal_cc = {}
+    personal_cc_ready = personal_cc.get("status") == "connected"
     if not companycam_ready:
         cards.append(_card(
             "companycam", "CompanyCam", "CC", "admin_required",
@@ -114,15 +125,24 @@ def statuses(*, access=None, cfg=None, platform_name=None) -> list[dict]:
              "actions can be recorded under your work email."),
             action="sign_in", action_label="Sign in",
             scope="organization"))
-    else:
+    elif personal_cc_ready:
         cards.append(_card(
             "companycam", "CompanyCam", "CC", "connected",
-            "Connected securely by office",
-            (f"{franchise} manages the secure API connection in Supabase. "
-             "Linguar Hub records actions under your work identity; CompanyCam "
-             "opens with your own CompanyCam sign-in."),
-            identity=email, action="open_companycam",
-            action_label="Open / sign in", scope="organization"))
+            "Personal account connected",
+            (f"Your CompanyCam account is connected for {franchise}. The "
+             "office application credentials remain protected in Supabase."),
+            identity=(personal_cc.get("display_name") or
+                      personal_cc.get("external_email") or email),
+            action="connect_companycam", action_label="Reconnect",
+            scope="personal"))
+    else:
+        cards.append(_card(
+            "companycam", "CompanyCam", "CC", "sign_in_required",
+            "Connect your CompanyCam account",
+            (f"{franchise} is ready. Sign into your own CompanyCam account "
+             "once; no keys or tokens need to be pasted."),
+            identity=email, action="connect_companycam",
+            action_label="Connect CompanyCam", scope="personal"))
 
     trello_key = bool(str(cfg.get("trello_api_key") or "").strip())
     trello_token = bool(str(cfg.get("trello_token") or "").strip())
@@ -178,6 +198,27 @@ def open_target(provider: str) -> str:
         "companycam": "https://app.companycam.com/",
         "microsoft": "https://outlook.office.com/mail/",
     }.get(str(provider or "").strip().lower(), "")
+
+
+def connect_companycam() -> dict:
+    """Start the authenticated, franchise-scoped CompanyCam OAuth flow."""
+    department = _franchise()
+    if not department:
+        return {"ok": False, "error": "Choose a franchise first."}
+    try:
+        import supabase_client
+        result = supabase_client.invoke_function(
+            "companycam-oauth-start", {"department": department}) or {}
+        url = str(result.get("url") or "")
+        if not result.get("ok") or not url.startswith("https://"):
+            return {"ok": False,
+                    "error": result.get("error") or "CompanyCam sign-in could not start."}
+        import webbrowser
+        webbrowser.open(url)
+        return {"ok": True,
+                "message": "Finish signing into CompanyCam in the browser, then return here."}
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
 
 
 def sign_in(email: str, password: str) -> dict:

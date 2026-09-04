@@ -18,13 +18,24 @@ def _access(**overrides):
 def test_companycam_is_org_managed_but_attributed_to_signed_in_user(monkeypatch):
     monkeypatch.setattr(user_connections, "_franchise", lambda: "IE")
     cards = user_connections.statuses(
-        access=_access(), cfg={"companycam_api_token": "office-key"})
+        access=_access(), cfg={"companycam_api_token": "office-key"},
+        connection_status={"status": "connected", "display_name": "Sam Tech"})
     cc = next(card for card in cards if card["provider"] == "companycam")
     assert cc["state"] == "connected"
-    assert cc["scope"] == "organization"
-    assert cc["identity"] == "sam@servpro.test"
-    assert "IE manages" in cc["detail"]
-    assert cc["action_label"] == "Open / sign in"
+    assert cc["scope"] == "personal"
+    assert cc["identity"] == "Sam Tech"
+    assert "connected for IE" in cc["detail"]
+    assert cc["action_label"] == "Reconnect"
+
+
+def test_ready_office_connection_asks_employee_for_one_click_oauth(monkeypatch):
+    monkeypatch.setattr(user_connections, "_franchise", lambda: "IE")
+    cards = user_connections.statuses(
+        access=_access(), cfg={"companycam_api_token": "office-key"})
+    cc = next(card for card in cards if card["provider"] == "companycam")
+    assert cc["state"] == "sign_in_required"
+    assert cc["action"] == "connect_companycam"
+    assert cc["action_label"] == "Connect CompanyCam"
 
 
 def test_companycam_connection_requires_linguar_identity(monkeypatch):
@@ -83,6 +94,27 @@ def test_settings_exposes_normal_connection_cards(monkeypatch):
     monkeypatch.setattr(user_connections, "statuses", lambda: [{
         "provider": "companycam", "state": "connected"}])
     assert settings_web.Api().user_connections()["connections"][0]["provider"] == "companycam"
+
+
+def test_companycam_connect_opens_only_server_generated_https_url(monkeypatch):
+    opened = []
+    monkeypatch.setattr(user_connections, "_franchise", lambda: "IE")
+    import supabase_client
+    monkeypatch.setattr(supabase_client, "invoke_function", lambda name, body: {
+        "ok": True, "url": "https://app.companycam.com/oauth/authorize?safe=1"})
+    import webbrowser
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+    result = user_connections.connect_companycam()
+    assert result["ok"]
+    assert opened == ["https://app.companycam.com/oauth/authorize?safe=1"]
+
+
+def test_companycam_connect_rejects_non_https_callback_result(monkeypatch):
+    monkeypatch.setattr(user_connections, "_franchise", lambda: "IE")
+    import supabase_client
+    monkeypatch.setattr(supabase_client, "invoke_function", lambda name, body: {
+        "ok": True, "url": "javascript:alert(1)"})
+    assert not user_connections.connect_companycam()["ok"]
 
 
 def test_settings_page_renders_my_connections():

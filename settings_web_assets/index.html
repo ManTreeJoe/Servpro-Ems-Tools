@@ -1089,10 +1089,11 @@ async function runConnectionAction(button) {
   }
   button.disabled = true;
   const label = button.textContent;
-  button.textContent = action === "connect_trello" ? "Waiting for Trello…" : "Opening…";
+  button.textContent = action === "connect_trello" ? "Waiting for Trello…"
+    : action === "connect_companycam" ? "Opening CompanyCam…" : "Opening…";
   if (msg) {
-    msg.textContent = action === "connect_trello"
-      ? "Finish signing in and approving access in the browser tab."
+    msg.textContent = action === "connect_trello" || action === "connect_companycam"
+      ? `Finish signing in and approving ${provider === "trello" ? "Trello" : "CompanyCam"} in the browser tab.`
       : `Opening ${provider}…`;
     msg.style.color = "";
   }
@@ -1105,7 +1106,32 @@ async function runConnectionAction(button) {
     msg.textContent = result?.ok ? (result.message || "Opened.") : (result?.error || "Could not connect.");
     msg.style.color = result?.ok ? "var(--green)" : "var(--red)";
   }
-  if (result?.ok) await renderConnections();
+  if (result?.ok) {
+    await renderConnections();
+    if (action === "connect_companycam") void waitForCompanyCamConnection(msg);
+  }
+}
+
+async function waitForCompanyCamConnection(msg) {
+  // The OAuth callback completes in another browser tab. Poll only this
+  // small status endpoint so the employee sees the green connected state
+  // without reloading Settings or wondering whether the redirect worked.
+  for (const delay of [2000, 3000, 5000, 8000, 12000, 20000, 30000]) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    let payload;
+    try { payload = await pywebview.api.user_connections(); } catch (_) { continue; }
+    const connected = (payload?.connections || []).find((card) =>
+      card.provider === "companycam" && card.state === "connected");
+    if (connected) {
+      await renderConnections();
+      if (msg) { msg.textContent = "CompanyCam connected."; msg.style.color = "var(--green)"; }
+      return;
+    }
+  }
+  if (msg) {
+    msg.textContent = "Still waiting for CompanyCam. Finish the browser sign-in, then press Reconnect if it expired.";
+    msg.style.color = "var(--amber)";
+  }
 }
 
 async function runPreflight() {

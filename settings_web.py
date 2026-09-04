@@ -279,6 +279,12 @@ class Api:
         provider = str(provider or "").strip().lower()
         if provider == "trello":
             return self.authorize_trello()
+        if provider == "companycam":
+            try:
+                import user_connections
+                return user_connections.connect_companycam()
+            except Exception as ex:
+                return {"ok": False, "error": str(ex)}
         try:
             import user_connections
             url = user_connections.open_target(provider)

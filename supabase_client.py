@@ -501,6 +501,17 @@ def invoke_function(name: str, body=None):
                 token=access_token())
 
 
+def external_connection_status(provider: str, department: str) -> dict:
+    """The signed-in user's non-secret provider status for one franchise."""
+    rows = rest("GET", "external_connection_status", params={
+        "select": "provider,department,status,external_email,display_name,scopes,connected_at,updated_at",
+        "provider": f"eq.{str(provider or '').strip().lower()}",
+        "department": f"eq.{str(department or '').strip().upper()}",
+        "limit": "1",
+    }) or []
+    return rows[0] if isinstance(rows, list) and rows else {}
+
+
 def health() -> dict:
     """Reachability + auth probe for Settings and diagnostics. Never raises."""
     out = {"configured": False, "reachable": False, "signed_in": False,

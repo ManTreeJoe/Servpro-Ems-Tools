@@ -1,2 +1,8 @@
 [functions.companycam-gateway]
 verify_jwt = true
+
+[functions.companycam-oauth-start]
+verify_jwt = true
+
+[functions.companycam-oauth-callback]
+verify_jwt = false
