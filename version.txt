@@ -1,6 +1,6 @@
 {
-  "version": "1.8.6",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.6",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.6/Linguar-Hub-Setup-1.8.6.exe",
-  "notes": "Main stability update: restores job navigation and Trello-backed Job Logs, centralizes CompanyCam with secure employee sign-in, adds CompanyCam photo tags and subcontractor dispatch drafts, improves Trello sign-in reliability, and simplifies Settings for employees and administrators."
+  "version": "1.8.7",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.7",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.7/Linguar-Hub-Setup-1.8.7.exe",
+  "notes": "UI stability update: fixes the CompanyCam connection callback, keeps Jobs menus above the board, unifies toolbar and overflow placement across workspaces, simplifies crowded labels, and removes the retired legacy-app launcher."
 }
