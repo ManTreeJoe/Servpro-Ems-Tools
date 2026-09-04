@@ -17,7 +17,7 @@
 <title>APA Monitor — Linguar Hub</title>
 <script src="../web_shared/appearance.js?v=20260901a"></script>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260903a" />
-<link rel="stylesheet" href="app.css?v=20260903a" />
+<link rel="stylesheet" href="app.css?v=20260904a" />
 <meta name="theme-color" content="#1A1A1A" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
 <script src="../web_shared/text_context_menu.js?v=20260903a"></script>
@@ -33,7 +33,7 @@
     <div id="apa-trello-wrap" style="position:relative;">
       <input id="apa-trello-search" class="search" type="search"
              style="width:280px;"
-             placeholder="🔍 Search Trello → auto-add…" autocomplete="off" />
+             placeholder="Find Trello job…" autocomplete="off" />
       <div id="apa-trello-results"
            style="position:absolute;top:36px;left:0;right:0;
                   background:var(--surface);border:1px solid var(--border);
@@ -45,15 +45,15 @@
       <option value="">All franchises</option>
     </select>
     <input id="search-box" class="search" type="search"
-           placeholder="🔎 Filter items…" autocomplete="off" />
-    <button id="create-doc-btn" class="btn" style="display:none;" title="Auto-create today's APA file (carries forward active items from yesterday)">＋ Create today's APA</button>
-    <button id="refresh-lanes-btn" class="btn" style="display:none;" title="Re-route carried-forward items into the section matching each job's CURRENT Trello lane (new-day cleanup)">🔄 Refresh lanes from Trello</button>
-    <button id="teams-all-btn" class="btn btn-primary">✉ Send Teams (all)</button>
-    <button id="eod-btn" class="btn">📧 Send EOD email</button>
-    <button id="bulk-paste-btn" class="btn">📋 Bulk paste</button>
-    <button id="refresh-btn" class="btn">↻ Refresh</button>
+           placeholder="Filter items…" autocomplete="off" />
+    <button id="create-doc-btn" class="btn" style="display:none;" aria-label="Create today's APA" title="Create today’s APA and carry forward active items">Create Today</button>
+    <button id="refresh-lanes-btn" class="btn" style="display:none;" aria-label="Sync lanes from Trello" title="Move carried-forward items to their current Trello lanes">Sync Lanes</button>
+    <button id="teams-all-btn" class="btn btn-primary" aria-label="Send all items through Teams" title="Send every section through Teams">Teams</button>
+    <button id="eod-btn" class="btn" aria-label="Send end-of-day email" title="Send the end-of-day email">EOD</button>
+    <button id="bulk-paste-btn" class="btn" aria-label="Paste a list of items" title="Add multiple items from a pasted list">Paste</button>
+    <button id="refresh-btn" class="btn" title="Reload this APA day">Refresh</button>
     <div id="more-wrap" style="position:relative;">
-      <button id="more-btn" class="btn" title="More actions">⋯ More</button>
+      <button id="more-btn" class="btn" title="More actions" aria-label="More APA actions">More</button>
       <div id="more-menu"
            style="position:absolute;top:36px;right:0;
                   background:var(--surface);border:1px solid var(--border);

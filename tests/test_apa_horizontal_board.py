@@ -38,3 +38,19 @@ def test_grab_to_pan_does_not_steal_apa_card_dragging():
 
     assert r'[draggable=\"true\"]' in helper
     assert '.item' in helper
+
+
+def test_apa_toolbar_uses_short_labels_without_squashing_buttons():
+    root = Path(__file__).parents[1]
+    html = (root / "apa_web_assets" / "index.html").read_text(encoding="utf-8")
+    css = (root / "apa_web_assets" / "app.css").read_text(encoding="utf-8")
+
+    for label in (">Sync Lanes<", ">Teams<", ">EOD<", ">Paste<", ">Refresh<"):
+        assert label in html
+    for verbose in ("Refresh lanes from Trello", "Send Teams (all)",
+                    "Send EOD email", "Bulk paste"):
+        assert f">{verbose}<" not in html
+    assert ".topbar-actions .btn" in css
+    toolbar_button_rule = css.split(".topbar-actions .btn", 1)[1].split("}", 1)[0]
+    assert "white-space: nowrap" in toolbar_button_rule
+    assert "flex: 0 0 auto" in toolbar_button_rule
