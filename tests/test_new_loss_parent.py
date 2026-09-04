@@ -25,6 +25,18 @@ import job_folders as jf
 import new_loss_intake as nli
 
 
+def test_wip_template_lookup_does_not_select_recon_board(monkeypatch):
+    """The generic WIP board owns intake templates, not Recon's board."""
+    import trello_client as tc
+
+    monkeypatch.setattr(tc, "list_boards", lambda: [
+        {"id": "recon", "name": "RECON WORK IN PROGRESS"},
+        {"id": "ems", "name": "WORK IN PROGRESS"},
+    ])
+
+    assert nli._wip_board()["id"] == "ems"
+
+
 def test_wip_templates_are_live_and_not_a_fixed_three_item_list(monkeypatch):
     import trello_client as tc
 
@@ -38,6 +50,7 @@ def test_wip_templates_are_live_and_not_a_fixed_three_item_list(monkeypatch):
             {"id": "t1", "name": "EMS - Residential Template", "idList": "templates", "isTemplate": True, "closed": False},
             {"id": "t2", "name": "PCM - (Property/Site - Unit or Work Order) - Date Received", "idList": "templates", "isTemplate": True, "closed": False},
             {"id": "old", "name": "Old Template", "idList": "templates", "isTemplate": True, "closed": True},
+            {"id": "stale", "name": "Archived-list Template", "idList": "archived-list", "isTemplate": True, "closed": False},
         ]
 
     monkeypatch.setattr(tc, "_call", call)

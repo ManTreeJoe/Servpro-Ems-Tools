@@ -1,6 +1,6 @@
 {
-  "version": "1.8.12",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.12",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.12/Linguar-Hub-Setup-1.8.12.exe",
-  "notes": "Jobs board card-sizing fix: cards now keep a consistent Trello-like height in busy lanes, and each lane scrolls vertically instead of compressing its cards. Includes the 1.8.11 CompanyCam exact-folder picker."
+  "version": "1.8.13",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.13",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.13/Linguar-Hub-Setup-1.8.13.exe",
+  "notes": "New Loss template fix: template loading now resolves the generic WORK IN PROGRESS board instead of accidentally selecting RECON WORK IN PROGRESS. It mirrors all 15 visible EMS templates across the standard and Property Management template lanes while excluding stale cards in archived lists."
 }

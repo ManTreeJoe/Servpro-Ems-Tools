@@ -152,10 +152,20 @@ def suggest_card_name(fields):
 def _wip_board():
     """The active department's WORK IN PROGRESS board dict, or None."""
     import trello_client as tc
-    for b in tc.list_boards():
-        if "work in progress" in (b.get("name") or "").lower():
-            return b
-    return None
+    boards = tc.list_boards() or []
+    normalize = lambda value: re.sub(
+        r"[^A-Z0-9]+", " ", str(value or "").upper()).strip()
+    expected = normalize("WORK IN PROGRESS")
+    exact = next((board for board in boards
+                  if normalize(board.get("name")) == expected), None)
+    if exact:
+        return exact
+    # Some franchises suffix the main board with a year or office number.
+    # Only accept one unambiguous suffix match; never treat
+    # "RECON WORK IN PROGRESS" as the generic intake board.
+    candidates = [board for board in boards
+                  if normalize(board.get("name")).startswith(expected + " ")]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def list_templates():
@@ -179,10 +189,12 @@ def list_templates():
     cards = tc._call(f"/boards/{bid}/cards",
                      params={"fields": "id,name,isTemplate,closed,idList",
                              "filter": "all"}) or []
+    open_list_ids = {item.get("id") for item in lists if item.get("id")}
     list_names = {item.get("id"): item.get("name") or "" for item in lists}
     out = {"_board": board, "_intake": intake, "_all": []}
     for c in cards:
-        if not c.get("isTemplate") or c.get("closed"):
+        if (not c.get("isTemplate") or c.get("closed")
+                or c.get("idList") not in open_list_ids):
             continue
         nm = (c.get("name") or "").lower()
         kind = ("fire" if "fire" in nm or "smoke" in nm else
