@@ -25,3 +25,20 @@ def test_folder_link_mismatch_uses_in_app_confirmation():
     assert "await confirmJobFolderLink(" in source
     assert "window.confirm(" not in source
 
+
+def test_folder_link_modal_can_choose_an_exact_windows_folder():
+    source = _folder_link_modal_source()
+
+    assert "data-choose-exact-folder" in source
+    assert "choose_exact_job_folder" in source
+    assert "await linkPath(picked.path" in source
+
+
+def test_companycam_failure_offers_exact_folder_recovery():
+    source = APP_JS.read_text(encoding="utf-8")
+    start = source.index("async function openCompanyCamPullModal")
+    companycam = source[start:]
+
+    assert "data-choose-job-folder" in companycam
+    assert "openJobFolderLinkModal(data" in companycam
+    assert "openCompanyCamPullModal(data, audit)" in companycam

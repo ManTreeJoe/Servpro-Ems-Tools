@@ -1,6 +1,6 @@
 {
-  "version": "1.8.10",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.10",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.10/Linguar-Hub-Setup-1.8.10.exe",
-  "notes": "CompanyCam folder-resolution hotfix: imports now use the same nested job-folder search as Jobs, safely auto-pin one unique high-confidence site or claim folder, and continue requiring manual selection when candidates are ambiguous. Includes the 1.8.9 folder-link and PCM Trello identity fixes."
+  "version": "1.8.11",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.11",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.11/Linguar-Hub-Setup-1.8.11.exe",
+  "notes": "CompanyCam exact-folder recovery: when automatic job-folder matching fails, users can open a Windows folder picker, choose the precise nested OD job folder, pin it, and immediately retry the photo import. Ranked folder suggestions remain available for the common case."
 }

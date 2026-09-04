@@ -1326,6 +1326,37 @@ class Api(JobSettingsApi):
         """Visible folder-link flow for Pipeline cards; no context menu required."""
         return self._audit_api().list_folder_candidates(client, year)
 
+    def choose_exact_job_folder(self, start_path: str = "") -> dict:
+        """Let the user select the exact job folder in Windows Explorer.
+
+        Ranked folder matching is useful for the common case, but commercial
+        and property-management work is frequently nested below a client or
+        campus folder.  The native picker is the explicit escape hatch: the
+        path it returns is still validated by ``link_job_folder`` before it is
+        persisted.
+        """
+        if self._window is None:
+            return {"ok": False, "error": "The Jobs window is not ready."}
+        initial = os.path.abspath(str(start_path or "").strip()) if start_path else ""
+        if initial and not os.path.isdir(initial):
+            initial = os.path.dirname(initial)
+        try:
+            result = self._window.create_file_dialog(
+                webview.FOLDER_DIALOG,
+                directory=initial if os.path.isdir(initial) else "",
+                allow_multiple=False,
+            )
+            if not result:
+                return {"ok": True, "cancelled": True, "path": ""}
+            path = result[0] if isinstance(result, (list, tuple)) else result
+            path = os.path.abspath(str(path or "").strip())
+            if not path or not os.path.isdir(path):
+                return {"ok": False, "error": "That folder is not available."}
+            return {"ok": True, "cancelled": False, "path": path,
+                    "name": os.path.basename(path.rstrip(os.sep))}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
     def link_job_folder(self, client: str, path: str,
                         confirm: bool = False) -> dict:
         result = self._audit_api().set_folder_path(client, path, confirm)

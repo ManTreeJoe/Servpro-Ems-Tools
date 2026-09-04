@@ -2505,13 +2505,13 @@ function confirmJobFolderLink(warning) {
   });
 }
 
-async function openJobFolderLinkModal(data, closeWorkspace) {
+async function openJobFolderLinkModal(data, closeWorkspace = () => {}, onLinked = null) {
   const client = data.client || data.audit?.client || "";
   const modal = document.createElement("div");
   modal.className = "modal-scrim audit-overlay";
   modal.innerHTML = `<div class="modal-box folder-link-modal" role="dialog" aria-modal="true" aria-label="Link OD job folder">
     <header class="modal-head"><div><div class="modal-title">Link OD job folder</div><div class="modal-sub">${escapeHtml(client)} · this folder becomes the job's saved file location</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
-    <div class="modal-body"><div class="folder-link-tools"><input type="search" data-folder-filter placeholder="Filter folder names…" aria-label="Filter folder names"><button class="btn" data-all-years>Search all years</button></div>
+    <div class="modal-body"><div class="folder-link-tools"><input type="search" data-folder-filter placeholder="Filter folder names…" aria-label="Filter folder names"><button class="btn" data-all-years>Search all years</button><button class="btn btn-primary" data-choose-exact-folder>Choose exact folder…</button></div>
       <div class="folder-link-message" data-folder-message>Finding the best matching folders…</div><div class="folder-link-list" data-folder-list></div></div>
     <footer class="modal-foot"><small>Pick the actual job folder—not EMS, DOCS, or PICS inside it.</small><button class="btn" data-close>Cancel</button></footer></div>`;
   document.body.appendChild(modal);
@@ -2522,34 +2522,39 @@ async function openJobFolderLinkModal(data, closeWorkspace) {
   const message = modal.querySelector("[data-folder-message]");
   const filter = modal.querySelector("[data-folder-filter]");
   let candidates = [];
+  const linkPath = async (path, button = null) => {
+    if (button) button.disabled = true;
+    let result = await pywebview.api.link_job_folder(client, path || "", false);
+    if (result?.needs_confirm) {
+      const accepted = await confirmJobFolderLink(result.warning);
+      if (!accepted) {
+        if (button) button.disabled = false;
+        message.textContent = "Folder link cancelled";
+        message.className = "folder-link-message";
+        return;
+      }
+      result = await pywebview.api.link_job_folder(client, path || "", true);
+    }
+    if (!result?.ok) {
+      if (button) button.disabled = false;
+      message.textContent = result?.error || result?.warning || "Folder could not be linked";
+      message.className = "folder-link-message error";
+      return;
+    }
+    close();
+    if (typeof closeWorkspace === "function") closeWorkspace(true);
+    setStatus(`Linked exact OD folder to ${client}`, "ok");
+    if (typeof onLinked === "function") await onLinked(result);
+    else await onAuditCard(client, data.card_id || "", "", data.selected_division || "EMS");
+  };
   const render = () => {
     const query = (filter.value || "").trim().toLowerCase();
     const shown = candidates.filter((item) => !query || `${item.name} ${item.parent || ""} ${item.year || ""}`.toLowerCase().includes(query)).slice(0, 60);
     list.innerHTML = shown.map((item) => `<button class="folder-link-row" data-folder-path="${escapeAttr(item.path || "")}"><span><strong>${escapeHtml(item.name || "Job folder")}</strong><small>${escapeHtml([item.parent, item.year_folder || item.year].filter(Boolean).join(" · "))}</small></span><b>Link folder</b></button>`).join("") || `<div class="aud-empty">No matching folders. Search all years or change the filter.</div>`;
     list.querySelectorAll("[data-folder-path]").forEach((button) => button.addEventListener("click", async () => {
       button.disabled = true; button.querySelector("b").textContent = "Linking…";
-      let result = await pywebview.api.link_job_folder(client, button.dataset.folderPath || "", false);
-      if (result?.needs_confirm) {
-        const accepted = await confirmJobFolderLink(result.warning);
-        if (!accepted) {
-          button.disabled = false;
-          button.querySelector("b").textContent = "Link folder";
-          message.textContent = "Folder link cancelled";
-          message.className = "folder-link-message";
-          return;
-        }
-        result = await pywebview.api.link_job_folder(
-          client, button.dataset.folderPath || "", true);
-      }
-      if (!result?.ok) {
-        button.disabled = false; button.querySelector("b").textContent = "Link folder";
-        message.textContent = result?.error || result?.warning || "Folder could not be linked";
-        message.className = "folder-link-message error";
-        return;
-      }
-      close(); closeWorkspace(true);
-      setStatus(`Linked OD folder to ${client}`, "ok");
-      await onAuditCard(client, data.card_id || "", "", data.selected_division || "EMS");
+      await linkPath(button.dataset.folderPath || "", button);
+      if (button.isConnected) button.querySelector("b").textContent = "Link folder";
     }));
   };
   const load = async (scope = "") => {
@@ -2566,6 +2571,26 @@ async function openJobFolderLinkModal(data, closeWorkspace) {
   };
   filter.addEventListener("input", render);
   modal.querySelector("[data-all-years]").addEventListener("click", () => load("all"));
+  modal.querySelector("[data-choose-exact-folder]").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    message.textContent = "Opening the Windows folder picker…";
+    const startPath = candidates[0]?.path || "";
+    const picked = await pywebview.api.choose_exact_job_folder(startPath);
+    button.disabled = false;
+    if (!picked?.ok) {
+      message.textContent = picked?.error || "The folder picker could not open";
+      message.className = "folder-link-message error";
+      return;
+    }
+    if (picked.cancelled || !picked.path) {
+      message.textContent = "No folder selected";
+      message.className = "folder-link-message";
+      return;
+    }
+    message.textContent = `Selected ${picked.name || picked.path}`;
+    await linkPath(picked.path, button);
+  });
   filter.focus();
   await load("");
 }
@@ -2766,8 +2791,12 @@ async function openCompanyCamPullModal(data, audit) {
   if (!modal.isConnected) return;
   const body = modal.querySelector(".cc-pull-body");
   if (!plan?.ok) {
-    body.innerHTML = `<div class="job-card-load-error"><strong>CompanyCam import is unavailable</strong><p>${escapeHtml(plan?.error || "The project could not be matched.")}</p><button class="btn" data-open-cc-project>Open CompanyCam</button></div>`;
+    body.innerHTML = `<div class="job-card-load-error"><strong>CompanyCam import is unavailable</strong><p>${escapeHtml(plan?.error || "The project could not be matched.")}</p><div class="cc-pull-recovery"><button class="btn btn-primary" data-choose-job-folder>Choose exact folder…</button><button class="btn" data-open-cc-project>Open CompanyCam</button></div></div>`;
     body.querySelector("[data-open-cc-project]")?.addEventListener("click", () => pywebview.api.open_companycam_link(client));
+    body.querySelector("[data-choose-job-folder]")?.addEventListener("click", () => {
+      close();
+      openJobFolderLinkModal(data, () => {}, () => openCompanyCamPullModal(data, audit));
+    });
     return;
   }
   if (!plan.missing) {
