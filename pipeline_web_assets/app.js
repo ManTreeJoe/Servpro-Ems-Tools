@@ -2475,6 +2475,36 @@ function formatCommentDate(value) {
   return Number.isNaN(d.getTime()) ? value : `${formatAppDate(d)} at ${d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`;
 }
 
+function confirmJobFolderLink(warning) {
+  return new Promise((resolve) => {
+    if (!window.openModal) {
+      resolve(false);
+      return;
+    }
+    const modalId = "job-folder-link-confirm";
+    let settled = false;
+    const finish = (accepted) => {
+      if (settled) return;
+      settled = true;
+      resolve(accepted);
+    };
+    const overlay = window.openModal({
+      id: modalId,
+      width: 520,
+      title: "Link this job folder?",
+      sub: "The folder name differs from the job name",
+      body: `<p class="folder-link-confirm-copy">${escapeHtml(warning || "Please confirm this is the correct job folder.")}</p>
+        <p class="folder-link-confirm-note">Property-management, commercial, unit, and claim folders may legitimately use a different name.</p>
+        <div class="modal-footer"><button class="btn modal-close" type="button">Cancel</button><button class="btn btn-primary" id="job-folder-link-confirm-yes" type="button">Link folder</button></div>`,
+      onClose: () => finish(false),
+    });
+    overlay.querySelector("#job-folder-link-confirm-yes")?.addEventListener("click", () => {
+      finish(true);
+      window.closeModal(modalId);
+    });
+  });
+}
+
 async function openJobFolderLinkModal(data, closeWorkspace) {
   const client = data.client || data.audit?.client || "";
   const modal = document.createElement("div");
@@ -2499,8 +2529,17 @@ async function openJobFolderLinkModal(data, closeWorkspace) {
     list.querySelectorAll("[data-folder-path]").forEach((button) => button.addEventListener("click", async () => {
       button.disabled = true; button.querySelector("b").textContent = "Linking…";
       let result = await pywebview.api.link_job_folder(client, button.dataset.folderPath || "", false);
-      if (result?.needs_confirm && window.confirm(`${result.warning}\n\nLink this folder anyway?`)) {
-        result = await pywebview.api.link_job_folder(client, button.dataset.folderPath || "", true);
+      if (result?.needs_confirm) {
+        const accepted = await confirmJobFolderLink(result.warning);
+        if (!accepted) {
+          button.disabled = false;
+          button.querySelector("b").textContent = "Link folder";
+          message.textContent = "Folder link cancelled";
+          message.className = "folder-link-message";
+          return;
+        }
+        result = await pywebview.api.link_job_folder(
+          client, button.dataset.folderPath || "", true);
       }
       if (!result?.ok) {
         button.disabled = false; button.querySelector("b").textContent = "Link folder";

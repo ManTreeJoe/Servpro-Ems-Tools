@@ -584,6 +584,8 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .folder-link-list { display:grid; gap:6px; }
 .folder-link-row { width:100%; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:11px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); color:var(--text); text-align:left; cursor:pointer; }
 .folder-link-row:hover { border-color:var(--green); background:var(--green-soft); }.folder-link-row span,.folder-link-row strong,.folder-link-row small{display:block}.folder-link-row small{margin-top:3px;color:var(--text-muted)}.folder-link-row b{flex:0 0 auto;color:var(--green-light);font-size:11px}
+.folder-link-confirm-copy { margin:0; color:var(--text); line-height:1.5; }
+.folder-link-confirm-note { margin:10px 0 0; color:var(--text-muted); font-size:12px; line-height:1.45; }
 .footer-job-context { align-self:center; color:var(--text-muted); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
 .audit-loading-body { padding: 18px !important; background: var(--bg); }
 .job-card-loading-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 34%); gap: 16px; height: 100%; }
