@@ -1,6 +1,6 @@
 {
-  "version": "1.8.9",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.9",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.9/Linguar-Hub-Setup-1.8.9.exe",
-  "notes": "Jobs reliability update: folder linking now confirms reliably in the desktop app, and property-management sites and claims keep separate Trello cards, comments, checklists, and job records. Opening an exact card also repairs stale legacy card pins and filters unrelated matches from conflict warnings."
+  "version": "1.8.10",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.10",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.10/Linguar-Hub-Setup-1.8.10.exe",
+  "notes": "CompanyCam folder-resolution hotfix: imports now use the same nested job-folder search as Jobs, safely auto-pin one unique high-confidence site or claim folder, and continue requiring manual selection when candidates are ambiguous. Includes the 1.8.9 folder-link and PCM Trello identity fixes."
 }

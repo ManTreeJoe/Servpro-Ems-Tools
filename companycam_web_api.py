@@ -373,6 +373,29 @@ class CompanyCamApi:
                 path = p or ""
             except Exception:
                 path = ""
+        if not path:
+            # Property managers and multi-site clients store the actual job
+            # one level below the client folder. The legacy resolver above
+            # scans only top-level year folders; use the same nested candidate
+            # source as Jobs before telling the operator to find it again.
+            # Auto-pin only one clearly best result. A tie remains a manual
+            # choice because a wrong photo destination is worse than no pull.
+            try:
+                finder = getattr(self, "list_folder_candidates", None)
+                result = finder(client, "all") if callable(finder) else {}
+                candidates = [row for row in (result.get("candidates") or [])
+                              if int(row.get("score") or 0) >= 2
+                              and os.path.isdir(str(row.get("path") or ""))]
+                if candidates:
+                    best_score = max(int(row.get("score") or 0)
+                                     for row in candidates)
+                    best = [row for row in candidates
+                            if int(row.get("score") or 0) == best_score]
+                    if len(best) == 1:
+                        path = str(best[0].get("path") or "")
+                        persistence.set_folder_path(client, path)
+            except Exception:
+                path = ""
         if not path or not os.path.isdir(path):
             return ""
 

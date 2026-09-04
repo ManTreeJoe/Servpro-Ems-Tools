@@ -87,3 +87,52 @@ def test_an_unresolvable_job_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(cwa.audit_logic, "try_resolve_folder_by_terms",
                         lambda *a, **k: ("", "", ""))
     assert _Api()._cc_pics_dir("Nobody, Here") == ""
+
+
+def test_unique_nested_jobs_candidate_is_auto_pinned_for_companycam(
+        tmp_path, monkeypatch):
+    job = tmp_path / "2026 Jobs" / "PCM" / "Kellogg Terrace - Cruz Sarah"
+    pics = job / "EMS" / "PICS"
+    pics.mkdir(parents=True)
+    monkeypatch.setattr(cwa, "persistence", persistence)
+    monkeypatch.setattr(persistence, "get_folder_path", lambda _client: "")
+    monkeypatch.setattr(cwa.audit_logic, "try_resolve_folder_by_terms",
+                        lambda *a, **k: ("", "", ""))
+    pinned = []
+    monkeypatch.setattr(persistence, "set_folder_path",
+                        lambda client, path: pinned.append((client, path)))
+
+    class NestedApi(_Api):
+        def list_folder_candidates(self, _client, _scope):
+            return {"ok": True, "candidates": [
+                {"path": str(job), "name": job.name, "score": 5},
+                {"path": str(job.parent), "name": "PCM", "score": 1},
+            ]}
+
+    client = "PCM - Kellogg Terrace - (Cruz, Sarah) 8/28"
+    assert NestedApi()._cc_pics_dir(client) == str(pics)
+    assert pinned == [(client, str(job))]
+
+
+def test_ambiguous_nested_candidates_are_never_auto_pinned(
+        tmp_path, monkeypatch):
+    first = tmp_path / "Kellogg Terrace A"
+    second = tmp_path / "Kellogg Terrace B"
+    first.mkdir(); second.mkdir()
+    monkeypatch.setattr(cwa, "persistence", persistence)
+    monkeypatch.setattr(persistence, "get_folder_path", lambda _client: "")
+    monkeypatch.setattr(cwa.audit_logic, "try_resolve_folder_by_terms",
+                        lambda *a, **k: ("", "", ""))
+    pinned = []
+    monkeypatch.setattr(persistence, "set_folder_path",
+                        lambda *args: pinned.append(args))
+
+    class AmbiguousApi(_Api):
+        def list_folder_candidates(self, _client, _scope):
+            return {"ok": True, "candidates": [
+                {"path": str(first), "name": first.name, "score": 4},
+                {"path": str(second), "name": second.name, "score": 4},
+            ]}
+
+    assert AmbiguousApi()._cc_pics_dir("PCM - Kellogg Terrace") == ""
+    assert pinned == []
