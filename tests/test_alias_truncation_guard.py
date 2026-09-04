@@ -21,7 +21,7 @@ from ems_db_common import (alias_probe_token,
 
 
 CALLIE = "menifee union school district -callie kirkpatrick elementary"
-BELL = "menifee union school district (bell mountain )"
+BELL = "menifee union school district (bell mountain ) - 8/14"
 
 
 def test_a_truncation_with_several_matching_jobs_is_ambiguous():

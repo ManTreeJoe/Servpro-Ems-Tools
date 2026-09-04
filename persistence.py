@@ -235,12 +235,12 @@ def _canon_pin_key(client) -> str:
     s = (client or "").strip()
     if not s:
         return ""
-    # Drop everything from the FIRST " - " onward. APA's
-    # `_strip_to_base` gives "Last, First - Carrier"; bare-name
-    # surfaces (audit, snapshot, job notes) don't include " - ".
-    # Real client names with an embedded hyphen use "-" without
-    # spaces (e.g. "Smith-Jones"), so splitting on " - " is safe.
-    head = s.split(" - ", 1)[0].strip()
+    # A spaced dash is not inherently a carrier separator. It also separates
+    # property-management sites, units, claim numbers and second losses. The
+    # former blanket first-dash split collapsed every PCM job to ``pcm`` and
+    # allowed one Trello card's comments to appear on another job. Start with
+    # the full title and remove only a suffix proven to be a carrier below.
+    head = s
     # Also strip the no-space-after variant " -Carrier" (e.g.
     # "Smith, John -AAA") — fragment must be a short uppercase
     # alpha to avoid eating "Smith-Jones".

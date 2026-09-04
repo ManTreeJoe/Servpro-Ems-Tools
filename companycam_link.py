@@ -6,13 +6,14 @@ NAME at read time, and the names do not agree -- CompanyCam projects are
 "Michelle Brayley" while the job is "Brayley, Michelle - AAA".
 
 So matching has to survive three differences at once: word order, the
-carrier suffix, and punctuation. `canon_key` handles the carrier (it
-strips at " - ") and a token SET handles the order.
+carrier suffix, and punctuation. `canon_key` removes a *recognized* carrier
+suffix and a token SET handles the order.
 
-The danger is that canon_key strips at " - " and therefore collapses
-every claim of a multi-claim job onto one key. The first dry run
-cheerfully proposed tying "Mansolino, Sayra - AAA - 1st Claim" to the
-job's SECOND claim, and a unit's project to its parent. Anything where
+Older releases stripped at the first " - " and therefore collapsed every
+claim of a multi-claim job onto one key. Existing data can still contain
+those legacy relationships. The first dry run cheerfully proposed tying
+"Mansolino, Sayra - AAA - 1st Claim" to the job's SECOND claim, and a unit's
+project to its parent. Anything where
 the two sides disagree about which claim or unit they mean is refused
 outright rather than guessed -- a wrong pin is worse than no pin,
 because get_link returns the OLDEST row and a wrong one wins forever.
@@ -56,19 +57,31 @@ def _unit_no(name: str) -> str:
 
 
 def _suffix_tokens(name: str) -> frozenset:
-    """Words after the FIRST " - ", which is exactly what canon_key
-    throws away.
+    """Words after the FIRST " - ".
 
     That strip is why "PCM - Kellogg Terrace Condominiums" and
     "PCM - (Gianni Villas) - 6/15/26" both reduce to "pcm" and looked
     like an exact match. The suffix is where the two disagree, so it has
     to be read before the strip is trusted.
     """
-    parts = re.split(r"\s+-\s*", name or "", maxsplit=1)
+    parts = re.split(r"(?:\s+-\s*|-\s+)", name or "", maxsplit=1)
     if len(parts) < 2:
         return frozenset()
     tail = re.sub(r"[^a-z0-9& ]+", " ", parts[1].lower())
     return frozenset(t for t in tail.split()
+                     if len(t) > 1 and t not in _STOP and not t.isdigit())
+
+
+def _head_tokens(name: str) -> frozenset:
+    """Order-free words before the first spaced dash.
+
+    This is only a last-chance candidate finder. ``disagreement`` still has
+    to approve the pair, which lets the backfill report a clear refusal for
+    two claims/sites sharing a client without ever linking them.
+    """
+    head = re.split(r"(?:\s+-\s*|-\s+)", name or "", maxsplit=1)[0]
+    head = re.sub(r"[^a-z0-9& ]+", " ", head.lower())
+    return frozenset(t for t in head.split()
                      if len(t) > 1 and t not in _STOP and not t.isdigit())
 
 
@@ -113,12 +126,16 @@ def plan(projects, jobs, linked_keys=frozenset()) -> dict:
     """
     by_key: dict = {}
     by_tokens = collections.defaultdict(list)
+    by_head = collections.defaultdict(list)
     for j in jobs:
         name = j.get("display_name") or ""
         by_key.setdefault(C.canon_key(name), j)
         t = tokens(name)
         if t:
             by_tokens[t].append(j)
+        h = _head_tokens(name)
+        if h:
+            by_head[h].append(j)
 
     out = {"link": [], "refused": [], "ambiguous": [], "unmatched": [],
            "already": []}
@@ -131,6 +148,8 @@ def plan(projects, jobs, linked_keys=frozenset()) -> dict:
         job, how = by_key.get(C.canon_key(pname)), "exact"
         if job is None:
             cand = by_tokens.get(tokens(pname)) or []
+            if not cand:
+                cand = by_head.get(_head_tokens(pname)) or []
             if len(cand) > 1:
                 out["ambiguous"].append({
                     "project": pname, "id": pid,

@@ -1759,10 +1759,24 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 folder_path = str(state.get("path") or "").strip()
                 trello_card = str(state.get("trello_card_id") or "").strip()
                 try:
-                    job = ems_db.resolve_and_link(
-                        client, folder_path=folder_path,
-                        trello_card=trello_card, create=True,
-                        source="crm_workspace", display_name=client)
+                    # Older versions collapsed any title at its first spaced
+                    # dash. A card such as ``PCM - Kellogg Terrace ...`` may
+                    # consequently already be linked to the generic ``pcm``
+                    # row alongside unrelated claims. When the exact title
+                    # has no row, create its now-specific identity first and
+                    # attach the selected card there. Letting strong-link
+                    # resolution win here would perpetuate the bad merge.
+                    key = ems_db.upsert_job(
+                        display_name=client,
+                        department=(_config.active_department() or ""),
+                        metadata={"created_from": "crm_workspace"})
+                    if folder_path:
+                        ems_db.set_link(key, "folder_path", folder_path,
+                                        added_by="crm_workspace")
+                    if trello_card:
+                        ems_db.set_link(key, "trello_card", trello_card,
+                                        added_by="crm_workspace")
+                    job = ems_db.get_job(key)
                 except Exception:
                     # Some older rows have no absolute path.  Preserve the
                     # active franchise on the new master row, then attach any
@@ -2139,7 +2153,9 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return {"ok": True, "state": "missing", "card_id": "",
                 "candidates": []}
 
-    def reconcile_crm_division_trello_cards(self, client: str) -> dict:
+    def reconcile_crm_division_trello_cards(self, client: str,
+                                            opened_card_id: str = "",
+                                            opened_division: str = "") -> dict:
         """Auto-link one clear Trello card per work division.
 
         Contents and Recon are inferred only from explicit board/lane names;
@@ -2153,8 +2169,13 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             hits = self.search_trello(name) or []
         except Exception as ex:
             return {"ok": False, "error": str(ex), "divisions": []}
+        # A broad property-manager prefix can score unrelated jobs highly.
+        # Reject mismatched sites, units and claim ordinals before they can
+        # become division candidates for this job.
+        from companycam_link import disagreement as _identity_disagreement
         strong = [h for h in hits if float(h.get("score") or 0) >= .92
-                  and h.get("tier") != "archive"]
+                  and h.get("tier") != "archive"
+                  and not _identity_disagreement(name, h.get("name") or "")]
         grouped = {"EMS": [], "CONTENTS": [], "RECON": []}
         for hit in strong:
             context = " ".join(str(hit.get(key) or "")
@@ -2171,12 +2192,29 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 })
         current = {card["division"]: card for card in
                    self.crm_division_trello_cards(name).get("cards", [])}
+        opened_card_id = str(opened_card_id or "").strip()
+        from ems_db_common import normalize_division
+        clicked_division = normalize_division(opened_division or "EMS")
+        if opened_card_id:
+            # The board click is an explicit choice, stronger than a legacy
+            # name-derived pin. Save it to the specific job before comparing
+            # search candidates so an old PCM collision repairs itself.
+            saved = self.pin_crm_division_trello(
+                name, clicked_division, opened_card_id)
+            if saved.get("ok"):
+                current[clicked_division] = {
+                    "division": clicked_division,
+                    "card_id": opened_card_id, "pinned": True,
+                }
         results = []
         for division in ("EMS", "CONTENTS", "RECON"):
             pin = str(current.get(division, {}).get("card_id") or "")
             candidates = grouped[division]
             candidate_ids = {card["card_id"] for card in candidates}
-            if pin and candidate_ids and pin not in candidate_ids:
+            if (opened_card_id and pin == opened_card_id and
+                    division == clicked_division):
+                state, reason = "linked", ""
+            elif pin and candidate_ids and pin not in candidate_ids:
                 state, reason = "conflict", "saved_pin_disagrees"
             elif pin:
                 state, reason = "linked", ""

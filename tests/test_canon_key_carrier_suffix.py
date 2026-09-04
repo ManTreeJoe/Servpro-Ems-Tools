@@ -70,6 +70,21 @@ def test_the_district_does_not_swallow_its_schools():
     assert a != b
 
 
+def test_pcm_sites_and_claims_never_collapse_to_the_property_manager():
+    """A property manager is the client account, not the job identity.
+
+    These are the exact two live cards that were cross-wired in Jobs.  The
+    old first-dash split reduced both to ``pcm`` and let one card's comments
+    appear on the other.
+    """
+    kellogg = canon_key("PCM - Kellogg Terrace - (Cruz, Sarah) 8/28")
+    patti = canon_key("PCM - Patti, Leah (95 - 00273-4581)")
+
+    assert kellogg != patti
+    assert kellogg != "pcm"
+    assert patti != "pcm"
+
+
 def test_units_of_one_complex_stay_distinct():
     assert canon_key("Avila Apartments- Unit 226") != \
            canon_key("Avila Apartments- Unit 227")

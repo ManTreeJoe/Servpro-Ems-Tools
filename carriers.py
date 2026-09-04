@@ -78,6 +78,7 @@ _ALIASES = {
     "selfpay": "Self Pay",
     "state farm insurance": "State Farm",
     "statefarm": "State Farm",
+    "usaa general": "USAA",
     "triple a": "AAA",
     "aaa insurance": "AAA",
     # Assignments arrive titled "ACE", but for this office that IS AAA —

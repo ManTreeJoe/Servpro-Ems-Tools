@@ -500,7 +500,7 @@ def test_background_refresh_falls_back_to_trello_until_shared_schema_exists(monk
     assert calls == [True]
 
 
-def test_pipeline_workspace_routes_trello_data_to_selected_division(monkeypatch):
+def test_pipeline_workspace_keeps_the_exact_opened_card_authoritative(monkeypatch):
     api = pipeline_web.Api()
     monkeypatch.setattr(api, "audit_card", lambda _client: {
         "ok": True, "client": "Three Card Job", "path": "",
@@ -532,8 +532,54 @@ def test_pipeline_workspace_routes_trello_data_to_selected_division(monkeypatch)
 
     result = api.job_card_workspace("Three Card Job", "ems12345", "RECON")
     assert result["selected_division"] == "RECON"
-    assert result["card_id"] == "recon123"
-    assert result["comments"][0]["text"] == "comment from recon123"
+    assert result["card_id"] == "ems12345"
+    assert result["comments"][0]["text"] == "comment from ems12345"
+
+
+def test_pcm_workspace_does_not_replace_clicked_card_with_another_pcm_pin(monkeypatch):
+    """The exact live regression: collapsed PCM state pointed at Patti,
+    while the operator clicked Kellogg.  Comments must follow the click."""
+    api = pipeline_web.Api()
+    kellogg_id = "kellogg-card"
+    patti_id = "patti-card"
+    monkeypatch.setattr(api, "audit_card", lambda _client: {
+        "ok": True, "path": "", "trello_card_id": patti_id,
+        "form_issues": [], "photo_issues": [], "requirements": [],
+        "activity": [],
+    })
+
+    class AuditStub:
+        def crm_job_workspace(self, *_a):
+            return {"ok": True, "job_log": [], "division_trello_cards": [
+                {"division": "EMS", "card_id": patti_id, "pinned": True},
+            ]}
+
+        def crm_division_trello_cards(self, *_a):
+            return {"ok": True, "cards": [
+                {"division": "EMS", "card_id": patti_id, "pinned": True},
+            ]}
+
+    monkeypatch.setattr(api, "_audit_api", lambda: AuditStub())
+    monkeypatch.setattr(pipeline_web.pipeline_store, "list_checklists", lambda _cid: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store, "list_activity", lambda _cid: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store, "add_activities", lambda *_a, **_k: {})
+    monkeypatch.setattr("trello_client.get_member_me", lambda: {})
+    monkeypatch.setattr("trello_client.get_card", lambda cid: {
+        "checklists": [], "attachments": [], "members": [],
+        "actions": [{
+            "type": "commentCard", "id": f"comment-{cid}",
+            "date": "2026-08-28", "memberCreator": {"fullName": "Tech"},
+            "data": {"text": f"comment from {cid}"},
+        }],
+    })
+    monkeypatch.setattr("ems_db.find_job_by_name", lambda _name: {})
+
+    result = api.job_card_workspace(
+        "PCM - Kellogg Terrace - (Cruz, Sarah) 8/28", kellogg_id, "EMS")
+
+    assert result["card_id"] == kellogg_id
+    assert [c["text"] for c in result["comments"]] == [
+        "comment from kellogg-card"]
 
 
 def test_opened_contents_card_selects_contents_automatically(monkeypatch):

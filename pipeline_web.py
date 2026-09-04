@@ -779,13 +779,16 @@ class Api(JobSettingsApi):
         audit_api = self._audit_api()
         reconcile_divisions = getattr(
             audit_api, "reconcile_crm_division_trello_cards", None)
-        reconcile_key = client.strip().casefold()
+        reconcile_key = (client.strip().casefold(),
+                         (card_id or "").strip().casefold(),
+                         (division or "EMS").strip().upper())
 
         def load_division_reconciliation():
             cached = self._division_reconcile_cache.get(reconcile_key)
             if cached and time.monotonic() - cached[0] < 300:
                 return cached[1]
-            result = (reconcile_divisions(client) if reconcile_divisions else
+            result = (reconcile_divisions(client, card_id, division)
+                      if reconcile_divisions else
                       {"ok": True, "divisions": [], "has_conflict": False})
             self._division_reconcile_cache[reconcile_key] = (
                 time.monotonic(), result)
@@ -803,6 +806,11 @@ class Api(JobSettingsApi):
         if not summary.get("ok"):
             reconcile_pool.shutdown(wait=False, cancel_futures=True)
             return summary
+        # The board click carries a stronger identity than a name-derived
+        # audit pin. Pass that exact card through CRM hydration as well, so a
+        # legacy collapsed name cannot attach this workspace to its sibling.
+        if (card_id or "").strip():
+            summary = {**summary, "trello_card_id": card_id.strip()}
         crm = self._crm_workspace(client, summary)
         try:
             division_reconciliation = reconcile_future.result()
@@ -859,11 +867,14 @@ class Api(JobSettingsApi):
         selected_division = requested_division or "EMS"
         selected_card = next((card for card in division_cards
                               if card.get("division") == selected_division), {})
-        cid = str(selected_card.get("card_id") or "").strip()
-        # A just-opened legacy card can predate the shared pin. It remains
-        # the EMS card until the user explicitly assigns another division.
+        # Opening a board card is an exact, user-selected identity. Never
+        # replace it with a name-derived/saved division pin: legacy keys could
+        # collapse sibling claims (notably every ``PCM - ...`` card) and that
+        # displayed another job's comments. Division-tab navigation passes no
+        # opened id, so its saved division card still wins as intended.
+        cid = opened_id or str(selected_card.get("card_id") or "").strip()
         if not cid and selected_division == "EMS":
-            cid = opened_id or (summary.get("trello_card_id") or "").strip()
+            cid = (summary.get("trello_card_id") or "").strip()
         crm = dict(crm)
         crm["work_environments"] = _detected_work_environments(
             crm, summary, division_cards, selected_division)
@@ -1042,7 +1053,11 @@ class Api(JobSettingsApi):
         key = (client or "").strip().casefold()
         self._invalidate_workspace(client, card_id)
         self._audit_card_cache.pop(key, None)
-        self._division_reconcile_cache.pop(key, None)
+        for reconcile_key in list(self._division_reconcile_cache):
+            if (reconcile_key == key or
+                    (isinstance(reconcile_key, tuple) and
+                     reconcile_key[0] == key)):
+                self._division_reconcile_cache.pop(reconcile_key, None)
         try:
             from ems_db_sqlite import canon_key
             self._old_jobs_cache.pop(canon_key(client or ""), None)

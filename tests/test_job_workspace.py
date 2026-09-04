@@ -38,6 +38,27 @@ def test_workspace_auto_registers_an_audited_job_missing_from_index(workspace):
     assert db.get_link(job["canon_key"], "trello_card") == "card-legacy"
 
 
+def test_workspace_splits_a_specific_pcm_job_from_legacy_pcm_card_links(workspace):
+    """Old releases keyed every PCM card as ``pcm``. Opening an exact card
+    must establish the site/claim job instead of adopting that shared row."""
+    db, api = workspace
+    legacy = db.upsert_job(display_name="PCM")
+    db.set_link(legacy, "trello_card", "patti-card")
+    db.set_link(legacy, "trello_card", "kellogg-card")
+
+    result = api.crm_job_workspace(
+        "PCM - Kellogg Terrace - (Cruz, Sarah) 8/28", {
+            "path": "", "trello_card_id": "kellogg-card",
+            "form_issues": [], "photo_issues": [], "requirements": [],
+        })
+
+    assert result["ok"]
+    assert result["canon_key"] == db.canon_key(
+        "PCM - Kellogg Terrace - (Cruz, Sarah) 8/28")
+    assert result["canon_key"] != legacy
+    assert db.get_link(result["canon_key"], "trello_card") == "kellogg-card"
+
+
 def test_workspace_edit_is_marked_manual(workspace):
     db, api = workspace
     key = db.upsert_job(display_name="Avery Morgan")
@@ -217,6 +238,32 @@ def test_division_cards_auto_link_separately_and_flag_conflicts(workspace, monke
     assert cards["EMS"] == "abcde123"
     assert cards["CONTENTS"] == "bcdef234"
     assert cards["RECON"] == ""
+
+
+def test_opened_card_repairs_legacy_pcm_conflict_without_warning(workspace,
+                                                                 monkeypatch):
+    db, api = workspace
+    name = "PCM - Kellogg Terrace - (Cruz, Sarah) 8/28"
+    db.upsert_job(display_name=name)
+    monkeypatch.setattr("audit_web.persistence.set_trello_card_id",
+                        lambda *_args: None)
+    monkeypatch.setattr(api, "search_trello", lambda _n: [
+        {"card_id": "kellogg1", "name": name, "board": "WIP",
+         "lane": "Work in progress", "tier": "active", "score": 1.0},
+        {"card_id": "pattiii1",
+         "name": "PCM - Patti, Leah (95 - 00273-4581)", "board": "WIP",
+         "lane": "Work in progress", "tier": "active", "score": 1.0},
+    ])
+
+    result = api.reconcile_crm_division_trello_cards(
+        name, "kellogg1", "EMS")
+    ems = next(row for row in result["divisions"]
+               if row["division"] == "EMS")
+
+    assert result["has_conflict"] is False
+    assert ems["state"] == "linked"
+    assert ems["card_id"] == "kellogg1"
+    assert [c["card_id"] for c in ems["candidates"]] == ["kellogg1"]
 
 
 def test_workspace_is_part_of_shared_job_detail():
