@@ -2,5 +2,5 @@
   "version": "1.8.9",
   "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.9",
   "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.9/Linguar-Hub-Setup-1.8.9.exe",
-  "notes": "Jobs folder-link reliability update: replaces the unreliable native WebView confirmation with a dependable in-app confirmation so commercial, property-management, unit, claim, and differently named job folders can be linked successfully."
+  "notes": "Jobs reliability update: folder linking now confirms reliably in the desktop app, and property-management sites and claims keep separate Trello cards, comments, checklists, and job records. Opening an exact card also repairs stale legacy card pins and filters unrelated matches from conflict warnings."
 }
