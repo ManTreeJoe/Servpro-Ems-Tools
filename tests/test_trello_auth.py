@@ -24,6 +24,10 @@ import config
 import trello_auth
 
 
+def test_normal_sign_in_window_allows_for_account_choice_and_mfa():
+    assert trello_auth._TIMEOUT_S >= 600
+
+
 @pytest.fixture(autouse=True)
 def _cfg(tmp_path, monkeypatch):
     path = tmp_path / "config.json"

@@ -30,7 +30,11 @@ import config
 
 _SCOPE = "read,write,account"
 _APP_NAME = "Linguar Hub"
-_TIMEOUT_S = 120
+# People commonly have to choose an account, complete MFA, or ask which
+# workspace to allow.  Two minutes closed the loopback listener while the
+# Trello tab was still open, leaving a correct redirect at a dead localhost
+# page.  Ten minutes is still bounded but behaves like a human setup flow.
+_TIMEOUT_S = 600
 
 # FIXED port, not an ephemeral one. Trello validates `return_url` against
 # the API key's Allowed Origins list, and an origin is scheme+host+PORT —
@@ -74,7 +78,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             if token:
                 self._send(_PAGE_HEAD + """<div class="card">
                   <div class="ok">✓</div><h1>Trello connected</h1>
-                  <p>You can close this tab and go back to EMS&nbsp;Tools.</p>
+                  <p>You can close this tab and go back to Linguar Hub.</p>
                   </div>""")
             else:
                 self._send(_PAGE_HEAD + """<div class="card">
@@ -229,7 +233,8 @@ def authorize(*, timeout=_TIMEOUT_S, open_browser=True) -> dict:
                     "allowed_origin": f"http://localhost:{port}",
                     "manual_url": authorize_url(api_key),
                     "error": (
-                        "Trello didn't come back. If the page said "
+                        "Trello sign-in timed out after 10 minutes. Start "
+                        "again from Settings → Connect Trello. If the page said "
                         "\"Invalid return_url\", add "
                         f"http://localhost:{port} to your API key's "
                         "Allowed Origins at trello.com/apps/admin — "
