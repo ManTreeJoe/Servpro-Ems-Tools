@@ -401,6 +401,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .lane-empty { color: var(--text-dim); font-size: 12px; text-align: center; padding: 8px 0; }
 
 .kcard {
+  flex: 0 0 auto;
   background: var(--surface-2); border: 1px solid var(--border);
   border-left: 3px solid transparent; border-radius: 6px;
   padding: 8px 9px; cursor: grab; transition: border-color 100ms ease, background 100ms ease;

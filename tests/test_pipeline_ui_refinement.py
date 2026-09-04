@@ -248,6 +248,13 @@ def test_jobs_board_zoom_is_visible_persistent_and_board_scoped():
     assert 'class="board-view-menu toolbar-more view-board-only"' in html
 
 
+def test_job_cards_never_shrink_to_fit_a_full_lane():
+    """A busy Trello-style lane scrolls; its cards keep their normal height."""
+    css = _asset("app.css")
+
+    assert "flex: 0 0 auto" in css[css.index(".kcard {"):css.index(".toolbar-more", css.index(".kcard {"))]
+
+
 def test_jobs_toolbar_menus_stack_above_the_board():
     """Board view and overflow menus must not render behind the board."""
     css = _asset("app.css")

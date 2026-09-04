@@ -1,6 +1,6 @@
 {
-  "version": "1.8.11",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.11",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.11/Linguar-Hub-Setup-1.8.11.exe",
-  "notes": "CompanyCam exact-folder recovery: when automatic job-folder matching fails, users can open a Windows folder picker, choose the precise nested OD job folder, pin it, and immediately retry the photo import. Ranked folder suggestions remain available for the common case."
+  "version": "1.8.12",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.12",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.12/Linguar-Hub-Setup-1.8.12.exe",
+  "notes": "Jobs board card-sizing fix: cards now keep a consistent Trello-like height in busy lanes, and each lane scrolls vertically instead of compressing its cards. Includes the 1.8.11 CompanyCam exact-folder picker."
 }
