@@ -26,6 +26,16 @@ def test_oauth_tokens_are_encrypted_and_never_returned_to_client_source():
     assert "OAUTH_TOKEN_ENCRYPTION_KEY" in shared
 
 
+def test_oauth_callback_confirmation_is_browser_renderable_on_supabase():
+    """Hosted Edge Functions rewrite text/html GET responses to text/plain."""
+    callback = (ROOT / "supabase/functions/companycam-oauth-callback/index.ts").read_text(encoding="utf-8")
+    assert '"Content-Type": "image/svg+xml; charset=utf-8"' in callback
+    assert '"X-Content-Type-Options": "nosniff"' in callback
+    assert '"Cache-Control": "no-store"' in callback
+    assert '"text/html; charset=utf-8"' not in callback
+    assert "✓" not in callback
+
+
 def test_gateway_prefers_personal_connection_and_can_refresh_it():
     gateway = (ROOT / "supabase/functions/companycam-gateway/index.ts").read_text(encoding="utf-8")
     assert "personalCredential" in gateway
