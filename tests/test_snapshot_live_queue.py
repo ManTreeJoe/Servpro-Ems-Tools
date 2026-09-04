@@ -18,8 +18,8 @@ def test_snapshot_queue_auto_refreshes_from_trello():
 def test_snapshot_queue_explains_shared_trello_workflow():
     html = (ROOT / "snapshot_web_assets" / "index.html").read_text(encoding="utf-8")
 
-    assert "Live Trello Snapshot lane" in html
-    assert "Anyone can move a card into Snapshot in Trello" in html
+    assert "Close-out queue" in html
+    assert "Cards in Trello's Snapshot lane appear here" in html
     assert 'id="queue-synced"' in html
 
 

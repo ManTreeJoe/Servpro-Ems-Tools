@@ -113,4 +113,4 @@ def test_every_shared_card_loader_has_the_new_version():
         marker = "audit_detail.js?v="
         if marker in text:
             versions.add(text.split(marker, 1)[1].split('"', 1)[0])
-    assert versions == {"20260831d"}
+    assert versions == {"20260904a"}
