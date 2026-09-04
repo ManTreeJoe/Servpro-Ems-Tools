@@ -248,6 +248,16 @@ def test_jobs_board_zoom_is_visible_persistent_and_board_scoped():
     assert 'class="board-view-menu toolbar-more view-board-only"' in html
 
 
+def test_jobs_toolbar_menus_stack_above_the_board():
+    """Board view and overflow menus must not render behind the board."""
+    css = _asset("app.css")
+    topbar_rule = css[css.index(".topbar {", css.index("Modern jobsite board")):]
+    topbar_rule = topbar_rule[:topbar_rule.index("}")]
+    assert "z-index:" in topbar_rule
+    assert ".toolbar-more > div" in css
+    assert ".board-wrap" in css and "isolation: isolate" in css
+
+
 def test_job_workspace_visibly_separates_work_from_connected_tools():
     js = _asset("app.js")
     header_start = js.index('<div class="card-quick-actions"')

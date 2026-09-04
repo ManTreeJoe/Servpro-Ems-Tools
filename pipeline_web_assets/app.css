@@ -997,6 +997,8 @@ button,input,select,textarea { font-family:var(--font-body); }
   padding: 8px 16px !important;
   background: rgba(17,21,19,.96);
   backdrop-filter: blur(18px);
+  z-index: 120;
+  overflow: visible;
 }
 .pipeline-title { font-size: 21px; font-weight: 760; }
 .view-toggle { padding: 3px; border-radius: 10px; background: #202722; }
