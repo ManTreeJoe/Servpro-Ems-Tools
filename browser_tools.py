@@ -31,7 +31,7 @@ SHELL_METHODS = {
     "open_url", "install_update", "counts", "get_starred_clients",
     "toggle_starred_client", "is_client_starred", "open_trello_for_client",
     "open_folder_for_client", "open_xa_for_client",
-    "open_companycam_for_client", "trello_card_hover", "open_tk_launcher",
+    "open_companycam_for_client", "trello_card_hover",
     "department_state", "switch_department",
 }
 
@@ -39,7 +39,7 @@ SHELL_METHODS = {
 # useful when the portal is opened on the same PC, but must never make a remote
 # browser operate the host computer.
 HOST_ONLY_SHELL_METHODS = {
-    "focus_window", "open_url", "install_update", "open_tk_launcher",
+    "focus_window", "open_url", "install_update",
     "open_trello_for_client", "open_folder_for_client", "open_xa_for_client",
     "open_companycam_for_client", "switch_department",
 }

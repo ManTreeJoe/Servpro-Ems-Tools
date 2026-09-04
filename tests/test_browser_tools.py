@@ -30,9 +30,6 @@ class FakeHome:
     def header(self):
         return {"greeting": "Hello"}
 
-    def open_tk_launcher(self):
-        return True
-
     def install_update(self, _url=""):
         raise AssertionError("browser must never invoke the desktop installer")
 
@@ -55,9 +52,6 @@ def test_browser_host_rejects_private_and_unregistered_methods():
 
 def test_remote_browser_cannot_control_the_host_desktop():
     host = BrowserToolHost(FakeHome)
-    result = host.call("open_tk_launcher", local_request=False)
-    assert result["ok"] is False
-    assert result["local_only"] is True
     result = host.call("jobs_open_file", ["X:/job.pdf"], local_request=False)
     assert result["ok"] is False
     assert result["local_only"] is True
@@ -85,7 +79,6 @@ def test_browser_shell_assets_use_the_shared_bridge_and_tool_routes():
     assert "state.data?.tool_routes" in operations
     assert "openRequestedBrowserPanel" in home
     assert "if (window.__LINGUAR_BROWSER_TOOLS__) return;" in home
-    assert '$("#legacy-btn")?.remove()' in home
 
 
 def test_tools_shell_uses_the_real_hub_mark_instead_of_gradient_placeholders():

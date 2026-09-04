@@ -1839,7 +1839,7 @@ class Api(JobSettingsApi):
 def main(argv=None):
     api = Api()
     window = webview.create_window(
-        title="Pipeline — Linguar Hub (web spike)",
+        title="Pipeline — Linguar Hub",
         url=INDEX_HTML,
         js_api=api,
         width=1280, height=820,

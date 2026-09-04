@@ -1,4 +1,4 @@
-/* Linguar Hub web spikes — shared theme + chrome.
+/* Linguar Hub — shared theme and application chrome.
  *
  * Every panel under scripts/<name>_web_assets/ imports this via
  *   <link rel="stylesheet" href="../web_shared/theme.css" />

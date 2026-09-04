@@ -9509,7 +9509,7 @@ def main(argv=None):
     _argv = argv if argv is not None else sys.argv[1:]
     api = Api()
     window = webview.create_window(
-        title="Audit — Linguar Hub (web spike)",
+        title="Audit — Linguar Hub",
         url=INDEX_HTML,
         js_api=api,
         width=1480, height=860,

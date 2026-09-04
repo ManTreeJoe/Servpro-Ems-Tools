@@ -23,7 +23,6 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 window.addEventListener("pywebviewready", async () => {
-  if (window.__LINGUAR_BROWSER_TOOLS__) $("#legacy-btn")?.remove();
   // WebView2 focus fix: nudge the app window to the foreground on click so
   // a text field doesn't just blink a caret while the window stays inactive.
   let _focusNudgeAt = 0;
@@ -34,7 +33,6 @@ window.addEventListener("pywebviewready", async () => {
     try { pywebview?.api?.focus_window?.(); } catch (_) { /* ignore */ }
   }, true);
   $("#refresh-btn").addEventListener("click", reloadEverything);
-  $("#legacy-btn").addEventListener("click", () => pywebview.api.open_tk_launcher());
   $("#toast-log-btn").addEventListener("click", () => window.openToastLogDrawer?.());
   await loadShell();
   refreshCounts();

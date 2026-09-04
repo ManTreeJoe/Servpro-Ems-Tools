@@ -105,6 +105,24 @@
   .add-row-btn:hover { border-color: var(--green); color: var(--green);
     background: var(--green-soft); }
 
+  .snapshot-tabs {
+    display: flex; gap: 4px; padding: 0 18px;
+    border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .snapshot-tabs .tab-btn {
+    background: transparent; color: var(--text); border: 0;
+    border-bottom: 2px solid transparent; padding: 10px 16px;
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .tracked-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .tracked-table-head { position: sticky; top: 0; background: var(--surface); z-index: 5; }
+  .tracked-table-head tr { border-bottom: 1px solid var(--border); }
+  .tracked-table-head th {
+    padding: 8px 10px; text-align: left; font-size: 10px; font-weight: 600;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em;
+  }
+  .tracked-table-head th:last-child { text-align: right; }
+
   .pdf-row {
     display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
     padding: 9px 12px; border-bottom: 1px solid var(--border);
@@ -382,13 +400,11 @@
 <!-- LIST VIEW — two tabs:
      • Today (Estimating board's SNAPSHOT lane + recent PDFs)
      • Tracked (Snapshots <YY>.xlsx as a clean dispute-style table) -->
-<nav class="tabs" id="snap-tabs" style="display:flex;gap:4px;padding:0 18px 0;border-bottom:1px solid var(--border);background:var(--surface);">
-  <button class="tab-btn active" data-tab="today"
-          style="background:transparent;color:var(--text);border:0;border-bottom:2px solid transparent;padding:10px 16px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;">
+<nav class="snapshot-tabs" id="snap-tabs">
+  <button class="tab-btn active" data-tab="today">
     📸 Close-out queue
   </button>
-  <button class="tab-btn" data-tab="tracked"
-          style="background:transparent;color:var(--text);border:0;border-bottom:2px solid transparent;padding:10px 16px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;">
+  <button class="tab-btn" data-tab="tracked">
     📋 Tracked <span class="muted" style="font-size:11px;font-weight:500;" id="tab-tracked-count"></span>
   </button>
 </nav>
@@ -455,23 +471,23 @@
       </div>
       <div id="tracked-loc" class="muted" style="font-size:11px;padding:6px 16px;border-bottom:1px solid var(--border);opacity:.7;"></div>
       <div style="overflow:auto;max-height:calc(100vh - 220px);">
-        <table id="tracked-tbl" style="width:100%;border-collapse:collapse;font-size:12px;">
-          <thead style="position:sticky;top:0;background:var(--surface);z-index:5;">
-            <tr style="border-bottom:1px solid var(--border);">
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Sheet</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Received</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Name</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Carrier</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Claim#</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Type</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Lead</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Inspection</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Demo</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Docusketch</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Scope</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Final</th>
-              <th style="text-align:left;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;">Closing</th>
-              <th style="text-align:right;padding:8px 10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:10px;"></th>
+        <table id="tracked-tbl" class="tracked-table">
+          <thead class="tracked-table-head">
+            <tr>
+              <th>Sheet</th>
+              <th>Received</th>
+              <th>Name</th>
+              <th>Carrier</th>
+              <th>Claim#</th>
+              <th>Type</th>
+              <th>Lead</th>
+              <th>Inspection</th>
+              <th>Demo</th>
+              <th>Docusketch</th>
+              <th>Scope</th>
+              <th>Final</th>
+              <th>Closing</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="tracked-tbody"></tbody>

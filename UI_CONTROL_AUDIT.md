@@ -15,7 +15,7 @@ The placement contract is:
 
 Configuration, export, bulk maintenance, and specialist actions belong in `More`. Primary work must stay visible and must never require right-click.
 
-Remaining cleanup should remove local duplicate control rules as each panel is touched. Settings, Snapshot, and legacy specialist tools contain the largest amount of inline presentation code; migrate those styles into named local classes without changing their workflows.
+Remaining cleanup should remove local duplicate control rules as each panel is touched. Settings and specialist tools contain the largest amount of inline presentation code; migrate those styles into named local classes without changing their workflows. Snapshot's tracker tabs and table header now use named layout classes.
 
 ## Naming map
 
@@ -76,7 +76,6 @@ Hidden-by-default specialist tools should remain available in Settings rather th
 
 | Control | Recommendation |
 |---|---|
-| Open legacy app | Keep in Support tools during migration; remove after 2 stable Main releases |
 | Global refresh | Keep bottom-left; rename tooltip to `Refresh current screen & counts` |
 | Client Usage report | Move to Reports if it is office-wide rather than client-specific |
 | Client Overview | Rename once its exact content is finalized; “Overview” is too vague |

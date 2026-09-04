@@ -995,20 +995,6 @@ class HomeApi:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
-    def open_tk_launcher(self):
-        """Spawn the legacy Tk launcher (fallback) detached."""
-        import subprocess
-        try:
-            if getattr(sys, "frozen", False):
-                cmd = [sys.executable, "--tk"]
-            else:
-                cmd = [sys.executable, os.path.join(_HERE, "launcher.py"), "--tk"]
-            creationflags = 0x00000008 if sys.platform == "win32" else 0
-            subprocess.Popen(cmd, creationflags=creationflags)
-            return True
-        except Exception:
-            return False
-
     # ── Department (multi-account) switcher ──────────────────────────
     def department_state(self):
         """State for the launcher's department pill: whether multi-dept
