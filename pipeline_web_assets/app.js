@@ -1529,7 +1529,7 @@ function openAuditModal(data, trelloUrl = "") {
             </div></div>
           </div>
           <div class="quick-utility-actions"><div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu">
-            <button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
+            <button data-dispatch-subcontractor>Dispatch subcontractor</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
           </div></div></div>
         </div>
       </header>
@@ -1673,6 +1673,13 @@ function openAuditModal(data, trelloUrl = "") {
     await pywebview.api.copy_to_clipboard(summary);
     event.currentTarget.closest(".tool-quick-menu")?.classList.remove("is-open");
     setStatus("Copied formatted job summary", "ok");
+  });
+  w.querySelector("[data-dispatch-subcontractor]")?.addEventListener("click", () => {
+    const fields = Object.fromEntries(copyFacts
+      .filter((field) => field?.id)
+      .map((field) => [field.id, field.value || ""]));
+    fields.client = data.client || res.client || "";
+    openSubcontractorDispatchModal(fields);
   });
   w.querySelectorAll("[data-checklist-role]").forEach((button) => button.addEventListener("click", () => {
     w.querySelectorAll("[data-checklist-role]").forEach((tab) => {
@@ -2731,10 +2738,11 @@ async function openCompanyCamPullModal(data, audit) {
 
   const groups = plan.groups || [];
   const stages = ["Initial", "Monitor", "Demo", "Final", "Equipment", "Contents", "Scope"];
-  body.innerHTML = `<div class="cc-pull-summary"><strong>${Number(plan.missing || 0)} photos to import</strong><span>${groups.length} shoot${groups.length === 1 ? "" : "s"} · choose where each untagged shoot belongs</span></div>
+  body.innerHTML = `<div class="cc-pull-summary"><strong>${Number(plan.missing || 0)} photos to import</strong><span>${groups.length} shoot${groups.length === 1 ? "" : "s"} · added tags sync to CompanyCam; existing tags stay</span></div>
     <div class="cc-pull-groups">${groups.map((group, index) => {
       const tagged = group.stage && group.stage !== "(no stage tag)";
       const suggested = group.suggested_stage || "";
+      const currentTags = group.current_tags || [];
       return `<article class="cc-pull-group">
         <input type="checkbox" data-cc-group="${index}" checked aria-label="Import this shoot">
         <div class="cc-pull-shoot"><strong>${escapeHtml(formatAppDate(group.date || "") || group.date || "Unknown date")}</strong><small>${Number(group.count || (group.photo_ids || []).length)} photos${group.rooms?.length ? ` · ${escapeHtml(group.rooms.slice(0, 3).map((room) => room[0]).join(", "))}` : ""}</small></div>
@@ -2742,6 +2750,7 @@ async function openCompanyCamPullModal(data, audit) {
           ? `<strong>${escapeHtml(group.stage)}</strong>`
           : `<select data-cc-stage="${index}"><option value="">Choose stage…</option>${stages.map((stage) => `<option value="${escapeAttr(stage)}" ${stage === suggested ? "selected" : ""}>${escapeHtml(stage)}</option>`).join("")}</select>`}</label>
         <label><span>Tech</span><input data-cc-tech="${index}" value="${escapeAttr(group.tech || "")}" placeholder="Technician"></label>
+        <label class="cc-pull-tags"><span>Add CompanyCam tags</span><input data-cc-tags="${index}" placeholder="Mold, Kitchen"><small>${currentTags.length ? `Current: ${escapeHtml(currentTags.join(", "))}` : "No current tags"}</small></label>
         <div class="cc-pull-target"><span>Files to</span><strong>${escapeHtml(group.target || "Job photos")}</strong></div>
       </article>`;
     }).join("")}</div>
@@ -2753,7 +2762,9 @@ async function openCompanyCamPullModal(data, audit) {
     const group = groups[index] || {};
     return {photo_ids: group.photo_ids || [],
       stage: body.querySelector(`[data-cc-stage="${index}"]`)?.value || "",
-      tech: body.querySelector(`[data-cc-tech="${index}"]`)?.value.trim() || ""};
+      tech: body.querySelector(`[data-cc-tech="${index}"]`)?.value.trim() || "",
+      tags: (body.querySelector(`[data-cc-tags="${index}"]`)?.value || "")
+        .split(",").map((tag) => tag.trim()).filter(Boolean)};
   });
   const refresh = () => {
     const assignments = selectedAssignments();
@@ -2782,6 +2793,72 @@ async function openCompanyCamPullModal(data, audit) {
     close();
     setStatus(`Pulling ${started.total || 0} CompanyCam photos in the background…`, "ok");
   });
+}
+
+async function openSubcontractorDispatchModal(jobFields) {
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay subcontract-dispatch-overlay";
+  modal.innerHTML = `<div class="modal-box subcontract-dispatch-card" role="dialog" aria-modal="true" aria-label="Dispatch subcontractor">
+    <header class="modal-head"><div><div class="modal-title">Dispatch subcontractor</div><div class="modal-sub">Build a draft from the saved job information</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
+    <div class="modal-body subcontract-dispatch-body">
+      <div class="subcontract-fields">
+        <label><span>Subcontractor email</span><input data-vendor-email type="email" value="dispatch@titan-enviro.com" placeholder="dispatch@vendor.com" autofocus></label>
+        <label><span>CC</span><input data-dispatch-cc type="email" value="EMS@servpro10100.com"></label>
+        <label><span>Service</span><input data-dispatch-service value="Mold clearance" placeholder="Mold clearance"></label>
+        <label><span>Ready date</span><input data-ready-date type="date"></label>
+        <label class="span-all"><span>Dispatch details</span><textarea data-scope-notes rows="3" placeholder="One containment in Kitchen"></textarea></label>
+      </div>
+      <div class="subcontract-preview" data-dispatch-preview><span>Complete the fields to preview the email.</span></div>
+      <footer class="subcontract-actions"><span data-dispatch-state></span><button class="btn" data-copy-dispatch>Copy draft</button><button class="btn btn-primary" data-open-dispatch>Open email draft</button></footer>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector("[data-close]").addEventListener("click", close);
+  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+  const value = (selector) => modal.querySelector(selector)?.value.trim() || "";
+  let currentDraft = null;
+  let sequence = 0;
+  const build = async () => {
+    const request = ++sequence;
+    const options = {
+      vendor_email: value("[data-vendor-email]"), cc: value("[data-dispatch-cc]"),
+      service: value("[data-dispatch-service]"), ready_date: value("[data-ready-date]"),
+      scope_notes: value("[data-scope-notes]"),
+    };
+    const draft = await pywebview.api.subcontractor_dispatch_draft(jobFields, options);
+    if (request !== sequence || !modal.isConnected) return null;
+    currentDraft = draft?.ok ? draft : null;
+    const preview = modal.querySelector("[data-dispatch-preview]");
+    if (!currentDraft) {
+      preview.innerHTML = `<strong>Draft unavailable</strong><span>${escapeHtml(draft?.error || "Try again.")}</span>`;
+      return null;
+    }
+    preview.innerHTML = `<div><span>To</span><strong>${escapeHtml(currentDraft.to || "Add a subcontractor email")}</strong></div><div><span>CC</span><strong>${escapeHtml(currentDraft.cc || "—")}</strong></div><div><span>Subject</span><strong>${escapeHtml(currentDraft.subject)}</strong></div><pre>${escapeHtml(currentDraft.body)}</pre>`;
+    modal.querySelector("[data-dispatch-state]").textContent = currentDraft.missing?.length
+      ? `Still needed: ${currentDraft.missing.join(", ")}` : "Ready to review in Outlook";
+    return currentDraft;
+  };
+  let timer;
+  modal.querySelectorAll("input, textarea").forEach((control) => control.addEventListener("input", () => {
+    clearTimeout(timer); timer = setTimeout(build, 160);
+  }));
+  modal.querySelector("[data-copy-dispatch]").addEventListener("click", async () => {
+    const draft = await build();
+    if (!draft) return;
+    await pywebview.api.copy_to_clipboard(`To: ${draft.to}\nCc: ${draft.cc}\nSubject: ${draft.subject}\n\n${draft.body}`);
+    setStatus("Subcontractor dispatch draft copied", "ok");
+  });
+  modal.querySelector("[data-open-dispatch]").addEventListener("click", async () => {
+    const draft = await build();
+    if (!draft || !draft.to) {
+      modal.querySelector("[data-dispatch-state]").textContent = "Add the subcontractor email first.";
+      return;
+    }
+    const url = `mailto:${encodeURIComponent(draft.to.replaceAll("; ", ","))}?cc=${encodeURIComponent(draft.cc)}&subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
+    await pywebview.api.open_url(url);
+  });
+  await build();
 }
 
 function watchCompanyCamPull(client) {

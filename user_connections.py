@@ -5,10 +5,10 @@ session, an organization application key, a per-user token, or the Windows
 desktop session.  They ask for :func:`statuses` and render the same small
 set of states and actions.
 
-CompanyCam is intentionally organization-managed for this private app.  An
+CompanyCam's API credential is organization-managed for this private app.  An
 administrator configures one Application Key per franchise; employees sign
-into Linguar Hub, and CompanyCam writes are attributed to that employee with
-``X_COMPANYCAM_USER``.  We do not ask every employee to create or paste a
+into Linguar Hub for app attribution and sign into CompanyCam normally when
+opening its own interface.  We do not ask employees to create or paste a
 personal CompanyCam token.
 """
 from __future__ import annotations
@@ -118,10 +118,11 @@ def statuses(*, access=None, cfg=None, platform_name=None) -> list[dict]:
         cards.append(_card(
             "companycam", "CompanyCam", "CC", "connected",
             "Connected securely by office",
-            (f"{franchise} manages the secure connection in Supabase. Actions "
-             "are sent to CompanyCam as the signed-in employee."),
+            (f"{franchise} manages the secure API connection in Supabase. "
+             "Linguar Hub records actions under your work identity; CompanyCam "
+             "opens with your own CompanyCam sign-in."),
             identity=email, action="open_companycam",
-            action_label="Open CompanyCam", scope="organization"))
+            action_label="Open / sign in", scope="organization"))
 
     trello_key = bool(str(cfg.get("trello_api_key") or "").strip())
     trello_token = bool(str(cfg.get("trello_token") or "").strip())

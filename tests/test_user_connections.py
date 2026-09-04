@@ -24,6 +24,7 @@ def test_companycam_is_org_managed_but_attributed_to_signed_in_user(monkeypatch)
     assert cc["scope"] == "organization"
     assert cc["identity"] == "sam@servpro.test"
     assert "IE manages" in cc["detail"]
+    assert cc["action_label"] == "Open / sign in"
 
 
 def test_companycam_connection_requires_linguar_identity(monkeypatch):

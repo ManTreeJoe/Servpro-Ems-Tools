@@ -1505,10 +1505,15 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
             "tech": tech_label(p, tech),
             "target": os.path.join(*shared) if shared else "",
             "dest": os.path.join(base, *shared) if base else "",
-            "count": 0, "rooms": {}, "photo_ids": [],
+            "count": 0, "rooms": {}, "photo_ids": [], "current_tags": [],
         })
         g["count"] += 1
         g["photo_ids"].append(str(p.get("id") or ""))
+        for tag in (p.get("tags") or []):
+            tag = str(tag or "").strip()
+            if tag and tag.casefold() not in {
+                    current.casefold() for current in g["current_tags"]}:
+                g["current_tags"].append(tag)
         r = room or "(no room tag)"
         g["rooms"][r] = g["rooms"].get(r, 0) + 1
 
@@ -1518,6 +1523,7 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
                   key=lambda g: (g["date"] or "", g["stage"]), reverse=True)
     for g in rows:
         g["rooms"] = sorted(g["rooms"].items(), key=lambda kv: -kv[1])
+        g["current_tags"].sort(key=str.casefold)
     return {"ok": True, "total": v["total"], "present": v["present"],
             "missing": v["missing"], "groups": rows,
             # Carried through so callers can keep showing the "deleted in

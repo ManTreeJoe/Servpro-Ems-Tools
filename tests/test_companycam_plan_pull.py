@@ -58,6 +58,18 @@ def test_groups_split_by_day_and_by_what_was_done(monkeypatch):
     assert stages == {"Initial": 2, "Demo": 1}
 
 
+def test_preview_exposes_existing_tags_once_per_shoot(monkeypatch):
+    photos = [
+        _photo("a1", DAY1, "FB", ["Kitchen", "Initial"]),
+        _photo("a2", DAY1, "FB", ["Initial", "Kitchen"]),
+    ]
+    monkeypatch.setattr(cc, "list_project_photos", lambda pid: photos)
+    monkeypatch.setattr(cc, "_id_tokens_on_disk", lambda d: set())
+    monkeypatch.setattr(cc.os.path, "isdir", lambda d: True)
+    group = cc.plan_pull("1", r"X:\job\PICS")["groups"][0]
+    assert group["current_tags"] == ["Initial", "Kitchen"]
+
+
 def test_newest_shoot_is_listed_first(monkeypatch):
     """The thing you just did is the thing you're most likely pulling."""
     photos = [

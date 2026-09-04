@@ -607,7 +607,7 @@ class CompanyCamApi:
             return {"ok": False,
                     "error": "No job folder — pin/find the folder first"}
 
-        pulled = skipped = 0
+        pulled = skipped = tagged = 0
         errors = []
         for g in groups:
             ids = [str(i) for i in (g.get("photo_ids") or []) if str(i).strip()]
@@ -620,6 +620,26 @@ class CompanyCamApi:
             # The creator is whoever's phone took the shot, which isn't
             # always who the folder should be filed under.
             row_tech = (g.get("tech") or "").strip()
+            # CompanyCam's API only supports additive photo tagging.  The
+            # pull dialog labels this honestly and sends only new tags; a
+            # failed tag must not prevent the requested photo download.
+            requested_tags = []
+            for value in (g.get("tags") or []):
+                value = str(value or "").strip()
+                if (value and len(value) <= 80
+                        and value.casefold() not in {
+                            item.casefold() for item in requested_tags}):
+                    requested_tags.append(value)
+            for photo_id in ids:
+                if not requested_tags:
+                    break
+                tag_result = cc.add_photo_tags(photo_id, requested_tags) or {}
+                if tag_result.get("ok"):
+                    tagged += 1
+                else:
+                    errors.append(
+                        f"{stage or 'untagged'}: tags were not added to "
+                        f"photo {photo_id} — {tag_result.get('error') or 'unknown error'}")
             try:
                 r = cc.pull_new_photos(
                     pid, pics, since_epoch=None, subfolder=stage,
@@ -640,6 +660,7 @@ class CompanyCamApi:
                 # One bad shoot must not lose the others already pulled.
                 errors.append(f"{stage or 'untagged'}: {ex}")
         return {"ok": True, "pulled": pulled, "skipped": skipped,
+                "tagged": tagged,
                 "pics": pics, "error": "; ".join(errors)}
 
     def _cc_emit(self, event: str, payload: dict) -> None:

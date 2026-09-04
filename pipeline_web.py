@@ -1775,6 +1775,15 @@ class Api(JobSettingsApi):
         from web_helpers import set_clipboard_text
         return set_clipboard_text(text)
 
+    def subcontractor_dispatch_draft(self, fields: dict,
+                                     options: dict) -> dict:
+        """Create—but never send—a subcontractor dispatch email draft."""
+        try:
+            import subcontractor_dispatch
+            return subcontractor_dispatch.compose(fields, options)
+        except Exception as ex:
+            return {"ok": False, "error": f"Could not build draft: {ex}"}
+
     def sync_from_trello(self) -> dict:
         """Kick off a Trello workspace sync on a background thread.
         Returns immediately so the UI can show a spinner; progress +
