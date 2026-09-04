@@ -580,7 +580,8 @@ class CompanyCamApi:
                 g["suggested_from"] = "run doc"
 
     def companycam_pull_assigned(self, client: str, assignments: list,
-                                 tech: str = "", card_id: str = "") -> dict:
+                                 tech: str = "", card_id: str = "",
+                                 progress_cb=None) -> dict:
         """Pull the ticked shoots, each into the stage chosen for IT.
 
         One stage for a whole project is wrong whenever a job has more than
@@ -609,13 +610,18 @@ class CompanyCamApi:
 
         pulled = skipped = tagged = 0
         errors = []
-        for g in groups:
+        total_photos = sum(len(g.get("photo_ids") or []) for g in groups)
+        completed_photos = 0
+        for group_index, g in enumerate(groups, 1):
             ids = [str(i) for i in (g.get("photo_ids") or []) if str(i).strip()]
             if not ids:
                 continue
             stage = (g.get("stage") or "").strip()
             if stage.upper() == "AUTO":
                 stage = ""
+            if progress_cb:
+                progress_cb(group_index, len(groups), stage or "untagged",
+                            completed_photos, total_photos)
             # A tech typed on the row OVERRIDES CompanyCam's creator.
             # The creator is whoever's phone took the shot, which isn't
             # always who the folder should be filed under.
@@ -659,6 +665,10 @@ class CompanyCamApi:
             except Exception as ex:
                 # One bad shoot must not lose the others already pulled.
                 errors.append(f"{stage or 'untagged'}: {ex}")
+            completed_photos += len(ids)
+            if progress_cb:
+                progress_cb(group_index, len(groups), stage or "untagged",
+                            completed_photos, total_photos)
         return {"ok": True, "pulled": pulled, "skipped": skipped,
                 "tagged": tagged,
                 "pics": pics, "error": "; ".join(errors)}
@@ -706,19 +716,20 @@ class CompanyCamApi:
         total = sum(len(g.get("photo_ids") or []) for g in groups)
 
         def _run():
-            done = 0
             try:
-                # One event per SHOOT, not per photo: enough to show
-                # movement without a message per download.
-                for i, g in enumerate(groups, 1):
+                # Emit around each shoot while it is actually downloaded.
+                # The old implementation emitted every progress event in a
+                # tight loop before downloading anything, leaving the bar at
+                # an almost-finished value for the entire real wait.
+                def _progress(i, n, stage, done, photo_total):
                     self._cc_emit("companycam:pull-progress", {
-                        "client": client, "i": i, "n": len(groups),
-                        "stage": (g.get("stage") or "").strip() or "untagged",
-                        "done": done, "total": total,
+                        "client": client, "i": i, "n": n,
+                        "stage": stage, "done": done,
+                        "total": photo_total,
                     })
-                    done += len(g.get("photo_ids") or [])
                 res = self.companycam_pull_assigned(
-                    client, groups, tech, card_id) or {}
+                    client, groups, tech, card_id,
+                    progress_cb=_progress) or {}
             except Exception as ex:
                 res = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
             res["client"] = client

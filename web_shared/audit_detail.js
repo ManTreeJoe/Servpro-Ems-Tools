@@ -1243,23 +1243,37 @@
         // can say "3 of 40", and that gap is exactly where a bar is
         // wanted most.
         if (window.Progress) window.Progress.start();
+        // Arm the completion listener BEFORE starting the worker. run_bg can
+        // execute (and emit done) before the pywebview start call resolves;
+        // subscribing afterwards loses that event and strands the UI forever.
+        const stopWatching = watchCcPull(row.client, ctx);
+        if (!stopWatching) {
+          if (window.Progress) window.Progress.fail();
+          setStatus(ctx, "A CompanyCam pull is already running for this job.", "warn");
+          finish(null); return;
+        }
         try {
           started = await pywebview.api.companycam_pull_assigned_bg(
             row.client, assignments(), tech || "", row.trello_card_id || "");
         } catch (e) {
+          stopWatching();
           if (window.Progress) window.Progress.fail();
           setStatus(ctx, "CompanyCam pull failed: " + e, "error");
           finish(null); return;
         }
         if (!started || !started.ok) {
+          stopWatching();
           if (window.Progress) window.Progress.fail();
           setStatus(ctx, "CompanyCam: " + ((started && started.error) || "?"), "warn");
           finish(null); return;
         }
         finish(started);   // closes the modal
         const n = started.total || 0;
-        setStatus(ctx, `⬇ Pulling ${n} photo${n === 1 ? "" : "s"} in the background…`, "");
-        watchCcPull(row.client, ctx);
+        // A tiny pull can complete before the start acknowledgement crosses
+        // the bridge. Do not overwrite its final success/error with Pulling.
+        if (!stopWatching.finished()) {
+          setStatus(ctx, `⬇ Pulling ${n} photo${n === 1 ? "" : "s"} in the background…`, "");
+        }
       });
     });
   }
@@ -1273,12 +1287,33 @@
   function watchCcPull(client, ctx) {
     // One listener per job. Pulling two jobs at once is fine — each has
     // its own watcher and ignores the other's events.
-    if (_ccWatching.has(client)) return;
+    if (_ccWatching.has(client)) return null;
     _ccWatching.add(client);
+
+    let idleTimer = null;
+    let completed = false;
+    const cleanup = () => {
+      window.removeEventListener("companycam:pull-progress", onProgress);
+      window.removeEventListener("companycam:pull-done", onDone);
+      _ccWatching.delete(client);
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = null;
+    };
+    // A navigation, renderer reset, or lost bridge event must not leave an
+    // immortal spinner. Real pulls reset this watchdog on each progress event.
+    const armWatchdog = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        cleanup();
+        if (window.Progress) window.Progress.fail();
+        setStatus(ctx, "CompanyCam stopped reporting progress. Check the job folder, then try again.", "warn");
+      }, 15 * 60 * 1000);
+    };
 
     const onProgress = (e) => {
       const d = (e && e.detail) || {};
       if (d.client !== client) return;
+      armWatchdog();
       // Photos when we have a count, shoots otherwise — a pull can know
       // how many shoots it has long before it knows the photo total.
       if (window.Progress) {
@@ -1292,9 +1327,8 @@
     const onDone = (e) => {
       const res = (e && e.detail) || {};
       if (res.client !== client) return;
-      window.removeEventListener("companycam:pull-progress", onProgress);
-      window.removeEventListener("companycam:pull-done", onDone);
-      _ccWatching.delete(client);
+      completed = true;
+      cleanup();
 
       if (!res.ok) {
         if (window.Progress) window.Progress.fail();
@@ -1320,6 +1354,9 @@
 
     window.addEventListener("companycam:pull-progress", onProgress);
     window.addEventListener("companycam:pull-done", onDone);
+    armWatchdog();
+    cleanup.finished = () => completed;
+    return cleanup;
   }
 
   // The matched project is empty but a project at the SAME ADDRESS has

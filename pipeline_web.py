@@ -87,7 +87,15 @@ BOARD_SPECS = (
     ("wip", "WORK IN PROGRESS"),
     ("est", "ESTIMATING"),
     ("contents", "CONTENTS"),
+    ("recon", "RECON WORK IN PROGRESS"),
 )
+
+# Stable Trello short links for boards explicitly assigned to Linguar Hub.
+# Names remain the human-facing fallback, but a harmless rename must not make
+# an entire division disappear from Jobs.
+BOARD_SHORTLINKS = {
+    "recon": "AmUodHrh",
+}
 
 # Historical EMS cards are deliberately outside BOARD_SPECS. Pulling 1,500+
 # closed cards during normal startup made the active board slow again. The
@@ -102,7 +110,14 @@ def _board_name_key(value: str) -> str:
     return re.sub(r"[^A-Z0-9]+", " ", str(value or "").upper()).strip()
 
 
-def _resolve_board(boards: list[dict], expected_name: str):
+def _resolve_board(boards: list[dict], expected_name: str,
+                   short_link: str = ""):
+    if short_link:
+        pinned = next((b for b in boards
+                       if str(b.get("shortLink") or "").casefold()
+                       == str(short_link).casefold()), None)
+        if pinned:
+            return pinned
     expected = _board_name_key(expected_name)
     exact = next((b for b in boards
                   if _board_name_key(b.get("name")) == expected), None)
@@ -328,7 +343,8 @@ def _trello_board_payload():
     with ThreadPoolExecutor(max_workers=len(BOARD_SPECS),
                             thread_name_prefix="trello-board") as pool:
         futures = [pool.submit(_build_board, tc, ps, key, bname,
-                               _resolve_board(available_boards, bname))
+                               _resolve_board(available_boards, bname,
+                                              BOARD_SHORTLINKS.get(key, "")))
                    for key, bname in BOARD_SPECS]
         out = [future.result() for future in futures]
     return {"ok": True, "boards": out, "source": "trello"}

@@ -908,42 +908,55 @@ async function startNew(client = "", cardId = "") {
       : "Loading job details and Job Log…");
     let fill;
     try {
-      fill = cardId
-        ? await pywebview.api.prefill_from_trello_card(cardId, client)
-        : await pywebview.api.prefill_for(client);
-    } catch (ex) {
+      try {
+        fill = cardId
+          ? await pywebview.api.prefill_from_trello_card(cardId, client)
+          : await pywebview.api.prefill_for(client);
+      } catch (ex) {
+        if (requestId !== state.openRequest) return;
+        setStatus(`Could not prefill this job: ${ex}. You can still complete it manually.`, "warn");
+        fill = {insured:client, subs:[], logs:[]};
+      }
+      // A slower earlier click must never overwrite the job opened after it.
       if (requestId !== state.openRequest) return;
-      setStatus(`Could not prefill this job: ${ex}. You can still complete it manually.`, "warn");
-      fill = {insured:client, subs:[], logs:[]};
+      fill = fill || {insured:client, subs:[], logs:[]};
+      // Remote/legacy records are not guaranteed to have list-shaped rows.
+      // Normalize at the boundary so one bad field cannot abort rendering.
+      fill.subs = Array.isArray(fill.subs) ? fill.subs : [];
+      fill.logs = Array.isArray(fill.logs) ? fill.logs : [];
+      $("#f-insured").value = fill.insured || client;
+      $("#f-carrier").value = fill.carrier
+        || (fill.claim ? `${fill.carrier || ""} · ${fill.claim}`.replace(/^ · /, "") : "");
+      $("#f-dol").value = fill.dol || "";
+      $("#f-first").value = fill.first_visit || "";
+      $("#f-cause").value = fill.cause || "";
+      fill.subs.forEach((r) => addRow("subs", r));
+      fill.logs.forEach((r) => addRow("logs", r));
+      const bits = [];
+      if (fill.carrier) bits.push("carrier");
+      if (fill.claim)   bits.push("claim");
+      if (fill.dol)     bits.push("DOL");
+      if (fill.first_visit) bits.push("first visit");
+      if (fill.cause)   bits.push("cause");
+      if (fill.subs.length) bits.push(`${fill.subs.length} subs`);
+      if (fill.logs.length) bits.push(`${fill.logs.length} log rows`);
+      const pinNote = fill.auto_pinned
+        ? ` · 📌 pinned card to ${fill.insured || client}`
+        : "";
+      setStatus(
+        cardId && bits.length
+          ? `📋 Parsed from Trello: ${bits.join(" · ")}${pinNote}`
+          : `Pre-filled ${fill.logs.length} log rows from recent run-docs`,
+        "ok");
+    } catch (ex) {
+      if (requestId === state.openRequest) {
+        setStatus(`Snapshot details could not be displayed: ${ex}. You can still complete it manually.`, "warn");
+      }
+    } finally {
+      // Only the newest request owns the banner. An older request finishing
+      // must never clear the current job's loading state.
+      if (requestId === state.openRequest) setSnapshotFormLoading(false);
     }
-    // A slower earlier click must never overwrite the job opened after it.
-    if (requestId !== state.openRequest) return;
-    fill = fill || {insured:client, subs:[], logs:[]};
-    $("#f-insured").value = fill.insured || client;
-    $("#f-carrier").value = fill.carrier
-      || (fill.claim ? `${fill.carrier || ""} · ${fill.claim}`.replace(/^ · /, "") : "");
-    $("#f-dol").value = fill.dol || "";
-    $("#f-first").value = fill.first_visit || "";
-    $("#f-cause").value = fill.cause || "";
-    (fill.subs || []).forEach((r) => addRow("subs", r));
-    (fill.logs || []).forEach((r) => addRow("logs", r));
-    const bits = [];
-    if (fill.carrier) bits.push("carrier");
-    if (fill.claim)   bits.push("claim");
-    if (fill.dol)     bits.push("DOL");
-    if (fill.first_visit) bits.push("first visit");
-    if (fill.cause)   bits.push("cause");
-    if (fill.subs?.length) bits.push(`${fill.subs.length} subs`);
-    if (fill.logs?.length) bits.push(`${fill.logs.length} log rows`);
-    const pinNote = fill.auto_pinned
-      ? ` · 📌 pinned card to ${fill.insured || client}`
-      : "";
-    setStatus(
-      cardId && bits.length
-        ? `📋 Parsed from Trello: ${bits.join(" · ")}${pinNote}`
-        : `Pre-filled ${fill.logs?.length || 0} log rows from recent run-docs`,
-      "ok");
-    setSnapshotFormLoading(false);
   } else {
     setSnapshotFormLoading(false);
     $("#f-insured").focus();
@@ -1412,7 +1425,14 @@ async function runSnapshotAudit() {
   summary.textContent = "Running audit…";
   result.innerHTML = "";
 
-  const res = await pywebview.api.audit_current(client);
+  let res;
+  try {
+    res = await pywebview.api.audit_current(client);
+  } catch (ex) {
+    summary.textContent = "Audit failed: " + ex;
+    summary.style.color = "var(--red)";
+    return;
+  }
   if (!res?.ok) {
     summary.textContent = "Audit failed: " + (res?.error || "?");
     summary.style.color = "var(--red)";
