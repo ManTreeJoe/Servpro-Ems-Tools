@@ -1,0 +1,104 @@
+/* Shared control system for every Linguar Hub web workspace.
+   Panel styles own their content; this layer owns the workspace shell and
+   common controls so placement, size, focus, and overflow behave uniformly. */
+
+.responsive-ui .topbar {
+  position: relative;
+  z-index: 120;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  overflow: visible;
+  border-bottom: 1px solid var(--border, #343a37);
+  background: var(--surface, #171b19);
+}
+
+.responsive-ui .topbar-actions {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.responsive-ui .btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border, #343a37);
+  border-radius: 7px;
+  background: var(--surface-2, #202522);
+  color: var(--text, #f0f2ef);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease,
+    color 120ms ease, transform 80ms ease;
+}
+
+.responsive-ui .btn:hover:not(:disabled) {
+  border-color: var(--border-strong, #555d58);
+  background: var(--surface-3, #292f2b);
+}
+
+.responsive-ui .btn:active:not(:disabled) { transform: translateY(1px); }
+.responsive-ui .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.responsive-ui .btn-primary,
+.responsive-ui .topbar .btn-primary {
+  border-color: var(--green, #2f7750);
+  background: var(--green, #2f7750);
+  color: var(--on-accent, #fff);
+}
+
+.responsive-ui .btn-primary:hover:not(:disabled),
+.responsive-ui .topbar .btn-primary:hover:not(:disabled) {
+  border-color: var(--green-hover, #3b8960);
+  background: var(--green-hover, #3b8960);
+}
+
+.responsive-ui .topbar :is(input.search, select.search) {
+  min-height: 34px;
+  border-radius: 7px;
+}
+
+.responsive-ui .topbar :is(details, #more-wrap) { position: relative; }
+.responsive-ui .topbar :is([role="menu"], .toolbar-more > div, #more-menu) {
+  z-index: 140;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.responsive-ui :is(.modal-foot, .dialog-actions, .form-actions) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.responsive-ui .statusbar {
+  flex: 0 0 auto;
+  min-height: 28px;
+  border-top: 1px solid var(--border, #343a37);
+  background: var(--surface, #171b19);
+}
+
+@media (max-width: 900px) {
+  .responsive-ui .topbar-actions { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .responsive-ui .btn { transition: none; }
+}

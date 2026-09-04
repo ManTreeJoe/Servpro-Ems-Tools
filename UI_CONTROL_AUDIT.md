@@ -2,6 +2,21 @@
 
 Status: Trial-first working standard. This audit uses Job Audit’s compact button language and the Client → Job → Division → Work Period structure.
 
+## Shared control foundation
+
+All 24 web workspaces load `web_shared/workspace_controls.css`. That shared layer now owns the workspace header, action row, canonical buttons, primary action, menu stacking, modal action alignment, and status bar. Individual tools still own their content layout and workflow-specific controls.
+
+The placement contract is:
+
+- Header left: workspace identity and view.
+- Header right: search/filter, one primary action, routine actions, refresh, then `More`.
+- Job workspace: identity, division, update actions, Job Info, connected systems, then `More`.
+- Modal footer: safe exit first, committing action last; destructive actions separated and confirmed.
+
+Configuration, export, bulk maintenance, and specialist actions belong in `More`. Primary work must stay visible and must never require right-click.
+
+Remaining cleanup should remove local duplicate control rules as each panel is touched. Settings, Snapshot, and legacy specialist tools contain the largest amount of inline presentation code; migrate those styles into named local classes without changing their workflows.
+
 ## Naming map
 
 | Area | Use | Avoid |

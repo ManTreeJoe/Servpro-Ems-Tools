@@ -60,6 +60,27 @@ Rules:
 - Avoid rows of equally emphasized buttons.
 - Action toolbars wrap at narrow widths. Do not require horizontal scrolling to reach routine actions.
 
+### Workspace header
+
+Use the same left-to-right order in every tool:
+
+1. Workspace name and view selector.
+2. Search and filters.
+3. One primary create or update action.
+4. Up to two routine secondary actions.
+5. Refresh.
+6. `More` for configuration, export, bulk, and infrequent actions.
+
+The header stays above workspace content. Menus open over the content rather than moving it or appearing behind it. Buttons keep their full label and wrap as a group when space is limited; individual labels never compress or clip.
+
+### Job workspace
+
+Keep claim identity and division switching first. Place actions directly below in this order: `Add update`, daily notes, Job Info copy fields, connected systems, then `More`. Requirements, checklists, Job Log, activity, and attachments remain content sections rather than toolbar actions.
+
+### Modal footer
+
+Place the safest exit first and the committing action last. Use `Cancel` then `Save`, `Create`, or `Send`. Put destructive actions on the opposite side or behind confirmation. Never mix navigation, configuration, and save actions in one undifferentiated row.
+
 ## Copy actions
 
 - Copy values must come from the saved Job Info record, not a card title or loosely parsed label.
