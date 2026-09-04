@@ -1,6 +1,6 @@
 {
-  "version": "1.8.8",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.8",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.8/Linguar-Hub-Setup-1.8.8.exe",
-  "notes": "Snapshot reliability update: fixes stuck Snapshot and CompanyCam loading, makes photo progress follow real downloads, posts PDFs to the exact Trello card opened, replaces the confusing Snapshot toggle with an explicit next-lane transition, and adds the Recon work board to Jobs."
+  "version": "1.8.9",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.9",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.9/Linguar-Hub-Setup-1.8.9.exe",
+  "notes": "Jobs folder-link reliability update: replaces the unreliable native WebView confirmation with a dependable in-app confirmation so commercial, property-management, unit, claim, and differently named job folders can be linked successfully."
 }
