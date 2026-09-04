@@ -244,7 +244,7 @@ def test_jobs_board_zoom_is_visible_persistent_and_board_scoped():
                    "Math.min(1.4"):
         assert marker in js
     assert "zoom: var(--board-zoom, 1)" not in css
-    assert "clamp(240px, calc(280px * var(--board-zoom, 1)), 392px)" in css
+    assert "calc(var(--lane-base-width) * var(--board-zoom, 1))" in css
     assert 'class="board-view-menu toolbar-more view-board-only"' in html
 
 
