@@ -356,7 +356,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return []
 
     # ── P0: Post snapshot PDF + missing-items comment to Trello ─────
-    def post_snapshot_to_trello(self, client, pdf_path, missing_items=None):
+    def post_snapshot_to_trello(self, client, pdf_path, missing_items=None,
+                                card_id=""):
         """Attach the generated PDF to the client's pinned card +
         post a consolidated 'Missing items' comment. Mirrors the Tk
         snapshot panel's post-after-generate flow.
@@ -367,10 +368,15 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": "no client"}
         if not pdf_path or not os.path.isfile(pdf_path):
             return {"ok": False, "error": "PDF not found"}
-        try:
-            card_id = persistence.get_trello_card_id(client) or ""
-        except Exception:
-            card_id = ""
+        # The card explicitly opened in Snapshot is authoritative. A job can
+        # have EMS, Contents and Recon cards with the same client name, while
+        # the local name pin may be absent or point to the wrong division.
+        card_id = str(card_id or "").strip()
+        if not card_id:
+            try:
+                card_id = persistence.get_trello_card_id(client) or ""
+            except Exception:
+                card_id = ""
         if not card_id:
             return {"ok": False,
                     "error": f"{client} has no Trello pin — pin a card first."}
@@ -394,7 +400,9 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 body = "📸 Snapshot generated.\n\n**Missing items:**\n"
                 body += "\n".join(f"  • {m}" for m in missing_items)
             else:
-                body = "📸 Snapshot generated — all items present."
+                # An empty list means the UI did not supply a missing-items
+                # summary, not proof that the audit found nothing missing.
+                body = "📸 Snapshot generated — PDF attached."
             try:
                 posted = bool(tc.post_comment(card_id, body))
                 if not posted:
@@ -1087,7 +1095,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return out
 
     def snapshot_return_destinations(self, card_id: str) -> dict:
-        """Estimating/Service Call lanes available when closeout is done."""
+        """Other open lanes on this Estimating board after closeout."""
         card_id = (card_id or "").strip()
         if not card_id:
             return {"ok": False, "error": "No Trello card selected"}
@@ -1102,10 +1110,41 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             destinations = []
             for lane in lists:
                 name = (lane.get("name") or "").strip()
-                upper = name.upper()
-                if "ESTIMAT" in upper or "SERVICE CALL" in upper:
-                    destinations.append({"id": lane.get("id") or "", "name": name})
+                lane_id = lane.get("id") or ""
+                if (not lane_id or lane_id == card.get("idList")
+                        or "SNAPSHOT" in name.upper()):
+                    continue
+                destinations.append({"id": lane_id, "name": name})
             return {"ok": True, "destinations": [d for d in destinations if d["id"]]}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def move_snapshot_to_lane(self, card_id: str, list_id: str) -> dict:
+        """Explicitly finish Snapshot and move its Trello card onward."""
+        card_id = (card_id or "").strip()
+        list_id = (list_id or "").strip()
+        if not card_id or not list_id:
+            return {"ok": False, "error": "Choose a Trello card and destination lane"}
+        try:
+            import trello_client as tc
+            card = tc.get_card_lite(card_id, fields="id,idBoard,idList") or {}
+            current = tc.get_list(card.get("idList") or "") or {}
+            target = tc.get_list(list_id) or {}
+            if "SNAPSHOT" not in (current.get("name") or "").upper():
+                return {"ok": False,
+                        "error": "This card is no longer in a Snapshot lane"}
+            if (not target.get("id")
+                    or target.get("idBoard") != card.get("idBoard")
+                    or "SNAPSHOT" in (target.get("name") or "").upper()):
+                return {"ok": False,
+                        "error": "Choose another lane on this Estimating board"}
+            if not tc.move_card(card_id, list_id):
+                return {"ok": False, "error": "Trello did not move the card"}
+            previous = persistence.get("snapshot_previous_lanes") or {}
+            previous.pop(card_id, None)
+            persistence.set_value("snapshot_previous_lanes", previous)
+            return {"ok": True, "lane": target.get("name") or "",
+                    "list_id": list_id}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 

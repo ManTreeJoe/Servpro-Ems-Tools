@@ -417,8 +417,8 @@
       <div class="queue-gate">
         <span class="queue-gate-mark">◆</span>
         <div>
-          <div class="queue-gate-title">Live Trello Snapshot lane</div>
-          <div class="queue-gate-sub">Anyone can move a card into Snapshot in Trello. It will appear here automatically so you can open it and complete the close-out. Use the Snapshot toggle if you need to move it yourself.</div>
+          <div class="queue-gate-title">Close-out queue</div>
+          <div class="queue-gate-sub">Cards in Trello's Snapshot lane appear here. Open one, create and post its PDF, then choose the next Estimating lane.</div>
         </div>
       </div>
       <div class="queue-filters">
@@ -609,12 +609,15 @@
 
     <!-- Post-generate action panel: shown after a successful generate -->
     <div id="post-actions" class="post-actions hidden">
-      <h3 class="form-h3">After-generate actions</h3>
+      <h3 class="form-h3">Finish snapshot</h3>
       <div class="post-action-row">
         <button class="btn btn-primary" id="post-trello-btn">
           <img src="../web_shared/trello.png" alt=""
                style="width:14px;height:14px;vertical-align:middle;margin-right:6px;" />
-          Attach PDF + post comment to Trello
+          Post PDF + comment to Trello
+        </button>
+        <button class="btn" id="move-snapshot-btn" disabled>
+          Move card to…
         </button>
         <button class="btn" id="snapshot-history-btn">🕘 Revision history</button>
         <button class="btn" id="open-pdf-btn">
@@ -655,6 +658,6 @@
 </footer>
 
 <script src="../web_shared/audit_detail.js?v=20260904a"></script>
-<script src="app.js?v=20260904a"></script>
+<script src="app.js?v=20260904b"></script>
 </body>
 </html>

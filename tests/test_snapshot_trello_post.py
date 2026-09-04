@@ -41,3 +41,26 @@ def test_snapshot_post_does_not_claim_a_failed_upload_succeeded(tmp_path, monkey
     assert result["attached"] is False
     assert result["posted"] is True
     assert "did not confirm the PDF attachment" in result["error"]
+
+
+def test_snapshot_posts_to_the_exact_opened_card_without_a_local_pin(
+        tmp_path, monkeypatch):
+    """The card chosen in Snapshot wins over fragile name-based pin lookup."""
+    monkeypatch.setattr(persistence, "get_trello_card_id", lambda _c: "")
+    attached_to = []
+    commented_on = []
+    monkeypatch.setattr(
+        trello_client, "attach_file",
+        lambda card_id, *a, **k: attached_to.append(card_id) or
+        {"id": "att-1", "url": "https://trello/attachment"})
+    monkeypatch.setattr(
+        trello_client, "post_comment",
+        lambda card_id, *a, **k: commented_on.append(card_id) or
+        {"id": "comment-1"})
+
+    result = snapshot_web.Api().post_snapshot_to_trello(
+        "Example Job", _pdf(tmp_path), [], "opened-card")
+
+    assert result["ok"] is True
+    assert attached_to == ["opened-card"]
+    assert commented_on == ["opened-card"]

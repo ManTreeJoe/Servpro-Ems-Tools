@@ -82,6 +82,7 @@ window.addEventListener("pywebviewready", async () => {
   $("#snapshot-comments-btn").addEventListener("click", toggleSnapshotComments);
   // After-generate buttons (post-actions panel)
   $("#post-trello-btn").addEventListener("click", postToTrello);
+  $("#move-snapshot-btn").addEventListener("click", finishSnapshotTransition);
   $("#snapshot-history-btn").addEventListener("click", openSnapshotHistory);
   $("#open-pdf-btn").addEventListener("click",
     () => state.lastPdfPath && pywebview.api.open_pdf(state.lastPdfPath));
@@ -360,7 +361,7 @@ function renderCandidateQueue() {
     return [r.client, r.board, r.lane].join(" ").toLowerCase().includes(q);
   });
   const queued = state.candidates.filter(r => r.snapshot).length;
-  $("#queue-count").textContent = `${queued} Snapshot · ${filtered.length} shown`;
+  $("#queue-count").textContent = `${queued} in close-out queue · ${filtered.length} shown`;
   // One-click flow: clicking ANYWHERE on the row opens the form with
   // the Trello card already parsed in (carrier/claim/DOL/cause/
   // first-visit/subs/logs/scope). User was complaining about having
@@ -377,12 +378,11 @@ function renderCandidateQueue() {
               ${r.card_id ? "· Pinned" : ""}
             </div>
           </div>
-          <label class="snapshot-toggle ${r.snapshot ? "on" : ""}" title="Move this Trello card ${r.snapshot ? "out of" : "into"} the Snapshot lane">
-            <input type="checkbox" data-snapshot-toggle data-card="${esc(r.card_id)}" data-list="${esc(r.snapshot_list_id)}" ${r.snapshot ? "checked" : ""}>
-            <span>Snapshot</span>
-          </label>
+          <span class="snapshot-toggle ${r.snapshot ? "on" : ""}" title="This is the card's current Trello workflow lane">
+            <span>${r.snapshot ? "Close-out queue" : esc(r.lane || "Estimating")}</span>
+          </span>
           ${r.card_id ? `<button class="btn snap-trello-btn" data-url="https://trello.com/c/${esc(r.card_id)}" style="font-size:11px;">🔗</button>` : "<span></span>"}
-          <button class="btn btn-primary" data-new="${esc(r.client)}" data-card="${esc(r.card_id || "")}" ${r.snapshot ? "" : "disabled"}>Open</button>
+          <button class="btn btn-primary" data-new="${esc(r.client)}" data-card="${esc(r.card_id || "")}">Open</button>
         </div>`).join("")
     : state.queue.focusedFromJobs && q
       ? `<div class="empty-inline"><strong>${esc(state.queue.search)}</strong> is not currently in a SNAPSHOT lane on an Estimating board. Move its Trello card into that lane when it is ready for the final close-out audit.</div>`
@@ -392,8 +392,7 @@ function renderCandidateQueue() {
   // Whole-row click → open form with Trello prefill (when card_id present)
   candsEl.querySelectorAll(".snap-cand").forEach((row) => {
     row.addEventListener("click", (e) => {
-      if (e.target.closest("[data-url]") || e.target.closest("[data-new]")
-          || e.target.closest(".snapshot-toggle")) return;
+      if (e.target.closest("[data-url]") || e.target.closest("[data-new]")) return;
       startNew(row.dataset.client, row.dataset.card || "");
     });
   });
@@ -404,41 +403,6 @@ function renderCandidateQueue() {
     }));
   candsEl.querySelectorAll("[data-url]").forEach((b) =>
     b.addEventListener("click", (e) => { e.stopPropagation(); pywebview.api.open_url(b.dataset.url); }));
-  candsEl.querySelectorAll("[data-snapshot-toggle]").forEach((toggle) =>
-    toggle.addEventListener("change", async (e) => {
-      e.stopPropagation();
-      const wanted = toggle.checked;
-      let returnListId = "";
-      if (!wanted) {
-        setStatus("Loading close-out destinations…");
-        const choices = await pywebview.api.snapshot_return_destinations(toggle.dataset.card);
-        if (!choices?.ok) {
-          toggle.checked = true;
-          setStatus(`Could not load destinations: ${choices?.error || "?"}`, "error");
-          return;
-        }
-        const picked = await pickSnapshotDestination(choices.destinations || []);
-        if (!picked) {
-          toggle.checked = true;
-          setStatus("Card stayed in Snapshot");
-          return;
-        }
-        returnListId = picked;
-      }
-      toggle.disabled = true;
-      setStatus(`${wanted ? "Adding to" : "Removing from"} Snapshot…`);
-      const res = await pywebview.api.set_snapshot(
-        toggle.dataset.card, wanted, toggle.dataset.list || "", returnListId);
-      if (!res?.ok) {
-        toggle.checked = !wanted;
-        toggle.disabled = false;
-        setStatus(`Snapshot toggle failed: ${res?.error || "?"}`, "error");
-        return;
-      }
-      setStatus(wanted ? "Added to Snapshot" : `Removed from Snapshot · ${res.lane}`, "ok");
-      await loadList();
-    }));
-
 }
 
 function pickSnapshotDestination(destinations) {
@@ -895,6 +859,7 @@ async function startNew(client = "", cardId = "") {
   state.lastPdfPath = null;
   state.lastClient = null;
   state.cardId = cardId || "";   // for the DocuSign-email city lookup
+  $("#move-snapshot-btn").disabled = !state.cardId;
   refreshSnapshotCommentsButton();
   $("#f-insured").value = client || "";
 
@@ -1347,6 +1312,7 @@ async function generate() {
     // Reveal the after-generate action panel — post to Trello,
     // mark drafted, open PDF again.
     $("#post-actions").classList.remove("hidden");
+    $("#post-actions").scrollIntoView({block: "nearest", behavior: "smooth"});
   } catch (ex) {
     $("#gen-status").textContent = "Error: " + ex;
     $("#gen-status").className = "error";
@@ -1357,15 +1323,24 @@ async function generate() {
 }
 
 async function postToTrello() {
-  if (!state.lastPdfPath || !state.lastClient) return;
+  if (!state.lastPdfPath || !state.lastClient) {
+    setStatus("Create the Snapshot PDF first", "warn");
+    return;
+  }
   const btn = $("#post-trello-btn");
   btn.disabled = true; btn.textContent = "Posting…";
   // Build a missing-items list from current form — anything blank in
   // subs/logs that user marked as "missing" via the dedicated UI.
   // For now we just send no list — backend's generic message fires.
-  const res = await pywebview.api.post_snapshot_to_trello(
-    state.lastClient, state.lastPdfPath, []);
-  btn.disabled = false;
+  let res;
+  try {
+    res = await pywebview.api.post_snapshot_to_trello(
+      state.lastClient, state.lastPdfPath, [], state.cardId || "");
+  } catch (ex) {
+    res = {ok: false, error: String(ex)};
+  } finally {
+    btn.disabled = false;
+  }
   if (!res?.ok) {
     const completed = [res?.attached && "PDF attached", res?.posted && "comment posted"]
       .filter(Boolean).join("; ");
@@ -1379,6 +1354,41 @@ async function postToTrello() {
   if (res.posted)   bits.push("comment posted");
   btn.textContent = "✓ " + bits.join(" + ");
   setStatus("✓ Posted to Trello", "ok");
+}
+
+async function finishSnapshotTransition() {
+  if (!state.cardId) {
+    setStatus("Open a Trello card before choosing its next lane", "warn");
+    return;
+  }
+  const btn = $("#move-snapshot-btn");
+  btn.disabled = true;
+  setStatus("Loading Estimating lanes…");
+  try {
+    const choices = await pywebview.api.snapshot_return_destinations(state.cardId);
+    if (!choices?.ok) {
+      setStatus(`Could not load lanes: ${choices?.error || "?"}`, "error");
+      return;
+    }
+    const picked = await pickSnapshotDestination(choices.destinations || []);
+    if (!picked) {
+      setStatus("Card stayed in the Snapshot lane");
+      return;
+    }
+    const moved = await pywebview.api.move_snapshot_to_lane(state.cardId, picked);
+    if (!moved?.ok) {
+      setStatus(`Could not move card: ${moved?.error || "?"}`, "error");
+      return;
+    }
+    setStatus(`Moved to ${moved.lane}`, "ok");
+    state.openRequest += 1;
+    switchTo("list");
+    await loadList();
+  } catch (ex) {
+    setStatus(`Could not move card: ${ex}`, "error");
+  } finally {
+    btn.disabled = !state.cardId;
+  }
 }
 
 async function openSnapshotHistory() {

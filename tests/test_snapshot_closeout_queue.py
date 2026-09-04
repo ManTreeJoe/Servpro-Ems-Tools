@@ -9,7 +9,8 @@ def test_closeout_queue_has_name_board_and_lane_filters():
         encoding="utf-8")
     for control in ("queue-search", "queue-board", "queue-lane", "queue-count"):
         assert f'id="{control}"' in html
-    assert "Use the Snapshot toggle" in html
+    assert "create and post its PDF" in html
+    assert "choose the next Estimating lane" in html
     assert "Close-out queue" in html
 
 
