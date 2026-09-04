@@ -41,7 +41,8 @@ def test_regular_user_is_not_asked_for_companycam_api_token(monkeypatch):
     cards = user_connections.statuses(access=_access(), cfg={})
     cc = next(card for card in cards if card["provider"] == "companycam")
     assert cc["state"] == "admin_required"
-    assert cc["action"] == ""
+    assert cc["action"] == "open_companycam"
+    assert cc["action_label"] == "Sign in to CompanyCam"
     assert "should not paste personal API tokens" in cc["detail"]
 
 

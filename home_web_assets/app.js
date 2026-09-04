@@ -409,9 +409,12 @@ function renderNavItem(it) {
   const isActive = state.active && state.active.key === it.key;
   // A panel whose backend Api failed to import is a dead tab — show ⚠
   // instead of a spinner so it's not silently broken.
+  const countTitle = it.key === "pipeline"
+    ? "All indexed jobs, including historical records"
+    : `${it.name} count`;
   const badge = it.error
     ? `<span class="sb-badge hot" id="badge-${esc(it.key)}" title="This panel failed to load — see ems.log">⚠</span>`
-    : `<span class="sb-badge loading" id="badge-${esc(it.key)}">…</span>`;
+    : `<span class="sb-badge loading" id="badge-${esc(it.key)}" title="${esc(countTitle)}">…</span>`;
   return `<div class="sb-item ${isActive ? "active" : ""}${it.error ? " errored" : ""}"
               data-key="${esc(it.key)}" data-src="${esc(it.src)}"
               data-icon="${esc(it.icon)}" data-name="${esc(it.name)}"

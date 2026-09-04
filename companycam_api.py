@@ -40,13 +40,42 @@ def _token():
     return tok
 
 
+def cloud_gateway_available():
+    """Whether this signed-in client can use the centrally managed gateway.
+
+    This is intentionally a capability check, not a network request. The
+    explicit Settings connection test is responsible for reporting a missing
+    franchise secret or deployment.
+    """
+    try:
+        import supabase_client
+        return bool(supabase_client.is_configured()
+                    and supabase_client.is_signed_in())
+    except Exception:
+        return False
+
+
 def is_configured():
     """True when an access token is present — lets callers hide/skip the
     CompanyCam path gracefully instead of raising."""
     try:
-        return bool((config.load().get("companycam_api_token") or "").strip())
+        return bool((config.load().get("companycam_api_token") or "").strip()
+                    or cloud_gateway_available())
     except Exception:
         return False
+
+
+def _cloud_call(path, *, params=None, method="GET", data=None):
+    """Call CompanyCam without bringing its organization key to this PC."""
+    import supabase_client
+    department = str(config.active_department() or "IE").strip().upper()
+    return supabase_client.invoke_function("companycam-gateway", {
+        "department": department,
+        "path": path,
+        "method": str(method or "GET").upper(),
+        "params": params or {},
+        "data": data,
+    })
 
 
 def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
@@ -54,6 +83,14 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
     body for writes, parsed-JSON return. Retries 429 (rate limit) and 503
     (transient, idempotent methods only) with Retry-After / exponential
     backoff. Raises urllib HTTPError on other non-2xx."""
+    # Existing installations with a local organization key remain usable
+    # during rollout. Fresh/co-worker installations use the authenticated
+    # Supabase gateway, so the key is configured once per franchise instead
+    # of once per Windows profile.
+    local_token = (config.load().get("companycam_api_token") or "").strip()
+    if not local_token and cloud_gateway_available():
+        return _cloud_call(path, params=params, method=method, data=data)
+
     qs = urllib.parse.urlencode(params or {}, doseq=True)
     url = f"{API_BASE}{path}" + (f"?{qs}" if qs else "")
     headers = {

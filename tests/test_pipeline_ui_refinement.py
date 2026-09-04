@@ -240,10 +240,24 @@ def test_jobs_board_zoom_is_visible_persistent_and_board_scoped():
         assert marker in html
     for marker in ('PanelState.get("boardZoom", 1)',
                    "PanelState.set({ boardZoom: next })",
-                   "function onBoardZoomShortcut", "Math.max(0.7",
+                   "function onBoardZoomShortcut", "Math.max(0.8",
                    "Math.min(1.4"):
         assert marker in js
-    assert "zoom: var(--board-zoom, 1)" in css
+    assert "zoom: var(--board-zoom, 1)" not in css
+    assert "clamp(240px, calc(280px * var(--board-zoom, 1)), 392px)" in css
+    assert 'class="board-view-menu toolbar-more view-board-only"' in html
+
+
+def test_job_workspace_visibly_separates_work_from_connected_tools():
+    js = _asset("app.js")
+    header_start = js.index('<div class="card-quick-actions"')
+    header_end = js.index('</header>', header_start)
+    header = js[header_start:header_end]
+    assert 'class="quick-primary-actions" aria-label="Work actions"' in header
+    assert 'class="quick-destination-actions" aria-label="Connected tools"' in header
+    assert header.index("data-add-job-log") < header.index("quick-destination-actions")
+    assert header.index("data-xa-note") < header.index("quick-destination-actions")
+    assert header.index("data-initial-notes") < header.index("quick-destination-actions")
 
 
 def test_apa_vertical_wheel_stays_in_the_column():

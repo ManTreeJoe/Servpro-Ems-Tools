@@ -24,13 +24,14 @@ async function loadClients(preferred = "") {
   const request = ++state.request;
   $("#client-list").innerHTML = `<div class="loading-card"><span class="spinner"></span>Loading clients…</div>`;
   let result;
-  try { result = await pywebview.api.list_clients(state.query, state.division, 300); }
+  try { result = await withTimeout(pywebview.api.list_clients(state.query, state.division, 300), 8000); }
   catch (error) { result = {ok:false, error:String(error), clients:[]}; }
   if (request !== state.request) return;
   state.clients = result?.clients || [];
   $("#result-count").textContent = `${state.clients.length} client${state.clients.length === 1 ? "" : "s"}`;
   if (!result?.ok) {
-    $("#client-list").innerHTML = `<div class="error-card">${escapeHtml(result?.error || "Clients could not be loaded.")}</div>`;
+    $("#client-list").innerHTML = `<div class="error-card"><strong>Clients could not be loaded</strong><span>${escapeHtml(result?.error || "Check the shared job-folder connection.")}</span><button class="btn" data-retry-clients>Retry</button></div>`;
+    $("#client-list").querySelector("[data-retry-clients]")?.addEventListener("click", () => loadClients(preferred));
     return;
   }
   renderDirectory();
@@ -38,6 +39,14 @@ async function loadClients(preferred = "") {
   const match = state.clients.find((item) => item.name.toLowerCase() === target.toLowerCase()) || state.clients[0];
   if (match) openClient(match.name);
   else $("#account").innerHTML = `<div class="account-empty"><div class="empty-mark">0</div><h2>No clients found</h2><p>Try another name or division.</p></div>`;
+}
+
+function withTimeout(promise, milliseconds) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("The client directory took too long to respond. Try again.")), milliseconds);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 function renderDirectory() {

@@ -89,15 +89,22 @@ def statuses(*, access=None, cfg=None, platform_name=None) -> list[dict]:
             "Sign in required", "Sign in once with your SERVPRO work account.",
             action="sign_in", action_label="Sign in"))
 
-    companycam_ready = bool(str(cfg.get("companycam_api_token") or "").strip())
+    companycam_local = bool(str(cfg.get("companycam_api_token") or "").strip())
+    try:
+        import companycam_api
+        companycam_cloud = bool(signed_in and companycam_api.cloud_gateway_available())
+    except Exception:
+        companycam_cloud = False
+    companycam_ready = companycam_local or companycam_cloud
     if not companycam_ready:
         cards.append(_card(
             "companycam", "CompanyCam", "CC", "admin_required",
-            "Office setup needed",
-            (f"An admin must connect the {franchise} CompanyCam account once. "
-             "Employees should not paste personal API tokens."),
-            action=("admin_setup" if is_admin else ""),
-            action_label=("Admin setup" if is_admin else ""),
+            "Office connection needed on this PC",
+            (f"An admin must install the {franchise} CompanyCam application key "
+             "on this PC. You can still sign into CompanyCam normally; employees "
+             "should not paste personal API tokens."),
+            action=("admin_setup" if is_admin else "open_companycam"),
+            action_label=("Admin setup" if is_admin else "Sign in to CompanyCam"),
             scope="organization", admin_only=True))
     elif not signed_in:
         cards.append(_card(
@@ -109,9 +116,10 @@ def statuses(*, access=None, cfg=None, platform_name=None) -> list[dict]:
             scope="organization"))
     else:
         cards.append(_card(
-            "companycam", "CompanyCam", "CC", "connected", "Connected by office",
-            (f"{franchise} manages the secure connection. Actions are sent to "
-             "CompanyCam as the signed-in employee."),
+            "companycam", "CompanyCam", "CC", "connected",
+            "Connected securely by office",
+            (f"{franchise} manages the secure connection in Supabase. Actions "
+             "are sent to CompanyCam as the signed-in employee."),
             identity=email, action="open_companycam",
             action_label="Open CompanyCam", scope="organization"))
 

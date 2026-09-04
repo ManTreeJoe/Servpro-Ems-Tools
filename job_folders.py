@@ -126,7 +126,7 @@ def find_client_folder(client: str, *, base: str = "", year=None) -> str:
 
 
 def search_clients(query: str, *, base: str = "", year=None,
-                   limit: int = 40) -> list:
+                   limit: int = 40, include_children: bool = True) -> list:
     """Existing client folders matching `query`, for a PICKER.
 
     This is the deliberate exception to the no-fuzzy-matching rule in the
@@ -164,7 +164,9 @@ def search_clients(query: str, *, base: str = "", year=None,
         # school" finds "Menifee Union School District".
         if q and q not in nm and not all(t in nm for t in q.split()):
             continue
-        kids = list_children(e.path)
+        # A full client directory only needs names and paths. Avoid opening
+        # every network folder until a query/filter needs claim details.
+        kids = list_children(e.path) if include_children else []
         out.append({
             "name": e.name,
             "path": e.path,

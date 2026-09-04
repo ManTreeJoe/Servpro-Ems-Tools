@@ -486,6 +486,21 @@ def rpc(fn, args=None):
                 token=access_token())
 
 
+def invoke_function(name: str, body=None):
+    """Invoke an authenticated Supabase Edge Function.
+
+    External-service credentials belong behind this boundary: the desktop
+    sends its short-lived user JWT, while CompanyCam/Trello keys remain in
+    Supabase's server-side secret store and can never be read back by the
+    client.
+    """
+    clean = str(name or "").strip()
+    if not clean or not all(c.isalnum() or c in "-_" for c in clean):
+        raise ValueError("invalid Edge Function name")
+    return _raw("POST", f"/functions/v1/{clean}", body=body or {},
+                token=access_token())
+
+
 def health() -> dict:
     """Reachability + auth probe for Settings and diagnostics. Never raises."""
     out = {"configured": False, "reachable": False, "signed_in": False,

@@ -249,7 +249,7 @@ async function loadBoard(isRefresh) {
 // Board-only zoom keeps the app chrome readable while dispatchers trade
 // detail for lane coverage. Deliberate stops prevent microscopic cards.
 function setBoardZoom(value) {
-  const next = Math.max(0.7, Math.min(1.4, Math.round(Number(value) * 10) / 10));
+  const next = Math.max(0.8, Math.min(1.4, Math.round(Number(value) * 10) / 10));
   state.boardZoom = next;
   PanelState.set({ boardZoom: next });
   applyBoardZoom();
@@ -266,7 +266,7 @@ function applyBoardZoom() {
     value.setAttribute("aria-label", `Jobs board zoom ${value.textContent}; reset to 100%`);
   }
   const out = $("#board-zoom-out"), inside = $("#board-zoom-in");
-  if (out) out.disabled = state.boardZoom <= 0.7;
+  if (out) out.disabled = state.boardZoom <= 0.8;
   if (inside) inside.disabled = state.boardZoom >= 1.4;
 }
 
@@ -1509,26 +1509,28 @@ function openAuditModal(data, trelloUrl = "") {
         <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Loading live details…" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh live</button>`}</div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button></div>
         <div class="card-quick-actions" aria-label="Job actions">
-          <div class="quick-primary-actions">
+          <div class="quick-primary-actions" aria-label="Work actions">
             <button class="action-btn primary" data-add-job-log><span class="quick-action-icon">＋</span>Add update</button>
+            <button class="action-btn" data-xa-note ${data.card_id ? "" : "disabled"}>🗒 XA note</button>
+            <button class="action-btn" data-initial-notes ${data.card_id ? "" : "disabled"}>📋 Initial notes</button>
+          </div>
+          <div class="quick-destination-actions" aria-label="Connected tools">
             <button class="action-btn" ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 Folder" : "🔗 Link folder"}</button>
             <button class="action-btn destination" data-open-trello ${trelloUrl ? "" : "disabled"}><img src="../web_shared/trello.png" alt="">Trello</button>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/xactanalysis.png" alt="">XA <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-xa ${data.card_id ? "" : "disabled"}>Open XactAnalysis</button>
               <button data-stage-xa ${res.path ? "" : "disabled"}>Stage files for XA</button>
             </div></div>
-            <button class="action-btn" data-xa-note ${data.card_id ? "" : "disabled"}>🗒 XA note</button>
-            <button class="action-btn" data-initial-notes ${data.card_id ? "" : "disabled"}>📋 Initial notes</button>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/companycam.png" alt="">CompanyCam <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-companycam ${data.card_id ? "" : "disabled"}>Open project</button>
               <button data-pull-companycam ${data.card_id ? "" : "disabled"}>Pull photos</button>
               <button data-companycam-report ${data.card_id ? "" : "disabled"}>Create report</button>
               <button data-quick-photo-report ${data.card_id ? "" : "disabled"}>Build quick PDF</button>
             </div></div>
-            <div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu">
-              <button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
-            </div></div>
           </div>
+          <div class="quick-utility-actions"><div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu">
+            <button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
+          </div></div></div>
         </div>
       </header>
       <div class="modal-body">${body}</div>

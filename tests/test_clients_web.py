@@ -70,6 +70,53 @@ def test_management_job_title_resolves_to_real_parent_client(monkeypatch):
     assert result["clients"][0]["job_count"] == 2
 
 
+def test_property_job_title_resolves_parent_before_parentheses(monkeypatch):
+    calls = []
+
+    def search(query, *, limit=250, **_kwargs):
+        calls.append(query)
+        if query == "Rainey Property Management":
+            return [{"name": "Rainey Property Management",
+                     "path": r"X:\IE_Public\2026 Jobs\Rainey Property Management",
+                     "children": ["Creekside Unit #1021"]}]
+        return []
+
+    import job_folders
+    monkeypatch.setattr(job_folders, "search_clients", search)
+    monkeypatch.setattr(clients_web.Api, "_divisions", staticmethod(lambda _path: ["EMS"]))
+
+    result = clients_web.Api().list_clients(
+        "Rainey Property Management (Creekside Unit #1021) - 9/1/26")
+
+    assert result["ok"] is True
+    assert [row["name"] for row in result["clients"]] == ["Rainey Property Management"]
+    assert "Rainey Property Management" in calls
+
+
+def test_unfiltered_client_directory_does_not_scan_every_client_division(monkeypatch):
+    import job_folders
+    search_options = {}
+
+    def search(*_args, **kwargs):
+        search_options.update(kwargs)
+        return [
+        {"name": "Client One", "path": r"X:\jobs\Client One", "children": ["2nd Claim"]},
+        {"name": "Client Two", "path": r"X:\jobs\Client Two", "children": []},
+        ]
+
+    monkeypatch.setattr(job_folders, "search_clients", search)
+
+    api = clients_web.Api()
+    monkeypatch.setattr(api, "_divisions", lambda _path: (_ for _ in ()).throw(
+        AssertionError("the unfiltered directory must stay lightweight")))
+
+    result = api.list_clients("", "all", 300)
+
+    assert result["ok"] is True
+    assert [row["name"] for row in result["clients"]] == ["Client One", "Client Two"]
+    assert search_options["include_children"] is False
+
+
 def test_client_page_exposes_dates_full_job_info_and_logs():
     backend = (ROOT / "clients_web.py").read_text(encoding="utf-8")
     js = (ROOT / "clients_web_assets" / "app.js").read_text(encoding="utf-8")

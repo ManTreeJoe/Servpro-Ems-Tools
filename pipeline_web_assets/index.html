@@ -20,8 +20,9 @@
 <script src="../web_shared/modal.js?v=20260812a"></script>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260903a" />
 <link rel="stylesheet" href="../web_shared/modal.css?v=20260813a" />
-<link rel="stylesheet" href="app.css?v=20260903h" />
+<link rel="stylesheet" href="app.css?v=20260903i" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
+<script src="../web_shared/text_context_menu.js?v=20260903a"></script>
 </head>
 <body class="responsive-ui">
 <a class="skip-link" href="#board-view">Skip to Jobs</a>
@@ -45,12 +46,18 @@
       autocomplete="off"
     />
     <button id="new-loss-btn" class="btn" title="Create a job from a carrier assignment email">＋ New Loss</button>
-    <div class="board-zoom view-board-only" role="group" aria-label="Jobs board zoom">
-      <button id="board-zoom-out" class="zoom-step" type="button" aria-label="Zoom jobs board out" title="Show more of the board (Ctrl+-)">−</button>
-      <button id="board-zoom-reset" class="zoom-value" type="button" title="Reset Jobs zoom (Ctrl+0)">100%</button>
-      <button id="board-zoom-in" class="zoom-step" type="button" aria-label="Zoom jobs board in" title="Make the board larger (Ctrl++)">+</button>
-    </div>
-    <button id="customize-board-btn" class="btn view-board-only" title="Change the active board’s appearance">Board Appearance</button>
+    <details class="board-view-menu toolbar-more view-board-only">
+      <summary class="btn" aria-label="Jobs board view settings" title="Lane size and board appearance">Board view</summary>
+      <div>
+        <span class="board-view-label">Lane size</span>
+        <div class="board-zoom" role="group" aria-label="Jobs board lane size">
+          <button id="board-zoom-out" class="zoom-step" type="button" aria-label="Narrow jobs lanes" title="Show more lanes (Ctrl+-)">−</button>
+          <button id="board-zoom-reset" class="zoom-value" type="button" title="Reset lane size (Ctrl+0)">100%</button>
+          <button id="board-zoom-in" class="zoom-step" type="button" aria-label="Widen jobs lanes" title="Show wider lanes (Ctrl++)">+</button>
+        </div>
+        <button id="customize-board-btn" class="btn" title="Change the active board’s appearance">Board appearance…</button>
+      </div>
+    </details>
     <button id="refresh-btn" class="btn btn-primary view-board-only" title="Refresh shared jobs and Trello">↻ Refresh Jobs</button>
     <details class="toolbar-more"><summary class="btn icon-btn" aria-label="More Pipeline actions" title="More Pipeline actions">•••</summary><div>
       <button id="thresholds-btn" class="btn" title="Edit the allowed days for each stage">⏱ Stage Deadlines</button>

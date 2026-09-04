@@ -30,12 +30,44 @@ class Api:
                 found.append(key)
         return found
 
+    @staticmethod
+    def _parent_hints(value: str) -> list[str]:
+        """Candidate account names encoded in a Trello/job display title.
+
+        These are search hints only. ``list_clients`` still requires an
+        exact normalized top-level folder match before it accepts one, so a
+        title can never silently invent or choose the wrong Client.
+        """
+        raw = " ".join(str(value or "").split()).strip()
+        if not raw:
+            return []
+        hints = []
+
+        def add(candidate):
+            candidate = str(candidate or "").strip(" -")
+            if candidate and candidate not in hints:
+                hints.append(candidate)
+
+        pieces = [part.strip() for part in raw.split(" - ")]
+        for end in range(len(pieces) - 1, 0, -1):
+            add(" - ".join(pieces[:end]))
+        # Property-management cards commonly encode the property/unit in
+        # parentheses immediately after the actual Client account name.
+        add(re.sub(r"\s*\([^)]*\)\s*$", "", pieces[0] if pieces else raw))
+        # A trailing date identifies the Job, not the Client.
+        add(re.sub(r"\s+\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\s*$", "", raw))
+        return hints
+
     def list_clients(self, query: str = "", division: str = "all",
                      limit: int = 250) -> dict:
         """Return a light client directory from the configured OD root."""
         try:
             import job_folders
-            rows = job_folders.search_clients(query or "", limit=max(1, int(limit or 250)))
+            wanted = (division or "all").strip().upper()
+            inspect_children = bool(query) or wanted not in {"", "ALL"}
+            rows = job_folders.search_clients(
+                query or "", limit=max(1, int(limit or 250)),
+                include_children=inspect_children)
             # A job-card deep link carries the card title, not merely the
             # account name. Management work commonly uses
             #   PCM - (Kellogg Terrace) - Cruz, Sarah 8/28
@@ -44,9 +76,7 @@ class Api:
             # leading segments against real top-level folders. The folder
             # match is the proof; splitting alone never invents a parent.
             if not rows and query:
-                pieces = [part.strip() for part in str(query).split(" - ")]
-                for end in range(len(pieces) - 1, 0, -1):
-                    hint = " - ".join(pieces[:end])
+                for hint in self._parent_hints(query):
                     candidates = job_folders.search_clients(hint, limit=max(1, int(limit or 250)))
                     normalized_hint = " ".join(hint.casefold().split())
                     exact = [row for row in candidates if
@@ -55,16 +85,22 @@ class Api:
                     if exact:
                         rows = exact
                         break
-            wanted = (division or "all").strip().upper()
             clients = []
             for row in rows:
                 path = row.get("path") or ""
-                divisions = self._divisions(path)
                 child_names = row.get("children") or []
-                child_divisions = set()
-                for name in child_names:
-                    child_divisions.update(self._divisions(os.path.join(path, name)))
-                all_divisions = divisions + sorted(child_divisions - set(divisions))
+                # The default directory is intentionally shallow: opening
+                # hundreds of client and claim folders on a network share
+                # blocks the page for seconds. Division inspection is only
+                # needed when the user explicitly filters by one.
+                divisions = []
+                all_divisions = []
+                if wanted not in {"", "ALL"} or query:
+                    divisions = self._divisions(path)
+                    child_divisions = set()
+                    for name in child_names:
+                        child_divisions.update(self._divisions(os.path.join(path, name)))
+                    all_divisions = divisions + sorted(child_divisions - set(divisions))
                 if wanted not in {"", "ALL"} and wanted not in all_divisions:
                     continue
                 clients.append({
