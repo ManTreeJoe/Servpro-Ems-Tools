@@ -58,6 +58,7 @@ def test_main_claims_instance_before_starting_either_shell():
 def test_main_and_trial_use_separate_single_instance_locks(monkeypatch):
     import paths
 
+    monkeypatch.delenv("LINGUAR_DEV_MODE", raising=False)
     monkeypatch.setattr(paths, "IS_TRIAL", False)
     assert home_web._instance_mutex_name() == (
         "Local\\LinguarHub.Main.SingleInstance")
@@ -65,6 +66,19 @@ def test_main_and_trial_use_separate_single_instance_locks(monkeypatch):
     monkeypatch.setattr(paths, "IS_TRIAL", True)
     assert home_web._instance_mutex_name() == (
         "Local\\LinguarHub.Trial.SingleInstance")
+
+
+def test_full_dev_shell_uses_main_data_with_an_isolated_runtime(monkeypatch):
+    import paths
+
+    monkeypatch.setattr(paths, "IS_TRIAL", False)
+    monkeypatch.setenv("LINGUAR_DEV_MODE", "1")
+
+    assert paths.APP_DIR_NAME == "Linguar Hub"
+    assert home_web._runtime_channel() == "Dev"
+    assert home_web._instance_mutex_name() == (
+        "Local\\LinguarHub.Dev.SingleInstance")
+    assert home_web._window_title() == "Linguar Hub — DEV"
 
 
 def test_state_replace_retries_a_brief_windows_lock(tmp_path, monkeypatch):

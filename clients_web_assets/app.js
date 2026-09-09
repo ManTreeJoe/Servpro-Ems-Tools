@@ -53,7 +53,7 @@ function renderDirectory() {
   $("#client-list").innerHTML = state.clients.map((client) => `
     <button class="client-row ${client.name === state.selected ? "active" : ""}" data-client="${escapeHtml(client.name)}">
       <span class="client-monogram">${escapeHtml(initials(client.name))}</span>
-      <span class="client-row-copy"><strong>${escapeHtml(client.name)}</strong><small>${client.job_count || 0} job${client.job_count === 1 ? "" : "s"}</small></span>
+      <span class="client-row-copy"><strong>${escapeHtml(client.name)}</strong><small>${clientCountText(client)}</small></span>
       <span class="mini-divisions">${(client.divisions || []).map((division) => `<i class="${division.toLowerCase()}">${division === "CONTENTS" ? "C" : division === "RECON" ? "R" : "E"}</i>`).join("")}</span>
     </button>`).join("") || `<div class="loading-card">No matching clients.</div>`;
   document.querySelectorAll("[data-client]").forEach((button) => button.addEventListener("click", () => openClient(button.dataset.client)));
@@ -71,6 +71,12 @@ async function openClient(name) {
   if (!result?.ok) {
     $("#account").innerHTML = `<div class="account-empty"><div class="empty-mark">!</div><h2>Client unavailable</h2><p>${escapeHtml(result?.error || "The client could not be opened.")}</p></div>`;
     return;
+  }
+  const directoryClient = state.clients.find((item) => item.name === name);
+  if (directoryClient) {
+    directoryClient.job_count = Number(result.job_count || 0);
+    directoryClient.job_count_known = true;
+    renderDirectory();
   }
   renderAccount(result);
 }
@@ -140,6 +146,11 @@ function selectJob(index) {
 function fact(label, value, fallback) { return `<div class="fact"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || fallback)}</strong></div>`; }
 function divisionText(divisions = []) { return divisions.length ? divisions.map((d) => d === "CONTENTS" ? "Contents" : d === "RECON" ? "Recon" : "EMS").join(" · ") : "No division linked"; }
 function initials(name) { const parts = String(name || "C").replace(/[,()\-]/g, " ").split(/\s+/).filter(Boolean); return ((parts[0]?.[0] || "C") + (parts[1]?.[0] || "")).toUpperCase(); }
+function clientCountText(client) {
+  if (!client?.job_count_known) return "Open to view jobs";
+  const count = Number(client.job_count || 0);
+  return `${count} job${count === 1 ? "" : "s"}`;
+}
 function showResult(result) { if (!result?.ok) setStatus(result?.error || "That could not be opened."); }
 function setStatus(message) { $("#status").textContent = message || ""; clearTimeout(setStatus.timer); setStatus.timer = setTimeout(() => $("#status").textContent = "", 4500); }
 function debounce(fn, delay) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); }; }

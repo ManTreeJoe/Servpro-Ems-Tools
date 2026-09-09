@@ -693,6 +693,11 @@ def test_the_module_actually_loads():
     assert int(r.stdout.strip()) > 15
 
 
+def test_checklist_context_reload_keeps_the_current_row(detail_js):
+    assert "reload: () => loadAllChecklists(row, ctx)" in detail_js
+    assert "reload: () => loadAllChecklists(r, ctx)" not in detail_js
+
+
 def test_the_mention_picker_cannot_break_the_drawer():
     """It is an enhancement. Unguarded, anything wrong in it took the
     whole detail render down with "Failed to load" and no comments."""

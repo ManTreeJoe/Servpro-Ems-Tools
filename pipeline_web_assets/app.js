@@ -482,7 +482,7 @@ async function openFocusedJob(name) {
         String(item.client || item.name || "").trim().toLowerCase() === normalized);
       if (card) {
         onAuditCard(card.client || card.name || name, card.card_id || "",
-          card.url || "", board.key === "contents" ? "CONTENTS" : "EMS");
+          card.url || "", divisionForBoardKey(board.key));
         return;
       }
     }
@@ -731,6 +731,9 @@ function onLaneDragEnd() {
 function renderCard(c, board = {}) {
   const loss = (c.loss_types || []).map((t) =>
     `<span class="chip-loss loss-${escapeAttr(t.toLowerCase())}">${escapeHtml(t)}</span>`).join("");
+  const carrierChip = c.job_info?.carrier
+    ? `<span class="chip-mini" title="Insurance carrier">${escapeHtml(c.job_info.carrier)}</span>`
+    : "";
   const ck = c.checklist || { done: 0, total: 0 };
   const ckChip = ck.total
     ? `<span class="chip-mini ${ck.done >= ck.total ? "ck-done" : ""}" title="Checklist progress">✓ ${ck.done}/${ck.total}</span>`
@@ -745,7 +748,7 @@ function renderCard(c, board = {}) {
     ? `<span class="chip-mini sync-conflict" title="Trello and Linguar Hub need review">⚠ Sync</span>`
     : c.sync_status === "pending"
       ? `<span class="chip-mini sync-pending" title="Saved in Linguar Hub; waiting for Trello">↻ Sync</span>` : "";
-  const chips = [loss, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
+  const chips = [loss, carrierChip, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
   const starred = isJobStarred(c.card_id);
   return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false" data-no-drag
                role="button" tabindex="0" aria-label="Open ${escapeAttr(c.client || "job")}"
@@ -753,11 +756,12 @@ function renderCard(c, board = {}) {
                data-list-id="${escapeAttr(c.list_id)}"
                data-url="${escapeAttr(c.url)}"
                data-client="${escapeAttr(c.client)}"
-               data-division="${escapeAttr(board.key === "contents" ? "CONTENTS" : "EMS")}"
+               data-division="${escapeAttr(divisionForBoardKey(board.key))}"
                data-card-summary="${escapeAttr(JSON.stringify({
                  due: c.due || "", overdue: Boolean(c.overdue),
                  days_in_lane: Number(c.days_in_lane || 0),
                  loss_types: c.loss_types || [], checklist: ck,
+                 job_info: c.job_info || {},
                  sync_status: c.sync_status || "",
                }))}">
     <div class="kcard-title">${escapeHtml(c.client || "(no name)")}</div>
@@ -767,6 +771,12 @@ function renderCard(c, board = {}) {
       <button class="kbtn" data-act="more" aria-label="More actions for ${escapeAttr(c.client || "job")}" title="More job actions">⋯</button>
     </div>
   </div>`;
+}
+
+function divisionForBoardKey(boardKey) {
+  if (boardKey === "contents") return "CONTENTS";
+  if (boardKey === "recon") return "RECON";
+  return "EMS";
 }
 
 // ── Drag to move (write-back with confirm) ───────────────────────
@@ -1110,6 +1120,30 @@ function instantWorkspaceData(cardOrClient, client, cardId, division) {
     summary.due ? `${summary.overdue ? "Overdue" : "Due"} ${fmtDue(summary.due)}` : "",
     summary.days_in_lane ? `${summary.days_in_lane} days in lane` : "",
   ].filter(Boolean);
+  const jobInfo = summary.job_info || {};
+  const section = (name, fields) => ({name, fields: fields.filter((field) => field.value)});
+  const infoSections = [
+    section("Customer Information", [
+      {id: "customer_name", label: "Customer name", value: jobInfo.customer_name || ""},
+      {id: "address", label: "Address", value: jobInfo.address || ""},
+      {id: "phone", label: "Phone", value: jobInfo.phone || ""},
+      {id: "email", label: "Email", value: jobInfo.email || ""},
+    ]),
+    section("Insurance Information", [
+      {id: "carrier", label: "Carrier", value: jobInfo.carrier || ""},
+      {id: "claim_number", label: "Claim #", value: jobInfo.claim_number || ""},
+    ]),
+    section("Property Details", [
+      {id: "date_of_loss", label: "Date of loss", value: jobInfo.date_of_loss || ""},
+      {id: "date_received", label: "Date received", value: jobInfo.date_received || ""},
+      {id: "cause_of_loss", label: "Cause of loss", value: jobInfo.cause_of_loss || ""},
+    ]),
+    section("Pipeline", [
+      {id: "pipeline_lane", label: "Current lane", value: lane},
+      ...(summary.loss_types?.length ? [{id: "loss_type", label: "Loss type", value: summary.loss_types.join(", ")}] : []),
+      ...(summary.due ? [{id: "due", label: "Due", value: fmtDue(summary.due)}] : []),
+    ]),
+  ].filter((item) => item.fields.length);
   return {
     ok: true, client, card_id: cardId, selected_division: selected,
     selected_trello_url: cardOrClient?.dataset?.url || "",
@@ -1118,11 +1152,7 @@ function instantWorkspaceData(cardOrClient, client, cardId, division) {
       requirements: [], activity: chips, path: "", aging: summary.days_in_lane || 0},
     crm: {ok: true, lifecycle_stage: lane.toLowerCase().replaceAll(" ", "_"),
       job_log: [], progress: {items: [], percent_complete: 0}, work_environments: []},
-    info_sections: [{name: "Pipeline", fields: [
-      {id: "pipeline_lane", label: "Current lane", value: lane},
-      ...(summary.loss_types?.length ? [{id: "loss_type", label: "Loss type", value: summary.loss_types.join(", ")}] : []),
-      ...(summary.due ? [{id: "due", label: "Due", value: fmtDue(summary.due)}] : []),
-    ]}],
+    info_sections: infoSections,
     division_trello_cards: [{division: selected, card_id: cardId,
       url: cardOrClient?.dataset?.url || "", pinned: Boolean(cardId)}],
     division_card_reconciliation: {ok: true, divisions: []},
@@ -1186,6 +1216,104 @@ async function onFlagCard(cardEl) {
   setStatus(res.posted_trello ? `🚩 Flagged "${item.trim()}" + commented Trello` : `🚩 Flagged "${item.trim()}"`, "ok");
 }
 
+function openChangePinnedTrelloCard(cardEl) {
+  const client = String(cardEl?.dataset?.client || "").trim();
+  const division = String(cardEl?.dataset?.division || "EMS").trim().toUpperCase();
+  if (!client) {
+    setStatus("This card does not have a job name to match.", "warn");
+    return;
+  }
+
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay trello-pin-overlay";
+  modal.innerHTML = `<div class="modal-box trello-pin-picker" role="dialog" aria-modal="true" aria-label="Change pinned Trello card">
+    <header class="modal-head trello-pin-head">
+      <div><div class="modal-title">Change pinned Trello card</div><div class="modal-sub">${escapeHtml(client)} · ${escapeHtml(division)}</div></div>
+      <button class="audit-close" data-close aria-label="Close">×</button>
+    </header>
+    <div class="modal-body trello-pin-body">
+      <label class="trello-pin-search"><span>Find a Trello card</span><input data-search value="${escapeAttr(client)}" autocomplete="off" spellcheck="false" placeholder="Job name, claim number, or address"></label>
+      <div class="trello-pin-results" data-results aria-live="polite"><div class="trello-pin-message">Searching…</div></div>
+      <form class="trello-pin-direct" data-direct-form>
+        <label><span>Or paste an exact Trello link or card ID</span><input data-direct-input autocomplete="off" spellcheck="false" placeholder="https://trello.com/c/…"></label>
+        <button class="btn" type="submit">Use link</button>
+      </form>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+
+  const searchInput = modal.querySelector("[data-search]");
+  const resultsEl = modal.querySelector("[data-results]");
+  const directInput = modal.querySelector("[data-direct-input]");
+  let searchTimer = null;
+  let searchSequence = 0;
+  let pinning = false;
+
+  const onKeyDown = (event) => { if (event.key === "Escape") close(); };
+  const close = () => {
+    if (searchTimer) clearTimeout(searchTimer);
+    document.removeEventListener("keydown", onKeyDown);
+    modal.remove();
+  };
+  const pinCard = async (cardIdOrUrl, cardName = "") => {
+    const value = String(cardIdOrUrl || "").trim();
+    if (!value || pinning) return;
+    pinning = true;
+    resultsEl.innerHTML = `<div class="trello-pin-message">Saving ${escapeHtml(division)} card…</div>`;
+    try {
+      const result = await withTimeout(
+        pywebview.api.pin_crm_division_trello(client, division, value),
+        12000, "Saving the Trello card took too long");
+      if (!result?.ok) throw new Error(result?.error || "The card could not be pinned");
+      close();
+      setStatus(`${division} Trello card changed${cardName ? ` to ${cardName}` : ""}.`, "ok");
+    } catch (error) {
+      pinning = false;
+      resultsEl.innerHTML = `<div class="trello-pin-message error">${escapeHtml(error?.message || String(error))}</div>`;
+    }
+  };
+  const search = async () => {
+    const query = String(searchInput?.value || "").trim();
+    const sequence = ++searchSequence;
+    if (query.length < 2) {
+      resultsEl.innerHTML = `<div class="trello-pin-message">Enter at least two characters.</div>`;
+      return;
+    }
+    resultsEl.innerHTML = `<div class="trello-pin-message">Searching…</div>`;
+    try {
+      const result = await withTimeout(pywebview.api.global_card_search(query, 24), 12000,
+        "Trello search took too long");
+      if (sequence !== searchSequence) return;
+      if (!result?.ok) throw new Error(result?.error || "Search is unavailable");
+      const cards = result.cards || [];
+      resultsEl.innerHTML = cards.length ? cards.map((card) => `
+        <button type="button" class="trello-pin-result" data-result-card="${escapeAttr(card.card_id || card.url || "")}" data-result-name="${escapeAttr(card.name || "Trello card")}">
+          <strong>${escapeHtml(card.name || "Trello card")}</strong>
+          <span>${escapeHtml([card.board, card.list_name, card.source_label].filter(Boolean).join(" · ") || "Trello")}</span>
+        </button>`).join("") : `<div class="trello-pin-message">No matching cards. Paste the exact Trello link below.</div>`;
+      resultsEl.querySelectorAll("[data-result-card]").forEach((button) =>
+        button.addEventListener("click", () => pinCard(button.dataset.resultCard, button.dataset.resultName)));
+    } catch (error) {
+      if (sequence !== searchSequence) return;
+      resultsEl.innerHTML = `<div class="trello-pin-message error">${escapeHtml(error?.message || String(error))}</div>`;
+    }
+  };
+
+  modal.querySelector("[data-close]")?.addEventListener("click", close);
+  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+  document.addEventListener("keydown", onKeyDown);
+  searchInput?.addEventListener("input", () => {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(search, 220);
+  });
+  modal.querySelector("[data-direct-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void pinCard(directInput?.value || "");
+  });
+  searchInput?.focus();
+  void search();
+}
+
 function openCardMenu(ev, cardEl) {
   const client = cardEl.dataset.client;
   const cardId = cardEl.dataset.cardId;
@@ -1193,6 +1321,7 @@ function openCardMenu(ev, cardEl) {
   window.emsOpenInMenu(ev, client, {
     extra: [
       { label: "🔎 Run audit on this job", action: () => onAuditCard(cardEl) },
+      { iconImg: "../web_shared/trello.png", label: "Change pinned Trello card…", action: () => openChangePinnedTrelloCard(cardEl) },
       { label: "🚩 Flag missing item…", action: () => onFlagCard(cardEl) },
     ],
   });
@@ -1495,6 +1624,7 @@ function openAuditModal(data, trelloUrl = "") {
     </div>
     <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>${escapeHtml(selectedDivision)} Trello card</small></div>
       <span>${(data.comments || []).length}</span></div>
+      <label class="comment-search"><span aria-hidden="true">⌕</span><input type="search" data-comment-search placeholder="Search comments" aria-label="Search comments"><small data-comment-search-count></small></label>
       <div class="comment-stream" data-comment-stream>${comments}</div>
       <div class="comment-compose"><textarea data-comment-input name="job-comment" rows="3" aria-label="Job comment" autocomplete="off" placeholder="Write an update for this job…"></textarea>
         <div><span data-comment-state></span><button class="btn btn-primary" data-post-comment>Add comment</button></div></div>
@@ -1513,6 +1643,7 @@ function openAuditModal(data, trelloUrl = "") {
             <button class="action-btn primary" data-add-job-log><span class="quick-action-icon">＋</span>Add update</button>
             <button class="action-btn" data-xa-note ${data.card_id ? "" : "disabled"}>🗒 XA note</button>
             <button class="action-btn" data-initial-notes ${data.card_id ? "" : "disabled"}>📋 Initial notes</button>
+            <button class="action-btn" data-import-files title="Import downloaded or selected files into this job's OD folder">📥 Import files</button>
           </div>
           <div class="quick-destination-actions" aria-label="Connected tools">
             <button class="action-btn" ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 Folder" : "🔗 Link folder"}</button>
@@ -1632,6 +1763,8 @@ function openAuditModal(data, trelloUrl = "") {
     await pywebview.api.copy_to_clipboard(result.summary);
     setStatus("Initial notes copied", "ok");
   });
+  w.querySelector("[data-import-files]")?.addEventListener("click", () =>
+    openJobFileImportModal(data, res));
   w.querySelector("[data-pull-companycam]")?.addEventListener("click", () =>
     openCompanyCamPullModal(data, res));
   w.querySelector("[data-link-job-folder]")?.addEventListener("click", () =>
@@ -2003,6 +2136,20 @@ function openAuditModal(data, trelloUrl = "") {
     close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("Job Log entry deleted", "ok");
   }));
   const commentInput = w.querySelector("[data-comment-input]");
+  const commentSearch = w.querySelector("[data-comment-search]");
+  const filterComments = () => {
+    const query = String(commentSearch?.value || "").trim().toLocaleLowerCase();
+    const rows = Array.from(w.querySelectorAll("[data-comment-id]"));
+    let shown = 0;
+    rows.forEach((row) => {
+      const matches = !query || row.textContent.toLocaleLowerCase().includes(query);
+      row.hidden = !matches;
+      if (matches) shown += 1;
+    });
+    const count = w.querySelector("[data-comment-search-count]");
+    if (count) count.textContent = query ? `${shown} found` : "";
+  };
+  commentSearch?.addEventListener("input", filterComments);
   commentInput?.addEventListener("input", () => markDraftDirty("comment", Boolean(commentInput.value.trim())));
   w.querySelector("[data-post-comment]")?.addEventListener("click", async () => {
     const input = commentInput;
@@ -2013,6 +2160,7 @@ function openAuditModal(data, trelloUrl = "") {
     const result = await pywebview.api.post_job_comment(data.client || "", data.card_id || "", text);
     if (!result?.ok) { stateEl.textContent = result?.error || "Could not save"; return; }
     w.querySelector("[data-comment-stream]").insertAdjacentHTML("afterbegin", renderJobComment(result.comment));
+    filterComments();
     input.value = "";
     clearDraftDirty("comment");
     stateEl.textContent = result.posted_trello ? "Saved · Trello synced" : (result.warning || "Saved in Linguar Hub");
@@ -2767,6 +2915,101 @@ function notifyJobWorkspaceClosed() {
 }
 
 const companyCamPullWatchers = new Set();
+
+async function openJobFileImportModal(data, audit) {
+  const client = data.client || audit.client || "";
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim";
+  modal.innerHTML = `<div class="modal-box job-file-import-card" role="dialog" aria-modal="true" aria-label="Import files into job">
+    <header class="modal-head"><div><div class="modal-title">Import files</div><div class="modal-sub">${escapeHtml(client)} · files go into this job's OD folder</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
+    <div class="modal-body job-file-import-body">
+      <div class="job-file-import-toolbar">
+        <label><span>Job side</span><select data-import-side><option value="ems">EMS</option><option value="contents">Contents</option></select></label>
+        <label><span>Destination</span><select data-import-destination><option value="">Auto-sort</option><option value="Initial">PICS / Initial</option><option value="Monitor">PICS / Monitor</option><option value="Demo">PICS / Demo</option><option value="Mold Prep">PICS / Mold Prep</option><option value="Final">PICS / Final</option><option value="DOCS">DOCS</option></select></label>
+        <label><span>Tech, if photos</span><input data-import-tech placeholder="Name"></label>
+      </div>
+      <div class="job-file-import-actions"><button class="btn btn-primary" data-import-scan>Scan Downloads</button><button class="btn" data-import-pick>Choose files…</button><button class="btn" data-import-workcenter>Open WorkCenter</button><button class="btn" data-import-docusign>Open DocuSign</button></div>
+      <div class="job-file-import-path" data-import-path>Choose Scan Downloads or select files yourself.</div>
+      <div class="job-file-import-candidates" data-import-candidates></div>
+      <div class="job-file-import-result" data-import-result aria-live="polite"></div>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector("[data-close]")?.addEventListener("click", close);
+  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+  const side = () => modal.querySelector("[data-import-side]")?.value || "ems";
+  const destination = () => modal.querySelector("[data-import-destination]")?.value || "";
+  const tech = () => modal.querySelector("[data-import-tech]")?.value.trim() || "";
+  const resultEl = modal.querySelector("[data-import-result]");
+  const showResult = (result, fallback = "Import failed") => {
+    if (!result?.ok) {
+      resultEl.textContent = result?.cancelled ? "No files selected." : (result?.error || fallback);
+      resultEl.className = "job-file-import-result error";
+      return false;
+    }
+    const parts = [];
+    if (result.pics_count) parts.push(`${result.pics_count} photo${result.pics_count === 1 ? "" : "s"} filed`);
+    if (result.docs_count) parts.push(`${result.docs_count} document${result.docs_count === 1 ? "" : "s"} filed`);
+    if (result.sketches_count) parts.push(`${result.sketches_count} sketch${result.sketches_count === 1 ? "" : "es"} filed`);
+    resultEl.textContent = parts.join(" · ") || "Files imported.";
+    resultEl.className = "job-file-import-result ok";
+    return true;
+  };
+  const scan = async () => {
+    const button = modal.querySelector("[data-import-scan]");
+    const list = modal.querySelector("[data-import-candidates]");
+    button.disabled = true;
+    button.textContent = "Scanning…";
+    list.innerHTML = `<div class="aud-loading-inline">Checking Downloads…</div>`;
+    let response;
+    try { response = await pywebview.api.scan_downloads(client); }
+    catch (error) { response = {candidates: [], error: String(error)}; }
+    button.disabled = false;
+    button.textContent = "Scan Downloads";
+    modal.querySelector("[data-import-path]").textContent = response?.downloads ? `Downloads · ${response.downloads}` : "Downloads could not be scanned.";
+    const candidates = response?.candidates || [];
+    if (!candidates.length) {
+      list.innerHTML = `<div class="aud-empty">No importable downloads found. Download the file, then scan again—or choose it directly.</div>`;
+      if (response?.error) showResult(response);
+      return;
+    }
+    list.innerHTML = candidates.map((candidate, index) => `<article class="job-file-import-candidate" data-import-candidate="${index}"><span>${escapeHtml(candidate.icon || "📄")}</span><div><strong>${escapeHtml(candidate.kind_label || "File")}</strong><small>${escapeHtml(candidate.label || "")}</small></div><button class="btn" data-import-candidate-button="${index}">Import</button></article>`).join("");
+    list.querySelectorAll("[data-import-candidate-button]").forEach((candidateButton) => candidateButton.addEventListener("click", async () => {
+      const candidate = candidates[Number(candidateButton.dataset.importCandidateButton)] || {};
+      candidateButton.disabled = true;
+      candidateButton.textContent = "Importing…";
+      let imported;
+      try { imported = await pywebview.api.do_import(client, candidate.kind || "", candidate.paths || [], destination(), tech(), side()); }
+      catch (error) { imported = {ok:false, error:String(error)}; }
+      if (showResult(imported)) {
+        candidateButton.textContent = "Imported";
+        candidateButton.closest("[data-import-candidate]")?.classList.add("done");
+      } else {
+        candidateButton.disabled = false;
+        candidateButton.textContent = "Try again";
+      }
+    }));
+  };
+  modal.querySelector("[data-import-scan]")?.addEventListener("click", scan);
+  modal.querySelector("[data-import-pick]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Choosing…";
+    let result;
+    try { result = await pywebview.api.pick_and_import_file(client, destination(), side(), tech()); }
+    catch (error) { result = {ok:false, error:String(error)}; }
+    showResult(result);
+    button.disabled = false;
+    button.textContent = "Choose files…";
+  });
+  modal.querySelector("[data-import-workcenter]")?.addEventListener("click", async () => {
+    const result = await pywebview.api.open_workcenter();
+    if (!result?.ok) showResult(result, "WorkCenter could not be opened.");
+  });
+  modal.querySelector("[data-import-docusign]")?.addEventListener("click", () =>
+    pywebview.api.open_url("https://app.docusign.com/"));
+}
 
 async function openCompanyCamPullModal(data, audit) {
   const client = data.client || audit.client || "";

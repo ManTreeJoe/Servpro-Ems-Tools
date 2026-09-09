@@ -582,6 +582,80 @@ def test_pcm_workspace_does_not_replace_clicked_card_with_another_pcm_pin(monkey
         "comment from kellogg-card"]
 
 
+def test_full_workspace_uses_job_info_from_the_exact_opened_trello_card(monkeypatch):
+    """A card can contain complete job info before the shared job row is hydrated.
+
+    The full workspace must show those fields from the exact card the user opened,
+    rather than rendering an empty Job info section just because the local/shared
+    projection is still blank.
+    """
+    api = pipeline_web.Api()
+    monkeypatch.setattr(api, "audit_card", lambda _client: {
+        "ok": True, "path": "", "trello_card_id": "opened-card",
+        "form_issues": [], "photo_issues": [], "requirements": [],
+        "activity": [],
+    })
+
+    class AuditStub:
+        def crm_job_workspace(self, *_a):
+            return {"ok": True, "job_log": [], "division_trello_cards": []}
+
+        def crm_division_trello_cards(self, *_a):
+            return {"ok": True, "cards": []}
+
+    monkeypatch.setattr(api, "_audit_api", lambda: AuditStub())
+    monkeypatch.setattr(pipeline_web.pipeline_store, "list_checklists", lambda _cid: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store, "list_activity", lambda _cid: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store, "add_activities", lambda *_a, **_k: {})
+    monkeypatch.setattr("trello_client.get_member_me", lambda: {})
+    monkeypatch.setattr("trello_client.get_card", lambda _cid: {
+        "desc": """**CUSTOMER INFORMATION**
+Customer Name: Present On Card
+Phone Number: 555-0101
+
+**INSURANCE INFORMATION**
+Insurance Company: Mercury
+Claim Number: CLAIM-42
+""",
+        "checklists": [], "attachments": [], "members": [], "actions": [],
+    })
+    monkeypatch.setattr("ems_db.find_job_by_name", lambda _name: {})
+
+    result = api.job_card_workspace(
+        "Present On Card - Mercury", "opened-card", "EMS")
+    fields = {
+        field["id"]: field["value"]
+        for section in result["info_sections"]
+        for field in section["fields"]
+    }
+
+    assert fields["customer_name"] == "Present On Card"
+    assert fields["phone"] == "555-0101"
+    assert fields["carrier"] == "Mercury"
+    assert fields["claim_number"] == "CLAIM-42"
+
+
+def test_board_payload_keeps_description_job_info_for_the_instant_card():
+    shaped = pipeline_web._card_to_board_dict({
+        "id": "card-1", "name": "Present On Card - Mercury",
+        "idList": "lane-1", "desc": """**CUSTOMER INFORMATION**
+Customer Name: Present On Card
+Phone Number: 555-0101
+
+**INSURANCE INFORMATION**
+Insurance Company: Mercury
+Claim Number: CLAIM-42
+""",
+    }, "New Loss")
+
+    assert shaped["job_info"] == {
+        "customer_name": "Present On Card",
+        "phone": "555-0101",
+        "carrier": "Mercury",
+        "claim_number": "CLAIM-42",
+    }
+
+
 def test_opened_contents_card_selects_contents_automatically(monkeypatch):
     api = pipeline_web.Api()
     monkeypatch.setattr(api, "audit_card", lambda _client: {

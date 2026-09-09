@@ -107,6 +107,10 @@ class Api:
                     "name": row.get("name") or "Client",
                     "path": path,
                     "job_count": max(1 if divisions else 0, 0) + len(child_names),
+                    # The fast, unfiltered directory deliberately skips
+                    # network-share child scans. Zero is therefore unknown,
+                    # not proof that the client has no jobs.
+                    "job_count_known": inspect_children,
                     "divisions": all_divisions,
                     "has_children": bool(child_names),
                 })

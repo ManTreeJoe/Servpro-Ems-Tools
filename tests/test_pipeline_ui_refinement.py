@@ -119,7 +119,7 @@ def test_cross_tool_job_links_target_jobs_not_removed_audit_panel():
     assert 'const key = d.key === "audit" ? "pipeline" : d.key;' in home
 
 
-def test_pipeline_groups_companycam_actions_under_one_visible_menu():
+def test_pipeline_groups_companycam_actions_under_its_existing_menu():
     js = _asset("app.js")
     backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
     header_start = js.index('<div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/companycam.png"')
@@ -128,13 +128,47 @@ def test_pipeline_groups_companycam_actions_under_one_visible_menu():
     assert "tool-menu-panel" in header
     assert "data-open-companycam" in header
     assert "data-pull-companycam" in header
-    assert "Pull photos" in header
+    assert ">Pull photos</button>" in header
     assert "data-companycam-report" in header
     assert "data-quick-photo-report" in header
     assert 'class="aud-section photo-report-section"' not in js
     assert "function openCompanyCamPullModal" in js
     assert "companycam_plan_pull" in backend
     assert "companycam_pull_assigned_bg" in backend
+
+
+def test_job_card_keeps_comment_search_visible_and_filters_loaded_comments():
+    js = _asset("app.js")
+    css = _asset("app.css")
+    assert 'data-comment-search placeholder="Search comments"' in js
+    assert 'commentSearch?.addEventListener("input", filterComments)' in js
+    assert 'row.textContent.toLocaleLowerCase().includes(query)' in js
+    assert "filterComments();" in js
+    assert ".comment-search" in css
+
+
+def test_job_card_exposes_the_general_od_file_import_workflow():
+    js = _asset("app.js")
+    backend = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")
+    actions = js[js.index('<div class="card-quick-actions"'):js.index('</header>', js.index('<div class="card-quick-actions"'))]
+    assert 'data-import-files' in actions
+    assert '📥 Import files</button>' in actions
+    assert 'function openJobFileImportModal' in js
+    for marker in ('data-import-scan', 'data-import-pick',
+                   'data-import-candidates', 'data-import-destination'):
+        assert marker in js
+    for method in ('def scan_downloads', 'def do_import',
+                   'def pick_and_import_file'):
+        assert method in backend
+
+
+def test_companycam_photo_pull_remains_in_its_existing_menu():
+    js = _asset("app.js")
+    header_start = js.index('<div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/companycam.png"')
+    header_end = js.index('</div></div>', header_start)
+    menu = js[header_start:header_end]
+    assert 'data-pull-companycam' in menu
+    assert '>Pull photos</button>' in menu
 
 
 def test_pipeline_job_actions_match_the_audit_button_language():

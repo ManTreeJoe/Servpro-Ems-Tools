@@ -37,7 +37,9 @@ def test_contents_folder_is_detected(tmp_path, monkeypatch):
 
 def test_live_contents_board_passes_contents_identity_to_workspace():
     js = (ROOT / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
-    assert 'board.key === "contents" ? "CONTENTS" : "EMS"' in js
+    assert 'if (boardKey === "contents") return "CONTENTS"' in js
+    assert 'if (boardKey === "recon") return "RECON"' in js
+    assert "divisionForBoardKey(board.key)" in js
     assert "resolvedDivision" in js
 
 

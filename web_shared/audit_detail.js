@@ -2321,7 +2321,7 @@
         clName: group.dataset.clName || "",
         itemId: li ? (li.dataset.item || "") : "",
         itemName: li ? (li.dataset.itemName || "") : "",
-        reload: () => loadAllChecklists(r, ctx),
+        reload: () => loadAllChecklists(row, ctx),
       });
     });
     // Role tabs. Remembered per panel so flipping between jobs keeps you

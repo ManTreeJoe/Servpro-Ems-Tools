@@ -1,6 +1,6 @@
 {
-  "version": "1.8.13",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.13",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.13/Linguar-Hub-Setup-1.8.13.exe",
-  "notes": "New Loss template fix: template loading now resolves the generic WORK IN PROGRESS board instead of accidentally selecting RECON WORK IN PROGRESS. It mirrors all 15 visible EMS templates across the standard and Property Management template lanes while excluding stale cards in archived lists."
+  "version": "1.8.14",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.14",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.14/Linguar-Hub-Setup-1.8.14.exe",
+  "notes": "Jobs workspace fixes: restores the visible Import files workflow for downloaded or selected OD files and restores right-click Change pinned Trello card with searchable active and archived cards. Also corrects Recon division handling, restores missing property-management templates, and improves job-info fallback while shared data catches up."
 }

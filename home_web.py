@@ -41,6 +41,32 @@ ROOT_INDEX_HTML = os.path.join(_HERE, "_ems_root_index.html")
 _INSTANCE_MUTEX = None
 
 
+def _is_dev_runtime():
+    """True for a full source shell that reuses Main's real data safely."""
+    return os.environ.get("LINGUAR_DEV_MODE", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _runtime_channel():
+    if _is_dev_runtime():
+        return "Dev"
+    try:
+        import paths as _paths
+        return "Trial" if getattr(_paths, "IS_TRIAL", False) else "Main"
+    except Exception:
+        return "Main"
+
+
+def _window_title():
+    channel = _runtime_channel()
+    if channel == "Trial":
+        return "Linguar Hub — TRIAL"
+    if channel == "Dev":
+        return "Linguar Hub — DEV"
+    return "Linguar Hub"
+
+
 def _set_windows_app_identity(is_trial=False):
     """Give each channel its own taskbar group and icon-cache identity."""
     if os.name != "nt":
@@ -50,8 +76,13 @@ def _set_windows_app_identity(is_trial=False):
         # Refresh the Windows icon cache. The first Linguar AUMIDs were
         # briefly shipped while the executable still carried wrench.ico;
         # Windows keeps that association even after the EXE icon changes.
-        app_id = ("Servpro.LinguarHub.Trial.2026.2"
-                  if is_trial else "Servpro.LinguarHub.Main.2026.2")
+        channel = _runtime_channel()
+        app_ids = {
+            "Main": "Servpro.LinguarHub.Main.2026.2",
+            "Trial": "Servpro.LinguarHub.Trial.2026.2",
+            "Dev": "Servpro.LinguarHub.Dev.2026.2",
+        }
+        app_id = app_ids[channel]
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
     except Exception:
         pass
@@ -63,11 +94,7 @@ def _instance_mutex_name():
     Both channels intentionally share settings and job data, but they are
     separate installed applications and must be able to run side by side.
     """
-    try:
-        import paths as _paths
-        channel = "Trial" if getattr(_paths, "IS_TRIAL", False) else "Main"
-    except Exception:
-        channel = "Main"
+    channel = _runtime_channel()
     return f"Local\\LinguarHub.{channel}.SingleInstance"
 
 
@@ -107,12 +134,7 @@ def _show_already_running():
     """Explain a blocked second launch without requiring pywebview startup."""
     try:
         import ctypes
-        try:
-            import paths as _paths
-            app_name = "Linguar Hub Trial" if getattr(
-                _paths, "IS_TRIAL", False) else "Linguar Hub"
-        except Exception:
-            app_name = "Linguar Hub"
+        app_name = _window_title()
         ctypes.windll.user32.MessageBoxW(
             0,
             f"{app_name} is already running. Close the open window before "
@@ -1105,8 +1127,7 @@ def main(argv=None):
         pass
     api = HomeApi()
     win = webview.create_window(
-        title=("Linguar Hub — TRIAL" if getattr(_paths, "IS_TRIAL", False)
-               else "Linguar Hub"),
+        title=_window_title(),
         url=ROOT_INDEX_HTML,    # served as http://127.0.0.1:port/_ems_root_index.html
         js_api=api,
         width=1480, height=900,

@@ -115,6 +115,13 @@ def test_unfiltered_client_directory_does_not_scan_every_client_division(monkeyp
     assert result["ok"] is True
     assert [row["name"] for row in result["clients"]] == ["Client One", "Client Two"]
     assert search_options["include_children"] is False
+    assert all(row["job_count_known"] is False for row in result["clients"])
+
+
+def test_client_directory_does_not_present_unscanned_counts_as_zero():
+    js = (ROOT / "clients_web_assets" / "app.js").read_text(encoding="utf-8")
+    assert 'return "Open to view jobs"' in js
+    assert "directoryClient.job_count = Number(result.job_count || 0)" in js
 
 
 def test_client_page_exposes_dates_full_job_info_and_logs():

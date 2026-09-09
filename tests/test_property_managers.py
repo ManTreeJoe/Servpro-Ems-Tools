@@ -10,7 +10,7 @@ def setup_function(_):
 def test_directory_seeds_and_edits(tmp_path):
     ems_db_sqlite.reset_db_path(str(tmp_path / "pm.sqlite3"))
     rows = pm.list_records()
-    assert len(rows) == 10
+    assert len(rows) == len(pm._SEEDS)
     aperto = next(r for r in rows if r["company_name"] ==
                   "Aperto Property Management")
     aperto["contact_name"] = "New Manager"

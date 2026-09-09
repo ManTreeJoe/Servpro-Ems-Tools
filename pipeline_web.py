@@ -223,6 +223,37 @@ def _days_since_iso(iso):
         return 0
 
 
+def _job_info_sections(job: dict | None = None, trello_desc: str = "") -> list:
+    """Build display sections from Hub values plus missing Trello fields.
+
+    Hub-edited values remain authoritative.  The exact opened Trello card is
+    only a display fallback for fields the shared/local job projection has not
+    hydrated yet.  This keeps a populated card from looking empty without
+    letting a stale card overwrite newer Hub edits.
+    """
+    import job_settings
+
+    local = job_settings.stored_values(job or {})
+    card = job_settings.from_card(trello_desc) if trello_desc else {}
+    values = {
+        fid: str(local.get(fid) or card.get(fid) or "").strip()
+        for fid in job_settings.BY_ID
+    }
+    grouped, order = {}, []
+    for fid, section, _key, label, core in job_settings.FIELDS:
+        value = values.get(fid) or ""
+        if not value:
+            continue
+        if section not in grouped:
+            grouped[section] = []
+            order.append(section)
+        grouped[section].append({
+            "id": fid, "label": label, "value": value, "core": bool(core),
+        })
+    return [{"name": section.title(), "fields": grouped[section]}
+            for section in order]
+
+
 _CARD_FIELDS = ("name,desc,shortUrl,idBoard,idList,labels,due,"
                 "dueComplete,dateLastActivity,closed")
 
@@ -306,6 +337,15 @@ def _card_to_board_dict(card, lane_name):
         loss = tc.card_loss_type(card)
     except Exception:
         loss = ""
+    try:
+        import job_settings
+        parsed_info = job_settings.from_card(card.get("desc") or "")
+        job_info = {key: parsed_info.get(key) or "" for key in (
+            "customer_name", "address", "phone", "email", "carrier",
+            "claim_number", "date_of_loss", "date_received", "cause_of_loss",
+        ) if parsed_info.get(key)}
+    except Exception:
+        job_info = {}
     due = card.get("due") or ""
     due_complete = bool(card.get("dueComplete"))
     overdue = False
@@ -323,6 +363,7 @@ def _card_to_board_dict(card, lane_name):
         "lane":         lane_name,
         "loss_types":   [s.strip() for s in
                          (loss.split(",") if loss else []) if s.strip()],
+        "job_info":     job_info,
         "checklist":    {"done": done, "total": total},
         "due":          str(due)[:10] if due else "",
         "due_complete": due_complete,
@@ -690,6 +731,10 @@ class Api(JobSettingsApi):
         if self._audit is None:
             import audit_web
             self._audit = audit_web.Api()
+            # File pickers belong to the full Pipeline window. The adapter
+            # owns the import engine, but must not open as a disconnected
+            # mini-tool with no native parent window.
+            self._audit.attach(self._window)
         return self._audit
 
     # New Loss belongs to the Jobs surface. Keep one provisioning engine in
@@ -836,24 +881,11 @@ class Api(JobSettingsApi):
             current_user_id = str((supabase_client.current_user() or {}).get("id") or "")
         except Exception:
             pass
+        job = {}
         try:
             import ems_db
-            import job_settings
             job = ems_db.find_job_by_name(client) or {}
-            values = job_settings.stored_values(job)
-            grouped = {}
-            order = []
-            for fid, section, _key, label, core in job_settings.FIELDS:
-                value = str(values.get(fid) or "").strip()
-                if not value:
-                    continue
-                if section not in grouped:
-                    grouped[section] = []
-                    order.append(section)
-                grouped[section].append({"id": fid, "label": label,
-                                         "value": value, "core": bool(core)})
-            info_sections = [{"name": section.title(), "fields": grouped[section]}
-                             for section in order]
+            info_sections = _job_info_sections(job)
         except Exception:
             pass
         from ems_db_common import normalize_division
@@ -909,6 +941,14 @@ class Api(JobSettingsApi):
                 trello_me = trello_me_future.result() or {}
             except Exception:
                 trello_me = {}
+        # The board card's description may be ahead of the shared/local job
+        # projection. Fill only missing Hub fields from the exact card that
+        # was opened so Job info never appears blank while sync catches up.
+        try:
+            info_sections = _job_info_sections(
+                job, str(trello_card.get("desc") or ""))
+        except Exception:
+            pass
         if cid:
             try:
                 imported_checklists = [{
@@ -1114,22 +1154,10 @@ class Api(JobSettingsApi):
         crm["work_environments"] = _detected_work_environments(
             crm, summary, division_cards, selected_division)
         crm["progress"]["review_mode"] = True
-        info_sections = []
         try:
-            import job_settings
-            values, grouped, order = job_settings.stored_values(job), {}, []
-            for fid, section, _key, label, _core in job_settings.FIELDS:
-                value = str(values.get(fid) or "").strip()
-                if not value:
-                    continue
-                if section not in grouped:
-                    grouped[section] = []
-                    order.append(section)
-                grouped[section].append({"id": fid, "label": label, "value": value})
-            info_sections = [{"name": section.title(), "fields": grouped[section]}
-                             for section in order]
+            info_sections = _job_info_sections(job)
         except Exception:
-            pass
+            info_sections = []
         return {"ok": True, "client": client, "card_id": cid,
                 "selected_division": selected_division,
                 "selected_trello_url": (f"https://trello.com/c/{cid}" if cid else ""),
@@ -1377,6 +1405,31 @@ class Api(JobSettingsApi):
 
     def import_initial_notes(self, client: str, card_id: str = "") -> dict:
         return self._audit_api().import_initial_notes(client, card_id)
+
+    def scan_downloads(self, client: str = "") -> dict:
+        return self._audit_api().scan_downloads(client)
+
+    def do_import(self, client: str, kind: str, paths: list,
+                  destination: str = "", tech: str = "",
+                  side: str = "ems") -> dict:
+        result = self._audit_api().do_import(
+            client, kind, paths, destination, tech, side)
+        if result.get("ok"):
+            self._document_cache.clear()
+            self._invalidate_workspace(client=client)
+        return result
+
+    def pick_and_import_file(self, client: str, destination: str = "",
+                             side: str = "ems", tech: str = "") -> dict:
+        result = self._audit_api().pick_and_import_file(
+            client, destination, side, tech)
+        if result.get("ok"):
+            self._document_cache.clear()
+            self._invalidate_workspace(client=client)
+        return result
+
+    def open_workcenter(self) -> dict:
+        return self._audit_api().open_workcenter()
 
     def open_companycam_link(self, client: str) -> bool:
         return self._audit_api().open_companycam_link(client)
@@ -1627,6 +1680,8 @@ class Api(JobSettingsApi):
         """Stash the window handle so background tasks can push events
         back to JS via window.evaluate_js()."""
         self._window = window
+        if self._audit is not None:
+            self._audit.attach(window)
 
     # ── Threshold editor (P2) ────────────────────────────────────────
     def get_thresholds(self) -> dict:
