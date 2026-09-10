@@ -1,6 +1,6 @@
 {
-  "version": "1.8.14",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.14",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.14/Linguar-Hub-Setup-1.8.14.exe",
-  "notes": "Jobs workspace fixes: restores the visible Import files workflow for downloaded or selected OD files and restores right-click Change pinned Trello card with searchable active and archived cards. Also corrects Recon division handling, restores missing property-management templates, and improves job-info fallback while shared data catches up."
+  "version": "1.8.15",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.15",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.15/Linguar-Hub-Setup-1.8.15.exe",
+  "notes": "Trello re-pin correction: right-click Change pinned Trello card now works on All jobs cross-board search results as well as cards inside visible lanes. Search results preserve EMS, Contents, and Recon identity, and the Jobs script uses a new cache key so the correction loads immediately."
 }

@@ -37,3 +37,23 @@ def test_board_cards_keep_the_correct_division_when_repinning():
     assert 'if (boardKey === "contents") return "CONTENTS"' in js
     assert 'if (boardKey === "recon") return "RECON"' in js
     assert 'data-division="${escapeAttr(divisionForBoardKey(board.key))}"' in js
+
+
+def test_all_board_search_results_also_expose_the_right_click_repin_menu():
+    js = APP_JS.read_text(encoding="utf-8")
+    render_start = js.index("function renderBoard()")
+    render_end = js.index("\nasync function openFocusedJob", render_start)
+    render = js[render_start:render_end]
+
+    assert 'card.addEventListener("contextmenu", onCardContext)' in render
+
+
+def test_search_results_infer_contents_and_recon_divisions_from_their_board():
+    js = APP_JS.read_text(encoding="utf-8")
+    results_start = js.index("function renderGlobalSearchResults(")
+    results_end = js.index("\nfunction activeBoardLook", results_start)
+    results = js[results_start:results_end]
+
+    assert "divisionForBoardName(card.board)" in results
+    assert 'if (name.includes("CONTENTS")) return "CONTENTS"' in js
+    assert 'if (name.includes("RECON")) return "RECON"' in js

@@ -433,10 +433,12 @@ function renderBoard() {
       renderBoard();
     }));
   root.querySelector("[data-load-archive]")?.addEventListener("click", loadArchiveBoard);
-  root.querySelectorAll("[data-global-card]").forEach((card) =>
+  root.querySelectorAll("[data-global-card]").forEach((card) => {
     card.addEventListener("click", () => onAuditCard(
       card.dataset.client || "", card.dataset.cardId || "",
-      card.dataset.url || "", card.dataset.division || "")));
+      card.dataset.url || "", card.dataset.division || ""));
+    card.addEventListener("contextmenu", onCardContext);
+  });
   root.querySelectorAll("[data-board-filter]").forEach((button) =>
     button.addEventListener("click", () => {
       state.boardFilter = button.dataset.boardFilter || "all";
@@ -507,7 +509,7 @@ function renderGlobalSearchResults(query) {
     <div class="global-search-head"><strong>All jobs</strong><span>${state.globalSearchResults.length} result${state.globalSearchResults.length === 1 ? "" : "s"} across Trello and job history</span></div>
     <div class="global-search-list">${state.globalSearchResults.map((card) => `
       <button type="button" class="global-search-card" data-global-card
-        data-card-id="${escapeAttr(card.card_id || "")}" data-client="${escapeAttr(card.name || "Job")}" data-url="${escapeAttr(card.url || "")}" data-division="${escapeAttr(card.division || "")}">
+        data-card-id="${escapeAttr(card.card_id || "")}" data-client="${escapeAttr(card.name || "Job")}" data-url="${escapeAttr(card.url || "")}" data-division="${escapeAttr(card.division || divisionForBoardName(card.board))}">
         <strong>${escapeHtml(card.name || "Job")}</strong>
         <span>${escapeHtml([card.board, card.list_name, card.source_label].filter(Boolean).join(" · ") || "Job history")}</span>
       </button>`).join("")}</div>
@@ -776,6 +778,13 @@ function renderCard(c, board = {}) {
 function divisionForBoardKey(boardKey) {
   if (boardKey === "contents") return "CONTENTS";
   if (boardKey === "recon") return "RECON";
+  return "EMS";
+}
+
+function divisionForBoardName(boardName) {
+  const name = String(boardName || "").trim().toUpperCase();
+  if (name.includes("CONTENTS")) return "CONTENTS";
+  if (name.includes("RECON")) return "RECON";
   return "EMS";
 }
 
