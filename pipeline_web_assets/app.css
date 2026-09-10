@@ -554,13 +554,6 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .card-quick-actions { width:100%; display:flex; flex-wrap:wrap; align-items:center; gap:8px; overflow:visible; padding:5px 0 4px; }
 .quick-primary-actions,.quick-destination-actions,.quick-utility-actions { flex:0 0 auto; display:flex; align-items:center; gap:4px; }
 .quick-destination-actions { padding-left:8px; border-left:1px solid var(--border); }
-.connected-action-group { display:inline-flex; align-items:stretch; gap:0; border-radius:7px; box-shadow:0 0 0 1px var(--border); }
-.card-quick-actions .connected-action-group .action-btn { border:0; border-radius:0; box-shadow:none; }
-.card-quick-actions .connected-action-group .action-btn:first-child { border-radius:7px 0 0 7px; }
-.card-quick-actions .connected-action-group .action-btn:last-child { border-radius:0 7px 7px 0; }
-.card-quick-actions .connected-action-group .action-btn + .action-btn { border-left:1px solid var(--border); }
-.card-quick-actions .connected-action-secondary { color:var(--muted); font-size:11px; padding-inline:9px; }
-.card-quick-actions .connected-action-secondary:hover { color:var(--text); }
 .quick-utility-actions { margin-left:auto; padding-left:8px; border-left:1px solid var(--border); }
 .card-quick-actions .action-btn { min-height:32px; display:inline-flex; align-items:center; gap:6px; padding:7px 11px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--text); font:inherit; font-size:12px; font-weight:600; white-space:nowrap; cursor:pointer; transition:background-color 100ms ease,border-color 100ms ease,color 100ms ease; }
 .card-quick-actions .action-btn:hover { background:var(--border); border-color:#55585d; }

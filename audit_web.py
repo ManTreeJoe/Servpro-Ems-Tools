@@ -2074,8 +2074,19 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             with self._division_cards_lock:
                 self._division_cards_cache.pop(
                     (client or "").strip().casefold(), None)
+            try:
+                import job_settings
+                info_pull = job_settings.pull_from_card(
+                    job["canon_key"], card_id)
+            except Exception as ex:
+                info_pull = {"ok": False, "imported_count": 0,
+                             "conflicts": [],
+                             "error": f"{type(ex).__name__}: {ex}"}
             return {"ok": True, "division": normalized, "card_id": card_id,
-                    "url": f"https://trello.com/c/{card_id}"}
+                    "url": f"https://trello.com/c/{card_id}",
+                    "info_pull": info_pull,
+                    "imported_count": int(info_pull.get("imported_count") or 0),
+                    "conflicts": list(info_pull.get("conflicts") or [])}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 

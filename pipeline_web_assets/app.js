@@ -1225,7 +1225,7 @@ async function onFlagCard(cardEl) {
   setStatus(res.posted_trello ? `🚩 Flagged "${item.trim()}" + commented Trello` : `🚩 Flagged "${item.trim()}"`, "ok");
 }
 
-function openChangePinnedTrelloCard(cardEl) {
+function openChangePinnedTrelloCard(cardEl, onPinned = null) {
   const client = String(cardEl?.dataset?.client || "").trim();
   const division = String(cardEl?.dataset?.division || "EMS").trim().toUpperCase();
   if (!client) {
@@ -1275,7 +1275,14 @@ function openChangePinnedTrelloCard(cardEl) {
         12000, "Saving the Trello card took too long");
       if (!result?.ok) throw new Error(result?.error || "The card could not be pinned");
       close();
-      setStatus(`${division} Trello card changed${cardName ? ` to ${cardName}` : ""}.`, "ok");
+      const imported = Number(result.imported_count || 0);
+      const conflicts = (result.conflicts || []).length;
+      const pullFailed = result.info_pull && !result.info_pull.ok;
+      const detail = pullFailed
+        ? ` · card pinned; Job Info could not be read (${result.info_pull.error || "Trello unavailable"})`
+        : ` · ${imported} Job Info field${imported === 1 ? "" : "s"} pulled${conflicts ? ` · ${conflicts} conflict${conflicts === 1 ? "" : "s"} need review` : ""}`;
+      setStatus(`${division} Trello card changed${cardName ? ` to ${cardName}` : ""}${detail}.`, pullFailed || conflicts ? "warn" : "ok");
+      if (typeof onPinned === "function") await onPinned(result);
     } catch (error) {
       pinning = false;
       resultsEl.innerHTML = `<div class="trello-pin-message error">${escapeHtml(error?.message || String(error))}</div>`;
@@ -1655,15 +1662,15 @@ function openAuditModal(data, trelloUrl = "") {
             <button class="action-btn" data-import-files title="Import downloaded or selected files into this job's OD folder">📥 Import files</button>
           </div>
           <div class="quick-destination-actions" aria-label="Connected tools">
-            <div class="connected-action-group" aria-label="Trello card actions">
-              <button class="action-btn destination" data-open-trello ${trelloUrl ? "" : "disabled"} title="Open the pinned Trello card; right-click to repin"><img src="../web_shared/trello.png" alt="">Open Trello</button>
-              <button class="action-btn connected-action-secondary" data-repin-trello title="Choose the exact ${escapeAttr(selectedDivision)} Trello card">Repin Trello</button>
-            </div>
-            <div class="connected-action-group" aria-label="Job folder actions">
-              <button class="action-btn" data-open-docs-folder ${res.path ? "" : "disabled"} title="Open the pinned job folder; right-click to repin">📁 Open Folder</button>
-              <button class="action-btn connected-action-secondary" data-repin-job-folder title="Choose the exact job folder">Repin Folder</button>
-              <button class="action-btn connected-action-secondary" data-copy-folder-path ${res.path ? "" : "disabled"} title="Copy the full job folder path">Copy Path</button>
-            </div>
+            <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/trello.png" alt="">Trello <small>⌄</small></button><div class="tool-menu-panel" role="menu" aria-label="Trello card actions">
+              <button data-open-trello ${trelloUrl ? "" : "disabled"}>Open card</button>
+              <button data-repin-trello>Change pinned card</button>
+            </div></div>
+            <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">📁</span>Folder <small>⌄</small></button><div class="tool-menu-panel" role="menu" aria-label="Job folder actions">
+              <button data-open-docs-folder ${res.path ? "" : "disabled"}>Open folder</button>
+              <button data-repin-job-folder>Choose exact folder</button>
+              <button data-copy-folder-path ${res.path ? "" : "disabled"}>Copy folder path</button>
+            </div></div>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/xactanalysis.png" alt="">XA <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-xa ${data.card_id ? "" : "disabled"}>Open XactAnalysis</button>
               <button data-stage-xa ${res.path ? "" : "disabled"}>Stage files for XA</button>
@@ -1755,7 +1762,22 @@ function openAuditModal(data, trelloUrl = "") {
     cardId: data.card_id || "",
     division: selectedDivision,
   }};
-  const repinTrello = () => openChangePinnedTrelloCard(linkedCardTarget);
+  const repinTrello = () => openChangePinnedTrelloCard(linkedCardTarget, async (result) => {
+    // Re-open from the shared source so the new card title, link, Job Info,
+    // and import-conflict state are visible without making the user refresh.
+    // The existing close guard protects any unfinished edits in this modal.
+    if (!close()) {
+      setStatus("Trello card changed. Finish or discard the open draft, then reopen the job to see its imported Job Info.", "warn");
+      return;
+    }
+    notifyJobWorkspaceClosed();
+    await onAuditCard(
+      data.client || res.client || "",
+      result?.card_id || data.card_id || "",
+      result?.url || "",
+      selectedDivision,
+    );
+  });
   const repinFolder = () => openJobFolderLinkModal(data, close);
   const copyFolderPath = async () => {
     if (!res.path) return;

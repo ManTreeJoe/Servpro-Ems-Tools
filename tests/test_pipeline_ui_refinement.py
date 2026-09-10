@@ -137,6 +137,36 @@ def test_pipeline_groups_companycam_actions_under_its_existing_menu():
     assert "companycam_pull_assigned_bg" in backend
 
 
+def test_pipeline_groups_trello_and_folder_actions_like_other_tools():
+    js = _asset("app.js")
+    actions = js[js.index('<div class="quick-destination-actions"'):
+                 js.index('<div class="quick-utility-actions"')]
+    for label in ("Trello <small>⌄</small>", "Folder <small>⌄</small>"):
+        assert label in actions
+    for marker in ("data-open-trello", "data-repin-trello",
+                   "data-open-docs-folder", "data-repin-job-folder",
+                   "data-copy-folder-path"):
+        assert marker in actions
+    assert "connected-action-group" not in actions
+    assert ">Open card</button>" in actions
+    assert ">Change pinned card</button>" in actions
+    assert ">Open folder</button>" in actions
+    assert ">Choose exact folder</button>" in actions
+    assert ">Copy folder path</button>" in actions
+
+
+def test_missing_links_disable_only_open_and_copy_not_the_tool_menu():
+    js = _asset("app.js")
+    actions = js[js.index('<div class="quick-destination-actions"'):
+                 js.index('<div class="quick-utility-actions"')]
+    trello_trigger = actions.index("Trello <small>⌄</small>")
+    folder_trigger = actions.index("Folder <small>⌄</small>")
+    assert "disabled" not in actions[actions.rfind("<button", 0, trello_trigger):trello_trigger]
+    assert "disabled" not in actions[actions.rfind("<button", 0, folder_trigger):folder_trigger]
+    assert '<button data-repin-trello>Change pinned card</button>' in actions
+    assert '<button data-repin-job-folder>Choose exact folder</button>' in actions
+
+
 def test_job_card_keeps_comment_search_visible_and_filters_loaded_comments():
     js = _asset("app.js")
     css = _asset("app.css")

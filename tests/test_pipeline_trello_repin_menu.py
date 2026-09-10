@@ -29,6 +29,29 @@ def test_change_pinned_card_picker_searches_and_pins_through_the_api():
 
     assert "global_card_search" in picker
     assert "pin_crm_division_trello" in picker
+    assert "imported_count" in picker
+    assert "conflicts" in picker
+    assert "Job Info" in picker
+    assert "onPinned = null" in picker
+    assert 'typeof onPinned === "function"' in picker
+
+
+def test_open_job_refreshes_after_repin_so_imported_job_info_is_visible():
+    js = APP_JS.read_text(encoding="utf-8")
+    modal_start = js.index("function openAuditModal(")
+    modal_end = js.index("\nfunction renderJobComment(", modal_start)
+    modal = js[modal_start:modal_end]
+
+    repin_start = modal.index("const repinTrello")
+    repin_end = modal.index("\n  const repinFolder", repin_start)
+    repin = modal[repin_start:repin_end]
+
+    assert "openChangePinnedTrelloCard(linkedCardTarget, async (result)" in repin
+    assert "if (!close())" in repin
+    assert "notifyJobWorkspaceClosed()" in repin
+    assert "result?.card_id" in repin
+    assert "result?.url" in repin
+    assert "await onAuditCard(" in repin
 
 
 def test_board_cards_keep_the_correct_division_when_repinning():

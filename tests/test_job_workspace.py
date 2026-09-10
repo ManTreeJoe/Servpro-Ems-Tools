@@ -137,6 +137,34 @@ def test_each_work_type_keeps_its_own_trello_card(workspace, monkeypatch):
     assert len(workspace_data["division_trello_cards"]) == 3
 
 
+def test_repin_pulls_new_card_info_and_preserves_conflicts(workspace,
+                                                           monkeypatch):
+    db, api = workspace
+    key = db.upsert_job(
+        display_name="Repin Info Job", address="Hub corrected address",
+        metadata={"settings": {"phone": ""},
+                  "trello_base": {"address": "Old card address"}})
+    monkeypatch.setattr("audit_web.persistence.set_trello_card_id",
+                        lambda *_args: None)
+    monkeypatch.setattr("trello_client.get_card_lite",
+                        lambda _card: {"desc": "new card"})
+    incoming = {field: "" for field in __import__("job_settings").BY_ID}
+    incoming.update({"address": "New card address", "phone": "951-555-0100"})
+    monkeypatch.setattr("job_settings.from_card", lambda _desc: incoming)
+
+    result = api.pin_crm_division_trello(
+        "Repin Info Job", "EMS", "Newcard1")
+
+    assert result["ok"] is True
+    assert result["imported_count"] == 1
+    assert [item["id"] for item in result["conflicts"]] == ["address"]
+    saved = db.get_job(key)
+    assert saved["address"] == "Hub corrected address"
+    assert saved["phone"] == "951-555-0100"
+    assert saved["metadata"]["trello_import_conflicts"][0]["theirs"] == \
+        "New card address"
+
+
 def test_replacing_one_division_card_does_not_touch_the_others(workspace,
                                                                monkeypatch):
     db, api = workspace

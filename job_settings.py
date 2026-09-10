@@ -431,6 +431,52 @@ def load(canon_key, child_name=""):
     return out
 
 
+def pull_from_card(canon_key, card_id):
+    """Merge a newly pinned card into the Hub without writing back to it.
+
+    Repinning is a corrective import boundary. Values that are blank or still
+    equal to the prior Trello baseline may advance; a Hub edit that disagrees
+    with the newly selected card stays in place and is returned as a conflict.
+    The baseline advances only for non-conflicting fields so the disagreement
+    remains reviewable after the card is reopened.
+    """
+    rec = _record(canon_key)
+    if rec is None:
+        return {"ok": False, "error": "job not found", "conflicts": []}
+    card_id = str(card_id or "").strip()
+    if not card_id:
+        return {"ok": False, "error": "Trello card is missing", "conflicts": []}
+    try:
+        import trello_client as tc
+        desc = (tc.get_card_lite(card_id) or {}).get("desc") or ""
+    except Exception as ex:
+        return {"ok": False,
+                "error": f"couldn't read the pinned Trello card ({ex})",
+                "conflicts": []}
+
+    mine = stored_values(rec)
+    base = stored_base(rec)
+    theirs = from_card(desc)
+    merged, conflicts = merge(base, mine, theirs)
+    conflict_ids = {item["id"] for item in conflicts}
+    next_base = {
+        fid: (base.get(fid) if fid in conflict_ids else theirs.get(fid, ""))
+        for fid in BY_ID
+    }
+    meta = _meta_of(rec)
+    meta[_META_SETTINGS] = merged
+    meta[_META_BASE] = next_base
+    if conflicts:
+        meta["trello_import_conflicts"] = conflicts
+    else:
+        meta.pop("trello_import_conflicts", None)
+    _persist(canon_key, "", merged, meta)
+    imported = [fid for fid in BY_ID
+                if merged.get(fid, "") != mine.get(fid, "")]
+    return {"ok": True, "card_id": card_id, "imported": imported,
+            "imported_count": len(imported), "conflicts": conflicts}
+
+
 def save(canon_key, values, child_name="", card_desc=""):
     """Persist values, then push the changed fields to the card.
 
