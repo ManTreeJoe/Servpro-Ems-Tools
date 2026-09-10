@@ -1,6 +1,6 @@
 {
-  "version": "1.8.17",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.17",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.17/Linguar-Hub-Setup-1.8.17.exe",
-  "notes": "Job card link controls restored: Open Trello, Repin Trello, Open Folder, Repin Folder, and Copy Path are visible on the opened job card. Right-clicking Trello starts repinning; right-clicking Folder offers open, repin, and copy-path actions."
+  "version": "1.8.18",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.18",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.18/Linguar-Hub-Setup-1.8.18.exe",
+  "notes": "Trello and Folder controls now use the same compact menus as XA and CompanyCam. Changing a pinned Trello card immediately imports its Job Info, preserves Linguar Hub edits, flags conflicts, and refreshes the open job on the corrected card."
 }
