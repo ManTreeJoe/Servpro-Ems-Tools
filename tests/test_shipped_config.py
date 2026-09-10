@@ -110,6 +110,35 @@ def test_machine_local_keys_are_absent(cfg):
         assert not cfg.get(key), f"{key} is machine-local and must not ship"
 
 
+def test_existing_install_recovers_run_folder_when_it_appears_later(
+        tmp_path, monkeypatch):
+    """A first launch can happen before the shared OneDrive library syncs.
+
+    Once that library becomes available, a later app launch must fill the
+    still-blank machine-local path instead of leaving Daily Run broken until
+    somebody manually revisits Settings.
+    """
+    import config
+
+    user_cfg = tmp_path / "user-config.json"
+    default_cfg = tmp_path / "default-config.json"
+    user_cfg.write_text('{"runs_dir": "", "supabase_url": "set"}',
+                        encoding="utf-8")
+    default_cfg.write_text('{"runs_dir": ""}', encoding="utf-8")
+    detected_run = tmp_path / "OneDrive" / "EMS Daily Run"
+    detected_run.mkdir(parents=True)
+
+    monkeypatch.setattr(config, "_USER_CFG", str(user_cfg))
+    monkeypatch.setattr(config, "_DEFAULT_CFG", str(default_cfg))
+    monkeypatch.setattr(config, "_MACHINE_RECOVERY_ATTEMPTED", False)
+    monkeypatch.setattr(config._paths, "auto_detect",
+                        lambda: {"runs_dir": str(detected_run)})
+    config._ensure_user_config()
+
+    recovered = json.loads(user_cfg.read_text(encoding="utf-8"))
+    assert recovered["runs_dir"] == str(detected_run)
+
+
 def test_personal_ui_scale_is_not_copied_from_the_build_machine():
     import importlib.util
     spec = importlib.util.spec_from_file_location(

@@ -12,9 +12,11 @@ import paths as _paths
 
 _USER_CFG    = _paths.data("config.json")
 _DEFAULT_CFG = _paths.resource("config.json")
+_MACHINE_RECOVERY_ATTEMPTED = False
 
 
 def _ensure_user_config():
+    global _MACHINE_RECOVERY_ATTEMPTED
     if _os.path.isfile(_USER_CFG):
         # Upgrades keep the user's config, but safe shared connection values
         # added by a newer release must still arrive.  Before this migration,
@@ -32,6 +34,20 @@ def _ensure_user_config():
             for key in ("supabase_url", "supabase_anon_key", "trello_api_key"):
                 if _is_blank(current.get(key)) and not _is_blank(bundled.get(key)):
                     current[key] = bundled[key]
+                    changed = True
+            # A common deployment order is: install Linguar Hub first, then
+            # let OneDrive finish adding the shared Daily Run library. The
+            # first-run seed cannot discover a folder that does not exist yet,
+            # and older builds never tried again, so that machine stayed stuck
+            # with a blank Run path. Retry once on each application launch and
+            # only fill a still-blank machine-local value; never replace a
+            # folder the user explicitly chose.
+            if not _MACHINE_RECOVERY_ATTEMPTED and _is_blank(
+                    current.get("runs_dir")):
+                _MACHINE_RECOVERY_ATTEMPTED = True
+                detected = _paths.auto_detect() or {}
+                if not _is_blank(detected.get("runs_dir")):
+                    current["runs_dir"] = detected["runs_dir"]
                     changed = True
             if changed:
                 tmp = _USER_CFG + ".tmp"

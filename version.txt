@@ -1,6 +1,6 @@
 {
-  "version": "1.8.15",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.15",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.15/Linguar-Hub-Setup-1.8.15.exe",
-  "notes": "Trello re-pin correction: right-click Change pinned Trello card now works on All jobs cross-board search results as well as cards inside visible lanes. Search results preserve EMS, Contents, and Recon identity, and the Jobs script uses a new cache key so the correction loads immediately."
+  "version": "1.8.16",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.16",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.16/Linguar-Hub-Setup-1.8.16.exe",
+  "notes": "Daily Run setup recovery: if Linguar Hub was installed before the shared OneDrive Daily Run library finished syncing, the app now retries discovery on the next launch and fills the still-blank Run path automatically without overwriting a folder the user selected."
 }
