@@ -52,6 +52,18 @@ _Avoid_: Requirement
 The temporary Trello representation of one Division. Linguar Hub owns the Job relationship and operational state.
 _Avoid_: Job, source of truth
 
+**External Mirror**:
+A provider-specific representation of selected Linguar Hub information. It keeps the provider's permanent identifiers and sync state but never becomes the identity or complete record of a Client, Job, or Division.
+_Avoid_: Master record, duplicate job
+
+**Sync Operation**:
+A durable request to publish one committed Linguar Hub change to an External Mirror. Retrying the same operation must not create a second card, comment, checklist item, or movement.
+_Avoid_: Save, direct API call
+
+**Sync Conflict**:
+Two different changes to the same mirrored fact after the last shared version. Both values are retained until an authorized user selects the operational value.
+_Avoid_: Sync error, latest wins
+
 **Job Folder**:
 The durable document location associated with a Job. Its path is a locator and may differ by machine or user.
 _Avoid_: Job identity
