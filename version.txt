@@ -1,6 +1,6 @@
 {
-  "version": "1.8.16",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.16",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.16/Linguar-Hub-Setup-1.8.16.exe",
-  "notes": "Daily Run setup recovery: if Linguar Hub was installed before the shared OneDrive Daily Run library finished syncing, the app now retries discovery on the next launch and fills the still-blank Run path automatically without overwriting a folder the user selected."
+  "version": "1.8.17",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.17",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.17/Linguar-Hub-Setup-1.8.17.exe",
+  "notes": "Job card link controls restored: Open Trello, Repin Trello, Open Folder, Repin Folder, and Copy Path are visible on the opened job card. Right-clicking Trello starts repinning; right-clicking Folder offers open, repin, and copy-path actions."
 }
