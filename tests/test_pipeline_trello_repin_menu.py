@@ -57,3 +57,30 @@ def test_search_results_infer_contents_and_recon_divisions_from_their_board():
     assert "divisionForBoardName(card.board)" in results
     assert 'if (name.includes("CONTENTS")) return "CONTENTS"' in js
     assert 'if (name.includes("RECON")) return "RECON"' in js
+
+
+def test_open_job_card_keeps_visible_trello_and_folder_recovery_actions():
+    """The opened job card must expose its everyday link controls directly.
+
+    Right-click may duplicate these shortcuts, but it cannot be the only way
+    to correct a wrong Trello card or job-folder link.
+    """
+    js = APP_JS.read_text(encoding="utf-8")
+    modal_start = js.index("function openAuditModal(")
+    modal_end = js.index("\nfunction renderJobComment(", modal_start)
+    modal = js[modal_start:modal_end]
+
+    for control in (
+        "data-open-trello",
+        "data-repin-trello",
+        "data-open-docs-folder",
+        "data-repin-job-folder",
+        "data-copy-folder-path",
+    ):
+        assert control in modal
+
+    assert "openChangePinnedTrelloCard" in modal
+    assert "openJobFolderLinkModal" in modal
+    assert "copy_to_clipboard(res.path" in modal
+    assert "showContextMenu(event" in modal
+    assert 'label: "Copy folder path"' in modal

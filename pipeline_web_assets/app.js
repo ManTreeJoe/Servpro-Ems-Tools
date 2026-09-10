@@ -1655,8 +1655,15 @@ function openAuditModal(data, trelloUrl = "") {
             <button class="action-btn" data-import-files title="Import downloaded or selected files into this job's OD folder">📥 Import files</button>
           </div>
           <div class="quick-destination-actions" aria-label="Connected tools">
-            <button class="action-btn" ${res.path ? "data-open-docs-folder" : "data-link-job-folder"}>${res.path ? "📁 Folder" : "🔗 Link folder"}</button>
-            <button class="action-btn destination" data-open-trello ${trelloUrl ? "" : "disabled"}><img src="../web_shared/trello.png" alt="">Trello</button>
+            <div class="connected-action-group" aria-label="Trello card actions">
+              <button class="action-btn destination" data-open-trello ${trelloUrl ? "" : "disabled"} title="Open the pinned Trello card; right-click to repin"><img src="../web_shared/trello.png" alt="">Open Trello</button>
+              <button class="action-btn connected-action-secondary" data-repin-trello title="Choose the exact ${escapeAttr(selectedDivision)} Trello card">Repin Trello</button>
+            </div>
+            <div class="connected-action-group" aria-label="Job folder actions">
+              <button class="action-btn" data-open-docs-folder ${res.path ? "" : "disabled"} title="Open the pinned job folder; right-click to repin">📁 Open Folder</button>
+              <button class="action-btn connected-action-secondary" data-repin-job-folder title="Choose the exact job folder">Repin Folder</button>
+              <button class="action-btn connected-action-secondary" data-copy-folder-path ${res.path ? "" : "disabled"} title="Copy the full job folder path">Copy Path</button>
+            </div>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/xactanalysis.png" alt="">XA <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-xa ${data.card_id ? "" : "disabled"}>Open XactAnalysis</button>
               <button data-stage-xa ${res.path ? "" : "disabled"}>Stage files for XA</button>
@@ -1743,9 +1750,34 @@ function openAuditModal(data, trelloUrl = "") {
     if (!close()) return;
     await onAuditCard(data.client || res.client || "", "", "", button.dataset.checklistDivision || "EMS");
   }));
+  const linkedCardTarget = { dataset: {
+    client: data.client || res.client || "",
+    cardId: data.card_id || "",
+    division: selectedDivision,
+  }};
+  const repinTrello = () => openChangePinnedTrelloCard(linkedCardTarget);
+  const repinFolder = () => openJobFolderLinkModal(data, close);
+  const copyFolderPath = async () => {
+    if (!res.path) return;
+    await pywebview.api.copy_to_clipboard(res.path);
+    setStatus("Job folder path copied", "ok");
+  };
+  const showFolderContext = (event) => {
+    event.preventDefault(); event.stopPropagation();
+    if (!window.showContextMenu) { repinFolder(); return; }
+    window.showContextMenu(event, [
+      { label: "Open folder", action: () => pywebview.api.open_job_folder(data.client || "", res.path || ""), disabled: !res.path },
+      { label: "Repin folder…", action: repinFolder },
+      { label: "Copy folder path", action: copyFolderPath, disabled: !res.path },
+    ], { minWidth: 210 });
+  };
   w.querySelectorAll("[data-open-trello]").forEach((button) => button.addEventListener("click", () => {
     if (trelloUrl) pywebview.api.open_url(trelloUrl);
   }));
+  w.querySelectorAll("[data-open-trello]").forEach((button) => button.addEventListener("contextmenu", (event) => {
+    event.preventDefault(); event.stopPropagation(); repinTrello();
+  }));
+  w.querySelector("[data-repin-trello]")?.addEventListener("click", repinTrello);
   w.querySelector("[data-open-xa]")?.addEventListener("click", async () => {
     const ok = await pywebview.api.open_xa_link(data.client || res.client || "", data.card_id || "");
     if (!ok) setStatus("No XactAnalysis link is saved for this job", "warn");
@@ -1776,8 +1808,9 @@ function openAuditModal(data, trelloUrl = "") {
     openJobFileImportModal(data, res));
   w.querySelector("[data-pull-companycam]")?.addEventListener("click", () =>
     openCompanyCamPullModal(data, res));
-  w.querySelector("[data-link-job-folder]")?.addEventListener("click", () =>
-    openJobFolderLinkModal(data, close));
+  w.querySelector("[data-link-job-folder]")?.addEventListener("click", repinFolder);
+  w.querySelector("[data-repin-job-folder]")?.addEventListener("click", repinFolder);
+  w.querySelector("[data-copy-folder-path]")?.addEventListener("click", copyFolderPath);
   w.querySelector("[data-refresh-workspace]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -2072,7 +2105,10 @@ function openAuditModal(data, trelloUrl = "") {
   }));
   w.querySelectorAll("[data-quick-photo-report]").forEach((control) => control.addEventListener("click", () =>
     openQuickPhotoReportModal(data.client || res.client || "", res.path || "", selectedDivision)));
-  w.querySelectorAll("[data-open-docs-folder]").forEach((button) => button.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || "")));
+  w.querySelectorAll("[data-open-docs-folder]").forEach((button) => {
+    button.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || ""));
+    button.addEventListener("contextmenu", showFolderContext);
+  });
   w.querySelectorAll("[data-open-old-job]").forEach((button) => button.addEventListener("click", () => pywebview.api.open_url(button.dataset.openOldJob)));
   w.querySelectorAll("[data-document-path]").forEach((button) => button.addEventListener("click", () => {
     pywebview.api.open_document(button.dataset.documentPath || "");
