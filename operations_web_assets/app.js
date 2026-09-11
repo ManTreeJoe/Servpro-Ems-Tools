@@ -1,4 +1,5 @@
 const state={data:null,view:"home",board:"wip",jobFilter:"all",query:"",selectedClient:"",clientAccount:null,selectedJob:null,jobContext:null,connections:[],fieldNoteTemplates:{},toolRoutes:{},accessKey:"",dispatchEditStarted:0};
+if(new URLSearchParams(location.search).get("embedded")==="1")document.documentElement.classList.add("embedded-shell");
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=(v)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const attr=esc;

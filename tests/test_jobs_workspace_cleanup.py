@@ -8,22 +8,28 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_pipeline_is_the_primary_jobs_workspace_and_reporting_is_grouped():
     groups = {name: items for name, items in home_web.NAV_GROUPS}
-    work = {key: label for key, _icon, label in groups["Work"]}
-    reports = {key: label for key, _icon, label in groups["Reports"]}
+    workspace = {key: label for key, _icon, label in groups["Workspace"]}
+    job_tools = {key: label for key, _icon, label in groups["Job tools"]}
 
-    assert list(work)[0] == "pipeline"
-    assert work["pipeline"] == "Jobs"
-    assert "daily_run" not in work
+    assert list(workspace) == [
+        "operations", "pipeline", "clients", "run_doc_editor",
+        "disputes", "apa", "resources",
+    ]
+    assert workspace["operations"] == "Operations"
+    assert workspace["pipeline"] == "Jobs"
+    assert "daily_run" not in workspace
     assert home_web._asset_folder_for("daily_run").endswith(
         "audit_web_assets/index.html?surface=daily")
-    assert work["clients"] == "Clients"
+    assert workspace["clients"] == "Clients"
     assert home_web._asset_folder_for("clients").endswith(
         "clients_web_assets/index.html")
-    assert work["snapshot"] == "Snapshot"
-    assert reports["apa"] == "APA"
-    assert "hygiene" in reports
-    assert "pipeline" not in reports
-    assert "kpi" not in reports
+    assert workspace["run_doc_editor"] == "Schedule"
+    assert workspace["disputes"] == "Billing & AR"
+    assert workspace["apa"] == "Analytics"
+    assert job_tools["snapshot"] == "Snapshot"
+    assert "hygiene" in job_tools
+    assert home_web._asset_folder_for("operations").endswith(
+        "operations_web_assets/index.html?embedded=1")
 
 
 def test_snapshot_session_reopens_snapshot(monkeypatch):

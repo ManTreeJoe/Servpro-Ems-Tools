@@ -64,11 +64,12 @@ async function loadShell() {
 // panels back into everyone's everyday sidebar.  When a requested panel is
 // normally hidden, expose it only for this browser session under "Open tool".
 const BROWSER_PANEL_FALLBACKS = {
+  operations: ["⌂", "Operations", "../operations_web_assets/index.html?embedded=1"],
   pipeline: ["▦", "Jobs", "../pipeline_web_assets/index.html"],
   daily_run: ["📋", "Daily Run", "../audit_web_assets/index.html?surface=daily"],
   clients: ["👥", "Clients", "../clients_web_assets/index.html"],
   snapshot: ["📸", "Snapshot", "../snapshot_web_assets/index.html"],
-  run_doc_editor: ["📋", "Daily Run Editor", "../run_doc_editor_web_assets/index.html"],
+  run_doc_editor: ["▣", "Schedule", "../run_doc_editor_web_assets/index.html"],
   photo_folders: ["📷", "Photo Folders", "../photo_folders_web_assets/index.html"],
   apa: ["📊", "APA", "../apa_web_assets/index.html"],
   disputes: ["⚖", "Billing Disputes", "../disputes_web_assets/index.html"],

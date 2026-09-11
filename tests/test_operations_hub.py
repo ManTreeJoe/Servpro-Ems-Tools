@@ -217,7 +217,7 @@ def test_browser_and_desktop_use_the_same_responsive_assets():
                    '"/api/requirement"', "Referenced job matched to this client"):
         assert marker in js
     for marker in ("data-job-backdrop", "linguar_hub.png",
-                   "app.js?v=20260902c", "data-edit-dispatch"):
+                   "app.js?v=20260911b", "data-edit-dispatch"):
         assert marker in html
     for marker in ("enableHorizontalGrab", "serviceIcon", "web_shared/trello.png",
                    "web_shared/xactanalysis.png", "web_shared/companycam.png",

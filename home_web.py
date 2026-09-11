@@ -165,27 +165,26 @@ def _ensure_root_index():
 # `key` to module name so the iframe-shim can derive the namespace
 # from the tool's asset folder name automatically.
 NAV_GROUPS = [
-    ("Work", [
+    ("Workspace", [
+        ("operations",  "⌂", "Operations"),
         ("pipeline",    "▦", "Jobs"),
-        ("clients",     "👥", "Clients"),
-        ("snapshot",    "📸", "Snapshot"),
-        ("run_doc_editor", "📋", "Daily Run Editor"),
-        ("photo_folders","📷", "Photo Folders"),
+        ("clients",     "◎", "Clients"),
+        ("run_doc_editor", "▣", "Schedule"),
+        ("disputes",    "▤", "Billing & AR"),
+        ("apa",         "⌁", "Analytics"),
+        ("resources",   "⌑", "Resources"),
     ]),
-    ("Reports", [
-        ("apa",         "📊", "APA"),
+    ("Job tools", [
+        ("snapshot",    "◫", "Snapshot"),
+        ("photo_folders","📷", "Photo Folders"),
         ("exceptions",  "⚠", "Exceptions"),
         ("notifications", "🔔", "Notifications"),
         ("hygiene",     "⚠", "Hygiene"),
-        ("disputes",    "⚖", "Billing Disputes"),
         ("wc_audit",    "🗂", "WC Audit"),
-    ]),
-    ("Reference", [
         ("spreadsheet", "📒", "Spreadsheets"),
         ("job_notes",   "🗒", "Job Notes"),
         ("multi_unit",  "🏢", "Multi-Unit"),
         ("cheat_sheet", "📝", "Cheat Sheet"),
-        ("resources",   "📚", "Forms & Resources"),
     ]),
     ("System", [
         ("automations", "⚡", "Automations"),
@@ -218,6 +217,8 @@ def _asset_folder_for(key: str) -> str:
     # remains addressable for browser deep links and the embedded workspace.
     if key == "daily_run":
         return "../audit_web_assets/index.html?surface=daily"
+    if key == "operations":
+        return "../operations_web_assets/index.html?embedded=1"
     folder = ASSET_FOLDER.get(key, f"{key}_web_assets")
     return f"../{folder}/index.html"
 
@@ -225,6 +226,7 @@ def _asset_folder_for(key: str) -> str:
 # Sub-Api class names per tool key — used so HomeApi can instantiate
 # them and auto-bind their methods with a tool-name prefix.
 SUB_MODULES = {
+    "operations":  "operations_web",
     "health":      "health_web",
     "exceptions":  "exceptions_web",
     "run_doc_editor": "run_doc_editor_web",
@@ -701,18 +703,20 @@ class HomeApi:
     #   the rest      — periodic or reference tools, not part of the
     #                   daily run: pulled up when wanted, not lived in.
     #
-    # Deliberately still visible: audit, apa, snapshot, pipeline,
-    # cheat_sheet (+ settings, which is pinned and never hideable).
+    # The Workspace group is the stable product navigation. These legacy
+    # panels remain available through Settings when an office needs them.
     _PANELS_HIDDEN_BY_DEFAULT = {
+        "snapshot",
         "photo_folders",
+        "exceptions",
         "notifications",
         "hygiene",
         "kpi",
-        "disputes",
         "wc_audit",
         "spreadsheet",
         "job_notes",
         "multi_unit",
+        "cheat_sheet",
     }
 
     def _is_panel_visible(self, key: str) -> bool:
