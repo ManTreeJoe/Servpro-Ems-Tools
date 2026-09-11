@@ -426,6 +426,75 @@ def mark_card_sync(external_card_id: str, *, ok: bool, error: str = "") -> None:
         pass
 
 
+def mark_card_pending(external_card_id: str) -> None:
+    """Mark a Linguar-owned change for the transitional Trello adapter."""
+    try:
+        _sb.rest("PATCH", "crm_pipeline_cards",
+                 params={"external_id": f"eq.{external_card_id}"},
+                 body={"sync_status": "pending", "sync_error": None,
+                       "updated_at": _now()})
+    except Exception:
+        pass
+
+
+def pending_trello_changes(*, limit: int = 100) -> dict:
+    """Return durable Hub changes waiting for Trello, without doing I/O there.
+
+    The sync adapter gets destination lane IDs, complete checklist state and
+    unsent comments in one interface.  Supabase remains optional: an older
+    installation simply returns an empty queue and keeps legacy behavior.
+    """
+    try:
+        cards = _rows("crm_pipeline_cards", sync_status="eq.pending",
+                      select=("card_key,external_id,lane_key,checklist_json,"
+                              "updated_at"), order="updated_at.asc",
+                      limit=str(max(1, min(int(limit or 100), 500))))
+        lane_keys = {str(card.get("lane_key") or "") for card in cards}
+        lanes = _rows("crm_pipeline_lanes", select="lane_key,external_id")
+        lane_ids = {str(row.get("lane_key") or ""):
+                    str(row.get("external_id") or "") for row in lanes
+                    if str(row.get("lane_key") or "") in lane_keys}
+        shaped_cards = []
+        for card in cards:
+            checklist = _decode_json(card.get("checklist_json"), {})
+            shaped_cards.append({
+                "card_key": card.get("card_key") or "",
+                "card_id": card.get("external_id") or "",
+                "list_id": lane_ids.get(str(card.get("lane_key") or ""), ""),
+                "checklists": list(checklist.get("lists") or []),
+            })
+        comments = _rows("crm_pipeline_activity", source="eq.linguar",
+                         external_id="is.null", action_type="eq.comment",
+                         select=("activity_key,card_key,body,actor_name,"
+                                 "happened_at"), order="happened_at.asc",
+                         limit=str(max(1, min(int(limit or 100), 500))))
+        card_ids = {str(row.get("card_key") or ""):
+                    str(row.get("external_id") or "")
+                    for row in _rows("crm_pipeline_cards",
+                                     select="card_key,external_id")}
+        shaped_comments = [{**row,
+                            "card_id": card_ids.get(
+                                str(row.get("card_key") or ""), "")}
+                           for row in comments]
+        return {"ok": True, "cards": shaped_cards,
+                "comments": shaped_comments}
+    except Exception as ex:
+        return {"ok": False, "cards": [], "comments": [],
+                "error": str(ex), "schema_missing": _missing_schema(ex)}
+
+
+def mark_activity_mirrored(activity_key: str, external_id: str) -> None:
+    """Attach Trello's acknowledgement to one already-saved Hub comment."""
+    if not activity_key or not external_id:
+        return
+    try:
+        _sb.rest("PATCH", "crm_pipeline_activity",
+                 params={"activity_key": f"eq.{activity_key}"},
+                 body={"external_id": external_id})
+    except Exception:
+        pass
+
+
 def add_activity(external_card_id: str, action_type: str, body: str,
                  actor_name: str = "", *, source: str = "linguar",
                  external_id: str = "", actor_id: str = "") -> dict:

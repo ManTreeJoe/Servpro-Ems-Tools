@@ -471,9 +471,10 @@ def test_pipeline_summary_filters_are_actionable_and_persisted():
     js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     css = (root / "pipeline_web_assets" / "app.css").read_text(encoding="utf-8")
     for marker in ('boardFilter: "all"', 'data-board-filter="attention"',
-                   'data-board-filter="due"', 'data-board-filter="sync"',
+                   'data-board-filter="due"',
                    "cardMatchesBoardFilter", "PanelState.set({ boardFilter"):
         assert marker in js
+    assert 'data-board-filter="sync"' not in js
     assert ".summary-item.active" in css
 
 

@@ -38,12 +38,16 @@ const state = {
   globalSearchResults: [],
   globalSearchLoading: false,
   globalSearchQuery: "",
+  openWorkspace: null,
+  backgroundSync: { running: false, lastStartedAt: 0, lastSuccessAt: "", error: "" },
   board_loaded: false,
   stage_render_limit: 350,
 };
 let workspaceRequestId = 0;
 let stagesLoadPromise = null;
 let archiveLoadPromise = null;
+let quietBoardSyncTimer = null;
+let quietCommentSyncTimer = null;
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -81,6 +85,7 @@ async function bootPipeline() {
   try { preferences = await pywebview.api.personal_preferences() || {}; } catch (_) {}
   document.documentElement.classList.toggle("density-compact", preferences.density === "compact");
   document.documentElement.classList.toggle("reduce-motion", !!preferences.reduce_motion);
+  window.addEventListener("pipeline:background-sync-done", onBackgroundSyncDone);
   state.view           = PanelState.get("view", preferences.default_view || state.view);
   state.activeBoardKey = PanelState.get("activeBoardKey", null);
   state.boardFilter    = PanelState.get("boardFilter", "all");
@@ -106,6 +111,7 @@ async function bootPipeline() {
     const cardId = pipelineQuery.get("card_id") || "";
     const division = pipelineQuery.get("division") || "EMS";
     await onAuditCard(requestedFocus || "Job", cardId, "", division);
+    startQuietSyncTimers();
     return;
   }
 
@@ -164,6 +170,7 @@ async function bootPipeline() {
   state.view = "";
   setView(initialView, false);
   if (initialView === "board") await loadBoard();
+  startQuietSyncTimers();
   if (requestedFocus) await openFocusedJob(requestedFocus);
   // A custom board photo is decoration, not job data. Load it only after
   // the lanes are usable so a slow OneDrive path or missing image can never
@@ -214,9 +221,9 @@ function setView(v, loadOnEnter = true) {
 // ════════════════════════════════════════════════════════════════
 async function loadBoard(isRefresh) {
   const btn = $("#refresh-btn");
-  if (isRefresh) { btn.disabled = true; btn.textContent = "↻ Syncing…"; }
+  if (isRefresh) { btn.disabled = true; btn.textContent = "Refreshing…"; }
   if (!isRefresh) $("#board-loading")?.classList.remove("hidden");
-  setStatus(isRefresh ? "Refreshing from Trello…" : "Loading shared Pipeline…");
+  setStatus(isRefresh ? "Refreshing jobs…" : "");
   try {
     const res = await withTimeout(
       pywebview.api.board_view(Boolean(isRefresh)),
@@ -234,15 +241,13 @@ async function loadBoard(isRefresh) {
     reconcileJobShelfWithBoard();
     renderBoard();
     const total = boardCardTotal();
-    const source = res.source === "shared" ? "shared Pipeline" :
-      (res.mirrored ? "Trello · saved to Pipeline" : "Trello");
-    setStatus(`✓ ${total} cards across ${res.boards.length} boards · ${source}`, "ok");
-    if (res.stale_cache && !isRefresh) refreshSavedBoardInBackground();
+    setStatus(isRefresh ? `✓ ${total} jobs refreshed` : "", "ok");
+    if (res.stale_cache && !isRefresh) refreshSavedBoardInBackground(true);
   } catch (ex) {
     setStatus(`Board error: ${ex}`, "error");
     if (!isRefresh) showBoardLoadError(ex?.message || ex);
   } finally {
-    if (isRefresh) { btn.disabled = false; btn.textContent = "↻ Sync Jobs"; }
+    if (isRefresh) { btn.disabled = false; btn.textContent = "Refresh"; }
   }
 }
 
@@ -281,7 +286,7 @@ function onBoardZoomShortcut(event) {
   }
 }
 
-async function refreshSavedBoardInBackground() {
+async function refreshSavedBoardInBackground(quiet = false) {
   try {
     const fresh = await pywebview.api.board_view_shared_refresh();
     if (!fresh?.ok || !(fresh.boards || []).length) return;
@@ -295,8 +300,7 @@ async function refreshSavedBoardInBackground() {
         if (row) row.scrollLeft = priorScroll;
       });
     }
-    const source = fresh.source === "shared" ? "shared Pipeline" : "Trello";
-    setStatus(`✓ ${boardCardTotal()} jobs · ${source} is current`, "ok");
+    if (!quiet) setStatus(`✓ ${boardCardTotal()} jobs are current`, "ok");
   } catch (_) {
     // The saved board remains fully usable. Explicit Sync Jobs surfaces
     // network errors when the user wants to troubleshoot them.
@@ -363,7 +367,6 @@ function boardSummary(boards) {
     total: cards.length,
     attention: cards.filter((c) => c.stall === "bad" || c.overdue || c.sync_status === "conflict").length,
     due: cards.filter((c) => c.due && !c.overdue).length,
-    waiting: cards.filter((c) => c.sync_status === "pending").length,
   };
 }
 
@@ -371,7 +374,6 @@ function cardMatchesBoardFilter(card) {
   if (state.boardFilter === "attention")
     return card.stall === "bad" || card.overdue || card.sync_status === "conflict";
   if (state.boardFilter === "due") return Boolean(card.due && !card.overdue);
-  if (state.boardFilter === "sync") return card.sync_status === "pending";
   return true;
 }
 
@@ -414,7 +416,6 @@ function renderBoard() {
       <button class="summary-primary ${state.boardFilter === "all" ? "active" : ""}" data-board-filter="all"><strong>${summary.total}</strong><span>Active jobs</span></button>
       <button class="summary-item ${summary.attention ? "needs-attention" : ""} ${state.boardFilter === "attention" ? "active" : ""}" data-board-filter="attention"><strong>${summary.attention}</strong><span>Need attention</span></button>
       <button class="summary-item ${state.boardFilter === "due" ? "active" : ""}" data-board-filter="due"><strong>${summary.due}</strong><span>Due soon</span></button>
-      ${summary.waiting ? `<button class="summary-item ${state.boardFilter === "sync" ? "active" : ""}" data-board-filter="sync"><strong>${summary.waiting}</strong><span>Waiting to sync</span></button>` : ""}
       <div class="summary-help">Click to open · drag to move</div>
     </section>
     ${globalResults}
@@ -473,6 +474,81 @@ function renderBoard() {
       event.stopPropagation(); openLaneMenu(event, button.closest(".lane"));
     }));
   root.querySelector("[data-add-lane]")?.addEventListener("click", openAddLaneComposer);
+}
+
+function startQuietSyncTimers() {
+  if (quietBoardSyncTimer || quietCommentSyncTimer) return;
+  quietBoardSyncTimer = window.setInterval(requestBackgroundSync, 120_000);
+  quietCommentSyncTimer = window.setInterval(refreshOpenWorkspaceComments, 60_000);
+  window.setTimeout(requestBackgroundSync, 8_000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    const elapsed = Date.now() - Number(state.backgroundSync.lastStartedAt || 0);
+    if (elapsed >= 120_000) requestBackgroundSync();
+    refreshOpenWorkspaceComments();
+  });
+  updateBackgroundSyncIndicator();
+}
+
+async function requestBackgroundSync() {
+  if (document.visibilityState !== "visible" || state.backgroundSync.running || state.drag || state.laneDrag) return;
+  state.backgroundSync.running = true;
+  state.backgroundSync.lastStartedAt = Date.now();
+  updateBackgroundSyncIndicator();
+  try {
+    const result = await pywebview.api.background_trello_sync();
+    if (!result?.started) {
+      state.backgroundSync.running = false;
+      updateBackgroundSyncIndicator();
+    }
+  } catch (error) {
+    state.backgroundSync.running = false;
+    state.backgroundSync.error = String(error?.message || error || "Sync unavailable");
+    updateBackgroundSyncIndicator();
+  }
+}
+
+async function onBackgroundSyncDone(event) {
+  const detail = event?.detail || {};
+  state.backgroundSync.running = false;
+  state.backgroundSync.error = detail.ok ? "" : String(detail.error || "Sync needs attention");
+  if (detail.ok) {
+    state.backgroundSync.lastSuccessAt = detail.at || new Date().toISOString();
+    await refreshSavedBoardInBackground(true);
+    await refreshOpenWorkspaceComments();
+  }
+  updateBackgroundSyncIndicator();
+}
+
+function updateBackgroundSyncIndicator() {
+  const indicator = $("#background-sync-state");
+  if (!indicator) return;
+  const sync = state.backgroundSync;
+  const mode = sync.error ? "attention" : sync.running ? "syncing" : "current";
+  indicator.dataset.state = mode;
+  indicator.querySelector("span").textContent = sync.error ? "Sync needs attention" : "Hub current";
+  const last = sync.lastSuccessAt ? formatCommentDate(sync.lastSuccessAt) : "not synced yet";
+  indicator.title = sync.error
+    ? `Linguar Hub is usable. Trello background sync: ${sync.error}`
+    : `Linguar Hub is the source of truth · Trello last checked ${last}`;
+}
+
+async function refreshOpenWorkspaceComments() {
+  const context = state.openWorkspace;
+  if (!context?.cardId || !context.element?.isConnected || context.refreshing ||
+      document.visibilityState !== "visible") return;
+  context.refreshing = true;
+  try {
+    const result = await pywebview.api.refresh_job_comments(context.cardId);
+    if (result?.ok && state.openWorkspace === context && context.element.isConnected) {
+      context.applyComments(result.comments || []);
+    }
+  } catch (_) {
+    // The local conversation remains usable; the global sync indicator is
+    // where adapter failures surface without disrupting the open job.
+  } finally {
+    context.refreshing = false;
+  }
 }
 
 async function openFocusedJob(name) {
@@ -748,8 +824,7 @@ function renderCard(c, board = {}) {
     : "";
   const syncChip = c.sync_status === "conflict"
     ? `<span class="chip-mini sync-conflict" title="Trello and Linguar Hub need review">⚠ Sync</span>`
-    : c.sync_status === "pending"
-      ? `<span class="chip-mini sync-pending" title="Saved in Linguar Hub; waiting for Trello">↻ Sync</span>` : "";
+    : "";
   const chips = [loss, carrierChip, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
   const starred = isJobStarred(c.card_id);
   return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false" data-no-drag
@@ -1001,7 +1076,7 @@ async function onLaneDrop(ev) {
   }
   const conflictNote = drag.conflict
     ? `\n\nConflict: Trello moved this card to “${drag.actualLane || "another lane"}” while it was held.` : "";
-  if (!confirm(`Move "${drag.name}" to "${toLane}" on Trello?\n\nThis updates the real board everyone sees.${conflictNote}`))
+  if (!confirm(`Move "${drag.name}" to "${toLane}"?\n\nLinguar Hub saves this now and updates the shared Trello board in the background.${conflictNote}`))
     return;
   setStatus(`Moving "${drag.name}" → ${toLane}…`);
   const res = await pywebview.api.move_card(drag.cardId, toListId);
@@ -1015,9 +1090,11 @@ async function onLaneDrop(ev) {
   if (drag.source === "shelf") removeFromJobShelf(drag.cardId);
   renderBoard();
   showMoveUndo(drag, toListId, toLane);
-  setStatus(res.synced === false
-    ? `✓ Moved in Linguar Hub · ${res.warning || "Trello needs review"}`
-    : `✓ Moved "${drag.name}" → ${toLane}`, res.synced === false ? "warn" : "ok");
+  setStatus(res.pending_sync
+    ? `✓ Moved "${drag.name}" → ${toLane}`
+    : res.synced === false
+      ? `✓ Moved in Linguar Hub · ${res.warning || "sync needs review"}`
+      : `✓ Moved "${drag.name}" → ${toLane}`, res.warning ? "warn" : "ok");
 }
 
 function moveCardLocally(cardId, fromListId, toListId, toLane) {
@@ -1064,17 +1141,17 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
     setStatus(`Card opened · workspace layout needs review`, "error");
     return;
   }
-  setStatus(`Opened "${client}" · loading shared job details…`);
+  setStatus("");
   try {
     const fast = await pywebview.api.job_card_workspace_fast(client, resolvedCardId, resolvedDivision);
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (!fast?.ok) {
       modal.setDeferredError(fast?.error || "Shared job details unavailable");
-      setStatus(`Basic card opened · loading Trello and local details…`, "warn");
+      setStatus("Job details are temporarily limited", "warn");
     } else if (!modal.hasUserInput()) {
       modal.close();
       modal = openAuditModal(fast, fast.selected_trello_url || resolvedUrl);
-      setStatus(`Job opened in ${fast.load_ms || 0} ms · loading audit, Trello, and documents…`);
+      setStatus("");
     }
     // The full request starts after the shared CRM payload is cached. Running
     // both at once duplicated the same Supabase hydration and could more than
@@ -1636,7 +1713,7 @@ function openAuditModal(data, trelloUrl = "") {
         <span class="progress-label">${progress.counts?.overdue || 0} overdue · ${progress.counts?.blocked || 0} blocked · ${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div><span class="job-save-mode" data-job-save-state>Changes save automatically</span></div><div class="work-types">${workTypes}</div></section>
-      <section class="aud-section checklist-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} card · stored in Linguar Hub · Trello sync is temporary</small></div>${checklistDivisionTabs}</div>${checklistGroups}</section>
+      <section class="aud-section checklist-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} requirements</small></div>${checklistDivisionTabs}</div>${checklistGroups}</section>
       ${oldJobsSection}
       <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
         <div class="signature-flow"><span class="${dsRequest.requested ? "done" : "active"}">1 Prepare</span><i></i><span class="${dsRequest.requested ? "active" : ""}">2 Send</span><i></i><span class="${(docs.files || []).some((file) => file.signed) ? "done" : ""}">3 Signed copy</span></div>
@@ -1647,8 +1724,8 @@ function openAuditModal(data, trelloUrl = "") {
       <details class="aud-section compact-section"><summary>Run activity <span>${(res.activity || []).length}</span></summary>${activity}</details>
       <details class="aud-section compact-section"><summary>Other attachments <span>${(data.attachments || []).length}</span></summary>${attachments}</details>
     </div>
-    <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>${escapeHtml(selectedDivision)} Trello card</small></div>
-      <span>${(data.comments || []).length}</span></div>
+    <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>${escapeHtml(selectedDivision)} job conversation</small></div>
+      <span data-comment-count>${(data.comments || []).length}</span></div>
       <label class="comment-search"><span aria-hidden="true">⌕</span><input type="search" data-comment-search placeholder="Search comments" aria-label="Search comments"><small data-comment-search-count></small></label>
       <div class="comment-stream" data-comment-stream>${comments}</div>
       <div class="comment-compose"><textarea data-comment-input name="job-comment" rows="3" aria-label="Job comment" autocomplete="off" placeholder="Write an update for this job…"></textarea>
@@ -1661,7 +1738,7 @@ function openAuditModal(data, trelloUrl = "") {
       <header class="modal-head">
         <div class="audit-head-main"><div class="audit-head-copy"><div class="modal-title-row"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div><button type="button" class="client-page-link" data-open-client-page>👤 Client page</button></div>
         <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div>${divisionDataTabs}</div>
-        <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Loading live details…" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh live</button>`}</div>
+        <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Checking details…" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh details</button>`}</div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button></div>
         <div class="card-quick-actions" aria-label="Job actions">
           <div class="quick-primary-actions" aria-label="Work actions">
@@ -1704,6 +1781,7 @@ function openAuditModal(data, trelloUrl = "") {
   document.body.appendChild(w);
   const previousFocus = document.activeElement;
   const dirtyDrafts = new Set();
+  let workspaceContext = null;
   const markDraftDirty = (key, dirty = true) => {
     if (dirty) dirtyDrafts.add(key);
     else dirtyDrafts.delete(key);
@@ -1712,6 +1790,7 @@ function openAuditModal(data, trelloUrl = "") {
   const close = (force = false) => {
     if (!force && dirtyDrafts.size && !window.confirm("Discard your unsaved draft? Saved job changes will not be lost.")) return false;
     document.removeEventListener("keydown", keyClose);
+    if (state.openWorkspace === workspaceContext) state.openWorkspace = null;
     w.remove();
     previousFocus?.focus?.();
     return true;
@@ -1932,7 +2011,7 @@ function openAuditModal(data, trelloUrl = "") {
     } else if (result.warning) {
       setStatus(`Saved in Linguar Hub · Trello sync needs attention`, "warn");
     } else {
-      setStatus("Checklist saved · Trello synced", "ok");
+      setStatus("Checklist saved", "ok");
     }
   }));
   const refreshAfterRequirement = async () => {
@@ -2226,6 +2305,32 @@ function openAuditModal(data, trelloUrl = "") {
     if (count) count.textContent = query ? `${shown} found` : "";
   };
   commentSearch?.addEventListener("input", filterComments);
+  const commentFingerprint = (items) => (items || []).map((item) => [
+    item?.id || "", item?.external_id || "", item?.at || "", item?.text || "",
+  ].join("\u001f")).join("\u001e");
+  workspaceContext = {
+    element: w,
+    client: data.client || res.client || "",
+    cardId: data.card_id || "",
+    division: selectedDivision,
+    refreshing: false,
+    commentsFingerprint: commentFingerprint(data.comments || []),
+    applyComments(nextComments) {
+      const nextFingerprint = commentFingerprint(nextComments);
+      if (nextFingerprint === this.commentsFingerprint) return;
+      const stream = w.querySelector("[data-comment-stream]");
+      if (!stream) return;
+      const scrollTop = stream.scrollTop;
+      stream.innerHTML = (nextComments || []).map(renderJobComment).join("") ||
+        `<div class="aud-empty activity-empty">No comments yet. Start the job conversation below.</div>`;
+      stream.scrollTop = scrollTop;
+      const count = w.querySelector("[data-comment-count]");
+      if (count) count.textContent = String((nextComments || []).length);
+      this.commentsFingerprint = nextFingerprint;
+      filterComments();
+    },
+  };
+  state.openWorkspace = workspaceContext;
   commentInput?.addEventListener("input", () => markDraftDirty("comment", Boolean(commentInput.value.trim())));
   w.querySelector("[data-post-comment]")?.addEventListener("click", async () => {
     const input = commentInput;
@@ -2236,10 +2341,12 @@ function openAuditModal(data, trelloUrl = "") {
     const result = await pywebview.api.post_job_comment(data.client || "", data.card_id || "", text);
     if (!result?.ok) { stateEl.textContent = result?.error || "Could not save"; return; }
     w.querySelector("[data-comment-stream]").insertAdjacentHTML("afterbegin", renderJobComment(result.comment));
+    const count = w.querySelector("[data-comment-count]");
+    if (count) count.textContent = String(Number(count.textContent || 0) + 1);
     filterComments();
     input.value = "";
     clearDraftDirty("comment");
-    stateEl.textContent = result.posted_trello ? "Saved · Trello synced" : (result.warning || "Saved in Linguar Hub");
+    stateEl.textContent = result.warning || "Saved";
   });
   w.querySelector("[data-comment-stream]")?.addEventListener("click", async (event) => {
     const edit = event.target.closest("[data-comment-edit]");

@@ -54,6 +54,8 @@ Main's **New Loss** action provisions one complete operational Job. It creates t
 | Signed documents | Job document storage | DocuSign |
 | Schedule | Linguar Hub Dispatch | Run Doc import/print |
 
+Trello synchronization runs as a background adapter: queued Hub writes are pushed before inbound board changes are imported every two minutes, while an open job conversation checks for new activity every minute. Routine sync does not reload the board or Job Workspace; only the affected data section changes.
+
 ## Delivery order
 
 ### Now — make the daily workflow dependable

@@ -286,6 +286,31 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .status-msg.ok    { color: var(--green); }
 .status-msg.warn  { color: var(--amber); }
 .status-msg.error { color: var(--red); }
+.background-sync-state {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.background-sync-state i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 16%, transparent);
+}
+.background-sync-state[data-state="syncing"] i {
+  background: var(--amber);
+  animation: quiet-sync-pulse 1.25s ease-in-out infinite;
+}
+.background-sync-state[data-state="attention"] { color: var(--amber); }
+.background-sync-state[data-state="attention"] i { background: var(--amber); }
+@keyframes quiet-sync-pulse { 50% { opacity: .38; } }
+@media (prefers-reduced-motion: reduce) {
+  .background-sync-state[data-state="syncing"] i { animation: none; }
+}
 
 /* ── Empty / loading states ────────────────────────────────────── */
 .empty-state, .loading-state {

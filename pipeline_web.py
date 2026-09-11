@@ -16,6 +16,7 @@ import datetime as _dt
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import io
+import json
 import os
 import re
 import sys
@@ -404,6 +405,9 @@ class Api(JobSettingsApi):
         self._window = None
         self._last_rows = []
         self._sync_running = False
+        self._trello_refresh_running = False
+        self._trello_sync_status = {
+            "state": "idle", "last_success_at": "", "last_error": ""}
         self._audit = None  # lazily-built audit_web.Api for card audits
         self._audit_card_cache = {}
         self._division_reconcile_cache = {}
@@ -631,14 +635,17 @@ class Api(JobSettingsApi):
                     "error": f"{type(ex).__name__}: {ex}"}
 
     def move_card(self, card_id: str, list_id: str) -> dict:
-        """Move a card to another lane on the REAL Trello board. The
-        frontend confirms before calling this (drag-to-move with a
-        'Move X to <lane>?' prompt)."""
+        """Move a Hub card immediately; Trello mirrors in the background."""
         if not card_id or not list_id:
             return {"ok": False, "error": "card_id + list_id required"}
         shared = pipeline_store.move_card(card_id, list_id)
         self._board_view_cache = None
         self._invalidate_workspace(card_id=card_id)
+        if shared.get("ok"):
+            return {"ok": True, "saved_local": True, "pending_sync": True,
+                    "synced": False}
+        # Older installs without the shared Pipeline keep their existing
+        # Trello-first fallback until the migration is installed.
         try:
             import trello_client as tc
             ok = tc.move_card(card_id, list_id)
@@ -1513,6 +1520,12 @@ class Api(JobSettingsApi):
     def set_job_check_item(self, card_id: str, item_id: str,
                            complete: bool) -> dict:
         local = pipeline_store.set_check_item(card_id, item_id, complete)
+        if local.get("ok"):
+            self._invalidate_workspace(card_id=card_id)
+            self._board_view_cache = None
+            return {"ok": True, "saved_local": True, "pending_sync": True,
+                    "synced": False}
+        # Compatibility fallback for an installation without shared tables.
         synced = False
         error = ""
         try:
@@ -1560,6 +1573,22 @@ class Api(JobSettingsApi):
             actor = supabase_client.actor_name(actor)
         except Exception:
             pass
+        local = pipeline_store.add_activity(
+            card_id, "comment", text, actor, actor_id=actor_id)
+        if local:
+            pipeline_store.mark_card_pending(card_id)
+            result = {"ok": True, "posted_trello": False,
+                    "pending_sync": True,
+                    "comment": {"id": local.get("activity_key") or "",
+                                "external_id": "", "text": text,
+                                "actor": actor,
+                                "at": local.get("happened_at") or
+                                _dt.datetime.now().isoformat(),
+                                "source": "linguar",
+                                "can_manage": bool(actor_id)}}
+            self._invalidate_workspace(client, card_id)
+            return result
+        # Compatibility fallback for an installation without shared tables.
         posted_action = None
         error = ""
         if card_id:
@@ -1572,16 +1601,13 @@ class Api(JobSettingsApi):
                 error = str(ex)
         external_id = str(posted_action.get("id") or "") if isinstance(
             posted_action, dict) else ""
-        local = pipeline_store.add_activity(
-            card_id, "comment", text, actor, external_id=external_id,
-            actor_id=actor_id)
         posted = bool(posted_action)
-        result = {"ok": bool(local) or posted, "posted_trello": posted,
-                "warning": error if local and not posted else "",
-                "comment": {"id": local.get("activity_key") or "",
+        result = {"ok": posted, "posted_trello": posted,
+                "warning": error,
+                "comment": {"id": external_id,
                             "external_id": external_id,
                             "text": text, "actor": actor,
-                            "at": local.get("happened_at") or _dt.datetime.now().isoformat(),
+                            "at": _dt.datetime.now().isoformat(),
                             "source": "linguar", "can_manage": bool(actor_id)}}
         if result.get("ok"):
             self._invalidate_workspace(client, card_id)
@@ -1923,6 +1949,201 @@ class Api(JobSettingsApi):
             return subcontractor_dispatch.compose(fields, options)
         except Exception as ex:
             return {"ok": False, "error": f"Could not build draft: {ex}"}
+
+    def _push_pending_trello(self) -> dict:
+        """Mirror durable Hub changes without making a screen wait on Trello."""
+        pending = pipeline_store.pending_trello_changes()
+        if not pending.get("ok"):
+            return {"ok": False, "cards": 0, "comments": 0,
+                    "error": pending.get("error") or "sync queue unavailable"}
+        import trello_client as tc
+
+        cards_done = comments_done = 0
+        errors = []
+        for card in pending.get("cards") or []:
+            card_id = str(card.get("card_id") or "")
+            if not card_id:
+                continue
+            ok = True
+            try:
+                list_id = str(card.get("list_id") or "")
+                if list_id:
+                    ok = bool(tc.move_card(card_id, list_id)) and ok
+                for checklist in card.get("checklists") or []:
+                    for item in checklist.get("items") or []:
+                        item_id = str(item.get("id") or "")
+                        if item_id:
+                            ok = bool(tc.set_check_item_state(
+                                card_id, item_id,
+                                "complete" if item.get("complete")
+                                else "incomplete")) and ok
+                pipeline_store.mark_card_sync(
+                    card_id, ok=ok,
+                    error="Trello did not accept a pending job change" if not ok else "")
+                cards_done += int(ok)
+            except Exception as ex:
+                pipeline_store.mark_card_sync(card_id, ok=False, error=str(ex))
+                errors.append(str(ex))
+
+        for comment in pending.get("comments") or []:
+            card_id = str(comment.get("card_id") or "")
+            body = str(comment.get("body") or "").strip()
+            if not card_id or not body:
+                continue
+            try:
+                posted = tc.post_comment(card_id, body) or {}
+                external_id = str(posted.get("id") or "") if isinstance(
+                    posted, dict) else ""
+                if external_id:
+                    pipeline_store.mark_activity_mirrored(
+                        str(comment.get("activity_key") or ""), external_id)
+                    comments_done += 1
+                else:
+                    errors.append("Trello did not accept a pending comment")
+            except Exception as ex:
+                errors.append(str(ex))
+        return {"ok": not errors, "cards": cards_done,
+                "comments": comments_done,
+                "error": errors[0] if errors else ""}
+
+    def background_trello_sync(self) -> dict:
+        """Start the quiet two-way Trello adapter cycle and return at once."""
+        if self._trello_refresh_running:
+            return {"started": False, "reason": "background sync already running"}
+        self._trello_refresh_running = True
+        self._trello_sync_status["state"] = "syncing"
+
+        def _bg():
+            pushed = {"ok": True, "cards": 0, "comments": 0}
+            pulled = {"ok": False, "boards": []}
+            try:
+                pushed = self._push_pending_trello()
+                pulled = self.board_view(force_trello=True)
+                # A successful pull must not hide an outbound write failure.
+                # Linguar Hub remains usable, but the quiet indicator changes
+                # to attention until the queued write is acknowledged.
+                ok = bool(pulled.get("ok")) and bool(pushed.get("ok"))
+                now = _dt.datetime.now(_dt.UTC).isoformat()
+                error = "" if ok else str(
+                    pushed.get("error") or pulled.get("error") or
+                    "Trello background sync needs attention")
+                self._trello_sync_status = {
+                    "state": "current" if ok else "attention",
+                    "last_success_at": now if ok else
+                    self._trello_sync_status.get("last_success_at", ""),
+                    "last_error": error,
+                }
+                detail = {
+                    "ok": ok,
+                    "pushed_cards": pushed.get("cards", 0),
+                    "pushed_comments": pushed.get("comments", 0),
+                    "push_warning": pushed.get("error", ""),
+                    "error": error,
+                    "at": now,
+                }
+                self._emit_js(
+                    "window.dispatchEvent(new CustomEvent("
+                    "'pipeline:background-sync-done', {detail: "
+                    f"{json.dumps(detail)}}}));")
+            except Exception as ex:
+                error = f"{type(ex).__name__}: {ex}"
+                self._trello_sync_status.update(
+                    {"state": "attention", "last_error": error})
+                self._emit_js(
+                    "window.dispatchEvent(new CustomEvent("
+                    "'pipeline:background-sync-done', {detail: "
+                    f"{{\"ok\": false, \"error\": {self._jsstr(error)}}}}}));")
+            finally:
+                self._trello_refresh_running = False
+
+        _wh_run_bg(_bg)
+        return {"started": True}
+
+    def trello_sync_status(self) -> dict:
+        return dict(self._trello_sync_status)
+
+    def refresh_job_comments(self, card_id: str) -> dict:
+        """Pull one open job's comments and return a section-sized update."""
+        card_id = str(card_id or "").strip()
+        if not card_id:
+            return {"ok": True, "comments": []}
+        import trello_client as tc
+        try:
+            card = tc.get_card(card_id) or {}
+            me = tc.get_member_me() or {}
+            imported = []
+            direct = []
+            for action in card.get("actions") or []:
+                if action.get("type") != "commentCard":
+                    continue
+                body = str((action.get("data") or {}).get("text") or "").strip()
+                if not body:
+                    continue
+                creator = action.get("memberCreator") or {}
+                external_id = str(action.get("id") or "")
+                actor = creator.get("fullName") or creator.get("username") or "Trello"
+                direct.append({
+                    "id": external_id, "external_id": external_id,
+                    "text": body, "actor": actor,
+                    "at": action.get("date") or "", "source": "trello",
+                    "can_manage": bool(me.get("id") and
+                                       creator.get("id") == me.get("id")),
+                })
+                imported.append({
+                    "action_type": "comment", "body": body,
+                    "actor_name": actor, "source": "trello",
+                    "external_id": external_id,
+                    "happened_at": action.get("date") or "",
+                    "metadata_json": {"actor_id": creator.get("id") or ""},
+                })
+            pipeline_store.add_activities(card_id, imported)
+            rows = pipeline_store.list_activity(card_id)
+            if not rows:
+                return {"ok": True, "comments": sorted(
+                    direct, key=lambda item: item.get("at") or "", reverse=True)}
+            try:
+                import supabase_client
+                hub_user_id = str((supabase_client.current_user() or {}).get("id") or "")
+            except Exception:
+                hub_user_id = ""
+            comments = []
+            # A Hub comment keeps its original activity key after Trello
+            # acknowledges it. The subsequent Trello import has the same
+            # external action id, so render that conversation event once.
+            imported_external_ids = {
+                str(row.get("external_id") or "") for row in rows
+                if str(row.get("source") or "") == "trello"
+                and str(row.get("external_id") or "")
+            }
+            for row in rows:
+                metadata = row.get("metadata_json") or {}
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except (TypeError, ValueError):
+                        metadata = {}
+                source = str(row.get("source") or "linguar")
+                external_id = str(row.get("external_id") or "")
+                if (source == "linguar" and external_id and
+                        external_id in imported_external_ids):
+                    continue
+                owner_id = str(metadata.get("actor_id") or "")
+                comments.append({
+                    "id": (external_id if source == "trello" else
+                           str(row.get("activity_key") or "")),
+                    "external_id": external_id,
+                    "text": row.get("body") or "",
+                    "actor": row.get("actor_name") or "Linguar Hub",
+                    "at": row.get("happened_at") or "", "source": source,
+                    "can_manage": bool(owner_id and (
+                        owner_id == (str(me.get("id") or "") if source == "trello"
+                                     else hub_user_id))),
+                })
+            comments.sort(key=lambda item: item.get("at") or "", reverse=True)
+            return {"ok": True, "comments": comments,
+                    "synced_at": _dt.datetime.now(_dt.UTC).isoformat()}
+        except Exception as ex:
+            return {"ok": False, "comments": [], "error": str(ex)}
 
     def sync_from_trello(self) -> dict:
         """Kick off a Trello workspace sync on a background thread.

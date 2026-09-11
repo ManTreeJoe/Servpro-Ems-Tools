@@ -13,3 +13,7 @@ Linguar Hub will be the canonical record for clients, jobs, divisions, requireme
 - Trello outages cannot block or roll back valid Linguar Hub work.
 - A provider write is successful only after an acknowledgement is stored; retries reuse the original operation key.
 - Imported activity keeps its origin and author. Hub-owned entries remain editable under Hub permissions and project outward.
+- The visible Jobs board paints from Linguar Hub storage and never waits for a routine Trello request.
+- While Jobs is open and visible, the adapter pushes queued Hub changes before pulling Trello board changes every two minutes. It checks the open job's conversation every minute and updates only that comment stream.
+- Routine synchronization is represented by a quiet **Hub current** state. Only a failed outbound write or a true merge/link conflict asks for attention.
+- Background timers pause with the page hidden and resume with one catch-up check; they never rebuild an open Job Workspace or discard a draft.

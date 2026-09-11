@@ -20,7 +20,7 @@
 <script src="../web_shared/modal.js?v=20260812a"></script>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260910a" />
 <link rel="stylesheet" href="../web_shared/modal.css?v=20260813a" />
-<link rel="stylesheet" href="app.css?v=20260904d" />
+<link rel="stylesheet" href="app.css?v=20260911a" />
 <link rel="stylesheet" href="../web_shared/workspace_controls.css?v=20260910a" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
 <script src="../web_shared/text_context_menu.js?v=20260903a"></script>
@@ -59,7 +59,7 @@
         <button id="customize-board-btn" class="btn" title="Change the active board’s appearance">Board appearance…</button>
       </div>
     </details>
-    <button id="refresh-btn" class="btn btn-primary view-board-only" title="Refresh shared jobs and Trello">↻ Refresh Jobs</button>
+    <button id="refresh-btn" class="btn btn-primary view-board-only" title="Refresh the Jobs workspace">Refresh</button>
     <details class="toolbar-more"><summary class="btn icon-btn" aria-label="More Pipeline actions" title="More Pipeline actions">•••</summary><div>
       <button id="thresholds-btn" class="btn" title="Edit the allowed days for each stage">⏱ Stage Deadlines</button>
       <button id="export-btn" class="btn" title="Export the current stages to an Excel workbook">📊 Export Stages</button>
@@ -70,7 +70,7 @@
 
 <!-- ── Board view (live Trello kanban) ───────────────────────────── -->
 <main id="board-view" class="board-wrap">
-  <div id="board-loading" class="loading-state">Loading boards from Trello…</div>
+  <div id="board-loading" class="loading-state">Opening Jobs…</div>
 </main>
 
 <!-- ── Stages view (lifecycle table) ─────────────────────────────── -->
@@ -116,6 +116,7 @@
 <footer class="statusbar">
   <span id="status-counts">— jobs</span>
   <span id="status-msg" class="status-msg" aria-live="polite"></span>
+  <span id="background-sync-state" class="background-sync-state" data-state="current"><i aria-hidden="true"></i><span>Hub current</span></span>
 </footer>
 
 <!-- Context menu (right-click on a Stages-table row) -->
@@ -152,6 +153,6 @@
   </form>
 </dialog>
 
-<script src="app.js?v=20260911a"></script>
+<script src="app.js?v=20260911b"></script>
 </body>
 </html>
