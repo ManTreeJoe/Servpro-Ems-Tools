@@ -41,6 +41,9 @@ def test_shell_uses_the_lops_workspace_structure_without_rebranding():
     assert '<div class="brand-name">' not in html
     assert '<div class="brand-sub">' not in html
     assert '<span>Company workspace</span>' not in html
+    brand_start = html.index('<div class="brand-row">')
+    brand_end = html.index('</header>', brand_start)
+    assert html.index('id="workspace-switch"', brand_start, brand_end) > brand_start
     assert 'class="workspace-trigger"' in html
     assert 'id="workspace-menu"' in html
     assert 'id="settings-btn"' in html
