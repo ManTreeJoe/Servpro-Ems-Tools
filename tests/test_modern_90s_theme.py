@@ -8,19 +8,36 @@ def _read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
-def test_shared_theme_uses_graphite_restoration_palette():
+def test_shared_theme_uses_lops_restoration_palette():
     css = _read("web_shared/theme.css")
-    for token in ("#0E1112", "#2F7750", "#647FCD", "#E8A64B", "--green-soft"):
+    for token in ("#F5F7F4", "#FFFFFF", "#164F3D", "#DFE5E0", "#EFB762"):
         assert token in css
+    assert 'Georgia, "Times New Roman", serif' in css
+    assert '"Aptos"' in css
 
 
 def test_shell_and_jobs_board_share_the_same_visual_language():
-    shell = _read("home_web_assets/theme.css").lower()
+    shell = _read("home_web_assets/app.css")
     jobs = _read("pipeline_web_assets/app.css")
-    assert "--bg:#0e1112" in shell
+    assert "background:#102F26" in shell
+    assert "#1F5A47" in shell
+    assert "#EFB762" in shell
     assert "var(--cobalt)" in jobs
-    assert "#111512" not in jobs
-    assert "#181e1a" not in jobs
+    assert "--bg:#101613" in jobs
+    assert "#0e1112" not in jobs
+
+
+def test_shell_keeps_the_linguar_hub_logo():
+    html = _read("home_web_assets/index.html")
+    assert "../linguar_hub.png" in html
+
+
+def test_shared_theme_cache_version_is_current_across_workspaces():
+    for index_path in ROOT.glob("*_web_assets/index.html"):
+        html = index_path.read_text(encoding="utf-8")
+        if "web_shared/theme.css" in html:
+            assert "web_shared/theme.css?v=20260910a" in html, index_path.parent.name
+        assert "web_shared/workspace_controls.css?v=20260910a" in html, index_path.parent.name
 
 
 def test_solid_green_actions_use_explicit_contrast_text():

@@ -4,7 +4,7 @@
 
 Linguar Hub should feel like one product, even while its tools are being migrated from Trello and older desktop workflows. New work must strengthen the existing interface language instead of introducing a new visual system inside each panel.
 
-The current visual source of truth is the Job Audit interface. Its buttons, action grouping, cards, typography, spacing, states, and interaction language should be reused across Jobs, Clients, Snapshot, APA, and related tools.
+The current interaction source of truth is the Job Audit interface. Its action grouping, states, and behavior should be reused across Jobs, Clients, Snapshot, APA, and related tools. The visual direction is the L OPS restoration workspace: field-paper surfaces, a permanent forest navigation rail, compact raised controls, and restrained amber attention accents.
 
 ## Product structure
 
@@ -155,7 +155,7 @@ Linguar Hub must look like a restoration operations tool, not a generated SaaS d
 - Every visible control must perform its labeled action. Hide unfinished controls; never use decorative `•••`, fake filters, or placeholder mode switches.
 - Use the established Hub logo and real provider marks. Do not substitute emoji, letter tiles, blank gradient squares, or invented icons when an approved asset exists.
 - Keep SERVPRO green as a functional brand/status color. Do not add neon glow, decorative gradients, glass panels, grid-paper backgrounds, or ambient animation without an operational reason.
-- Graphite surfaces are the visual default across every workspace, including Clients, Jobs, Dispatch, Snapshot, Audit, APA, and Settings. Green is reserved for the primary action, success/status meaning, focus, and a slim active-navigation indicator; it is not a panel background or decorative atmosphere.
+- Field-paper surfaces are the light-mode default, while forest-graphite surfaces provide the dark alternative. The navigation rail remains forest in both modes. Green is reserved for navigation, the primary action, success/status meaning, and focus; amber marks attention and the active-navigation seam.
 - Custom job-board backgrounds are the explicit exception because they are user-selected workspace customization. They must not reduce card contrast or readability.
 - Headings name the work directly: `Jobs needing action`, `Today’s schedule`, and `Jobs by lane`. Avoid slogan-like eyebrow triplets and vague labels such as `Control room`, `Pulse`, `Exposure`, or `Pressure`.
 - Metrics must answer a current workflow question and open the records behind the number. Do not add generic KPI cards merely to fill space.

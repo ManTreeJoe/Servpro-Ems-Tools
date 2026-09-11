@@ -33,7 +33,7 @@
   min-height: 34px;
   padding: 7px 11px;
   border: 1px solid var(--border, #343a37);
-  border-radius: 7px;
+  border-radius: 9px;
   background: var(--surface-2, #202522);
   color: var(--text, #f0f2ef);
   font: inherit;
@@ -43,8 +43,9 @@
   text-align: center;
   white-space: nowrap;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(21,40,33,.07), inset 0 1px 0 rgba(255,255,255,.10);
   transition: background-color 120ms ease, border-color 120ms ease,
-    color 120ms ease, transform 80ms ease;
+    color 120ms ease, transform 80ms ease, box-shadow 120ms ease;
 }
 
 .responsive-ui .btn:hover:not(:disabled) {
@@ -52,7 +53,10 @@
   background: var(--surface-3, #292f2b);
 }
 
-.responsive-ui .btn:active:not(:disabled) { transform: translateY(1px); }
+.responsive-ui .btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 3px rgba(21,40,33,.18);
+}
 .responsive-ui .btn:disabled { opacity: .4; cursor: not-allowed; }
 
 .responsive-ui .btn-primary,

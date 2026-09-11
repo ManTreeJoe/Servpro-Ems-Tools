@@ -59,5 +59,7 @@ def test_new_installs_follow_system_theme():
 def test_shared_theme_has_real_light_palette():
     css = (ROOT / "web_shared" / "theme.css").read_text(encoding="utf-8")
     assert ':root[data-theme="light"]' in css
-    assert "--bg:           #E9ECE6" in css
+    assert "--bg:           #F5F7F4" in css
+    assert "--surface:      #FFFFFF" in css
+    assert "--green:        #164F3D" in css
     assert "color-scheme: light" in css

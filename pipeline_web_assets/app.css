@@ -963,26 +963,26 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 
 /* ── Restoration operations console ───────────────────────────── */
 :root {
-  --bg:#0e1112; --surface:#161a1b; --surface-2:#1e2324;
-  --border:#333b3d; --text:#f0eee8; --text-muted:#a5adaa;
-  --text-dim:#717c79; --green:#2F7750; --green-hover:#3B8960;
-  --amber:#e8a64b; --red:#d96861; --link:#83a9ff;
-  --chip-bg:#282e2f; --chip-active:#2A2F2D;
-  --shadow-1:0 1px 2px rgba(0,0,0,.36),0 10px 30px rgba(0,0,0,.16);
-  --font-display:"Bahnschrift","Arial Narrow","Segoe UI Variable",sans-serif;
-  --font-body:"Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  --bg:#101613; --surface:#17201B; --surface-2:#202B25;
+  --border:#34453B; --text:#EDF3EF; --text-muted:#A9B9B0;
+  --text-dim:#718278; --green:#1C5541; --green-hover:#246C52;
+  --amber:#EFB762; --red:#D2724F; --link:#8DAFCE;
+  --chip-bg:#26342C; --chip-active:#294638;
+  --shadow-1:0 1px 2px rgba(0,0,0,.32),0 14px 34px rgba(0,0,0,.14);
+  --font-display:Georgia,"Times New Roman",serif;
+  --font-body:-apple-system,BlinkMacSystemFont,"Segoe UI Variable","Aptos","Segoe UI",sans-serif;
   --font-utility:"Cascadia Mono","Consolas",monospace;
 }
 html,body { font-family:var(--font-body); }
 button,input,select,textarea { font-family:var(--font-body); }
 .pipeline-title,.modal-title { font-family:var(--font-display); letter-spacing:.01em; }
-.topbar { position:relative; min-height:48px; background:#141819; }
+.topbar { position:relative; min-height:48px; background:var(--surface); }
 .topbar::after { content:""; position:absolute; left:0; right:0; bottom:-1px;
   height:2px; opacity:.75;
   background:linear-gradient(90deg,var(--green) 0 34%,var(--cobalt) 34% 64%,var(--amber) 64% 78%,transparent 78%); }
-.lane { background:#171b1c; border-color:#2d3537;
+.lane { background:#17201B; border-color:#34453B;
   box-shadow:0 8px 22px rgba(0,0,0,.12); }
-.lane-head { min-height:38px; background:#1c2122; }
+.lane-head { min-height:38px; background:#202B25; }
 .lane-name { font-family:var(--font-display); letter-spacing:.065em; }
 .kcard { position:relative; padding:10px 10px 9px 12px; background:#222a24;
   border-color:#344038; box-shadow:0 2px 7px rgba(0,0,0,.16); }
@@ -1013,7 +1013,7 @@ button,input,select,textarea { font-family:var(--font-body); }
 @media(max-width:760px){.cc-pull-group{grid-template-columns:auto 1fr}.cc-pull-group label,.cc-pull-target{grid-column:2}.cc-pull-summary{display:grid}}
 @media(max-width:760px){.subcontract-dispatch-body{grid-template-columns:1fr}.subcontract-fields{grid-template-columns:1fr}.subcontract-fields .span-all{grid-column:auto}.subcontract-actions{grid-column:auto;flex-wrap:wrap}.subcontract-actions>span{flex-basis:100%}}
 .audit-card .modal-title { font-family:var(--font-display); }
-.job-card-activity { background:#151a17; }
+.job-card-activity { background:#17201B; }
 
 /* Lane-shaped skeletons replace the old blank loading pane. */
 #board-loading:not(.hidden) { width:100%; min-height:330px; font-size:0;

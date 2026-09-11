@@ -9,33 +9,33 @@
  */
 :root {
   /* Palette */
-  --bg:           #0E1112;
-  --surface:      #161A1B;
-  --surface-2:    #1E2324;
-  --surface-3:    #282E2F;
-  --border:       #333B3D;
-  --border-strong:#465053;
-  --text:         #F0EEE8;
-  --text-muted:   #A5ADAA;
-  --text-dim:     #717C79;
-  --green:        #2F7750;
-  --green-hover:  #3B8960;
-  --green-dark:   #245D3E;
-  --green-soft:   rgba(47,119,80,.11);
-  --amber:        #E8A64B;
-  --amber-soft:   rgba(232,166,75,.14);
-  --red:          #D96861;
-  --red-soft:     rgba(217,104,97,.14);
-  --link:         #83A9FF;
-  --cobalt:       #647FCD;
-  --violet:       #8A74B8;
-  --chip-bg:      #282E2F;
-  --chip-active:  #2A2F2D;
+  --bg:           #101613;
+  --surface:      #17201B;
+  --surface-2:    #202B25;
+  --surface-3:    #2A382F;
+  --border:       #34453B;
+  --border-strong:#50665A;
+  --text:         #EDF3EF;
+  --text-muted:   #A9B9B0;
+  --text-dim:     #718278;
+  --green:        #1C5541;
+  --green-hover:  #246C52;
+  --green-dark:   #123D2E;
+  --green-soft:   rgba(70,145,108,.14);
+  --amber:        #EFB762;
+  --amber-soft:   rgba(239,183,98,.14);
+  --red:          #D2724F;
+  --red-soft:     rgba(210,114,79,.14);
+  --link:         #8DAFCE;
+  --cobalt:       #6687A5;
+  --violet:       #967EAA;
+  --chip-bg:      #26342C;
+  --chip-active:  #294638;
   --highlight:   #FAEB6B;
   --highlight-fg: #2A2410;
   --extended:    #FF6B6B;
-  --row-hover:   #202627;
-  --row-active:  #242A27;
+  --row-hover:   #1D2923;
+  --row-active:  #243A30;
 
   /* Activity palette (used by audit + APA web) */
   --act-demo:       #708A53;
@@ -45,11 +45,11 @@
   --act-post:       #526F9C;
   --act-contents:   #936463;
 
-  --shadow-1:    0 1px 2px rgba(0,0,0,.42), 0 12px 30px rgba(0,0,0,.16);
-  --radius:      7px;
-  --radius-lg:   10px;
-  --font-display:"Bahnschrift", "Arial Narrow", "Segoe UI Variable", sans-serif;
-  --font-body:   "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --shadow-1:    0 1px 2px rgba(0,0,0,.32), 0 14px 34px rgba(0,0,0,.14);
+  --radius:      8px;
+  --radius-lg:   11px;
+  --font-display:Georgia, "Times New Roman", serif;
+  --font-body:   -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Aptos", "Segoe UI", sans-serif;
   --font-utility:"Cascadia Mono", "Consolas", monospace;
   --on-accent:   #FFFFFF;
   --scrim:       rgba(5,8,7,.72);
@@ -59,40 +59,40 @@
  * without turning the app into a featureless white admin template. */
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg:           #E9ECE6;
-  --surface:      #F8F7F2;
-  --surface-2:    #EEF1EB;
-  --surface-3:    #E1E6DE;
-  --border:       #C8D0C6;
-  --border-strong:#A9B6AA;
-  --text:         #19231E;
-  --text-muted:   #53635A;
-  --text-dim:     #78857D;
-  --green:        #2D7950;
-  --green-hover:  #256944;
-  --green-dark:   #1E5B3A;
-  --green-soft:   rgba(45,121,80,.12);
-  --amber:        #A86510;
-  --amber-soft:   rgba(168,101,16,.12);
-  --red:          #B84E49;
-  --red-soft:     rgba(184,78,73,.11);
-  --link:         #315FA8;
-  --cobalt:       #496AB0;
-  --violet:       #765C9E;
-  --chip-bg:      #DEE4DC;
-  --chip-active:  #CFE1D4;
+  --bg:           #F5F7F4;
+  --surface:      #FFFFFF;
+  --surface-2:    #EEF2EF;
+  --surface-3:    #E1E8E3;
+  --border:       #DFE5E0;
+  --border-strong:#A9B9AF;
+  --text:         #152821;
+  --text-muted:   #68766F;
+  --text-dim:     #829087;
+  --green:        #164F3D;
+  --green-hover:  #0E3D2E;
+  --green-dark:   #102F26;
+  --green-soft:   rgba(22,79,61,.10);
+  --amber:        #BF8A29;
+  --amber-soft:   rgba(191,138,41,.12);
+  --red:          #B85438;
+  --red-soft:     rgba(184,84,56,.10);
+  --link:         #3D668F;
+  --cobalt:       #3D668F;
+  --violet:       #765C86;
+  --chip-bg:      #E5EBE7;
+  --chip-active:  #DBEAE4;
   --highlight:    #F1D75A;
   --highlight-fg: #332B08;
   --extended:     #B74742;
-  --row-hover:    #E6EBE4;
-  --row-active:   #D9E7DC;
+  --row-hover:    #F0F4F1;
+  --row-active:   #E2EDE7;
   --act-demo:     #537B39;
   --act-monitor:  #496C95;
   --act-mold:     #8A6128;
   --act-initial:  #6D5889;
   --act-post:     #486A9F;
   --act-contents: #8A5250;
-  --shadow-1:     0 1px 2px rgba(38,48,42,.12), 0 12px 28px rgba(38,48,42,.08);
+  --shadow-1:     0 1px 2px rgba(21,40,33,.08), 0 14px 34px rgba(21,40,33,.08);
   --on-accent:    #FFFFFF;
   --scrim:        rgba(31,43,36,.34);
 }
@@ -100,13 +100,13 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-    --bg:#E9ECE6;--surface:#F8F7F2;--surface-2:#EEF1EB;--surface-3:#E1E6DE;
-    --border:#C8D0C6;--border-strong:#A9B6AA;--text:#19231E;
-    --text-muted:#53635A;--text-dim:#78857D;--green:#2D7950;
-    --green-hover:#256944;--green-dark:#1E5B3A;--green-soft:rgba(45,121,80,.12);
-    --amber:#A86510;--amber-soft:rgba(168,101,16,.12);--red:#B84E49;
-    --red-soft:rgba(184,78,73,.11);--link:#315FA8;--chip-bg:#DEE4DC;
-    --chip-active:#CFE1D4;--row-hover:#E6EBE4;--row-active:#D9E7DC;
+    --bg:#F5F7F4;--surface:#FFFFFF;--surface-2:#EEF2EF;--surface-3:#E1E8E3;
+    --border:#DFE5E0;--border-strong:#A9B9AF;--text:#152821;
+    --text-muted:#68766F;--text-dim:#829087;--green:#164F3D;
+    --green-hover:#0E3D2E;--green-dark:#102F26;--green-soft:rgba(22,79,61,.10);
+    --amber:#BF8A29;--amber-soft:rgba(191,138,41,.12);--red:#B85438;
+    --red-soft:rgba(184,84,56,.10);--link:#3D668F;--chip-bg:#E5EBE7;
+    --chip-active:#DBEAE4;--row-hover:#F0F4F1;--row-active:#E2EDE7;
     --on-accent:#FFFFFF;--scrim:rgba(31,43,36,.34);
   }
 }
