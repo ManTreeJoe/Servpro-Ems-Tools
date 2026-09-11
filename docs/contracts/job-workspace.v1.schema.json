@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linguar.local/contracts/job-workspace.v1.schema.json",
+  "title": "Linguar Job Workspace v1",
+  "type": "object",
+  "required": ["contract", "organization", "client", "claim", "selected_division", "divisions", "sync"],
+  "properties": {
+    "contract": {
+      "const": {"name": "linguar.job-workspace", "version": 1}
+    },
+    "organization": {
+      "type": "object",
+      "required": ["franchise"],
+      "properties": {"franchise": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "client": {
+      "type": "object",
+      "required": ["id", "display_name", "phone", "email"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "display_name": {"type": "string"},
+        "phone": {"type": "string"},
+        "email": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "claim": {
+      "type": "object",
+      "required": ["id", "display_name", "claim_number", "carrier", "status", "loss_type", "date_of_loss", "date_received", "address", "folder_path"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "display_name": {"type": "string"},
+        "claim_number": {"type": "string"},
+        "carrier": {"type": "string"},
+        "status": {"type": "string"},
+        "loss_type": {"type": "string"},
+        "date_of_loss": {"type": "string"},
+        "date_received": {"type": "string"},
+        "address": {"type": "string"},
+        "folder_path": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "selected_division": {"enum": ["EMS", "CONTENTS", "RECON"]},
+    "divisions": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "selected", "stage", "status", "owner", "external_references"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "type": {"enum": ["EMS", "CONTENTS", "RECON"]},
+          "selected": {"type": "boolean"},
+          "stage": {"type": "string"},
+          "status": {"type": "string"},
+          "owner": {"type": "string"},
+          "external_references": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "sync": {
+      "type": "object",
+      "required": ["state", "conflicts"],
+      "properties": {
+        "state": {"enum": ["ready", "pending", "conflict", "offline"]},
+        "conflicts": {"type": "array"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

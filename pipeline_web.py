@@ -1020,6 +1020,17 @@ class Api(JobSettingsApi):
                                  "can_manage": bool(current_user_id and
                                                     owner_id == current_user_id)})
         comments.sort(key=lambda c: c.get("at") or "", reverse=True)
+        from job_workspace_contract import build_job_workspace
+        workspace = build_job_workspace(
+            requested_name=client,
+            job=job,
+            crm=crm,
+            audit=summary,
+            division_cards=division_cards,
+            selected_division=selected_division,
+            opened_card_id=cid,
+            reconciliation=division_reconciliation,
+        )
         result = {"ok": True, "client": client, "card_id": cid,
                 "selected_division": selected_division,
                 "selected_trello_url": (f"https://trello.com/c/{cid}"
@@ -1031,6 +1042,7 @@ class Api(JobSettingsApi):
                 "attachments": attachments, "members": members,
                 "old_jobs": old_jobs,
                 "documents": documents,
+                "workspace": workspace,
                 "load_ms": round((time.monotonic() - started) * 1000)}
         if len(self._workspace_cache) >= 80:
             oldest = min(self._workspace_cache,
@@ -1158,6 +1170,16 @@ class Api(JobSettingsApi):
             info_sections = _job_info_sections(job)
         except Exception:
             info_sections = []
+        from job_workspace_contract import build_job_workspace
+        workspace = build_job_workspace(
+            requested_name=client,
+            job=job,
+            crm=crm,
+            audit=summary,
+            division_cards=division_cards,
+            selected_division=selected_division,
+            opened_card_id=cid,
+        )
         return {"ok": True, "client": client, "card_id": cid,
                 "selected_division": selected_division,
                 "selected_trello_url": (f"https://trello.com/c/{cid}" if cid else ""),
@@ -1167,6 +1189,7 @@ class Api(JobSettingsApi):
                 "checklists": [], "comments": [], "attachments": [], "members": [],
                 "documents": {"provider": "DocuSign", "request": {}, "files": [],
                               "connected": False},
+                "workspace": workspace,
                 "deferred_loading": True,
                 "load_ms": round((time.monotonic() - started) * 1000)}
 

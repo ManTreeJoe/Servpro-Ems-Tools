@@ -534,6 +534,8 @@ def test_pipeline_workspace_keeps_the_exact_opened_card_authoritative(monkeypatc
     assert result["selected_division"] == "RECON"
     assert result["card_id"] == "ems12345"
     assert result["comments"][0]["text"] == "comment from ems12345"
+    assert result["workspace"]["selected_division"] == "RECON"
+    assert result["workspace"]["divisions"][2]["external_references"]["trello"]["id"] == "ems12345"
 
 
 def test_pcm_workspace_does_not_replace_clicked_card_with_another_pcm_pin(monkeypatch):

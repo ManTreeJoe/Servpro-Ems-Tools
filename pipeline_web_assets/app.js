@@ -1420,6 +1420,7 @@ async function openJobInfoEditor(data, audit, onSaved) {
 function openAuditModal(data, trelloUrl = "") {
   const res = data.audit || {};
   const crm = data.crm || {};
+  const workspace = data.workspace || {};
   const issues = [];
   (res.form_issues || []).forEach((f) => issues.push({ kind: "Form", text: f }));
   (res.photo_issues || []).forEach((p) => issues.push({ kind: "Photos", text: p }));
@@ -1509,15 +1510,23 @@ function openAuditModal(data, trelloUrl = "") {
     : `<div class="aud-empty">No stage requirements are active yet.</div>`;
   const workTypeState = Object.fromEntries((crm.work_environments || []).map((env) =>
     [String(env.work_environment || "").toLowerCase(), env]));
-  const divisionCards = Object.fromEntries((data.division_trello_cards || []).map((card) =>
+  const contractDivisionCards = (workspace.divisions || []).map((division) => ({
+    division: division.type,
+    ...(division.external_references?.trello || {}),
+    card_id: division.external_references?.trello?.id || "",
+  }));
+  const workspaceDivisionCards = contractDivisionCards.length
+    ? contractDivisionCards
+    : (data.division_trello_cards || []);
+  const divisionCards = Object.fromEntries(workspaceDivisionCards.map((card) =>
     [String(card.division || "").toLowerCase(), card]));
   const workTypeStages = [
     ["not_applicable", "Not part of this job"], ["planned", "Planned"],
     ["scheduled", "Scheduled"], ["active", "Active"], ["waiting", "Waiting"],
     ["ready_for_billing", "Ready for billing"], ["closeout", "Closeout"], ["closed", "Complete"],
   ];
-  const pinnedDivisionCards = (data.division_trello_cards || []).filter((card) => card.pinned);
-  const selectedDivision = data.selected_division || "EMS";
+  const pinnedDivisionCards = workspaceDivisionCards.filter((card) => card.pinned);
+  const selectedDivision = workspace.selected_division || data.selected_division || "EMS";
   const divisionDataTabs = pinnedDivisionCards.length > 1 ? `<div class="division-data-tabs" role="tablist" aria-label="Trello card data">
     ${pinnedDivisionCards.map((card) => `<button type="button" role="tab" data-division-data="${escapeAttr(card.division)}" aria-selected="${card.division === selectedDivision ? "true" : "false"}" class="${card.division === selectedDivision ? "active" : ""}">${card.division === "EMS" ? "💧 EMS" : card.division === "CONTENTS" ? "▣ Contents" : "🔨 Recon"}</button>`).join("")}
   </div>` : "";
