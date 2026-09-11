@@ -91,7 +91,7 @@ def test_sidebar_has_no_numeric_count_badges_or_background_count_polling():
 
 def test_shell_stylesheet_cache_key_tracks_the_footer_layout_release():
     html = _read("home_web_assets/index.html")
-    assert 'href="app.css?v=20260911i"' in html
+    assert 'href="app.css?v=20260911j"' in html
 
 
 def test_jobs_has_lops_page_hierarchy_and_a_light_operational_board():

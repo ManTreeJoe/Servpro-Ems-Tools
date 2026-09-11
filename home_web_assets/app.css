@@ -433,6 +433,7 @@ body { background: var(--bg); }
   box-shadow: inset 3px 0 #F0B95F, inset 0 -2px rgba(240, 185, 95, .28), 0 5px 12px rgba(3, 24, 17, .2);
 }
 .sb-icon { display: grid; place-items: center; font-size: 17px; }
+.sb-icon .phosphor-icon{display:block;width:19px;height:19px;fill:currentColor}
 .sb-foot {
   display: grid;
   gap: 0;

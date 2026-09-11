@@ -32,6 +32,16 @@ def test_pipeline_is_the_primary_jobs_workspace_and_reporting_is_grouped():
         "operations_web_assets/index.html?embedded=1")
 
 
+def test_primary_navigation_uses_the_l_ops_phosphor_icon_set():
+    shell = (ROOT / "home_web_assets" / "app.js").read_text(
+        encoding="utf-8")
+    for key in ("operations", "pipeline", "clients", "run_doc_editor",
+                "disputes", "apa", "resources"):
+        assert f"{key}: \"M" in shell
+    assert 'class="phosphor-icon"' in shell
+    assert "navIcon(it.key, it.icon)" in shell
+
+
 def test_snapshot_session_reopens_snapshot(monkeypatch):
     monkeypatch.setattr(home_web.persistence, "get",
                         lambda key, default=None:
