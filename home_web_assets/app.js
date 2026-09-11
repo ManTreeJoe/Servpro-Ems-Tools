@@ -10,14 +10,12 @@
 const state = {
   nav: [],
   active: null,
-  counts: {},
   header: {},
   frames: new Map(),
   frameOrder: [],
   activeFrame: null,
 };
 const MAX_WARM_PANELS = 6;
-let countsRefreshPromise = null;
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -41,23 +39,10 @@ window.addEventListener("pywebviewready", async () => {
   window.addEventListener("online", updateConnectivity);
   window.addEventListener("offline", updateConnectivity);
   await loadShell();
-  refreshCounts();
   maybeShowFirstRun();
   maybeCheckUpdate();
-  // ── Hybrid live updates ────────────────────────────────────────
-  // Sidebar badges auto-refresh every 30 seconds. Pauses when the
-  // window is hidden (alt-tabbed away) so we don't burn CPU /
-  // Trello quota on a backgrounded app.
-  setInterval(() => {
-    if (document.visibilityState === "visible") refreshCounts();
-  }, 30_000);
   // Clock tick every minute (cheap)
   setInterval(updateClock, 60_000);
-  // When the user returns focus to the window, refresh immediately
-  // so stale numbers don't sit there until the next interval tick.
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") refreshCounts();
-  });
 });
 
 async function loadShell() {
@@ -242,7 +227,6 @@ window.addEventListener("message", async (ev) => {
   if (d.type === "sidebar-reload") {
     state.nav = await pywebview.api.nav();
     renderSidebar();
-    refreshCounts();
     renderDeptSwitch();
   } else if (d.type === "ems-navigate" && d.key) {
     // Cross-tool jump from a panel's "Open in…" right-click. Switch the
@@ -454,14 +438,6 @@ async function maybeCheckUpdate() {
 
 function renderNavItem(it) {
   const isActive = state.active && state.active.key === it.key;
-  // A panel whose backend Api failed to import is a dead tab — show ⚠
-  // instead of a spinner so it's not silently broken.
-  const countTitle = it.key === "pipeline"
-    ? "All indexed jobs, including historical records"
-    : `${it.name} count`;
-  const badge = it.error
-    ? `<span class="sb-badge hot" id="badge-${esc(it.key)}" title="This panel failed to load — see ems.log">⚠</span>`
-    : `<span class="sb-badge loading" id="badge-${esc(it.key)}" title="${esc(countTitle)}">…</span>`;
   return `<div class="sb-item ${isActive ? "active" : ""}${it.error ? " errored" : ""}"
               data-key="${esc(it.key)}" data-src="${esc(it.src)}"
               data-icon="${esc(it.icon)}" data-name="${esc(it.name)}"
@@ -469,7 +445,6 @@ function renderNavItem(it) {
               aria-label="Open ${esc(it.name)}">
     <span class="sb-icon">${esc(it.icon)}</span>
     <span class="sb-name">${esc(it.name)}</span>
-    ${badge}
   </div>`;
 }
 
@@ -631,12 +606,9 @@ function renderWelcome() {
     el.addEventListener("click", () => navigate(el.dataset.key, el.dataset.src)));
 }
 
-// Sidebar refresh button does THREE things now:
-//   1. Reload the current tool's iframe (forces it to re-fetch data)
-//   2. Refresh sidebar badge counts
-//   3. Spin the ↻ icon for visible feedback so the user knows the
-//      click registered (previously: silent no-op feel — the counts
-//      may already be up-to-date so nothing visible changed)
+// Reload the current tool and spin the icon so the click has immediate
+// feedback. Sidebar counts were removed because they mixed unrelated totals
+// and added background work without helping users decide what to do next.
 async function reloadEverything() {
   const btn = document.getElementById("refresh-btn");
   if (btn) btn.classList.add("spinning");
@@ -652,56 +624,9 @@ async function reloadEverything() {
       url.searchParams.set("_r", String(Date.now()));
       frame.src = url.toString();
     }
-    await refreshCounts(true);
   } finally {
     setTimeout(() => btn?.classList.remove("spinning"), 600);
   }
-}
-
-async function refreshCounts(force = false) {
-  if (countsRefreshPromise) return countsRefreshPromise;
-  countsRefreshPromise = refreshCountsOnce(force);
-  try { return await countsRefreshPromise; }
-  finally { countsRefreshPromise = null; }
-}
-
-async function refreshCountsOnce(force = false) {
-  // Mark all badges loading
-  $$(".sb-badge").forEach((b) => { b.textContent = "…"; b.className = "sb-badge loading"; });
-  const counts = await pywebview.api.counts(Boolean(force));
-  state.counts = counts || {};
-  for (const [key, val] of Object.entries(state.counts)) {
-    const b = document.getElementById(`badge-${key}`);
-    if (!b) continue;
-    if (val === null || val === undefined) {
-      b.textContent = "—"; b.className = "sb-badge";
-      continue;
-    }
-    b.textContent = val;
-    b.className = "sb-badge " + kind(key, val);
-  }
-  // Clear the loading spinner on any panel counts() didn't return a value
-  // for — otherwise those badges (notifications, kpi, wc_audit, spreadsheet,
-  // multi_unit, cheat_sheet, settings, photo_folders) spin "…" forever.
-  $$(".sb-badge").forEach((b) => {
-    const key = (b.id || "").replace(/^badge-/, "");
-    // Leave the ⚠ dead-panel marker alone; only clear stale spinners.
-    if (b.textContent === "⚠") return;
-    if (!(key in state.counts)) {
-      b.textContent = "";
-      b.className = "sb-badge";
-    }
-  });
-}
-
-function kind(key, v) {
-  if (typeof v !== "number") return "";
-  if (v === 0) return "";
-  if (key === "audit") return v > 5 ? "warn" : "ok";
-  if (key === "hygiene") return v >= 50 ? "hot" : v >= 20 ? "warn" : "";
-  if (key === "snapshot") return v >= 10 ? "warn" : "ok";
-  if (key === "disputes") return v >= 50 ? "warn" : "";
-  return "";
 }
 
 function esc(s) {

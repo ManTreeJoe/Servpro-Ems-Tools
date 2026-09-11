@@ -48,7 +48,7 @@ def test_shell_uses_the_lops_workspace_structure_without_rebranding():
     assert 'id="workspace-menu"' in html
     assert 'id="settings-btn"' in html
     assert 'menu.querySelectorAll(".workspace-option")' in js
-    for marker in ("#0E352B", "#246A55", "#F0B95F", "grid-template-columns: 286px"):
+    for marker in ("#0E352B", "#246A55", "#F0B95F", "grid-template-columns: 230px"):
         assert marker in css
 
 
@@ -69,6 +69,15 @@ def test_footer_utilities_are_icon_only_and_connectivity_is_plain_language():
     assert 'id="toast-log-btn"' not in html
     assert 'sb-support-menu' not in html
     assert 'window.addEventListener("offline", updateConnectivity)' in js
+
+
+def test_sidebar_has_no_numeric_count_badges_or_background_count_polling():
+    html = _read("home_web_assets/index.html")
+    js = _read("home_web_assets/app.js")
+    css = _read("home_web_assets/app.css")
+    assert "sb-badge" not in html + js + css
+    assert "refreshCounts" not in js
+    assert "pywebview.api.counts" not in js
 
 
 def test_jobs_has_lops_page_hierarchy_and_a_light_operational_board():

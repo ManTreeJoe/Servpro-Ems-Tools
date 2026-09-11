@@ -73,22 +73,6 @@ body { background: var(--bg); }
   transform: translateY(-1px);
 }
 .sb-icon { font-size: 17px; line-height: 1; }
-.sb-badge {
-  background: var(--chip-bg);
-  color: var(--text-muted);
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  border: 1px solid transparent;
-  min-width: 22px; text-align: center;
-}
-.sb-badge.hot   { background: var(--red);   color: #FFFFFF; }
-.sb-badge.warn  { background: var(--amber); color: #FFFFFF; }
-.sb-badge.ok    { background: var(--green); color: #FFFFFF; }
-.sb-badge.loading { background: transparent; color: var(--text-dim); border-style: dashed; border-color: var(--border); }
-.sb-item.active .sb-badge { border-color: rgba(255,255,255,0.1); }
 
 .sb-foot {
   padding: 10px 12px;
@@ -291,19 +275,6 @@ body { background: var(--bg); }
   }
   .sb-icon { font-size: 19px; }
   .sb-name { display: none; }
-  .sb-badge {
-    position: absolute;
-    top: 2px;
-    right: 1px;
-    min-width: 15px;
-    max-width: 27px;
-    padding: 1px 3px;
-    overflow: hidden;
-    font-size: 8px;
-    line-height: 12px;
-  }
-  .sb-badge.loading { display: none; }
-
   .sb-foot {
     padding: 8px 14px;
     flex-direction: column;
@@ -336,14 +307,14 @@ body { background: var(--bg); }
 /* L OPS shell contract — calm field-paper workspace inside a permanent
    restoration-green navigation rail. The original Linguar mark remains the
    product identity; the web app supplies the layout and interaction rhythm. */
-.shell { grid-template-columns: 286px minmax(0, 1fr); }
+.shell { grid-template-columns: 230px minmax(0, 1fr); }
 .sidebar {
   background: #0E352B;
   border-right: 1px solid rgba(10, 42, 33, .34);
 }
 .sidebar::before { display: none; }
 .sb-head {
-  padding: 28px 20px 22px;
+  padding: 20px 14px 16px;
   border-bottom-color: rgba(255, 255, 255, .11);
 }
 .brand-row { align-items: center; gap: 12px; }
@@ -442,7 +413,7 @@ body { background: var(--bg); }
 .workspace-option b { display:block; font-size: 11.5px; }
 .workspace-option small { display:block; margin-top:3px; color:#9FB8AD; font-size:9.5px; }
 .workspace-option i { color:#F0B95F; font-style:normal; }
-.sb-nav { padding: 18px 14px; }
+.sb-nav { padding: 13px 10px; }
 .sb-group {
   margin: 18px 10px 7px;
   padding: 0;
@@ -452,11 +423,11 @@ body { background: var(--bg); }
 }
 .sb-group:first-child { margin-top: 4px; }
 .sb-item {
-  min-height: 48px;
-  grid-template-columns: 27px minmax(0, 1fr) auto;
+  min-height: 44px;
+  grid-template-columns: 25px minmax(0, 1fr);
   gap: 11px;
   margin: 3px 0;
-  padding: 10px 13px;
+  padding: 8px 11px;
   border-radius: 10px;
   color: #AFC2BA;
   font-size: 13.5px;
@@ -516,7 +487,7 @@ body { background: var(--bg); }
 :root[data-theme="light"] .pane { background: #F7F9F6; }
 
 @media (max-width: 1120px) and (min-width: 901px) {
-  .shell { grid-template-columns: 238px minmax(0, 1fr); }
+  .shell { grid-template-columns: 214px minmax(0, 1fr); }
 }
 
 @media (max-width: 900px) {
