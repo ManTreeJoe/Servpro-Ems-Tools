@@ -22,17 +22,23 @@
         <span class="brand-mark" aria-hidden="true"><img src="../linguar_hub.png" width="40" height="40" alt=""></span>
         <div>
           <div class="brand-name">Linguar Hub</div>
-          <div class="brand-sub" id="time-meta">—</div>
+          <div class="brand-sub">Restoration operations</div>
         </div>
       </div>
-      <div class="dept-switch" id="dept-switch" style="display:none;"></div>
+      <label class="workspace-switch" id="workspace-switch" hidden>
+        <span>Company workspace</span>
+        <select class="dept-switch" id="dept-switch" aria-label="Company workspace"></select>
+      </label>
     </header>
     <nav class="sb-nav" id="sb-nav"></nav>
     <footer class="sb-foot">
-      <button class="sb-foot-btn" id="refresh-btn" title="Reload current tool + refresh sidebar counts" aria-label="Refresh current tool and counts">↻</button>
-      <details class="sb-support-menu"><summary class="sb-foot-btn" title="Support tools" aria-label="Open support tools">⋯</summary><div>
-        <button id="toast-log-btn">🛎 Status history</button>
-      </div></details>
+      <div class="sb-company-state"><i aria-hidden="true"></i><span>Company workspace</span></div>
+      <div class="sb-session"><span id="time-meta">—</span><div>
+        <button class="sb-foot-btn" id="refresh-btn" title="Reload current tool + refresh sidebar counts" aria-label="Refresh current tool and counts">↻</button>
+        <details class="sb-support-menu"><summary class="sb-foot-btn" title="Support tools" aria-label="Open support tools">⋯</summary><div>
+          <button id="toast-log-btn">Status history</button>
+        </div></details>
+      </div></div>
     </footer>
   </aside>
 
@@ -91,18 +97,6 @@
 </div>
 
 <style>
-  /* Department switcher pill in the sidebar header */
-  .dept-switch { display: flex; gap: 4px; margin-top: 12px;
-    background: var(--surface-2, #26272c); border: 1px solid var(--border, #34353b);
-    border-radius: 8px; padding: 3px; }
-  .dept-seg { flex: 1; text-align: center; cursor: pointer;
-    font-size: 12px; font-weight: 700; letter-spacing: .03em;
-    padding: 5px 8px; border-radius: 6px; color: var(--text-muted, #9aa5ae);
-    border: none; background: transparent; transition: background .12s, color .12s; }
-  .dept-seg:hover { color: var(--text, #e8e8ea); }
-  .dept-seg.active { background: var(--surface-3, #282e2f); color: var(--text, #f0eee8);
-    box-shadow: inset 0 -2px 0 var(--green, #2f7750); }
-  .dept-seg:disabled { cursor: default; }
   .dept-splash {
     position: fixed; inset: 0; z-index: 2000;
     background: var(--bg, #17181c);
@@ -157,6 +151,6 @@
 
 <script src="../web_shared/health_banner.js?v=20260826a"></script>
 <script src="../web_shared/toast_log.js?v=20260731j"></script>
-<script src="app.js?v=20260903b"></script>
+<script src="app.js?v=20260911a"></script>
 </body>
 </html>

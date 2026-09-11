@@ -32,6 +32,29 @@ def test_shell_keeps_the_linguar_hub_logo():
     assert "../linguar_hub.png" in html
 
 
+def test_shell_uses_the_lops_workspace_structure_without_rebranding():
+    html = _read("home_web_assets/index.html")
+    js = _read("home_web_assets/app.js")
+    css = _read("home_web_assets/app.css")
+    for marker in ("Restoration operations", "Company workspace",
+                   'class="workspace-switch"', 'class="sb-company-state"'):
+        assert marker in html
+    assert '<select class="dept-switch"' in html
+    assert "host.onchange = () => switchDept" in js
+    for marker in ("#0E352B", "#246A55", "#F0B95F", "grid-template-columns: 286px"):
+        assert marker in css
+
+
+def test_jobs_has_lops_page_hierarchy_and_a_light_operational_board():
+    html = _read("pipeline_web_assets/index.html")
+    css = _read("pipeline_web_assets/app.css")
+    assert "RESTORATION OPERATIONS" in html
+    assert 'class="pipeline-title-block"' in html
+    assert '.board-wrap:not(.has-custom-background)' in css
+    assert "background: #F7F9F6" in css
+    assert 'font-family: var(--font-body)' in css
+
+
 def test_shared_theme_cache_version_is_current_across_workspaces():
     for index_path in ROOT.glob("*_web_assets/index.html"):
         html = index_path.read_text(encoding="utf-8")

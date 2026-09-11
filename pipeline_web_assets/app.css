@@ -1320,3 +1320,112 @@ button,input,select,textarea { font-family:var(--font-body); }
   .new-loss-heading-fields,.new-loss-grid,.new-loss-fields { grid-template-columns:1fr; }
   .new-loss-footer { margin-inline:-14px; padding-inline:14px; }
 }
+
+/* L OPS Jobs contract. Display type belongs to the page title; operational
+   cards remain compact sans-serif objects that can be scanned and moved. */
+html, body { color-scheme: inherit; }
+.pipeline-title-block { display: grid; gap: 4px; min-width: 0; }
+.pipeline-eyebrow {
+  color: var(--text-muted);
+  font: 760 9px/1 var(--font-body);
+  letter-spacing: .16em;
+}
+.pipeline-title {
+  font-family: var(--font-display);
+  font-size: clamp(25px, 2.2vw, 34px);
+  font-weight: 760;
+  line-height: 1;
+  letter-spacing: -.025em;
+}
+.topbar {
+  min-height: 82px;
+  padding: 14px 24px !important;
+  backdrop-filter: none;
+}
+.topbar::after { height: 1px; background: var(--border); opacity: 1; }
+.pipeline-heading { gap: 20px; }
+.topbar-actions { gap: 9px; }
+.topbar .btn,
+.topbar .search,
+.board-zoom { min-height: 40px; border-radius: 10px; }
+.topbar .btn { padding-inline: 15px; }
+.topbar .btn-primary { box-shadow: 0 2px 5px rgba(15, 55, 43, .15); }
+.view-toggle { border-radius: 10px; }
+.vtab { min-height: 34px; }
+
+:root[data-theme="light"] .topbar {
+  background: #FFFFFF;
+  border-bottom-color: #DCE4DE;
+}
+:root[data-theme="light"] .pipeline-eyebrow { color: #73857B; }
+:root[data-theme="light"] .pipeline-title { color: #10291F; }
+:root[data-theme="light"] .view-toggle { background: #EDF2EE; border-color: #D9E2DC; }
+:root[data-theme="light"] .vtab.active {
+  background: #FFFFFF;
+  color: #16392D;
+  box-shadow: 0 1px 4px rgba(17, 49, 39, .12);
+}
+:root[data-theme="light"] .search {
+  background: #F4F7F4;
+  border-color: #DCE4DE;
+}
+:root[data-theme="light"] .board-wrap:not(.has-custom-background) {
+  --board-overlay: none;
+  background: #F7F9F6;
+}
+:root[data-theme="light"] .pipeline-summary {
+  background: #EDF3EF;
+  border-color: #DCE5DF;
+}
+:root[data-theme="light"] .summary-primary strong { color: #15513E; }
+:root[data-theme="light"] .summary-primary:hover,
+:root[data-theme="light"] .summary-item:hover { background: rgba(21, 81, 62, .055); }
+:root[data-theme="light"] .board-tab {
+  background: #EEF3EF;
+  border-color: #D8E2DB;
+  color: #52665C;
+}
+:root[data-theme="light"] .board-tab.active {
+  background: #18523F;
+  border-color: #18523F;
+  color: #FFFFFF;
+  box-shadow: 0 2px 6px rgba(21, 74, 56, .18);
+}
+:root[data-theme="light"] .board-tab.active .board-tab-count { color: #CFE1D8; }
+:root[data-theme="light"] .board-wrap:not(.has-custom-background) .lane {
+  background: #E9EFEB;
+  border-color: #D9E2DC;
+  box-shadow: none;
+}
+:root[data-theme="light"] .board-wrap:not(.has-custom-background) .lane-head {
+  background: transparent;
+  border-bottom-color: #D6E0D9;
+}
+:root[data-theme="light"] .board-wrap:not(.has-custom-background) .lane-name { color: #213C31; }
+:root[data-theme="light"] .board-wrap:not(.has-custom-background) .lane-count {
+  background: rgba(25, 75, 57, .08);
+  color: #5D7066;
+}
+:root[data-theme="light"] .board-wrap:not(.has-custom-background) .kcard {
+  background: #FFFFFF;
+  border-color: #DCE4DE;
+  color: #183229;
+  box-shadow: 0 1px 2px rgba(18, 48, 38, .08);
+}
+:root[data-theme="light"] .board-wrap:not(.has-custom-background) .kcard:hover {
+  background: #FFFFFF;
+  border-color: #AFC2B7;
+  box-shadow: 0 5px 14px rgba(18, 48, 38, .1);
+}
+:root[data-theme="light"] .kcard-title {
+  color: #172F26;
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+:root[data-theme="light"] .statusbar { background: #FFFFFF; border-top-color: #DCE4DE; }
+
+@media (max-width: 980px) {
+  .topbar { min-height: 68px; padding: 10px 14px !important; }
+  .pipeline-title { font-size: 24px; }
+  .pipeline-eyebrow { display: none; }
+}

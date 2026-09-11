@@ -141,20 +141,19 @@ function restoreLastPanel() {
 // ── Department switcher (multi-account) ────────────────────────────
 async function renderDeptSwitch() {
   const host = document.getElementById("dept-switch");
+  const wrapper = document.getElementById("workspace-switch");
   if (!host) return;
   let st;
   try { st = await pywebview.api.department_state(); } catch (_) { st = null; }
   if (!st?.ok || !st.enabled || !(st.departments || []).length) {
-    host.style.display = "none";
+    if (wrapper) wrapper.hidden = true;
     return;
   }
-  host.style.display = "flex";
-  host.innerHTML = (st.departments || []).map((d) =>
-    `<button class="dept-seg ${d.key === st.active ? "active" : ""}"
-             data-key="${esc(d.key)}" title="${esc(d.label)}">${esc(d.key)}</button>`
+  if (wrapper) wrapper.hidden = false;
+  host.innerHTML = (st.departments || []).map((department) =>
+    `<option value="${esc(department.key)}" ${department.key === st.active ? "selected" : ""}>SERVPRO ${esc(department.key)}</option>`
   ).join("");
-  host.querySelectorAll(".dept-seg").forEach((b) =>
-    b.addEventListener("click", () => switchDept(b.dataset.key, st.active)));
+  host.onchange = () => switchDept(host.value, st.active);
 }
 
 async function switchDept(key, active) {
@@ -164,10 +163,11 @@ async function switchDept(key, active) {
   if (txt) txt.textContent = `Switching to ${key}…`;
   if (splash) splash.classList.remove("hidden");
   // Disable the pills so a double-click can't fire two switches.
-  document.querySelectorAll(".dept-seg").forEach((b) => (b.disabled = true));
+  const selector = document.getElementById("dept-switch");
+  if (selector) selector.disabled = true;
   const unlock = () => {
     if (splash) splash.classList.add("hidden");
-    document.querySelectorAll(".dept-seg").forEach((b) => (b.disabled = false));
+    if (selector) selector.disabled = false;
   };
   try {
     const r = await pywebview.api.switch_department(key);
