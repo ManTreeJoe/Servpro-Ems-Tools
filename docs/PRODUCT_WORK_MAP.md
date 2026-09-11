@@ -72,6 +72,43 @@ Main's **New Loss** action provisions one complete operational Job. It creates t
 4. Universal search that returns active, closed, archived, and external-only matches.
 5. Review queue for ambiguous client, claim, folder, and Trello matches.
 
+### Queued after the shared identity/workspace migration — XA assignment intake
+
+Build the temporary XactAnalysis email importer described in
+[`XA_TEMPORARY_AUTO_IMPORT.md`](XA_TEMPORARY_AUTO_IMPORT.md). This is an
+internal Windows workflow until Verisk provisions an official integration.
+
+1. Import approved `.eml` files into an **Import Draft** queue; importing never
+   creates or changes a live Job.
+2. Parse and normalize assignment facts behind one `AssignmentImportSource`
+   interface while preserving the original source, parser version, unknown
+   labels, SHA-256, Internet Message ID, and safe attachment metadata.
+3. Match drafts to the shared Client → Claim → Division contract using exact
+   source, XA ID, claim/property, property/date, and contact-only confidence
+   levels. No candidate is merged automatically.
+4. Give authorized Front Ops users a review screen with edit, approve as new
+   Job, add related assignment, merge exact duplicate, and reject actions.
+5. Make approval atomic and write post-commit outbox work for CompanyCam,
+   profiles, requirements, tasks, and audit entries. External failures remain
+   retryable and never roll back the approved Job.
+6. After the local parser and review workflow pass acceptance tests, connect
+   the same pipeline to an authorized Outlook `XA Intake` folder through
+   Microsoft Graph. Replace the source adapter—not the matcher or approval
+   workflow.
+
+**Owner:** Job intake, with Client and Claim candidate matching.
+
+**Screen:** Front Ops → XA Import Drafts.
+
+**Save behavior:** explicit approval or rejection; risky merges require a
+second confirmation.
+
+**Source:** temporary email/Graph adapter; Linguar Hub owns the approved data.
+
+**Done when:** the approved sample set imports without creating live Jobs,
+duplicates and related assignments are distinguished, and approval is
+idempotent, authorized, audited, and safe under integration failure.
+
 ### Later — remove temporary dependencies
 
 1. Linguar Hub-native boards, checklists, comments, and automations replace Trello.
@@ -98,4 +135,5 @@ If those six answers are unclear, the feature is not ready to place in the inter
 - `UI_UX_GUIDELINES.md` — interface and interaction contract
 - `docs/DEPARTMENT_TIMING_REQUIREMENTS.md` — ownership and timing model
 - `docs/TRELLO_AUTOMATION_MIGRATION.md` — Trello replacement plan
+- `docs/XA_TEMPORARY_AUTO_IMPORT.md` — temporary XA assignment intake backlog
 - `DATA_STORAGE_POLICY.md` — structured data and file storage policy
