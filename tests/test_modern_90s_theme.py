@@ -69,6 +69,12 @@ def test_footer_utilities_are_icon_only_and_connectivity_is_plain_language():
     assert 'id="toast-log-btn"' not in html
     assert 'sb-support-menu' not in html
     assert 'window.addEventListener("offline", updateConnectivity)' in js
+    footer_start = html.index('<footer class="sb-foot">')
+    footer_end = html.index('</footer>', footer_start)
+    footer = html[footer_start:footer_end]
+    assert footer.index('id="time-meta"') < footer.index('class="sb-utility-row"')
+    utility = footer[footer.index('class="sb-utility-row"'):]
+    assert utility.index('id="connection-state"') < utility.index('id="settings-btn"') < utility.index('id="refresh-btn"')
 
 
 def test_sidebar_has_no_numeric_count_badges_or_background_count_polling():

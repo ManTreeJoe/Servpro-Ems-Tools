@@ -441,16 +441,16 @@ body { background: var(--bg); }
 .sb-icon { display: grid; place-items: center; font-size: 17px; }
 .sb-foot {
   display: grid;
-  gap: 14px;
-  padding: 16px 18px 18px;
+  gap: 0;
+  padding: 13px 12px 14px;
   border-top-color: rgba(255, 255, 255, .11);
 }
 .sb-company-state {
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 40px;
-  padding: 0 12px;
+  min-height: 34px;
+  padding: 0 9px;
   border: 1px solid rgba(255, 255, 255, .14);
   border-radius: 9px;
   color: #B7C8C0;
@@ -469,14 +469,15 @@ body { background: var(--bg); }
   box-shadow: 0 0 0 3px rgba(216, 138, 100, .11);
 }
 .sb-session {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  gap: 8px;
   color: #8FA89D;
   font-size: 10px;
 }
+.sb-session > span { padding-left: 2px; }
 .sb-session > div { display: flex; gap: 6px; }
+.sb-utility-row { align-items: center; }
+.sb-utility-row .sb-company-state { flex: 1 1 auto; }
 .sb-settings-btn { width: 34px; padding: 0; }
 .sb-settings-btn.active {
   border-color: rgba(240,185,95,.55);
