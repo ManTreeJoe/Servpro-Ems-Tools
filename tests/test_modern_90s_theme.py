@@ -42,6 +42,9 @@ def test_shell_uses_the_lops_workspace_structure_without_rebranding():
     assert 'class="workspace-trigger"' in html
     assert 'id="workspace-menu"' in html
     assert 'id="settings-btn"' in html
+    assert 'menu.querySelectorAll(".workspace-option")' in js
+    for marker in ("#0E352B", "#246A55", "#F0B95F", "grid-template-columns: 286px"):
+        assert marker in css
 
 
 def test_system_health_is_part_of_settings_not_primary_navigation():
@@ -50,9 +53,6 @@ def test_system_health_is_part_of_settings_not_primary_navigation():
     assert 'item.key !== "settings" && item.key !== "health"' in home_js
     assert 'data-scope-tab="health"' in settings
     assert '../health_web_assets/index.html?embedded=1' in settings
-    assert "host.onchange = () => switchDept" in js
-    for marker in ("#0E352B", "#246A55", "#F0B95F", "grid-template-columns: 286px"):
-        assert marker in css
 
 
 def test_jobs_has_lops_page_hierarchy_and_a_light_operational_board():

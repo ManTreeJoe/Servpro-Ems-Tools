@@ -62,6 +62,9 @@
     cursor:pointer; font:inherit; font-weight:650; }
   .settings-tab.active { color:var(--text); border-color:var(--green);
     background:var(--row-active); }
+  .health-settings { min-height:calc(100vh - 150px); }
+  .health-settings iframe { display:block;width:100%;min-height:calc(100vh - 150px);border:0;background:var(--bg); }
+  body.showing-health .footer { display:none; }
   [data-settings-scope].scope-hidden { display:none !important; }
   .settings-card { margin-bottom:14px; padding:16px 18px; background:var(--surface);
     border:1px solid var(--border); border-radius:10px; }
@@ -149,7 +152,11 @@
   <nav class="settings-tabs" aria-label="Settings level">
     <button class="settings-tab active" type="button" data-scope-tab="personal">My settings</button>
     <button class="settings-tab" type="button" data-scope-tab="admin" style="display:none;">Admin setup</button>
+    <button class="settings-tab" type="button" data-scope-tab="health">System health</button>
   </nav>
+  <section class="health-settings" data-settings-scope="health">
+    <iframe title="System health" loading="lazy" src="../health_web_assets/index.html?embedded=1"></iframe>
+  </section>
   <!-- First-run wizard — only renders when not every critical
        field is set. JS fetches first_run_status() on load + hides
        this panel when all_done. -->
@@ -446,7 +453,8 @@ let SETTINGS_SCOPE = "personal";
 let SETTINGS_ACCESS = {is_admin:false, email:""};
 
 function showSettingsScope(scope) {
-  SETTINGS_SCOPE = scope === "admin" ? "admin" : "personal";
+  SETTINGS_SCOPE = scope === "admin" || scope === "health" ? scope : "personal";
+  document.body.classList.toggle("showing-health", SETTINGS_SCOPE === "health");
   document.querySelectorAll("[data-settings-scope]").forEach((el) =>
     el.classList.toggle("scope-hidden",
       el.dataset.settingsScope !== "both" && el.dataset.settingsScope !== SETTINGS_SCOPE));
