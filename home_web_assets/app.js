@@ -23,6 +23,7 @@ const $$ = (s) => Array.from(document.querySelectorAll(s));
 // Same regular-weight Phosphor icons used by L OPS. Keeping the paths local
 // avoids a CDN/runtime dependency in the installed desktop app.
 const NAV_ICON_PATHS = {
+  analytics: "M224,200h-8V40a8,8,0,0,0-8-8H152a8,8,0,0,0-8,8V80H96a8,8,0,0,0-8,8v40H48a8,8,0,0,0-8,8v64H32a8,8,0,0,0,0,16H224a8,8,0,0,0,0-16ZM160,48h40V200H160ZM104,96h40V200H104ZM56,144H88v56H56Z",
   operations: "M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,16V152h-28.7A15.86,15.86,0,0,0,168,156.69L148.69,176H107.31L88,156.69A15.86,15.86,0,0,0,76.69,152H48V48Zm0,160H48V168H76.69L96,187.31A15.86,15.86,0,0,0,107.31,192h41.38A15.86,15.86,0,0,0,160,187.31L179.31,168H208v40Z",
   pipeline: "M216,48H40a8,8,0,0,0-8,8V208a16,16,0,0,0,16,16H88a16,16,0,0,0,16-16V160h48v16a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V56A8,8,0,0,0,216,48ZM88,208H48V128H88Zm0-96H48V64H88Zm64,32H104V64h48Zm56,32H168V128h40Zm0-64H168V64h40Z",
   clients: "M244.8,150.4a8,8,0,0,1-11.2-1.6A51.6,51.6,0,0,0,192,128a8,8,0,0,1-7.37-4.89,8,8,0,0,1,0-6.22A8,8,0,0,1,192,112a24,24,0,1,0-23.24-30,8,8,0,1,1-15.5-4A40,40,0,1,1,219,117.51a67.94,67.94,0,0,1,27.43,21.68A8,8,0,0,1,244.8,150.4ZM190.92,212a8,8,0,1,1-13.84,8,57,57,0,0,0-98.16,0,8,8,0,1,1-13.84-8,72.06,72.06,0,0,1,33.74-29.92,48,48,0,1,1,58.36,0A72.06,72.06,0,0,1,190.92,212ZM128,176a32,32,0,1,0-32-32A32,32,0,0,0,128,176ZM72,120a8,8,0,0,0-8-8A24,24,0,1,1,87.24,82a8,8,0,1,0,15.5-4A40,40,0,1,0,37,117.51,67.94,67.94,0,0,0,9.6,139.19a8,8,0,1,0,12.8,9.61A51.6,51.6,0,0,1,64,128,8,8,0,0,0,72,120Z",
@@ -81,6 +82,7 @@ async function loadShell() {
 // panels back into everyone's everyday sidebar.  When a requested panel is
 // normally hidden, expose it only for this browser session under "Open tool".
 const BROWSER_PANEL_FALLBACKS = {
+  analytics: ["⌁", "Analytics", "../analytics_web_assets/index.html"],
   operations: ["⌂", "Operations", "../operations_web_assets/index.html?embedded=1"],
   pipeline: ["▦", "Jobs", "../pipeline_web_assets/index.html"],
   daily_run: ["📋", "Daily Run", "../audit_web_assets/index.html?surface=daily"],
@@ -253,7 +255,8 @@ window.addEventListener("message", async (ev) => {
     // Audit was folded into the Jobs workspace. Keep this alias at the
     // shell boundary so an older warm iframe can never send a dead route.
     const key = d.key === "audit" ? "pipeline" : d.key;
-    const item = findItem(key);
+    const fallback = BROWSER_PANEL_FALLBACKS[key];
+    const item = findItem(key) || (fallback && {src: fallback[2]});
     if (item) navigate(key, item.src, d.focus || "");
   } else if (d.type === "ems-open-tool-modal" && d.key === "snapshot") {
     openSnapshotModal(d.focus || "");

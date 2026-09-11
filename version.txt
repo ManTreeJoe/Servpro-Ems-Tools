@@ -1,6 +1,6 @@
 {
-  "version": "1.8.18",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.18",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.18/Linguar-Hub-Setup-1.8.18.exe",
-  "notes": "Trello and Folder controls now use the same compact menus as XA and CompanyCam. Changing a pinned Trello card immediately imports its Job Info, preserves Linguar Hub edits, flags conflicts, and refreshes the open job on the corrected card."
+  "version": "1.8.19",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.19",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.19/Linguar-Hub-Setup-1.8.19.exe",
+  "notes": "Refreshed desktop navigation and Schedule layout, quieter Trello background updates, and an initial Analytics workspace with record drill-downs and local weekly review notes. Backup retries now show their actual result and do not report skipped cloud exports as verified. Shared weekly audits and new database migrations are not included."
 }

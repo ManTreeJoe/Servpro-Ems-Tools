@@ -171,10 +171,11 @@ NAV_GROUPS = [
         ("clients",     "◎", "Clients"),
         ("run_doc_editor", "▣", "Schedule"),
         ("disputes",    "▤", "Billing & AR"),
-        ("apa",         "⌁", "Analytics"),
+        ("analytics",   "⌁", "Analytics"),
         ("resources",   "⌑", "Resources"),
     ]),
     ("Job tools", [
+        ("apa",         "⌁", "APA Monitor"),
         ("snapshot",    "◫", "Snapshot"),
         ("photo_folders","📷", "Photo Folders"),
         ("exceptions",  "⚠", "Exceptions"),
@@ -226,6 +227,7 @@ def _asset_folder_for(key: str) -> str:
 # Sub-Api class names per tool key — used so HomeApi can instantiate
 # them and auto-bind their methods with a tool-name prefix.
 SUB_MODULES = {
+    "analytics":   "analytics_web",
     "operations":  "operations_web",
     "health":      "health_web",
     "exceptions":  "exceptions_web",

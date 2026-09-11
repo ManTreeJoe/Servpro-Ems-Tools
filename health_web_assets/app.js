@@ -28,7 +28,8 @@ async function load(force) {
   const backups = st.backup?.checks || [];
   $("#backups").innerHTML = backups.length ? backups.map((b) => row(
     b.name, b.ok || st.backup?.pending, st.backup?.pending ? "Backing up now…" :
-      (b.last_success ? `${b.state} · ${b.age_hours} hours old` : "No verified backup yet"))).join("")
+      [b.last_success ? `${b.state} · ${b.age_hours} hours old` : "No verified backup yet",
+       st.backup?.last_report?.[b.name] ? `Last attempt: ${st.backup.last_report[b.name]}` : ""].filter(Boolean).join(" · "))).join("")
     : row("Backup verification", false, "Run a backup to establish recovery history");
   $("#health-status").textContent = requiredProblems ? "Review the highlighted items" : "All required checks passed";
 }
@@ -36,7 +37,13 @@ async function load(force) {
 async function runBackup() {
   const btn = $("#health-backup");
   btn.disabled = true; btn.textContent = "Backing up…";
-  try { const result = await pywebview.api.run_backup(); await load(true); $("#health-status").textContent = result.ok ? "Backup completed" : "Backup finished with an error"; }
+  try {
+    const result = await pywebview.api.run_backup();
+    await load(true);
+    const details = Object.entries(result.report || {}).map(([name, status]) => `${name}: ${status}`).join(" · ");
+    $("#health-status").textContent = result.pending ? "A backup is already running. Refresh to check its result."
+      : `${result.ok ? "Backup verified" : "Backup not fully verified"}${details ? ' · ' + details : ''}`;
+  }
   catch (e) { $("#health-status").textContent = `Backup failed: ${e}`; }
   finally { btn.disabled = false; btn.textContent = "Run backup now"; }
 }

@@ -13,7 +13,7 @@ def test_pipeline_is_the_primary_jobs_workspace_and_reporting_is_grouped():
 
     assert list(workspace) == [
         "operations", "pipeline", "clients", "run_doc_editor",
-        "disputes", "apa", "resources",
+        "disputes", "analytics", "resources",
     ]
     assert workspace["operations"] == "Operations"
     assert workspace["pipeline"] == "Jobs"
@@ -25,7 +25,8 @@ def test_pipeline_is_the_primary_jobs_workspace_and_reporting_is_grouped():
         "clients_web_assets/index.html")
     assert workspace["run_doc_editor"] == "Schedule"
     assert workspace["disputes"] == "Billing & AR"
-    assert workspace["apa"] == "Analytics"
+    assert workspace["analytics"] == "Analytics"
+    assert job_tools["apa"] == "APA Monitor"
     assert job_tools["snapshot"] == "Snapshot"
     assert "hygiene" in job_tools
     assert home_web._asset_folder_for("operations").endswith(

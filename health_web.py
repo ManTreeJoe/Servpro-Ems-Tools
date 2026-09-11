@@ -21,7 +21,22 @@ class Api:
 
     def run_backup(self):
         import data_backup
-        report = data_backup.run_once(force=True)
-        return {"ok": not any(str(v).startswith("failed")
-                              for v in report.values()),
-                "report": report, "backup": data_backup.health()}
+        with data_backup._RUN_LOCK:
+            busy = data_backup._IN_PROGRESS
+            if not busy:
+                data_backup._IN_PROGRESS = True
+        if busy:
+            return {"ok": False, "pending": True, "report": {},
+                    "backup": data_backup.health()}
+        try:
+            report = data_backup.run_once(force=True)
+            with data_backup._RUN_LOCK:
+                data_backup._LAST_REPORT = dict(report)
+        finally:
+            with data_backup._RUN_LOCK:
+                data_backup._IN_PROGRESS = False
+        verified = data_backup.health()
+        acceptable = {"copied", "recent", "skipped: local backend"}
+        return {"ok": bool(verified.get("ok") and "_error" not in report
+                            and all(v in acceptable for v in report.values())),
+                "report": report, "backup": verified}

@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_clients_is_a_standalone_workspace():
     shell = (ROOT / "home_web.py").read_text(encoding="utf-8")
-    assert '("clients",     "👥", "Clients")' in shell
+    import home_web
+    assert any(key == "clients" and name == "Clients"
+               for _, items in home_web.NAV_GROUPS for key, icon, name in items)
     assert '"clients":     "clients_web"' in shell
     assert 'surface=clients' not in shell
     assert (ROOT / "clients_web.py").exists()
