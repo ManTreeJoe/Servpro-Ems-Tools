@@ -39,7 +39,17 @@ def test_shell_uses_the_lops_workspace_structure_without_rebranding():
     for marker in ("Restoration operations", "Company workspace",
                    'class="workspace-switch"', 'class="sb-company-state"'):
         assert marker in html
-    assert '<select class="dept-switch"' in html
+    assert 'class="workspace-trigger"' in html
+    assert 'id="workspace-menu"' in html
+    assert 'id="settings-btn"' in html
+
+
+def test_system_health_is_part_of_settings_not_primary_navigation():
+    home_js = _read("home_web_assets/app.js")
+    settings = _read("settings_web_assets/index.html")
+    assert 'item.key !== "settings" && item.key !== "health"' in home_js
+    assert 'data-scope-tab="health"' in settings
+    assert '../health_web_assets/index.html?embedded=1' in settings
     assert "host.onchange = () => switchDept" in js
     for marker in ("#0E352B", "#246A55", "#F0B95F", "grid-template-columns: 286px"):
         assert marker in css

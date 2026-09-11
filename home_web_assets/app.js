@@ -33,6 +33,10 @@ window.addEventListener("pywebviewready", async () => {
     try { pywebview?.api?.focus_window?.(); } catch (_) { /* ignore */ }
   }, true);
   $("#refresh-btn").addEventListener("click", reloadEverything);
+  $("#settings-btn").addEventListener("click", () => {
+    const item = findItem("settings");
+    if (item) navigate("settings", item.src);
+  });
   $("#toast-log-btn").addEventListener("click", () => window.openToastLogDrawer?.());
   await loadShell();
   refreshCounts();
@@ -140,20 +144,53 @@ function restoreLastPanel() {
 
 // ── Department switcher (multi-account) ────────────────────────────
 async function renderDeptSwitch() {
-  const host = document.getElementById("dept-switch");
   const wrapper = document.getElementById("workspace-switch");
-  if (!host) return;
+  const trigger = document.getElementById("workspace-trigger");
+  const menu = document.getElementById("workspace-menu");
+  if (!wrapper || !trigger || !menu) return;
   let st;
   try { st = await pywebview.api.department_state(); } catch (_) { st = null; }
   if (!st?.ok || !st.enabled || !(st.departments || []).length) {
-    if (wrapper) wrapper.hidden = true;
+    wrapper.hidden = true;
     return;
   }
-  if (wrapper) wrapper.hidden = false;
-  host.innerHTML = (st.departments || []).map((department) =>
-    `<option value="${esc(department.key)}" ${department.key === st.active ? "selected" : ""}>SERVPRO ${esc(department.key)}</option>`
-  ).join("");
-  host.onchange = () => switchDept(host.value, st.active);
+  wrapper.hidden = false;
+  const active = (st.departments || []).find((department) => department.key === st.active)
+    || st.departments[0];
+  document.getElementById("workspace-monogram").textContent = active.key;
+  document.getElementById("workspace-current").textContent = `SERVPRO ${active.key}`;
+  menu.innerHTML = (st.departments || []).map((department) => {
+    const selected = department.key === active.key;
+    return `<button class="workspace-option${selected ? " active" : ""}" type="button"
+                    role="menuitemradio" aria-checked="${selected ? "true" : "false"}"
+                    data-workspace="${esc(department.key)}">
+      <span class="workspace-monogram">${esc(department.key)}</span>
+      <span><b>SERVPRO ${esc(department.key)}</b><small>${selected ? "Current workspace" : "Switch workspace"}</small></span>
+      <i aria-hidden="true">${selected ? "✓" : ""}</i>
+    </button>`;
+  }).join("");
+  const closeMenu = () => {
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+  };
+  trigger.onclick = (event) => {
+    event.stopPropagation();
+    const opening = menu.hidden;
+    menu.hidden = !opening;
+    trigger.setAttribute("aria-expanded", opening ? "true" : "false");
+  };
+  menu.querySelectorAll(".workspace-option").forEach((option) => {
+    option.addEventListener("click", () => {
+      closeMenu();
+      switchDept(option.dataset.workspace, active.key);
+    });
+  });
+  if (!wrapper.dataset.outsideBound) {
+    document.addEventListener("click", (event) => {
+      if (!wrapper.contains(event.target)) closeMenu();
+    });
+    wrapper.dataset.outsideBound = "true";
+  }
 }
 
 async function switchDept(key, active) {
@@ -163,7 +200,7 @@ async function switchDept(key, active) {
   if (txt) txt.textContent = `Switching to ${key}…`;
   if (splash) splash.classList.remove("hidden");
   // Disable the pills so a double-click can't fire two switches.
-  const selector = document.getElementById("dept-switch");
+  const selector = document.getElementById("workspace-trigger");
   if (selector) selector.disabled = true;
   const unlock = () => {
     if (splash) splash.classList.add("hidden");
@@ -348,10 +385,11 @@ function updateClock() {
 
 function renderSidebar() {
   const nav = $("#sb-nav");
-  nav.innerHTML = state.nav.map((g) => `
-    <div class="sb-group">${esc(g.label)}</div>
-    ${g.items.map(renderNavItem).join("")}
-  `).join("");
+  nav.innerHTML = state.nav.map((g) => {
+    const items = g.items.filter((item) => item.key !== "settings" && item.key !== "health");
+    if (!items.length) return "";
+    return `<div class="sb-group">${esc(g.label)}</div>${items.map(renderNavItem).join("")}`;
+  }).join("");
   $$(".sb-item").forEach((el) =>
     el.addEventListener("click", () => navigate(el.dataset.key, el.dataset.src)));
   $$(".sb-item").forEach((el) =>
@@ -437,6 +475,7 @@ function navigate(key, src, focus, isRestore) {
   $$(".sb-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.key === key);
   });
+  $("#settings-btn")?.classList.toggle("active", key === "settings");
   // Hide welcome, show the selected warm iframe. Keeping a small working set
   // means switching Jobs → Run Doc → Jobs does not rebuild either panel or
   // repeat its initial database/network reads.
