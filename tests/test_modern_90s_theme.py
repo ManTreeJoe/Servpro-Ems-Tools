@@ -86,6 +86,11 @@ def test_sidebar_has_no_numeric_count_badges_or_background_count_polling():
     assert "pywebview.api.counts" not in js
 
 
+def test_shell_stylesheet_cache_key_tracks_the_footer_layout_release():
+    html = _read("home_web_assets/index.html")
+    assert 'href="app.css?v=20260911h"' in html
+
+
 def test_jobs_has_lops_page_hierarchy_and_a_light_operational_board():
     html = _read("pipeline_web_assets/index.html")
     css = _read("pipeline_web_assets/app.css")
