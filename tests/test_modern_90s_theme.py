@@ -36,9 +36,11 @@ def test_shell_uses_the_lops_workspace_structure_without_rebranding():
     html = _read("home_web_assets/index.html")
     js = _read("home_web_assets/app.js")
     css = _read("home_web_assets/app.css")
-    for marker in ("Restoration operations", "Company workspace",
-                   'class="workspace-switch"', 'class="sb-company-state"'):
+    for marker in ('class="workspace-switch"', 'class="sb-company-state"'):
         assert marker in html
+    assert '<div class="brand-name">' not in html
+    assert '<div class="brand-sub">' not in html
+    assert '<span>Company workspace</span>' not in html
     assert 'class="workspace-trigger"' in html
     assert 'id="workspace-menu"' in html
     assert 'id="settings-btn"' in html

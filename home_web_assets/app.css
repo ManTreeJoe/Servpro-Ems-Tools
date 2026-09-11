@@ -346,7 +346,7 @@ body { background: var(--bg); }
   padding: 28px 20px 22px;
   border-bottom-color: rgba(255, 255, 255, .11);
 }
-.brand-row { gap: 14px; }
+.brand-row { gap: 0; }
 .brand-mark,
 .brand-mark img {
   width: 46px;
@@ -367,22 +367,10 @@ body { background: var(--bg); }
 }
 .workspace-switch {
   position: relative;
-  display: grid;
-  gap: 10px;
-  margin-top: 26px;
-  padding: 14px;
-  border: 1px solid rgba(255, 255, 255, .15);
-  border-radius: 11px;
-  background: rgba(255, 255, 255, .025);
+  display: block;
+  margin-top: 16px;
 }
 .workspace-switch[hidden] { display: none; }
-.workspace-switch > span {
-  color: #AFC2BA;
-  font-size: 10px;
-  font-weight: 760;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
 .workspace-trigger {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
