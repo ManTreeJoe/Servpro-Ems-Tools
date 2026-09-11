@@ -55,6 +55,17 @@ def test_system_health_is_part_of_settings_not_primary_navigation():
     assert '../health_web_assets/index.html?embedded=1' in settings
 
 
+def test_footer_utilities_are_icon_only_and_connectivity_is_plain_language():
+    html = _read("home_web_assets/index.html")
+    js = _read("home_web_assets/app.js")
+    assert 'id="connection-state"' in html
+    assert '<span>Online</span>' in html
+    assert '>⚙</button>' in html
+    assert 'id="toast-log-btn"' not in html
+    assert 'sb-support-menu' not in html
+    assert 'window.addEventListener("offline", updateConnectivity)' in js
+
+
 def test_jobs_has_lops_page_hierarchy_and_a_light_operational_board():
     html = _read("pipeline_web_assets/index.html")
     css = _read("pipeline_web_assets/app.css")

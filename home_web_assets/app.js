@@ -37,7 +37,9 @@ window.addEventListener("pywebviewready", async () => {
     const item = findItem("settings");
     if (item) navigate("settings", item.src);
   });
-  $("#toast-log-btn").addEventListener("click", () => window.openToastLogDrawer?.());
+  updateConnectivity();
+  window.addEventListener("online", updateConnectivity);
+  window.addEventListener("offline", updateConnectivity);
   await loadShell();
   refreshCounts();
   maybeShowFirstRun();
@@ -191,6 +193,15 @@ async function renderDeptSwitch() {
     });
     wrapper.dataset.outsideBound = "true";
   }
+}
+
+function updateConnectivity() {
+  const status = document.getElementById("connection-state");
+  if (!status) return;
+  const online = navigator.onLine;
+  status.classList.toggle("offline", !online);
+  const label = status.querySelector("span");
+  if (label) label.textContent = online ? "Online" : "Offline";
 }
 
 async function switchDept(key, active) {

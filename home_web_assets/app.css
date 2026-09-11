@@ -108,12 +108,6 @@ body { background: var(--bg); }
   transition: background-color 100ms ease, color 100ms ease, border-color 100ms ease;
 }
 .sb-foot-btn:hover { background: rgba(255,255,255,.07); color: #FFFFFF; }
-.sb-support-menu { position:relative; }
-.sb-support-menu summary { display:flex;align-items:center;justify-content:center;list-style:none;cursor:pointer; }
-.sb-support-menu summary::-webkit-details-marker { display:none; }
-.sb-support-menu > div { position:absolute;z-index:100;left:0;bottom:calc(100% + 7px);display:grid;gap:4px;min-width:170px;padding:7px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 12px 30px rgba(0,0,0,.45); }
-.sb-support-menu > div button { padding:8px 10px;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left;cursor:pointer; }
-.sb-support-menu > div button:hover { background:var(--surface-2); }
 .sb-foot-btn.spinning {
   color: var(--green); border-color: var(--green);
   animation: sb-foot-spin 600ms ease-out;
@@ -509,6 +503,10 @@ body { background: var(--bg); }
   background: #74D0A5;
   box-shadow: 0 0 0 3px rgba(116, 208, 165, .1);
 }
+.sb-company-state.offline i {
+  background: #D88A64;
+  box-shadow: 0 0 0 3px rgba(216, 138, 100, .11);
+}
 .sb-session {
   display: flex;
   align-items: center;
@@ -518,8 +516,7 @@ body { background: var(--bg); }
   font-size: 10px;
 }
 .sb-session > div { display: flex; gap: 6px; }
-.sb-settings-btn { width: auto; padding-inline: 9px; gap: 6px; }
-.sb-settings-btn b { font: 650 10px/1 var(--font-body); }
+.sb-settings-btn { width: 34px; padding: 0; }
 .sb-settings-btn.active {
   border-color: rgba(240,185,95,.55);
   background: rgba(240,185,95,.13);
@@ -551,7 +548,6 @@ body { background: var(--bg); }
   .sb-session { display: block; }
   .sb-session > div { display: grid; gap: 7px; }
   .sb-settings-btn { width: 36px; padding: 0; }
-  .sb-settings-btn b { display:none; }
 }
 :root[data-theme="light"] .pane { background:#F5F7F4; }
 :root[data-theme="light"] .tool-workspace {
