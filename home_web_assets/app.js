@@ -381,7 +381,8 @@ function updateClock() {
 function renderSidebar() {
   const nav = $("#sb-nav");
   nav.innerHTML = state.nav.map((g) => {
-    const items = g.items.filter((item) => item.key !== "settings" && item.key !== "health");
+    const items = g.items.filter((item) =>
+      item.key !== "settings" && item.key !== "health" && item.key !== "automations");
     if (!items.length) return "";
     return `<div class="sb-group">${esc(g.label)}</div>${items.map(renderNavItem).join("")}`;
   }).join("");

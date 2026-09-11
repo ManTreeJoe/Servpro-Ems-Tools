@@ -55,9 +55,12 @@ def test_shell_uses_the_lops_workspace_structure_without_rebranding():
 def test_system_health_is_part_of_settings_not_primary_navigation():
     home_js = _read("home_web_assets/app.js")
     settings = _read("settings_web_assets/index.html")
-    assert 'item.key !== "settings" && item.key !== "health"' in home_js
+    for key in ("settings", "health", "automations"):
+        assert f'item.key !== "{key}"' in home_js
     assert 'data-scope-tab="health"' in settings
     assert '../health_web_assets/index.html?embedded=1' in settings
+    assert 'id="open-workflow-automations"' in settings
+    assert '{type: "ems-navigate", key: "automations"}' in settings
 
 
 def test_footer_utilities_are_icon_only_and_connectivity_is_plain_language():

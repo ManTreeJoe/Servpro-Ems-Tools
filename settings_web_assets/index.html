@@ -199,6 +199,7 @@
     <div class="settings-disclosure-body">
     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
       <button class="btn" id="edit-tech-roster">Edit roster…</button>
+      <button class="btn" id="open-workflow-automations">Workflow automations</button>
       <details class="admin-advanced"><summary class="btn">Advanced tools ▾</summary><div>
         <button class="btn" id="open-data-folder">Open data folder</button>
         <button class="btn" id="open-config-file">Edit config.json</button>
@@ -622,6 +623,9 @@ window.addEventListener("pywebviewready", async () => {
     () => pywebview.api.open_tech_roster());
   document.getElementById("edit-tech-roster").addEventListener("click",
     openTechRosterEditor);
+  document.getElementById("open-workflow-automations").addEventListener("click", () => {
+    window.parent?.postMessage({type: "ems-navigate", key: "automations"}, "*");
+  });
   document.getElementById("authorize-trello").addEventListener("click",
     async (ev) => {
       const btn = ev.currentTarget;
