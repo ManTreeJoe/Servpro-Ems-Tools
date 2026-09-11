@@ -52,6 +52,34 @@ function markDirty() {
 }
 function confirmDiscard() { return !state.dirty || window.confirm("Discard your unsaved run-doc changes?"); }
 
+function localDate(value) { return new Date(`${value}T12:00:00`); }
+function dayDifference(from, to) { return Math.round((localDate(to) - localDate(from)) / 86400000); }
+function renderWeekStrip() {
+  const host = $("#week-strip");
+  if (!host || !state.model?.date_iso) return;
+  const selected = localDate(state.model.date_iso);
+  const monday = new Date(selected);
+  monday.setDate(selected.getDate() - ((selected.getDay() + 6) % 7));
+  const todayIso = new Date().toLocaleDateString("en-CA");
+  host.innerHTML = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(monday); date.setDate(monday.getDate() + index);
+    const iso = date.toLocaleDateString("en-CA");
+    const active = iso === state.model.date_iso;
+    const today = iso === todayIso;
+    return `<button class="week-day ${active ? "active" : ""} ${today ? "today" : ""}" data-date="${iso}" aria-current="${active ? "date" : "false"}">
+      <span>${date.toLocaleDateString([], { weekday: "short" })}</span><strong>${date.getDate()}</strong>
+    </button>`;
+  }).join("");
+  host.querySelectorAll("[data-date]").forEach(button => button.addEventListener("click", async () => {
+    if (!confirmDiscard()) return;
+    const current = new Date().toLocaleDateString("en-CA");
+    state.dayOffset = dayDifference(current, button.dataset.date);
+    PanelState.set({ dayOffset: state.dayOffset });
+    state.dirty = false; state.undo = [];
+    await loadDay();
+  }));
+}
+
 async function walkDay(delta) {
   if (!confirmDiscard()) return;
   state.dayOffset = delta === 0 ? 0 : state.dayOffset + delta;
@@ -61,7 +89,7 @@ async function walkDay(delta) {
 }
 
 async function loadDay() {
-  $("#day-title").textContent = "Loading run document…";
+  $("#day-title").textContent = "Loading schedule…";
   $("#run-board").classList.add("hidden");
   $("#empty").classList.add("hidden");
   hideNotice();
@@ -72,6 +100,7 @@ async function loadDay() {
   $("#undo-btn").disabled = true; $("#save-btn").disabled = true;
   $("#department").textContent = result?.department || "Run document";
   $("#day-title").textContent = result?.date_label || "Run document";
+  renderWeekStrip();
   $("#open-word").disabled = !result?.exists;
   if (!result?.ok || !result?.editable) {
     const empty = $("#empty");
@@ -94,6 +123,7 @@ function renderRows() {
   const order = state.model.section_order || Object.keys(state.model.sections);
   if (!order.includes(state.activeSection)) state.activeSection = order[0] || "work";
   const labels = state.model.section_labels || {};
+  renderSummary();
   $("#section-rail").innerHTML = order.map((section, i) => {
     const count = (state.model.sections[section] || []).length;
     return `<button class="section-nav ${section === state.activeSection ? "active" : ""}" data-section="${escapeHtml(section)}">
@@ -104,7 +134,7 @@ function renderRows() {
   }).join("");
   $("#document-pages").innerHTML = order.map((section) => {
     const rows = state.model.sections[section] || [];
-    const kicker = section === "work" ? "Today’s field plan" : section === "monitor" ? "Keep eyes on" : "Queue and follow-up";
+    const kicker = section === "work" ? "Scheduled work" : section === "monitor" ? "Watch list" : "Follow-up queue";
     return `<article class="document-section" id="${sectionDomId(section)}" data-doc-section="${escapeHtml(section)}">
       <header class="section-head"><div><span class="section-kicker">${escapeHtml(kicker)}</span><h2>${escapeHtml(labels[section] || section)}</h2></div><span class="section-count">${rows.length} row${rows.length === 1 ? "" : "s"}</span></header>
       <div class="rows">${rows.map((row, index) => rowHtml(section, row, index)).join("")}</div>
@@ -145,11 +175,37 @@ function trackDocumentSection() {
 }
 document.addEventListener("scroll", (event) => { if (event.target?.id === "document-pages") trackDocumentSection(); }, true);
 function rowHtml(section, row, index) {
+  const meta = scheduleMeta(row.text, section);
   return `<div class="run-row ${row.struck ? "struck" : ""}" data-section="${section}" data-index="${index}">
     <button class="row-tab" draggable="true" title="Drag this row" aria-label="Drag row ${index + 1}"><span class="grip-lines" aria-hidden="true">☰</span><span>${index + 1}</span></button>
-    <div class="row-main"><textarea class="row-text" rows="1" spellcheck="true" aria-label="${section} row ${index + 1}">${escapeHtml(row.text || "")}</textarea></div>
+    <div class="row-main">
+      <div class="row-schedule-meta">
+        <span class="row-time ${meta.time ? "" : "empty"}">${escapeHtml(meta.time || "No time")}</span>
+        ${meta.crew ? `<span class="row-crew">${escapeHtml(meta.crew)}</span>` : ""}
+      </div>
+      <textarea class="row-text" rows="1" spellcheck="true" aria-label="${section} row ${index + 1}">${escapeHtml(row.text || "")}</textarea>
+    </div>
     <div class="row-tools"><button class="row-tool format" title="Format item" aria-label="Format item">▤</button><button class="row-tool done ${row.struck ? "active" : ""}" title="Mark complete" aria-label="Mark complete">✓</button><button class="row-tool delete" title="Remove row" aria-label="Remove row">×</button></div>
   </div>`;
+}
+
+function scheduleMeta(text, section) {
+  const parts = String(text || "").split("|").map(cleanPart);
+  const dated = DATED_SECTIONS.has(section);
+  return { time: parts[dated ? 4 : 3] || "", crew: parts[dated ? 5 : 4] || "" };
+}
+
+function renderSummary() {
+  const rows = Object.values(state.model?.sections || {}).flat();
+  const completed = rows.filter(row => row.struck).length;
+  const crew = rows.filter(row => {
+    const section = Object.entries(state.model.sections).find(([, values]) => values.includes(row))?.[0] || "work";
+    return Boolean(scheduleMeta(row.text, section).crew);
+  }).length;
+  $("#scheduled-count").textContent = rows.length;
+  $("#open-count").textContent = rows.length - completed;
+  $("#completed-count").textContent = completed;
+  $("#crew-count").textContent = crew;
 }
 
 function bindRows() {

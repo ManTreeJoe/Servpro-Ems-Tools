@@ -134,3 +134,18 @@ def test_editor_has_optional_section_aware_item_template():
     assert "DATED_SECTIONS.has(section)" in js
     assert "This item belongs to the selected day, so no date is needed" in js
     assert "Every field is optional" in js
+
+
+def test_editor_uses_schedule_first_day_navigation_and_summary():
+    root = Path(__file__).resolve().parents[1] / "run_doc_editor_web_assets"
+    js = (root / "app.js").read_text(encoding="utf-8")
+    html = (root / "index.html").read_text(encoding="utf-8")
+    css = (root / "app.css").read_text(encoding="utf-8")
+    assert 'id="week-strip"' in html
+    assert 'id="scheduled-count"' in html
+    assert 'id="crew-count"' in html
+    assert "function renderWeekStrip" in js
+    assert "function renderSummary" in js
+    assert "function scheduleMeta" in js
+    assert ".schedule-summary" in css
+    assert ".row-schedule-meta" in css

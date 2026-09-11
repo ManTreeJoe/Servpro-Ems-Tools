@@ -70,3 +70,31 @@
 :root[data-theme="light"] .composer-preview{background:#E5EDF5}
 :root[data-theme="light"] .notice.warn{border-color:#D1B36F;background:#F5EBCF;color:#62490E}
 :root[data-theme="light"] .notice.error{border-color:#D1A19D;background:#F8E8E6;color:#7C302B}
+
+/* L OPS schedule contract: the Word document remains the persistence layer,
+   while the working surface reads as a live day schedule. */
+.editor-shell{gap:10px;padding-top:12px}
+.day-heading{margin-bottom:0;align-items:center}
+.day-heading h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(24px,2.5vw,32px);font-weight:700;letter-spacing:-.035em}
+.file-meta{margin-top:5px}
+.week-strip{flex:0 0 auto;width:100%;max-width:1420px;margin:0 auto;display:grid;grid-template-columns:repeat(7,minmax(64px,1fr));gap:6px}
+.week-day{min-height:50px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-muted);cursor:pointer;text-align:center}
+.week-day span,.week-day strong{display:block}.week-day span{font-size:9px;font-weight:750;text-transform:uppercase;letter-spacing:.08em}.week-day strong{margin-top:3px;color:var(--text);font-size:16px}
+.week-day:hover{border-color:var(--text-dim);background:var(--row-hover)}.week-day.active{border-color:#557867;background:#20372e;box-shadow:inset 0 -3px #72a987}.week-day.active span,.week-day.active strong{color:#eef6f1}.week-day.today:not(.active){box-shadow:inset 0 -2px var(--dispatch-blue)}
+.schedule-summary{flex:0 0 auto;width:100%;max-width:1420px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);overflow:hidden;border:1px solid var(--border);border-radius:8px;background:var(--surface)}
+.schedule-summary>div{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:42px;padding:7px 13px;border-right:1px solid var(--border)}.schedule-summary>div:last-child{border-right:0}.schedule-summary span{color:var(--text-muted);font-size:10px}.schedule-summary strong{font:700 18px/1 "Bahnschrift SemiCondensed","Arial Narrow",sans-serif}
+.run-board{border-radius:10px;background:var(--surface);box-shadow:0 8px 24px rgba(0,0,0,.14)}
+.section-rail{background:#18221d;padding:10px 8px}.section-rail::before{content:"SCHEDULE GROUPS"}.section-nav{min-height:38px;border-radius:7px}.section-nav.active{background:#254538;border-color:#456b59;box-shadow:inset 3px 0 #e0af57}.section-nav.active .section-index{color:#edc87e}
+.document-pages{padding:14px 18px 50px;background:#171b18}
+.document-section{width:min(100%,1080px);margin-bottom:12px;border-radius:8px;box-shadow:none}
+.document-section .section-head{min-height:54px;padding:10px 14px;box-shadow:inset 3px 0 #557867}.document-section .section-head h2{font-family:"Segoe UI Variable","Segoe UI",sans-serif;font-size:16px;font-weight:700}.section-kicker{font-size:8px}
+.run-row{grid-template-columns:38px minmax(0,1fr) auto;min-height:64px}.row-tab{background:#294b3d!important}.row-main{padding:7px 10px}.row-schedule-meta{display:flex;align-items:center;gap:7px;min-height:18px;margin-bottom:2px}.row-time,.row-crew{display:inline-flex;align-items:center;min-height:18px;padding:2px 7px;border-radius:999px;font-size:9px;font-weight:700}.row-time{color:#e6c77d;background:#46391e}.row-time.empty{color:var(--text-dim);background:var(--surface-3)}.row-crew{color:#b9d7c8;background:#254538}.row-text{padding:4px 5px;font-size:13px;line-height:1.4}.row-tools{gap:4px;padding-inline:8px}.row-tool{width:28px;height:28px;border:1px solid transparent}.row-tool:hover{border-color:var(--border)}
+.add-row{padding:10px 14px;color:#b7c9bf;background:#202823}
+.composer-card{border-radius:14px}.composer-head,.composer-foot{background:#1d2923}.composer-preview{border-left-color:#72a987;background:#1c2a23}
+
+:root[data-theme="light"] .week-day.active{border-color:#27644d;background:#dfeee6;box-shadow:inset 0 -3px #27644d}:root[data-theme="light"] .week-day.active span,:root[data-theme="light"] .week-day.active strong{color:#173d2f}
+:root[data-theme="light"] .section-rail{background:#e5ece7}:root[data-theme="light"] .section-nav.active{background:#d8e9df;border-color:#9bb9a8;box-shadow:inset 3px 0 #b27b21}:root[data-theme="light"] .section-nav.active .section-index{color:#76500f}
+:root[data-theme="light"] .document-pages{background:#eef1ed}:root[data-theme="light"] .row-tab{background:#356c56!important}:root[data-theme="light"] .row-time{color:#65470f;background:#f3e5bd}:root[data-theme="light"] .row-crew{color:#24513e;background:#dcece3}:root[data-theme="light"] .composer-head,:root[data-theme="light"] .composer-foot{background:#e7eee9}:root[data-theme="light"] .composer-preview{background:#e2eee7}
+
+@media(max-width:900px){.schedule-summary{grid-template-columns:repeat(2,1fr)}.schedule-summary>div:nth-child(2){border-right:0}.schedule-summary>div:nth-child(-n+2){border-bottom:1px solid var(--border)}}
+@media(max-width:760px){.week-strip{overflow-x:auto;grid-template-columns:repeat(7,70px);padding-bottom:3px}.run-board{grid-template-rows:auto minmax(0,1fr)}.document-pages{padding:9px 7px 42px}.schedule-summary>div{padding-inline:10px}.row-tools{padding-inline:4px}.row-tool{width:26px}.mode-chip{display:none}}

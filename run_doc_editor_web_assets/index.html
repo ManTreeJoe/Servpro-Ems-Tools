@@ -5,10 +5,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#1A1A1A" />
-  <title>Run Doc Editor — Linguar Hub</title>
+  <title>Daily Schedule — Linguar Hub</title>
   <script src="../web_shared/appearance.js?v=20260901a"></script>
   <link rel="stylesheet" href="../web_shared/theme.css?v=20260910a" />
-  <link rel="stylesheet" href="app.css?v=20260831e" />
+  <link rel="stylesheet" href="app.css?v=20260911a" />
 <link rel="stylesheet" href="../web_shared/workspace_controls.css?v=20260910a" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
   <script src="../web_shared/health_banner.js?v=20260820a"></script>
@@ -21,14 +21,14 @@
   <header class="topbar editor-topbar">
     <div class="brand">
       <span class="clipboard-mark" aria-hidden="true"></span>
-      <div><div class="eyebrow">Daily dispatch</div><div class="brand-name">Run Doc Editor</div></div>
-      <span class="mode-chip">Single editor</span>
+      <div><div class="eyebrow">Operations</div><div class="brand-name">Daily Schedule</div></div>
+      <span class="mode-chip">Run Doc connected</span>
     </div>
     <div class="topbar-actions">
       <button class="btn icon-btn" id="day-prev" title="Previous day">←</button>
       <button class="btn" id="day-today">Today</button>
       <button class="btn icon-btn" id="day-next" title="Next day">→</button>
-      <button class="btn" id="open-word">Open in Word</button>
+      <button class="btn" id="open-word">Print / Word</button>
       <button class="btn" id="undo-btn" disabled>Undo</button>
       <button class="btn btn-primary save-btn" id="save-btn" disabled>Save changes</button>
     </div>
@@ -37,22 +37,29 @@
     <section class="day-heading" aria-labelledby="day-title">
       <div>
         <div class="department" id="department">—</div>
-        <h1 id="day-title">Loading today’s run…</h1>
+        <h1 id="day-title">Loading schedule…</h1>
         <div class="file-meta" id="file-meta"></div>
       </div>
       <div class="save-state clean" id="save-state"><span></span>Saved</div>
     </section>
+    <nav class="week-strip" id="week-strip" aria-label="Choose schedule day"></nav>
+    <section class="schedule-summary" aria-label="Schedule summary">
+      <div><span>Run items</span><strong id="scheduled-count">—</strong></div>
+      <div><span>Open</span><strong id="open-count">—</strong></div>
+      <div><span>Complete</span><strong id="completed-count">—</strong></div>
+      <div><span>Crew named</span><strong id="crew-count">—</strong></div>
+    </section>
     <div class="notice hidden" id="notice" role="status"></div>
     <div class="empty hidden" id="empty"></div>
     <section class="run-board hidden" id="run-board" aria-label="Run document sections">
-      <nav class="section-rail" id="section-rail" aria-label="Table of contents"></nav>
-      <div class="document-pages" id="document-pages" tabindex="0" aria-label="Full run document"></div>
+      <nav class="section-rail" id="section-rail" aria-label="Schedule groups"></nav>
+      <div class="document-pages" id="document-pages" tabindex="0" aria-label="Daily schedule"></div>
     </section>
   </main>
   <div class="item-composer hidden" id="item-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
     <div class="composer-card">
       <header class="composer-head">
-        <div><div class="eyebrow">Run item</div><h2 id="composer-title">Format dispatch item</h2></div>
+        <div><div class="eyebrow">Schedule item</div><h2 id="composer-title">Edit scheduled work</h2></div>
         <button class="btn icon-btn" id="composer-close" aria-label="Close">×</button>
       </header>
       <div class="composer-body">
@@ -63,16 +70,16 @@
           <label><span>Phone</span><input id="field-phone" autocomplete="off" /></label>
           <label><span>Task</span><input id="field-task" autocomplete="off" placeholder="Demo, monitoring, pickup…" /></label>
           <label class="date-field"><span>Date</span><input id="field-date" autocomplete="off" placeholder="Wed 8/26" /></label>
-          <label><span>Time</span><input id="field-time" autocomplete="off" placeholder="9–11 or 1 PM" /></label>
+          <label><span>Arrival window</span><input id="field-time" autocomplete="off" placeholder="12–3 PM" /></label>
           <label><span>Crew or owner</span><input id="field-crew" autocomplete="off" /></label>
           <label class="wide"><span>Status or next step</span><input id="field-status" autocomplete="off" /></label>
         </div>
-        <div class="composer-preview"><span>Word line preview</span><div id="composer-preview"></div></div>
+        <div class="composer-preview"><span>Run Doc line</span><div id="composer-preview"></div></div>
       </div>
       <footer class="composer-foot"><button class="btn" id="composer-cancel">Cancel</button><button class="btn btn-primary" id="composer-apply">Use this line</button></footer>
     </div>
   </div>
-  <footer class="statusbar"><span>Choose a section, then drag numbered tabs to reorder its rows.</span><span id="status-msg">Ctrl+S saves</span></footer>
-  <script src="app.js?v=20260831e"></script>
+  <footer class="statusbar"><span>Drag any numbered tab to reorder work or move it to another group.</span><span id="status-msg">Ctrl+S saves</span></footer>
+  <script src="app.js?v=20260911a"></script>
 </body>
 </html>
