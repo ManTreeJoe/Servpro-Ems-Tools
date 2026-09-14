@@ -28,7 +28,8 @@
       <button class="btn icon-btn" id="day-prev" title="Previous day">←</button>
       <button class="btn" id="day-today">Today</button>
       <button class="btn icon-btn" id="day-next" title="Next day">→</button>
-      <button class="btn" id="open-word">Print / Word</button>
+      <button class="btn" id="print-run" title="Print the saved Run in its original Word layout">Print</button>
+      <button class="btn" id="open-word">Open in Word</button>
       <button class="btn" id="undo-btn" disabled>Undo</button>
       <button class="btn btn-primary save-btn" id="save-btn" disabled>Save changes</button>
     </div>
@@ -72,14 +73,19 @@
           <label class="date-field"><span>Date</span><input id="field-date" autocomplete="off" placeholder="Wed 8/26" /></label>
           <label><span>Arrival window</span><input id="field-time" autocomplete="off" placeholder="12–3 PM" /></label>
           <label><span>Crew or owner</span><input id="field-crew" autocomplete="off" /></label>
+          <details class="arrival-picker"><summary>Choose arrival window</summary><label>Earliest arrival<input id="arrival-from" type="time" step="900"></label><label>Latest arrival<input id="arrival-through" type="time" step="900"></label><button type="button" class="btn" onclick="VisitControls.applyArrival()">Use window</button><p id="arrival-error" role="alert"></p></details>
+          <details class="crew-picker"><summary>Select crew</summary><input id="crew-search" type="search" placeholder="Find technician" aria-label="Find technician"><p id="crew-message" role="status"></p><div id="crew-options"></div></details>
           <label class="wide"><span>Status or next step</span><input id="field-status" autocomplete="off" /></label>
         </div>
         <div class="composer-preview"><span>Run Doc line</span><div id="composer-preview"></div></div>
       </div>
-      <footer class="composer-foot"><button class="btn" id="composer-cancel">Cancel</button><button class="btn btn-primary" id="composer-apply">Use this line</button></footer>
+      <footer class="composer-foot"><button class="btn" id="composer-cancel">Cancel</button><button class="btn btn-primary" id="composer-apply">Apply changes</button></footer>
     </div>
   </div>
   <footer class="statusbar"><span>Drag any numbered tab to reorder work or move it to another group.</span><span id="status-msg">Ctrl+S saves</span></footer>
-  <script src="app.js?v=20260911a"></script>
+  <link rel="stylesheet" href="schedule_visits.css?v=20260911a">
+  <script src="schedule_fields.js?v=20260911a"></script>
+  <script src="visit_controls.js?v=20260911a"></script>
+  <script src="app.js?v=20260911print"></script>
 </body>
 </html>

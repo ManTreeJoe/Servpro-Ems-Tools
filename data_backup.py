@@ -72,7 +72,8 @@ def _prune(dest, base):
     """Keep the newest KEEP copies of one file."""
     try:
         mine = sorted(
-            (f for f in os.listdir(dest) if f.startswith(base + ".")),
+            (f for f in os.listdir(dest) if f.startswith(base + ".")
+             and _stamp_time(f[len(base) + 1:])),
             reverse=True)
         for old in mine[KEEP:]:
             try:
@@ -224,9 +225,16 @@ def start_background(force=False):
     def _go():
         global _IN_PROGRESS, _LAST_REPORT
         with _RUN_LOCK:
-            if _IN_PROGRESS:
-                return
-            _IN_PROGRESS = True
+            busy = _IN_PROGRESS
+            if not busy:
+                _IN_PROGRESS = True
+        if busy:
+            # The hourly callback already consumed its timer. A manual
+            # backup owns the worker, but will not schedule another check.
+            # Keep the chain alive without changing that worker's state.
+            if not force:
+                _schedule_next()
+            return
         try:
             _LAST_REPORT = run_once(force=force)
         except Exception:
@@ -274,7 +282,7 @@ def list_backups():
         if f.startswith("."):
             continue
         base, _, stamp = f.rpartition(".")
-        if base not in FILES + (CLOUD_NAME,):
+        if base not in FILES + (CLOUD_NAME,) or not _stamp_time(stamp):
             continue
         p = os.path.join(dest, f)
         try:

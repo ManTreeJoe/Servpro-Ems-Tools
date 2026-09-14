@@ -1,0 +1,12 @@
+.job-workspace-tabs { display:flex; flex:0 0 auto; gap:4px; overflow-x:auto; padding:0 20px; border-bottom:1px solid var(--border); }
+.job-workspace-tabs button { flex:0 0 auto; padding:12px 14px; border:0; border-bottom:3px solid transparent; background:transparent; color:var(--text-muted); font:600 13px var(--font-body); cursor:pointer; }
+.job-workspace-tabs button[aria-selected="true"] { color:var(--text); border-bottom-color:var(--green); }
+.job-workspace-tabs button:hover { background:var(--surface-2); }
+.job-workspace-tabs button:focus-visible,.job-workspace-panel:focus-visible { outline:2px solid var(--green); outline-offset:-2px; }
+.job-workspace-panel[hidden] { display:none !important; }
+.tabbed-job-layout { display:block; overflow-y:auto; }
+.tabbed-job-layout .job-card-main { overflow:visible; }
+.tabbed-job-layout .job-card-activity { border:1px solid var(--border); background:var(--surface); margin-top:16px; }
+.tabbed-job-layout .comment-stream { flex:none; overflow:visible; }
+.tabbed-job-layout .section-title-row small { font-size:12px; }
+@media(max-width:700px) { .job-workspace-tabs { padding-inline:8px; } .job-workspace-tabs button { padding:11px 10px; } }

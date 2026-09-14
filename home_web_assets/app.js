@@ -511,6 +511,11 @@ function navigate(key, src, focus, isRestore) {
   state.frames.forEach((candidate) => candidate.classList.toggle("hidden", candidate !== frame));
   const current = frame.getAttribute("src") || "about:blank";
   if (current === "about:blank" || focus) frame.src = url;
+  else if (key === "operations" && !isRestore) {
+    // Operations has internal views but its own navigation is hidden when
+    // embedded. The shell button must escape Dispatch/Clients back home.
+    frame.contentWindow?.showView?.("home");
+  }
   frame.classList.remove("hidden");
   state.activeFrame = frame;
   state.frameOrder = state.frameOrder.filter((saved) => saved !== key);

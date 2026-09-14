@@ -1,0 +1,20 @@
+.visit-summary { display:grid; gap:4px; width:100%; padding:6px 4px; border:0; border-radius:4px; background:transparent; color:var(--text); text-align:left; font:14px/1.45 var(--font-body); cursor:pointer; }
+.visit-summary strong { font-size:14px; font-weight:600; }
+.visit-summary small { font-size:12px; color:var(--text-muted); overflow-wrap:anywhere; }
+.visit-summary:hover { background:var(--row-hover,var(--surface-2)); }
+.visit-summary:focus-visible { outline:2px solid var(--dispatch-blue); }
+.run-source { padding:4px; }
+.run-source summary { font-size:12px; color:var(--text-muted); cursor:pointer; }
+.run-source textarea { width:100%; }
+.row-time,.row-crew { font-size:12px; min-height:24px; }
+.composer-grid label>span { font-size:12px; letter-spacing:0; text-transform:none; }
+.composer-help:empty { display:none; }
+.arrival-picker,.crew-picker { min-width:0; padding:10px; border:1px solid var(--border); border-radius:6px; }
+.arrival-picker summary,.crew-picker summary { cursor:pointer; font-size:13px; }
+.arrival-picker label { margin:10px 0; }
+#crew-search { margin:10px 0; }
+#crew-options { max-height:180px; overflow-y:auto; }
+#crew-options label { display:flex; align-items:center; gap:8px; min-height:36px; font-size:13px; }
+#crew-options input { width:18px; height:18px; margin:0; }
+#crew-message:empty,#arrival-error:empty { display:none; }
+#crew-message,#arrival-error { font-size:12px; }

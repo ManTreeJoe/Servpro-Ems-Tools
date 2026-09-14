@@ -1,0 +1,208 @@
+{
+  "observed_on": "2026-09-11",
+  "purpose": "Remote migration history inventory; checksums are evidence, not a schema backup.",
+  "projects": {
+    "linguar_hub": [
+      {
+        "version": "20260903163736",
+        "name": "rls_security_baseline",
+        "statements_md5": "066565eaa913b46f292fb627248bc014",
+        "statement_count": 1
+      },
+      {
+        "version": "20260903170240",
+        "name": "revoke_default_public_function_execute",
+        "statements_md5": "765c1e11ca87159b9ba5251ebe6ceae5",
+        "statement_count": 1
+      },
+      {
+        "version": "20260904153439",
+        "name": "companycam_user_oauth",
+        "statements_md5": "fee6c9148218dac4974d9ebc4a1fb101",
+        "statement_count": 14
+      }
+    ],
+    "l_ops": [
+      {
+        "version": "20260909153947",
+        "name": "organization_foundation",
+        "statements_md5": "32e4448c12d6650122c4a2ee1459f1b8",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909154730",
+        "name": "operator_provisioning",
+        "statements_md5": "aba0b88e87eedfa50884c5e27e477416",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909155351",
+        "name": "private_access_policies",
+        "statements_md5": "842dfd9cf9e806d441e3472f14da3ab5",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909160548",
+        "name": "operator_management",
+        "statements_md5": "4368449eab011b5125e1d1d240631586",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909161353",
+        "name": "workspace_records",
+        "statements_md5": "eb92b4947629eac75ee30bcf58ca9ec0",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909161826",
+        "name": "validate_workspace_documents",
+        "statements_md5": "2ca49dde8190dc6dbeb3e039d85b982b",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909163129",
+        "name": "relational_workspace_records",
+        "statements_md5": "a0689889ed29a0944bb6655c0039b766",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909163239",
+        "name": "imported_job_unknown_states",
+        "statements_md5": "c012611adf9fe71865529ba538434015",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909163437",
+        "name": "legacy_reference_fields",
+        "statements_md5": "267699ebc787e70555ec525d61f7d765",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909174324",
+        "name": "ems_board_lanes",
+        "statements_md5": "b9a43b7a7c891b6ad2b11214345fc12a",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909210450",
+        "name": "saved_workspace_views",
+        "statements_md5": "7e798a082e75ba482fabb2c358ef3015",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909211607",
+        "name": "job_log",
+        "statements_md5": "b44dc3098293b653cadc23d5fe1c70d8",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909223045",
+        "name": "job_assignments",
+        "statements_md5": "d017de059b6a4af71fd5e5bd19deb247",
+        "statement_count": 1
+      },
+      {
+        "version": "20260909223141",
+        "name": "assignment_member_validation",
+        "statements_md5": "bff124ed71296eda21571981e30def5f",
+        "statement_count": 1
+      },
+      {
+        "version": "20260910150543",
+        "name": "job_visits",
+        "statements_md5": "b4ceb7055668b77fee031843aae580fe",
+        "statement_count": 1
+      },
+      {
+        "version": "20260910170451",
+        "name": "job_comments",
+        "statements_md5": "67a8cebe2cbd407635fbde3e59d171b9",
+        "statement_count": 1
+      },
+      {
+        "version": "20260910170801",
+        "name": "structured_job_log",
+        "statements_md5": "f24b8db4c587930d2397a853898498d5",
+        "statement_count": 1
+      },
+      {
+        "version": "20260910171915",
+        "name": "monitoring_job_log",
+        "statements_md5": "f0f3e8c42c2a67195e3e19239af9b121",
+        "statement_count": 1
+      },
+      {
+        "version": "20260910172242",
+        "name": "link_visit_job_log",
+        "statements_md5": "bfae40f273a81bbed11ea9bc41939896",
+        "statement_count": 1
+      },
+      {
+        "version": "20260910201843",
+        "name": "job_tags",
+        "statements_md5": "8f52388710d455965e6e454d3b424009",
+        "statement_count": 1
+      },
+      {
+        "version": "20260910205640",
+        "name": "connected_workflows",
+        "statements_md5": "39159e1b5df3b82632a12b18d4dea2ca",
+        "statement_count": 1
+      },
+      {
+        "version": "20260911161311",
+        "name": "editable_job_notes",
+        "statements_md5": "f89380913e238263933793fe69825af7",
+        "statement_count": 1
+      },
+      {
+        "version": "20260911170026",
+        "name": "shared_job_media",
+        "statements_md5": "6dfb778cab2b626f93fa520d3da47dea",
+        "statement_count": 1
+      },
+      {
+        "version": "20260911170444",
+        "name": "qualify_media_storage_path",
+        "statements_md5": "438712c2d4eb9c26df20aec73742220e",
+        "statement_count": 1
+      },
+      {
+        "version": "20260911170852",
+        "name": "media_ready_storage_check",
+        "statements_md5": "d8eaa05106968dabdd1f4819ec522e17",
+        "statement_count": 1
+      },
+      {
+        "version": "20260911184819",
+        "name": "contents_inventory",
+        "statements_md5": "f23e07990b66ef5858a5d5b5e5d03bab",
+        "statement_count": 1
+      },
+      {
+        "version": "20260911185456",
+        "name": "contents_insert_columns",
+        "statements_md5": "da11a5d58aa7afa84a1f23226a7e3b0f",
+        "statement_count": 1
+      },
+      {
+        "version": "20260911201848",
+        "name": "daily_run_test_rows",
+        "statements_md5": "258a4568e52443460f85e35a1870f116",
+        "statement_count": 1
+      },
+      {
+        "version": "20260911204517",
+        "name": "workspace_staff_permissions",
+        "statements_md5": "4a48da8c7a4aa31f55138551334f2490",
+        "statement_count": 1
+      },
+      {
+        "version": "20260911205534",
+        "name": "workspace_admin_roster_visibility",
+        "statements_md5": "0cb18c32e541aed0af12ad868114b1e8",
+        "statement_count": 1
+      }
+    ]
+  }
+}

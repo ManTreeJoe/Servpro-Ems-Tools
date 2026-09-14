@@ -16,6 +16,20 @@ class Api:
     def attach(self, window):
         self._window = window
 
+    def get_crew_roster(self):
+        """Use the same editable roster as Snapshot and technician recognition."""
+        try:
+            import audit_logic
+            import persistence
+            audit_logic.ensure_roster_seeded()
+            roster = persistence.get_user_techs() or {}
+            aliases = roster.get('abbrev') or {}
+            return {'ok': True, 'entries': [
+                {'name': name, 'aliases': [key for key, value in aliases.items() if value == name]}
+                for name in sorted(set(roster.get('names') or []), key=str.casefold)]}
+        except Exception:
+            return {'ok': False, 'entries': [], 'error': 'Technician roster unavailable. You can still enter crew names manually.'}
+
     @staticmethod
     def _day(offset=0):
         return _dt.date.today() + _dt.timedelta(days=int(offset or 0))
@@ -62,6 +76,13 @@ class Api:
                              "Close the file in Word, then save again."}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def print_preview(self, day_offset: int = 0) -> dict:
+        from office_print import preview_document
+        try:
+            return preview_document(run_doc._find_run_doc_for_date(self._day(day_offset)))
+        except Exception:
+            return {'ok': False, 'error': 'The Run document could not be located. Reload the selected day and try again.'}
 
     def open_word(self, day_offset: int = 0) -> bool:
         try:

@@ -60,11 +60,13 @@ Trello synchronization runs as a background adapter: queued Hub writes are pushe
 
 ### Now — make the daily workflow dependable
 
-1. One Job Workspace renderer from Jobs, Clients, Dispatch, search, and reports.
-2. Correct save states and conflict handling for every editable control.
-3. Stable Client → Job → Division identity and linking.
-4. Fast initial card shell followed by section-level loading.
-5. Complete parity for Job Info, requirements, checklist tabs, Job Log, comments, folders, XA, Trello, and CompanyCam.
+1. Reconcile Linguar Hub and L OPS database migrations and approve one canonical shared identity contract.
+2. Implement the Windows-first [Losses UI convergence plan](LOSSES_UI_CONVERGENCE_PLAN.md), using the L OPS design system with a permission-controlled desktop extension layer.
+3. One Job/Loss Workspace renderer from Jobs, Clients, Dispatch, search, analytics, and reports.
+4. Correct save states and conflict handling for every editable control.
+5. Stable Client → Loss/Job → Division identity and linking.
+6. Fast initial card shell followed by section-level loading.
+7. Complete parity for Job Info, requirements, checklist tabs, Job Log, comments, folders, XA, Trello, and CompanyCam.
 
 ### Next — simplify the client/job experience
 
@@ -138,4 +140,5 @@ If those six answers are unclear, the feature is not ready to place in the inter
 - `docs/DEPARTMENT_TIMING_REQUIREMENTS.md` — ownership and timing model
 - `docs/TRELLO_AUTOMATION_MIGRATION.md` — Trello replacement plan
 - `docs/XA_TEMPORARY_AUTO_IMPORT.md` — temporary XA assignment intake backlog
+- `docs/LOSSES_UI_CONVERGENCE_PLAN.md` — L OPS-aligned Windows Losses UI and desktop extension contract
 - `DATA_STORAGE_POLICY.md` — structured data and file storage policy

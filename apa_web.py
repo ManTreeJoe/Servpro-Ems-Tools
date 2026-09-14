@@ -1631,6 +1631,10 @@ class Api:
             return {"ok": False, "error": str(ex)}
 
     # ── Actions ──────────────────────────────────────────────────────
+    def print_preview(self, doc_path: str) -> dict:
+        from office_print import preview_document
+        return preview_document(doc_path)
+
     def open_doc_in_word(self, doc_path: str) -> bool:
         """Open the .docx in Word (or the default handler)."""
         if not doc_path or not os.path.isfile(doc_path):

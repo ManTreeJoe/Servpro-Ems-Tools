@@ -4,6 +4,17 @@ const $ = (selector) => document.querySelector(selector);
 const state = { dayOffset: 0, model: null, dirty: false, saving: false, drag: null, undo: [], activeSection: "work", composing: null };
 const DATED_SECTIONS = new Set(["upcoming", "tbs_new_loss", "tbs_mitigation", "tbs_contents", "pending_testing", "pending_insurance", "pending_property", "on_hold", "marketing"]);
 
+async function printRun() {
+  if (state.saving) { showNotice('Wait for the Run to finish saving before printing.', 'error'); return; }
+  if (state.dirty && !window.confirm('Print the last saved Run? Unsaved edits are not included.')) return;
+  const button = $('#print-run'); button.disabled = true;
+  try {
+    const result = await pywebview.api.print_preview(state.dayOffset);
+    showNotice(result.ok ? 'Print preview opened in Word. Choose File → Print to select a printer.' : result.error, result.ok ? 'success' : 'error');
+  } catch (_) { showNotice('Print preview could not open. Try Open in Word.', 'error'); }
+  finally { button.disabled = !state.model?.exists; }
+}
+
 window.addEventListener("pywebviewready", async () => {
   await PanelState.init("run_doc_editor");
   state.dayOffset = Number(PanelState.get("dayOffset", 0)) || 0;
@@ -11,7 +22,11 @@ window.addEventListener("pywebviewready", async () => {
   $("#day-prev").addEventListener("click", () => walkDay(-1));
   $("#day-today").addEventListener("click", () => walkDay(0));
   $("#day-next").addEventListener("click", () => walkDay(1));
-  $("#open-word").addEventListener("click", () => pywebview.api.open_word(state.dayOffset));
+  $('#print-run').addEventListener('click', printRun);
+  $("#open-word").addEventListener("click", async () => {
+    if (state.dirty && !window.confirm("Open the last saved Run document? Save changes first to include your edits.")) return;
+    if (!await pywebview.api.open_word(state.dayOffset)) showNotice("The Run document could not be opened. Check its location and try again.", "error");
+  });
   $("#save-btn").addEventListener("click", save);
   $("#undo-btn").addEventListener("click", undo);
   $("#composer-close").addEventListener("click", closeComposer);
@@ -102,6 +117,7 @@ async function loadDay() {
   $("#day-title").textContent = result?.date_label || "Run document";
   renderWeekStrip();
   $("#open-word").disabled = !result?.exists;
+  $('#print-run').disabled = !result?.exists;
   if (!result?.ok || !result?.editable) {
     const empty = $("#empty");
     empty.innerHTML = `<h2>${result?.exists ? "This run format is not editable yet" : "No run document found"}</h2><p>${escapeHtml(result?.error || "Choose another day or verify the department’s run folder in Settings.")}</p>`;
@@ -183,16 +199,21 @@ function rowHtml(section, row, index) {
         <span class="row-time ${meta.time ? "" : "empty"}">${escapeHtml(meta.time || "No time")}</span>
         ${meta.crew ? `<span class="row-crew">${escapeHtml(meta.crew)}</span>` : ""}
       </div>
-      <textarea class="row-text" rows="1" spellcheck="true" aria-label="${section} row ${index + 1}">${escapeHtml(row.text || "")}</textarea>
+      <button type="button" class="visit-summary" aria-label="Edit ${escapeHtml(meta.job || 'scheduled work')}">${visitSummary(meta)}</button>
+      <details class="run-source"><summary>Edit Run line</summary><textarea class="row-text" rows="1" spellcheck="true" aria-label="${section} row ${index + 1}">${escapeHtml(row.text || "")}</textarea></details>
     </div>
     <div class="row-tools"><button class="row-tool format" title="Format item" aria-label="Format item">▤</button><button class="row-tool done ${row.struck ? "active" : ""}" title="Mark complete" aria-label="Mark complete">✓</button><button class="row-tool delete" title="Remove row" aria-label="Remove row">×</button></div>
   </div>`;
 }
 
 function scheduleMeta(text, section) {
-  const parts = String(text || "").split("|").map(cleanPart);
-  const dated = DATED_SECTIONS.has(section);
-  return { time: parts[dated ? 4 : 3] || "", crew: parts[dated ? 5 : 4] || "" };
+  return ScheduleFields.parse(text, DATED_SECTIONS.has(section));
+}
+function visitSummary(meta) {
+  return `<strong>${escapeHtml(meta.job || 'Untitled work')}</strong>
+    ${meta.task ? `<span>${escapeHtml(meta.task)}</span>` : ''}
+    ${meta.address || meta.phone ? `<small>${escapeHtml([meta.address, meta.phone].filter(Boolean).join(' · '))}</small>` : ''}
+    ${meta.date || meta.status ? `<small>${escapeHtml([meta.date, meta.status].filter(Boolean).join(' · '))}</small>` : ''}`;
 }
 
 function renderSummary() {
@@ -220,8 +241,14 @@ function bindRows() {
     });
     textarea.addEventListener("input", () => {
       const at = ref(); state.model.sections[at.section][at.index].text = textarea.value;
+      const meta = scheduleMeta(textarea.value, at.section);
+      element.querySelector('.visit-summary').innerHTML = visitSummary(meta);
+      element.querySelector('.row-schedule-meta').innerHTML = `<span class="row-time ${meta.time ? '' : 'empty'}">${escapeHtml(meta.time || 'No time')}</span>${meta.crew ? `<span class="row-crew">${escapeHtml(meta.crew)}</span>` : ''}`;
+      renderSummary();
       autoHeight(textarea); markDirty();
     });
+    element.querySelector('.run-source').addEventListener('toggle', () => autoHeight(textarea));
+    element.querySelector('.visit-summary').addEventListener('click', () => openComposer(ref().section, ref().index));
     element.querySelector(".format").addEventListener("click", () => openComposer(ref().section, ref().index));
     element.querySelector(".done").addEventListener("click", () => {
       pushUndo(); const at = ref();
@@ -258,16 +285,10 @@ function bindRows() {
 
 function cleanPart(value) { return String(value || "").trim().replace(/\s+/g, " "); }
 function formatRunItem(fields, section) {
-  const identity = cleanPart(fields.job);
-  const location = [cleanPart(fields.address), cleanPart(fields.phone)].filter(Boolean).join(" — ");
-  const details = [cleanPart(fields.task)];
-  if (DATED_SECTIONS.has(section)) details.push(cleanPart(fields.date));
-  details.push(cleanPart(fields.time), cleanPart(fields.crew), cleanPart(fields.status));
-  return [identity, location, ...details].filter(Boolean).join(" | ");
+  return ScheduleFields.format(fields, DATED_SECTIONS.has(section));
 }
-function seedComposer(text) {
-  const parts = String(text || "").split("|").map(cleanPart);
-  return { job: parts[0] || "", address: parts[1] || "", phone: "", task: parts[2] || "", date: "", time: parts[3] || "", crew: parts[4] || "", status: parts.slice(5).join(" | ") };
+function seedComposer(text, section) {
+  return ScheduleFields.parse(text, DATED_SECTIONS.has(section));
 }
 function composerFields() {
   return { job: $("#field-job").value, address: $("#field-address").value, phone: $("#field-phone").value, task: $("#field-task").value, date: $("#field-date").value, time: $("#field-time").value, crew: $("#field-crew").value, status: $("#field-status").value };
@@ -275,15 +296,16 @@ function composerFields() {
 function openComposer(section, index) {
   const row = index === null ? null : state.model.sections[section][index];
   state.composing = { section, index };
-  const seed = seedComposer(row?.text || "");
+  const seed = seedComposer(row?.text || "", section);
   for (const key of Object.keys(seed)) $(`#field-${key}`).value = seed[key];
   const dated = DATED_SECTIONS.has(section);
   $("#item-composer").classList.remove("hidden");
   $("#item-composer").classList.toggle("dated", dated);
-  $("#composer-help").textContent = dated
-    ? "Add a date only when it helps explain a future visit, deadline, or follow-up. Every field is optional."
-    : "This item belongs to the selected day, so no date is needed. Every field is optional.";
+  $("#composer-help").textContent = row?.text?.includes("|")
+    ? "Check imported arrival and crew fields before saving. Older Run lines may have omitted blanks."
+    : "";
   renderComposerPreview();
+  VisitControls.open();
   setTimeout(() => $("#field-job").focus(), 20);
 }
 function closeComposer() { $("#item-composer").classList.add("hidden"); state.composing = null; }
@@ -294,6 +316,10 @@ function renderComposerPreview() {
 function applyComposer() {
   if (!state.composing) return;
   const text = formatRunItem(composerFields(), state.composing.section);
+  if (Object.entries(composerFields()).some(([key, value]) => key !== "status" && value.includes("|"))) {
+    $("#composer-help").textContent = "Use a dash instead of | inside a field; | separates Run columns.";
+    return;
+  }
   if (!text) { $("#field-job").focus(); return; }
   pushUndo();
   const { section, index } = state.composing;
@@ -326,10 +352,7 @@ function dropRow(source, target, before=true) {
   markDirty(); renderRows();
 }
 function addRow(section) {
-  pushUndo();
-  state.model.sections[section].push({ id: `new:${Date.now()}`, text: "", struck: false });
-  markDirty(); renderRows();
-  document.querySelector(`#${sectionDomId(section)} .run-row:last-child .row-text`)?.focus();
+  openComposer(section, null);
 }
 function removeRow(ref) {
   pushUndo(); state.model.sections[ref.section].splice(ref.index, 1);

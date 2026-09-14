@@ -1,39 +1,81 @@
 "use strict";
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const views={overview:'Overview',weekly:'Weekly Review',jobs:'Jobs to Review',corrections:'Corrections and Follow-ups',billing:'Billing and AR',trends:'Trends',quality:'Data Quality'};
-const state={view:'overview',data:null,ids:null,editing:null,request:0,snapshot:false};
+const state={view:'weekly',data:null,ids:null,editing:null,request:0,snapshot:false};
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const displayDate=v=>{if(!v)return '—';const m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[2]}-${m[3]}-${m[1].slice(2)}`:esc(v);};
-function filters(){return Object.fromEntries(new FormData($('#filters')));}
+function filters(){const f=Object.fromEntries(new FormData($('#filters')));if(['weekly','jobs'].includes(state.view))f.review_population='logs';if(state.view==='corrections')f.review_population='followups';return f;}
+function chooseReviewWeek(offset=0){
+ const start=new Date();start.setDate(start.getDate()-((start.getDay()+6)%7)+offset*7);
+ const end=new Date(start);end.setDate(start.getDate()+6);
+ $('#filters [name=start]').value=iso(start);$('#filters [name=end]').value=iso(end);
+}
 window.addEventListener('pywebviewready',()=>{
- const today=new Date(),start=new Date(today);start.setDate(today.getDate()-((today.getDay()+6)%7));
- $('#filters [name=start]').value=iso(start);$('#filters [name=end]').value=iso(today);
+ $('#filters').insertAdjacentHTML('afterbegin','<label>Review responsibility<select name="review_role"><option value="front_ops">Front Ops</option><option value="field">Field / leads</option><option value="estimating">Estimating</option><option value="general">General</option></select></label>');
+ chooseReviewWeek();
+ $('#filters').insertAdjacentHTML('beforeend','<button type="button" id="previous-review-week">Previous week</button><button type="button" id="current-review-week">This week</button>');
+ $('#previous-review-week').onclick=()=>{chooseReviewWeek(-1);load();};
+ $('#current-review-week').onclick=()=>{chooseReviewWeek();load();};
  const extra={stage:'Workflow stage',payer_type:'Payer type',carrier:'Carrier / client',coordinator:'Front Ops coordinator',estimator:'Estimator',field_lead:'Field lead',crew:'Crew / subcontractor',profile:'Job Profile'};
  $('#extra-filters').innerHTML=Object.entries(extra).map(([k,v])=>`<label>${v}<select name="${k}"><option value="">All</option></select></label>`).join('');
  $('#tabs').innerHTML=Object.entries(views).map(([k,v])=>`<button type="button" data-tab="${k}" aria-pressed="${k===state.view}">${v}</button>`).join('');
- $('#tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(!b)return;state.view=b.dataset.tab;state.ids=null;render();};
+ $('#tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(!b)return;state.view=b.dataset.tab;state.ids=null;load();};
  $('#filters').onsubmit=e=>{e.preventDefault();load();};$('#refresh').onclick=()=>load(true);$('#export').onclick=exportCSV;
  $('#apa').onclick=()=>parent.postMessage({type:'ems-navigate',key:'apa'},location.origin);
  $('#save-review').onclick=saveReview;
+ $('#review').addEventListener('toggle',()=>{
+   if(!$('#review').open) return;
+   let stamp=$('#review-stamp');
+   if(!stamp){stamp=document.createElement('p');stamp.id='review-stamp';$('#review-title').parentElement.after(stamp);}
+   const row=state.data?.rows.find(r=>r.id===state.editing), review=row&&reviewFor(row);
+   const f=state.data.filters;
+   stamp.textContent=`${f.review_role||'General'} · ${f.division||'All divisions'} · ${f.start} through ${f.end}`+(review?` — Reviewed by ${review.reviewer_name||'Unknown'} on ${review.updated_at}. Stage at review: ${review.evidence?.stage||'Not recorded'}.`:' — Not reviewed for this scope.');
+ });
  $('#view').onclick=handleView;
- $('#rows').onclick=e=>{const b=e.target.closest('button');if(!b)return;const row=state.data.rows.find(r=>r.id===b.dataset.id);if(!row)return;if(b.dataset.action==='review')openReview(row);else parent.postMessage({type:'linguar-open-job',focus:row.name,division:filters().division||row.divisions[0]?.division||''},location.origin);};
+ $('#result-search').addEventListener('input',()=>showRecords(state.ids,$('#record-title').textContent));
+ $('#reset-results').onclick=()=>{ $('#result-search').value=''; showRecords(null,'All records in scope'); };
+ $('#rows').onclick=e=>{const b=e.target.closest('button');if(!b)return;const row=state.data.rows.find(r=>r.id===b.dataset.id);if(!row)return;if(b.dataset.action==='review')openReview(row);else parent.postMessage({type:'linguar-open-job',focus:row.name,cardId:row.review_source?.card_id||'',division:state.data.filters.division||row.divisions[0]?.division||''},location.origin);};
  load();
 });
 async function load(force=false){
  const token=++state.request;$('#status').textContent='Loading current records…';
+ const queue=['weekly','jobs','corrections'].includes(state.view),statusFilter=$('#filters [name=status]');
+ statusFilter.disabled=queue;
+ if(queue)statusFilter.value='all';
+ statusFilter.title=queue?'Review queue includes cards in the selected Logs columns.':'';
+ for(const name of ['start','end']) $('#filters [name='+name+']').disabled=state.view==='corrections';
+ $('#records').inert=true;$('#view').inert=true;$('#export').disabled=true;
  try{const f=filters();if(f.start>f.end)throw Error('Choose an end date on or after the start date.');const result=await pywebview.api.load(f,force);if(token!==state.request)return;if(!result.ok)throw Error(result.error);state.data=result;state.ids=null;state.snapshot=false;
  for(const [key,options] of Object.entries(result.options)){const select=$(`#filters [name="${key}"]`);const previous=select.value;select.innerHTML='<option value="">All</option>'+options.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');select.value=previous;if(!options.length)select.title='No records have this field yet';}
- render();}catch(e){if(token===state.request){$('#status').textContent=String(e.message||e);if(!state.data)$('#view').innerHTML='<div class="panel">Analytics could not load. Use Refresh to retry or check Settings → System Health.</div>';}}
+ render();$('#records').inert=false;$('#view').inert=false;$('#export').disabled=false;}catch(e){if(token===state.request){$('#status').textContent=String(e.message||e)+(state.data?' — Previous results are read-only. Refresh to retry.':'');if(!state.data)$('#view').innerHTML='<div class="panel">Analytics could not load. Use Refresh to retry or check Settings → System Health.</div>';}}
 }
-function reviewFor(row){return state.data.review_store?.reviews?.[`${state.data.filters.start}:${row.id}`];}
+function reviewFor(row){return state.data.review_store?.reviews?.[row.review_key || `${state.data.filters.start}:${row.id}`];}
+function reviewStatus(review){
+ if(!review)return 'Not reviewed';
+ return {reviewed:'Reviewed',follow_up:'Follow-up required',resolved:'Correction resolved'}[review.outcome]||'Review recorded';
+}
+function renderReviewStamps(){
+ for(const button of $('#rows').querySelectorAll('[data-action="review"]')){
+  const row=state.data.rows.find(r=>r.id===button.dataset.id),review=reviewFor(row);
+  const status=document.createElement('div');status.className='review-status';status.textContent=reviewStatus(review);
+  button.before(status);
+  if(review){
+   const stamp=document.createElement('small');stamp.className='review-audit-stamp';
+   stamp.textContent=`${review.reviewer_name||'Reviewer not recorded'} · ${review.updated_at?displayDate(review.updated_at):'Date not recorded'}`;
+   status.append(stamp);
+  }
+ }
+}
 function card(label,ids,value=ids.length,sub=''){return `<button class="metric" data-ids="${esc(JSON.stringify(ids))}" data-label="${esc(label)}"><span>${esc(label)}</span><strong>${value===null?'—':value}</strong><small>${esc(sub||'View records')}</small></button>`;}
 function render(){
  if(!state.data)return;const d=state.data;
+ $('#result-search').value='';
  $('#location').textContent=`SERVPRO ${d.location}`;
  document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===state.view)));
  $('#status').textContent=`${state.snapshot?'Saved snapshot':'Current records'} · ${d.rows.length} records · ${displayDate(d.generated_at)} · ${d.source||'Job database'}`;
  $('#coverage').innerHTML=d.legacy_count?`<p class="coverage">${d.legacy_count} legacy job records have no confirmed Loss ID. Totals currently include these separately. <button data-quality>Review identity coverage</button></p>`:'';
- $('#coverage [data-quality]')?.addEventListener('click',()=>{state.view='quality';render();});
+ if(['logs','followups'].includes(d.filters.review_population)) $('#coverage').innerHTML=`<p class="coverage">${esc(d.warnings.join(' '))}</p>`;
+ $('#coverage [data-quality]')?.addEventListener('click',()=>{state.view='quality';load();});
  const reviewed=d.rows.filter(r=>reviewFor(r));const corrections=d.rows.filter(r=>reviewFor(r)?.outcome==='follow_up');
  let html='';
  if(state.view==='overview')html=`<div class="metrics">${d.metrics.map(m=>card(m.label,m.ids,m.value,m.coverage===null?'View records':`Known for ${m.coverage} records · view matches`)).join('')}</div><div class="split"><article class="panel"><h2>Department responsibility</h2>${['coordinator','field_lead','estimator'].map((key,i)=>card(['Front Ops','Field','Estimating'][i],d.rows.filter(r=>r[key]).map(r=>r.id),undefined,'Records with a named owner')).join('')}<p>Department timing targets are not yet connected to these records.</p></article><article class="panel"><h2>Where work is waiting</h2>${stageButtons(d.rows)}</article></div>`;
@@ -43,15 +85,68 @@ function render(){
  if(state.view==='billing'){html=`<h2>Billing readiness and receivables</h2><div class="metrics">${card('Ready to bill',d.metrics.find(m=>m.key==='ready').ids)}${card('Billed, not recorded paid',d.rows.filter(r=>r.billed&&!r.paid).map(r=>r.id))}${card('Recorded paid',d.rows.filter(r=>r.paid).map(r=>r.id))}</div><p>Invoice amounts, balances and payment aging are not connected yet. A missing paid date is not proof of an outstanding balance.</p>`;}
  if(state.view==='trends')html=`<h2>Eight-week operating trend</h2><p>Recorded intake and billing dates, ending ${displayDate(d.filters.end)}. Click a bar to see its records.</p><div class="panel trend">${d.trends.map(w=>`<div><strong>${displayDate(w.start)}</strong>${['new','billed'].map(k=>`<button data-ids="${esc(JSON.stringify(w[k]))}" data-label="${k==='new'?'New Losses':'Billed'} · ${displayDate(w.start)}"><span>${k==='new'?'New':'Billed'}</span><i style="width:${Math.max(2,w[k].length/Math.max(1,...d.trends.flatMap(t=>[t.new.length,t.billed.length]))*100)}%"></i><b>${w[k].length}</b></button>`).join('')}</div>`).join('')}</div><p>These are recorded events within the selected population; missing dates are excluded. Review Data Quality before interpreting totals.</p>`;
  if(state.view==='quality')html=`<h2>Data Quality</h2><div class="metrics">${d.quality.map(q=>card(q.label,q.ids)).join('')}</div><details class="panel"><summary>Source coverage</summary><p>${d.warnings.map(esc).join('<br>')||'Job graph loaded successfully.'}</p><p>Required paperwork, estimate status, role ownership, payer type and Job Profiles are reported only when recorded explicitly. Blank fields remain unknown.</p></details>`;
+ if(state.view==='weekly') {
+   const legacy=Object.entries(d.review_store?.reviews||{}).filter(([key])=>!key.startsWith('v2:'));
+   if(legacy.length) html+=`<details class="panel"><summary>Earlier general reviews (${legacy.length})</summary><p>Preserved history; not counted as a new department review.</p>${legacy.map(([,r])=>`<article><strong>${esc(r.name)}</strong><p>${esc(r.week)} · ${esc(r.outcome)} · ${esc(r.note)}</p></article>`).join('')}</details>`;
+ }
  $('#view').innerHTML=html;
+ if(state.view==='weekly'){
+  const total=d.rows.length,done=reviewed.length,percent=total?Math.round(done/total*100):0;
+  const progress=document.createElement('div');progress.className='review-progress';
+  progress.innerHTML=`<div><strong>${done} / ${total}</strong><span>reviewed · ${esc({front_ops:'Front Ops',field:'Field / leads',estimating:'Estimating',general:'General'}[d.filters.review_role]||'General')}</span></div><progress max="${Math.max(1,total)}" value="${done}" aria-label="Review completion"></progress><span>${total?percent+'%':'No records'}</span>`;
+  $('#view .section-head').after(progress);
+ }
  $('#snapshot-list')?.addEventListener('change',e=>{if(e.target.value==='')return;const s=d.review_store.snapshots[Number(e.target.value)];state.data={...s,review_store:{reviews:s.reviews,snapshots:d.review_store.snapshots}};state.snapshot=true;state.ids=null;for(const [key,value] of Object.entries(s.filters)){const control=$(`#filters [name="${key}"]`);if(control)control.value=value;}render();});
  showRecords(state.ids,views[state.view]);
 }
 function stageButtons(rows){return [...new Set(rows.map(r=>r.stage))].sort().map(s=>`<button class="stage" data-ids="${esc(JSON.stringify(rows.filter(r=>r.stage===s).map(r=>r.id)))}" data-label="${esc(s)}"><span>${esc(s.replaceAll('_',' '))}</span><b>${rows.filter(r=>r.stage===s).length}</b></button>`).join('')||'<p>No records match these filters.</p>';}
-function showRecords(ids,title){state.ids=ids;const rows=state.data.rows.filter(r=>!ids||ids.includes(r.id));$('#record-title').textContent=title||'Records';$('#record-count').textContent=`${rows.length} records`;
- $('#rows').innerHTML=rows.map(r=>`<tr><td><button class="job-link" data-action="open" data-id="${esc(r.id)}">${esc(r.name)}</button><small>${esc(r.identity)}</small></td><td>${esc(r.divisions.map(d=>d.division).join(', ')||'Unknown')}</td><td>${esc(r.stage.replaceAll('_',' '))}</td><td>${esc(r.carrier||'—')}</td><td>${displayDate(r.received)}</td><td><button data-action="review" data-id="${esc(r.id)}" ${state.snapshot?'disabled':''}>${reviewFor(r)?'Edit review':'Review'}</button></td></tr>`).join('')||'<tr><td colspan="6">No matching records.</td></tr>';
+function resultRows(){
+ const query=($('#result-search').value||'').trim().toLocaleLowerCase();
+ return state.data.rows.filter(r=>(!state.ids||state.ids.includes(r.id))&&[r.name,r.canon,r.carrier,r.review_source?.list_name].join(' ').toLocaleLowerCase().includes(query));
+}
+function showRecords(ids,title){state.ids=ids;const rows=resultRows();$('#record-title').textContent=title||'Records';$('#record-count').textContent=`${rows.length} records`;
+ $('#rows').innerHTML=rows.map(r=>`<tr><td><button class="job-link" data-action="open" data-id="${esc(r.id)}">${esc(r.name)}</button><small>${esc(r.identity)}</small></td><td>${esc(r.divisions.map(d=>d.division).join(', ')||'Unknown')}</td><td>${esc(r.review_source?.list_name||r.stage.replaceAll('_',' '))}</td><td>${esc(r.carrier||'—')}</td><td>${displayDate(r.received)}</td><td><button data-action="review" data-id="${esc(r.id)}" ${state.snapshot?'disabled':''}>${reviewFor(r)?'Edit review':'Review'}</button></td></tr>`).join('')||'<tr><td colspan="6">No matching records.</td></tr>';
+ renderReviewStamps();
 }
 async function handleView(e){const b=e.target.closest('button');if(!b)return;if(b.dataset.ids){showRecords(JSON.parse(b.dataset.ids),b.dataset.label);$('#records').scrollIntoView({behavior:'smooth',block:'start'});}if(b.dataset.review)openReview(state.data.rows.find(r=>r.id===b.dataset.review));if(b.hasAttribute('data-save-snapshot')){b.disabled=true;try{const r=await pywebview.api.save_snapshot(state.data.filters);if(!r.ok)throw Error(r.error);await load();$('#status').textContent='Review snapshot saved on this PC.';}catch(err){$('#status').textContent=err.message;}finally{b.disabled=false;}}}
-function openReview(row){if(state.snapshot)return;state.editing=row.id;const r=reviewFor(row)||{};$('#review-title').textContent=row.name;$('#review-note').value=r.note||'';$('#review-owner').value=r.owner||'';$('#review-due').value=r.due||'';$('#review-outcome').value=r.outcome||'reviewed';$('#review-error').textContent='';$('#review').showModal();}
-async function saveReview(){const b=$('#save-review');b.disabled=true;try{const r=await pywebview.api.save_review(state.editing,state.data.filters,$('#review-note').value,$('#review-owner').value,$('#review-due').value,$('#review-outcome').value);if(!r.ok)throw Error(r.error);$('#review').close();await load();}catch(e){$('#review-error').textContent=e.message;}finally{b.disabled=false;}}
-async function exportCSV(){if(!state.data)return;const d=state.data;const lines=[['Analytics',d.generated_at],['Filters',JSON.stringify(d.filters)],['Population','Legacy jobs are counted separately until loss identity is confirmed'],[],['ID','Loss / job','Identity','Division','Stage','Carrier','Received','Review note','Owner','Due']];d.rows.filter(r=>!state.ids||state.ids.includes(r.id)).forEach(r=>{const v=reviewFor(r)||{};lines.push([r.id,r.name,r.identity,r.divisions.map(x=>x.division).join(' / '),r.stage,r.carrier,displayDate(r.received),v.note,v.owner,displayDate(v.due)]);});const csv=lines.map(line=>line.map(v=>'"'+String(v??'').replace(/^[=+@\-\t\r]/,"'$&").replaceAll('"','""')+'"').join(',')).join('\r\n');try{const result=await pywebview.api.export_csv(csv);if(!result.ok)throw Error(result.error);$('#status').textContent=result.cancelled?'Export cancelled.':'CSV saved.';}catch(e){$('#status').textContent=e.message;}}
+function openReview(row){
+ if(state.snapshot)return;
+ state.editing=row.id;const r=reviewFor(row)||{},resolving=Boolean(row.correction_revision);
+ $('#review-title').textContent=row.name;
+ $('#review-note').value=resolving?'':r.note||'';
+ $('#review-note').parentElement.firstChild.textContent=resolving?'Resolution note':'Correction / review note';
+ $('#review-owner').value=r.owner||'';$('#review-due').value=r.due||'';
+ $('#review-owner').readOnly=resolving;$('#review-due').readOnly=resolving;
+ $('#review-outcome').value=resolving?'resolved':r.outcome||'reviewed';$('#review-outcome').disabled=resolving;
+ $('#save-review').textContent=resolving?'Resolve correction':'Save review';
+ $('#review-error').textContent=resolving?`Original correction: ${r.note||'No note'} (${r.week||'Earlier review'})`:'';
+ $('#review').showModal();
+}
+async function saveReview(){
+ const b=$('#save-review');b.disabled=true;
+ try{
+  const row=state.data.rows.find(r=>r.id===state.editing);
+  const r=row?.correction_revision
+   ? await pywebview.api.resolve_correction(row.review_key,row.correction_revision,$('#review-note').value)
+   : await pywebview.api.save_review(state.editing,state.data.filters,$('#review-note').value,$('#review-owner').value,$('#review-due').value,$('#review-outcome').value);
+  if(!r.ok)throw Error(r.error);$('#review').close();await load();
+ }catch(e){$('#review-error').textContent=e.message;}finally{b.disabled=false;}
+}
+async function exportCSV(){
+ if(!state.data)return;
+ const d=state.data;
+ const lines=[['Analytics',d.generated_at],['Filters',JSON.stringify(d.filters)],
+  ['Population',d.source||'Legacy jobs are counted separately until loss identity is confirmed'],
+  ['Review storage','This PC only'],[],
+  ['ID','Loss / job','Identity','Division','Stage','Carrier','Received','Review status','Reviewer','Reviewed at','Review period start','Review period end','Responsibility','Source column at review','Review note','Owner','Due']];
+ lines.splice(2,0,['Result selection',$('#record-title').textContent],['Result search',$('#result-search').value]);
+ for(const row of resultRows()){
+  const review=reviewFor(row),v=review||{},scope=v.filters||d.filters;
+  lines.push([row.id,row.name,row.identity,row.divisions.map(x=>x.division).join(' / '),row.stage,row.carrier,row.received,
+   reviewStatus(review),v.reviewer_name,v.updated_at,scope.start,scope.end,v.role||scope.review_role,
+   v.evidence?.review_source?.list_name||v.evidence?.review_membership?.list_name||'',v.note,v.owner,v.due]);
+ }
+ const csv=lines.map(line=>line.map(v=>'"'+String(v??'').replace(/^[=+@\-\t\r]/,"'$&").replaceAll('"','""')+'"').join(',')).join('\r\n');
+ try{const result=await pywebview.api.export_csv(csv);if(!result.ok)throw Error(result.error);$('#status').textContent=result.cancelled?'Export cancelled.':'CSV saved.';}
+ catch(e){$('#status').textContent=e.message;}
+}

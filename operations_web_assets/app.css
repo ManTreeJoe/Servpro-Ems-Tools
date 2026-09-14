@@ -3,8 +3,8 @@
   --line:#343d3f;--line-2:#465154;--ink:#f1eee7;--muted:#a8b0ad;--dim:#727d7a;
   --green:#2F7750;--green-soft:rgba(47,119,80,.11);--amber:#e4a348;--amber-soft:rgba(228,163,72,.13);
   --blue:#718ed6;--blue-soft:rgba(113,142,214,.13);--rust:#c97555;--danger:#d76a63;
-  --display:"Bahnschrift SemiCondensed","Arial Narrow",sans-serif;--body:"Segoe UI Variable Text","Segoe UI",sans-serif;
-  --utility:"Cascadia Mono","Consolas",monospace;--radius:10px;--shadow:0 18px 50px rgba(0,0,0,.28)
+  --display:Georgia,serif;--body:var(--font-body);
+  --utility:var(--font-body);--radius:10px;--shadow:0 18px 50px rgba(0,0,0,.28)
 }
 :root[data-theme="light"]{
   color-scheme:light;--bg:#e9ece6;--shell:#f1f3ed;--panel:#f8f7f2;--panel-2:#edf1eb;--raised:#dfe6de;

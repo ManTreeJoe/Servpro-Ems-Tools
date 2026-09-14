@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Linguar Loss view v1",
+  "description": "Authorized canonical Loss projection shared by desktop and web. Claims and divisions are independent children.",
+  "type": "object",
+  "required": [
+    "contract",
+    "organization_id",
+    "id",
+    "client_id",
+    "number",
+    "customer",
+    "properties",
+    "claims",
+    "divisions",
+    "selected_division",
+    "stage",
+    "next_action",
+    "identity"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract": {
+      "const": {
+        "name": "linguar.loss-view",
+        "version": 1
+      }
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "client_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "number": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "customer": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "properties": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "divisions": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "enum": [
+              "EMS",
+              "CONTENTS",
+              "RECON"
+            ]
+          },
+          "stage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_action": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "selected_division": {
+      "enum": [
+        null,
+        "EMS",
+        "CONTENTS",
+        "RECON"
+      ]
+    },
+    "stage": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "next_action": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "identity": {
+      "const": {
+        "state": "canonical"
+      }
+    }
+  }
+}

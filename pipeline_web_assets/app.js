@@ -254,7 +254,7 @@ async function loadBoard(isRefresh) {
 // Board-only zoom keeps the app chrome readable while dispatchers trade
 // detail for lane coverage. Deliberate stops prevent microscopic cards.
 function setBoardZoom(value) {
-  const next = Math.max(0.8, Math.min(1.4, Math.round(Number(value) * 10) / 10));
+  const next = Math.max(0.5, Math.min(1.4, Math.round(Number(value) * 10) / 10));
   state.boardZoom = next;
   PanelState.set({ boardZoom: next });
   applyBoardZoom();
@@ -271,7 +271,7 @@ function applyBoardZoom() {
     value.setAttribute("aria-label", `Jobs board zoom ${value.textContent}; reset to 100%`);
   }
   const out = $("#board-zoom-out"), inside = $("#board-zoom-in");
-  if (out) out.disabled = state.boardZoom <= 0.8;
+  if (out) out.disabled = state.boardZoom <= 0.5;
   if (inside) inside.disabled = state.boardZoom >= 1.4;
 }
 
@@ -1721,8 +1721,8 @@ function openAuditModal(data, trelloUrl = "") {
         ${!docs.connected ? `<div class="signature-connection"><span><strong>Direct DocuSign connection is next</strong><small>For now, open DocuSign and mark the request sent after the envelope is actually sent.</small></span></div>` : ""}
         <div class="signature-actions"><button class="btn btn-primary" data-open-docusign>Open DocuSign ↗</button><button class="btn" data-mark-docusign-sent ${dsRequest.state ? "disabled" : ""}>Mark envelope sent</button><button class="btn" data-open-docs-folder ${res.path ? "" : "disabled"}>Open job folder</button></div>
         <div class="signature-files">${documentRows}</div></section>
-      <details class="aud-section compact-section"><summary>Run activity <span>${(res.activity || []).length}</span></summary>${activity}</details>
-      <details class="aud-section compact-section"><summary>Other attachments <span>${(data.attachments || []).length}</span></summary>${attachments}</details>
+      <details class="aud-section compact-section job-run-section" open><summary>Run activity <span>${(res.activity || []).length}</span></summary>${activity}</details>
+      <details class="aud-section compact-section job-attachments-section" open><summary>Other attachments <span>${(data.attachments || []).length}</span></summary>${attachments}</details>
     </div>
     <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>${escapeHtml(selectedDivision)} job conversation</small></div>
       <span data-comment-count>${(data.comments || []).length}</span></div>
@@ -1734,7 +1734,7 @@ function openAuditModal(data, trelloUrl = "") {
   const w = document.createElement("div");
   w.className = "modal-scrim audit-overlay";
   w.innerHTML = `
-    <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job audit" tabindex="-1">
+    <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job workspace" tabindex="-1">
       <header class="modal-head">
         <div class="audit-head-main"><div class="audit-head-copy"><div class="modal-title-row"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div><button type="button" class="client-page-link" data-open-client-page>👤 Client page</button></div>
         <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div>${divisionDataTabs}</div>
@@ -1780,6 +1780,7 @@ function openAuditModal(data, trelloUrl = "") {
     </div>`;
   document.body.appendChild(w);
   const previousFocus = document.activeElement;
+  window.JobWorkspaceTabs.mount(w, `${state.department || ''}:${data.card_id || data.client || ''}`);
   const dirtyDrafts = new Set();
   let workspaceContext = null;
   const markDraftDirty = (key, dirty = true) => {

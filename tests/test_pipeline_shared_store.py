@@ -283,7 +283,7 @@ def test_pipeline_card_is_the_full_job_workspace():
     for marker in ("_document_signature_workspace", "mark_docusign_sent",
                    "open_document"):
         assert marker in py
-    assert 'class="aud-section compact-section"' in js
+    assert 'class="aud-section compact-section' in js
     assert ".job-card-layout" in css
     assert ".job-card-activity" in css
     for marker in ("edit_job_comment", "delete_job_comment"):

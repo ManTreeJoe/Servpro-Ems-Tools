@@ -132,8 +132,9 @@ def test_editor_has_optional_section_aware_item_template():
         assert f'id="field-{field}"' in html
     assert "function formatRunItem" in js
     assert "DATED_SECTIONS.has(section)" in js
-    assert "This item belongs to the selected day, so no date is needed" in js
-    assert "Every field is optional" in js
+    assert "seedComposer(row?.text || \"\", section)" in js
+    assert "ScheduleFields.format(fields, DATED_SECTIONS.has(section))" in js
+    assert 'placeholder="12–3 PM"' in html
 
 
 def test_editor_uses_schedule_first_day_navigation_and_summary():

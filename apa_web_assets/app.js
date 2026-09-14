@@ -12,6 +12,7 @@
 const state = {
   doc:          null,    // current payload from Api.today_doc / doc_for_date
   active_date:  null,    // ISO string
+  loadSeq:      0,       // Only the latest date request may update the view.
   search:       "",
   toggle:       "all",   // "all" / "estimator" / "builtin" / "nonempty"
   calendar:     { year: 0, month: 0, dates: new Set(), seq: 0 },
@@ -31,6 +32,7 @@ window.addEventListener("pywebviewready", async () => {
   $("#manage-sections-btn").addEventListener("click", openManageSectionsModal);
   $("#manage-franchises-btn").addEventListener("click", openManageFranchisesModal);
   $("#open-word-btn").addEventListener("click", openInWord);
+  $("#print-btn").addEventListener("click", printAPA);
   $("#reveal-btn").addEventListener("click", revealInExplorer);
   $("#clear-all-btn").addEventListener("click", clearAllItems);
   $("#prev-date").addEventListener("click", () => stepDate(-1));
@@ -278,20 +280,30 @@ async function loadInitialData() {
 }
 
 async function loadToday() {
-  setStatus("Loading…");
-  state.doc = await pywebview.api.today_doc();
-  state.active_date = state.doc.date_iso;
-  renderAll();
-  setStatus("");
+  return loadRequestedDoc(() => pywebview.api.today_doc());
 }
 
 async function loadDate(iso) {
   if (!iso) return;
+  return loadRequestedDoc(() => pywebview.api.doc_for_date(iso));
+}
+
+async function loadRequestedDoc(request) {
+  const seq = ++state.loadSeq;
   setStatus("Loading…");
-  state.doc = await pywebview.api.doc_for_date(iso);
-  state.active_date = state.doc.date_iso;
-  renderAll();
-  setStatus("");
+  try {
+    const doc = await request();
+    if (seq !== state.loadSeq) return false;
+    if (!doc?.date_iso) throw new Error(doc?.error || "No document response received");
+    state.doc = doc;
+    state.active_date = doc.date_iso;
+    renderAll();
+    setStatus("");
+    return true;
+  } catch (ex) {
+    if (seq === state.loadSeq) setStatus(`Failed to load: ${ex.message || ex}`, "error");
+    return false;
+  }
 }
 
 function stepDate(delta) {
@@ -890,6 +902,17 @@ async function openInWord() {
   setStatus(ok ? "Opened in Word" : "Couldn't open Word", ok ? "ok" : "error");
 }
 
+async function printAPA() {
+  if (!state.doc?.doc_path) { setStatus('No saved APA document for this day.', 'error'); return; }
+  if (!window.confirm('Print the saved APA for this day? Unsaved edits are not included.')) return;
+  const button = $('#print-btn'); button.disabled = true;
+  try {
+    const result = await pywebview.api.print_preview(state.doc.doc_path);
+    setStatus(result.ok ? 'Print preview opened in Word. Choose File → Print to select a printer.' : result.error, result.ok ? 'ok' : 'error');
+  } catch (_) { setStatus('Print preview could not open. Try Open in Word.', 'error'); }
+  finally { button.disabled = false; }
+}
+
 async function revealInExplorer() {
   if (!state.doc?.doc_path) return;
   await pywebview.api.reveal_in_explorer(state.doc.doc_path);
@@ -1405,7 +1428,10 @@ async function openAddToApaConfirmModal(sug) {
     // they can see the new row land.
     const todayISO = new Date().toISOString().slice(0, 10);
     if (state.active_date !== todayISO) {
-      await loadDate(todayISO);
+      if (!await loadDate(todayISO)) {
+        btn.disabled = false; btn.textContent = "📥 Add to APA";
+        return;
+      }
     }
     const res = await pywebview.api.add_item_to_section(
       section, text, stat, sub, false);
@@ -1687,7 +1713,7 @@ async function createTodayDoc() {
   } else {
     setStatus(res.note || "Doc already existed", "warn");
   }
-  await loadDate(state.active_date);
+  if (!await loadDate(state.active_date)) return;
   // Review the carried jobs — after loadDate, so state.doc is the doc
   // the modal will be editing. Every carried job is listed with what the
   // Trello check decided, not just the ones it couldn't place: an

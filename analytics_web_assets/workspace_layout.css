@@ -1,0 +1,34 @@
+/* L OPS patterns: grouped totals, review progress, and inspectable results.
+   Keep Hub's real metrics and readable desktop sizing. */
+:root { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI Variable','Aptos','Segoe UI',sans-serif; }
+#filters { padding:18px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+#filters label { font-size:14px; }
+#tabs button { font-size:14px; }
+#view > .metrics { gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--panel); }
+#view > .metrics .metric { border:0; border-right:1px solid var(--line); border-bottom:1px solid var(--line); border-radius:0; min-height:116px; }
+.metric strong { font:600 32px Georgia,serif; }
+.metric small { font-size:13px; }
+.review-progress { display:grid; grid-template-columns:minmax(200px,auto) 1fr auto; align-items:center; gap:22px; padding:20px 22px; margin:20px 0; border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:12px; background:var(--panel); }
+.review-progress strong { font:600 26px Georgia,serif; }
+.review-progress div span { display:block; margin-top:5px; color:var(--muted); }
+.review-progress > span { font-weight:650; }
+.review-progress progress { width:100%; height:10px; appearance:none; border:0; border-radius:8px; overflow:hidden; background:var(--soft); }
+.review-progress progress::-webkit-progress-bar { background:var(--soft); }
+.review-progress progress::-webkit-progress-value { background:var(--accent); border-radius:8px; }
+.results-heading { padding-bottom:18px; align-items:end; }
+.results-heading h2 { margin-bottom:6px; }
+.results-heading .actions { align-items:end; }
+#record-count { color:var(--muted); }
+#result-search { width:min(260px,100%); }
+th,td small { font-size:13px; }
+#records table { min-width:800px; }
+.review-status { margin-bottom:8px; }
+@media(max-width:700px) {
+ .review-progress { grid-template-columns:1fr auto; gap:14px; padding:16px; }
+ .review-progress progress { grid-column:1/-1; grid-row:2; }
+ .results-heading,.results-heading .actions { align-items:stretch; }
+ .results-heading > div,.results-heading .actions { width:100%; }
+ .results-heading label { flex:1; min-width:130px; }
+ #filters { padding:12px; }
+ #extra-filters { grid-template-columns:1fr; }
+}

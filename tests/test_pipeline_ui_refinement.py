@@ -304,11 +304,11 @@ def test_jobs_board_zoom_is_visible_persistent_and_board_scoped():
         assert marker in html
     for marker in ('PanelState.get("boardZoom", 1)',
                    "PanelState.set({ boardZoom: next })",
-                   "function onBoardZoomShortcut", "Math.max(0.8",
+                   "function onBoardZoomShortcut", "Math.max(0.5",
                    "Math.min(1.4"):
         assert marker in js
-    assert "zoom: var(--board-zoom, 1)" not in css
-    assert "calc(var(--lane-base-width) * var(--board-zoom, 1))" in css
+    assert "zoom: var(--board-zoom, 1)" in css
+    assert "calc(var(--lane-base-width) * var(--board-zoom, 1))" not in css
     assert 'class="board-view-menu toolbar-more view-board-only"' in html
 
 

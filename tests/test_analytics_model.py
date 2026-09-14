@@ -81,7 +81,7 @@ def test_review_validation_scope_and_snapshot_history(monkeypatch):
     assert api.save_snapshot(filters)['ok']
     assert api.save_review('loss1', filters, 'Received', outcome='resolved')['ok']
     result = api.load(filters)['review_store']
-    key = '2026-09-07:loss1'
+    key = next(r['review_key'] for r in api.load(filters)['rows'] if r['id'] == 'loss1')
     assert result['reviews'][key]['history'][0]['outcome'] == 'follow_up'
     assert result['snapshots'][0]['reviews'][key]['outcome'] == 'follow_up'
     assert result['snapshots'][0]['filters']['location'] == 'IE'
