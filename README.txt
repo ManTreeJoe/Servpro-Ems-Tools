@@ -1,3 +1,7 @@
+L OPS platform / agent reference
+See docs/l-ops-platform.md for shared web/mobile/iPad build notes and cross-repository coordination.
+Full guide: https://github.com/ManTreeJoe/l-ops-crm/blob/main/docs/agent-guide/README.md
+
 Linguar Hub
 =========
 SERVPRO IE Department admin automation suite.
