@@ -77,7 +77,6 @@
     document.body.appendChild(w);
     const close = () => w.remove();
     w.querySelector("#ta-close").addEventListener("click", close);
-    w.addEventListener("click", (e) => { if (e.target === w) close(); });
 
     const listEl = w.querySelector("#ta-list");
     const statusEl = w.querySelector("#ta-status");

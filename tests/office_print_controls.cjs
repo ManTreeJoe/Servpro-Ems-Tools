@@ -16,12 +16,14 @@ const fs=require('fs'),assert=require('node:assert/strict');
     window.$=s=>document.querySelector(s);
     window.state={doc:{doc_path:'selected.docx'},dayOffset:-7,dirty:true,model:{exists:true}};
     window.calls=[];window.confirm=()=>false;
+    window.saveDoc=async()=>true;
     window.setStatus=window.showNotice=message=>{window.notice=message;};
     window.pywebview={api:{print_preview:async arg=>{calls.push(arg);return {ok:true};}}};
    });
    await page.addScriptTag({content:source.slice(start,end)});
    await page.evaluate(name=>window[name](),name);
-   assert.deepEqual(await page.evaluate(()=>calls),[],'cancel does not print');
+   assert.deepEqual(await page.evaluate(()=>calls),name==='printAPA'?[arg]:[],'APA prints directly; schedule retains its existing guard');
+   await page.evaluate(()=>calls=[]);
    await page.evaluate(()=>window.confirm=()=>true);
    await page.evaluate(name=>window[name](),name);
    assert.deepEqual(await page.evaluate(()=>calls),[arg]);
@@ -29,6 +31,12 @@ const fs=require('fs'),assert=require('node:assert/strict');
    await page.evaluate(name=>window[name](),name);
    assert.equal(await page.evaluate(()=>notice),'Word unavailable');
    assert.equal(await page.locator(name==='printAPA'?'#print-btn':'#print-run').isDisabled(),false);
+   if(name==='printAPA'){
+    await page.evaluate(()=>{calls=[];saveDoc=async()=>false;});
+    await page.evaluate(()=>printAPA());
+    assert.deepEqual(await page.evaluate(()=>calls),[],'failed save must not print');
+    assert.equal(await page.locator('#print-btn').isDisabled(),false);
+   }
    await page.screenshot({path:require('path').join(require('os').tmpdir(),`${name}-toolbar.png`)});
   }
   console.log('Print controls passed: selected document/day, cancellation, errors and button recovery.');

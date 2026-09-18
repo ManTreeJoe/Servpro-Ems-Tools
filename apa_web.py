@@ -168,7 +168,8 @@ def _doc_payload_for(date_obj):
     payload: section_order + items per section + metadata."""
     path = apa.doc_path_for_today(date_obj)
     exists = os.path.isfile(path)
-    parsed = apa.parse_existing_doc(path) if exists else {}
+    order = apa._persisted_section_order()
+    parsed = apa.parse_existing_doc(path, section_order=order) if exists else {}
     # Pre-load the franchise-tags map once so we don't re-load per
     # item — keeps the payload build O(items) instead of O(items × IO).
     try:
@@ -189,7 +190,7 @@ def _doc_payload_for(date_obj):
     except Exception:
         all_notes_raw = {}
     sections = []
-    for name in apa.SECTION_ORDER:
+    for name in order:
         # `apa_message_notes` is keyed by client → {section: text}; pre-
         # invert per-section once so item lookup is a single dict get.
         notes_for_section = {}
@@ -326,6 +327,32 @@ def _iter_recent_dates():
 
 
 class Api:
+    def paste_review(self, operation: str, payload: dict = None) -> dict:
+        """Explicit table-review interface; it never posts to or moves Trello cards."""
+        from apa_paste_review import Review
+        try:
+            review = Review(self)
+            p = payload or {}
+            if operation == 'start': return review.start(p['text'], p['day'])
+            if operation == 'recent': return review.recent(p['day'])
+            if operation == 'inspect': return review.inspect(p['batch_id'], p['index'], p.get('query',''))
+            if operation == 'choose': return review.choose(p['batch_id'], p['index'], p['card_id'])
+            if operation == 'commit':
+                return review.commit(p['batch_id'], p['index'], p['action'], p.get('lane',''),
+                    p.get('sub',''), p.get('existing_index'), p.get('confirmed') is True, p.get('distinct') is True)
+            raise ValueError('Unknown paste review operation.')
+        except Exception as exc:
+            return {'ok':False, 'error':str(exc)}
+
+    def backup_apa_month(self, month: str) -> dict:
+        from apa_digital_archive import archive_month
+        try:
+            report = archive_month(apa._apa_root(), month)
+            return {'ok':not report['failures'], 'report':report,
+                    'error':'Some files could not be backed up.' if report['failures'] else ''}
+        except Exception as exc:
+            return {'ok':False, 'error':str(exc)}
+
     """Methods exposed to JS via `pywebview.api`."""
 
     def __init__(self):
@@ -911,8 +938,28 @@ class Api:
     def _suggest_section_for_lane(self, lane_name: str) -> str:
         ln = (lane_name or "").strip().lower()
         if not ln: return ""
+        # Saved lanes are routing configuration, not a second hard-coded
+        # estimator roster. Match whole names only so ANN never takes ANNA
+        # and a shared lane still needs an explicit routing rule.
+        norm = lambda value: " ".join(value.casefold().split())
+        key = norm(ln)
+        overrides = self.lane_section_overrides()
+        for lane, target in overrides.items():
+            if norm(lane) == key:
+                return target  # An explicit blank disables automatic routing.
+        for lane, target in overrides.items():
+            if norm(lane) in key:
+                return target
         m = self.lane_section_map()
-        if ln in m: return m[ln]
+        # Preserve deliberate aliases such as ESTEBAN -> KIM.
+        if ln in m:
+            return m[ln]
+        matches = list(dict.fromkeys(s for s in apa._persisted_section_order()
+                                     if norm(s) == key))
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            return ""
         for k, v in m.items():
             if k in ln: return v
         return ""
@@ -1219,6 +1266,11 @@ class Api:
         empty strings when nothing is pinned. Used by the right-click
         menu to decide whether to show 'Open Trello' (pinned) or
         'Pin Trello…' (not pinned)."""
+        from apa_paste_review import saved_link
+        link = saved_link(item_text or '')
+        if link:
+            cid = link['card_id']
+            return {'card_id':cid,'url':f'https://trello.com/c/{cid}'}
         bare = apa.strip_status_from_text(item_text or "").strip()
         if not bare:
             return {"card_id": "", "url": ""}
@@ -1249,6 +1301,9 @@ class Api:
         pin shows up in audit / snapshot / job-notes too."""
         if not card_id:
             return {"ok": False, "error": "no card"}
+        from apa_paste_review import repin_saved_link
+        if repin_saved_link(item_text or '', card_id):
+            return {"ok": True, "key": item_text}
         bare = apa.strip_status_from_text(item_text or "").strip()
         # The persisted pin key is the lowercase + carrier-stripped
         # form — `_franchise_key` already does that for us.
@@ -1475,13 +1530,10 @@ class Api:
             # Clear the legacy key so it doesn't shadow the new one
             try: _per.set_value("apa_estimators", None)
             except Exception: pass
-            # Rebuild apa.SECTION_ORDER so subsequent reads pick up
-            # the new ordering without a process restart.
-            try:
-                apa.SECTION_ORDER = list(cleaned)
-            except Exception:
-                pass
-            return {"ok": True, "count": len(cleaned)}
+            # The Add-to-APA section picker and estimator/sub choices use
+            # derived lists too. Refresh them together, not just the board.
+            apa._reload_estimators_cache()
+            return {"ok": True, "count": len(apa.SECTION_ORDER)}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
@@ -1838,16 +1890,18 @@ class Api:
         unrouted = []
         reviewed = []
         _lane_cache = {}     # card_id → lane name (one fetch per card)
+        from apa_paste_review import saved_link, routing
         for sec, items in parsed.items():
             for text, highlighted in items:
                 dest = sec
                 cid = ""
                 reason = ""
                 lane = ""
+                imported = saved_link(text)
                 try:
                     bare = apa.strip_status_from_text(text or "").strip()
                     key = apa._franchise_key(bare) if bare else ""
-                    cid = (_per.get_trello_card_id(key) or "") if key else ""
+                    cid = imported['card_id'] if imported else ((_per.get_trello_card_id(key) or "") if key else "")
                 except Exception:
                     cid = ""
                 if not cid:
@@ -1866,6 +1920,8 @@ class Api:
                     else:
                         try:
                             suggested = self._suggest_section_for_lane(lane)
+                            if imported and imported.get('requirement'):
+                                suggested = routing(imported, {'suggested_section':suggested})[0]
                         except Exception:
                             suggested = ""
                         if suggested and suggested in valid_sections:
@@ -1916,6 +1972,10 @@ class Api:
         except Exception:
             return {"ok": False, "error": "bad date"}
         path = apa.doc_path_for_today(d)
+        # Use one canonical order for both incoming lane names and the writer.
+        # Old open views may still have mixed-case names from Manage Sections.
+        order = apa._persisted_section_order()
+        canonical = {name.strip().casefold(): name for name in order}
         # Normalize input into the (text, highlighted) tuple shape
         # write_doc expects.
         normalized = {}
@@ -1923,19 +1983,22 @@ class Api:
             name = s.get("name") or ""
             if not name:
                 continue
+            resolved = canonical.get(name.strip().casefold())
+            if resolved is None:
+                return {"ok": False, "error": f"Lane '{name}' is no longer configured. Refresh APA before moving cards. Nothing was saved."}
             items = []
             for it in (s.get("items") or []):
                 text = (it.get("text") or "").strip()
                 if not text:
                     continue
                 items.append((text, bool(it.get("highlighted"))))
-            normalized[name] = items
+            normalized.setdefault(resolved, []).extend(items)
         # Backfill missing sections with empty lists so write_doc
         # renders the canonical section order without dropping any.
-        for s in apa.SECTION_ORDER:
+        for s in order:
             normalized.setdefault(s, [])
         try:
-            apa.write_doc(path, d, normalized)
+            apa.write_doc(path, d, normalized, section_order=order)
         except Exception as ex:
             return {"ok": False,
                     "error": f"{type(ex).__name__}: {ex}"}

@@ -88,7 +88,6 @@
       });
       w.querySelector("#sp-auto")?.addEventListener("click", () => fin("AUTO"));
       w.querySelector("#sp-cancel").addEventListener("click", () => fin(null));
-      w.addEventListener("click", (e) => { if (e.target === w) fin(null); });
       setTimeout(() => w.querySelector("#sp-custom")?.focus(), 30);
     });
   };
@@ -157,7 +156,6 @@
         if (isOther) other.focus();
       });
       w.querySelector("#pt-cancel").addEventListener("click", () => fin(null));
-      w.addEventListener("click", (e) => { if (e.target === w) fin(null); });
       const go = () => {
         let v = sel.value;
         if (v === "__other__") v = (other.value || "").trim();
@@ -252,7 +250,6 @@
         });
       });
       w.querySelector("#ig-cancel").addEventListener("click", () => fin(null));
-      w.addEventListener("click", (e) => { if (e.target === w) fin(null); });
       w.querySelector("#ig-go").addEventListener("click", () => {
         const out = [];
         for (let i = 0; i < groups.length; i++) {

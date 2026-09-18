@@ -286,10 +286,10 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         try: os.startfile(path); return True
         except Exception: return False
 
-    def open_od_for_client(self, client, hint_path=""):
+    def open_od_for_client(self, *a, **k):
         """Same smart-resolve path the audit + IUQ use, so a stale
         snapshot-row path doesn't silently fail when you click 📁 OD."""
-        return self._aw().open_od_for_client(client, hint_path)
+        return self._aw().open_od_for_client(*a, **k)
 
     def open_url(self, url):
         if not url: return False
@@ -594,8 +594,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().open_trello_card(card_id)
     def open_xa_link(self, client, card_id=""):
         return self._aw().open_xa_link(client, card_id)
-    def open_companycam_link(self, client):
-        return self._aw().open_companycam_link(client)
+    def open_companycam_link(self, *a, **k):
+        return self._aw().open_companycam_link(*a, **k)
     def open_companycam_report_editor(self, *a, **k):
         return self._aw().open_companycam_report_editor(*a, **k)
     def companycam_quick_report_plan(self, *a, **k):

@@ -1065,7 +1065,7 @@ def card_xa_link(card):
 
 
 def card_companycam_link(card):
-    """Extract a CompanyCam project URL from a card's templated desc, or "".
+    """Extract a CompanyCam URL from a templated description or attachment.
 
     Mirrors `card_xa_link`. The card's LINKS section may carry a
     "CompanyCam Link: [label](url)" line (admins add it like the Video /
@@ -1080,7 +1080,7 @@ def card_companycam_link(card):
     try:
         fields = parse_card_desc(card.get("desc"))
     except Exception:
-        return ""
+        fields = {}
     links = fields.get("LINKS") or {}
     for k, v in links.items():
         key = "".join(ch for ch in (k or "").lower() if ch.isalnum())
@@ -1089,6 +1089,16 @@ def card_companycam_link(card):
             low = raw.lower()
             if low.startswith("http://") or low.startswith("https://"):
                 return raw
+    # New Loss adds a URL attachment after creating the project. Keep the
+    # legacy LINKS-description format readable as well.
+    from urllib.parse import urlparse
+    for attachment in card.get("attachments") or []:
+        raw = str(attachment.get("url") or "").strip()
+        parsed = urlparse(raw)
+        if (parsed.scheme in ("http", "https") and
+                parsed.hostname in ("app.companycam.com", "companycam.com") and
+                parsed.path.startswith("/projects/") and parsed.path.removeprefix("/projects/").strip("/")):
+            return raw
     return ""
 
 

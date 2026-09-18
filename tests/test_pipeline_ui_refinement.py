@@ -38,7 +38,7 @@ def test_workspace_deep_load_survives_fast_lookup_failure():
     block = js[start:end]
     assert "const fullOutcome = await fullPromise" in block
     assert "workspace could not render" in block
-    fast_failure = block[block.index("if (!fast?.ok)"):block.index("} else if", block.index("if (!fast?.ok)"))]
+    fast_failure = block[block.index("if (!fast?.ok)"):block.index("} else {", block.index("if (!fast?.ok)"))]
     assert "return;" not in fast_failure
 
 
@@ -226,11 +226,13 @@ def test_tool_menus_stay_inside_card_and_job_info_is_click_to_copy():
     assert 'closest(".tool-quick-menu")' in js
 
 
-def test_tool_menus_open_on_hover_and_do_not_latch_for_mouse_users():
+def test_tool_menus_open_explicitly_and_do_not_latch_for_mouse_users():
     css = _asset("app.css")
     js = _asset("app.js")
-    assert ".tool-quick-menu:hover>.tool-menu-panel" in css
-    assert ".tool-quick-menu:focus-within>.tool-menu-panel" in css
+    assert ".tool-quick-menu.is-open>.tool-menu-panel" in css
+    assert ".tool-quick-menu:hover>.tool-menu-panel" not in css
+    assert ".tool-quick-menu:focus-within>.tool-menu-panel" not in css
+    assert 'trigger?.addEventListener("click"' in js
     assert 'menu.addEventListener("pointerleave"' in js
     assert 'event.pointerType !== "touch"' in js
     assert 'setOpen(false)' in js

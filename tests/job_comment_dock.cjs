@@ -16,12 +16,22 @@ const path=require('path'),assert=require('node:assert/strict');
    await page.setViewportSize({width,height:800});
    for(const tab of ['overview','log','requirements','files','run']){
     await page.locator('#job-tab-'+tab).click();
-    assert.equal(await page.locator('[data-comment-input]').isVisible(),true,`composer available on ${tab}`);
-    await page.evaluate(()=>{document.querySelector('.job-card-layout').scrollTop=0;});
+    assert.equal(await page.locator('[data-comment-input]').isVisible(),true,`composer remains available on ${tab}`);
+    await page.locator('[data-comment-input]').scrollIntoViewIfNeeded();
     const bounds=await page.locator('.comment-compose').boundingBox();
-    assert.ok(bounds.y>=0&&bounds.y+bounds.height<=800,`composer stays in viewport on ${tab}`);
+    assert.ok(bounds.y>=0&&bounds.y+bounds.height<=800,'composer is reachable without clipping');
+    assert.equal(await page.evaluate(()=>document.querySelector('.job-card-activity').contains(originalInput)),true);
+    await page.evaluate(()=>{document.querySelector('.comment-stream').scrollTop=700;});
+    const afterScroll=await page.locator('.comment-compose').boundingBox();
+    assert.ok(Math.abs(afterScroll.y-bounds.y)<2,'history scroll does not move the composer');
+    if(width===1280){
+     const main=await page.locator('.job-card-main').boundingBox();
+     const activity=await page.locator('.job-card-activity').boundingBox();
+     assert.ok(activity.x>=main.x+main.width-1,'comments stay to the right of job details');
+    }
    }
   }
+  await page.locator('#job-tab-log').click();
   assert.equal(await page.locator('[data-comment-input]').inputValue(),'draft');
   assert.equal(await page.evaluate(()=>originalInput===document.querySelector('[data-comment-input]')),true);
   await page.locator('[data-comment-input]').fill('New comment');
@@ -30,6 +40,6 @@ const path=require('path'),assert=require('node:assert/strict');
   await page.locator('#job-tab-log').click();
   assert.equal(await page.locator('[data-comment-search]').isVisible(),true);
   await page.screenshot({path:path.join(require('os').tmpdir(),'linguar-comment-dock.png')});
-  console.log('PASS: comment composer visible on all tabs with long history, narrow layout, retained draft and post handler.');
+  console.log('PASS: right-side comments on every tab, independently scrolling history, retained draft and post handler at desktop and narrow widths.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

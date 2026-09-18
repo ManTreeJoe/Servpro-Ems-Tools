@@ -119,7 +119,6 @@
       } catch (_) { flash(btn, false); }
     });
     w.querySelector("#xp-close").addEventListener("click", fin);
-    w.addEventListener("click", (e) => { if (e.target === w) fin(); });
   }
 
   window.XactimatePrep = { open };

@@ -80,7 +80,6 @@
     document.body.appendChild(w);
     const fin = (v) => { w.remove(); if (onDone) onDone(v); };
     w.querySelector("#ri-cancel").addEventListener("click", () => fin(null));
-    w.addEventListener("click", (e) => { if (e.target === w) fin(null); });
     if (handles.length) w.querySelector("#ri-handle").value = handles[0];
     setTimeout(() => w.querySelector(".ri-item")?.focus(), 30);
 

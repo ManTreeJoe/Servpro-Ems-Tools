@@ -85,7 +85,8 @@
       document.body.style.overflow = "hidden";
     }
     const close = () => closeModal(overlayId);
-    wrap.querySelector(".overlay-backdrop").addEventListener("click", close);
+    // Backdrop clicks (including a text-selection release outside the panel)
+    // must not discard a working popup. Close/Cancel and Escape are explicit.
     // DELEGATED, not wired per button. Binding each .modal-close at
     // creation only ever reaches the ones present right then — and most
     // of these dialogs replace their body once async content lands, so

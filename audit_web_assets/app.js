@@ -1491,7 +1491,6 @@ function showClaimFoldersModal(row, folders) {
   document.body.appendChild(wrap);
   const close = () => wrap.remove();
   wrap.querySelector("#claims-close").addEventListener("click", close);
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   wrap.querySelectorAll(".claim-row").forEach((b) =>
     b.addEventListener("click", async () => {
       const ok = await pywebview.api.open_folder(b.dataset.path);
@@ -1538,7 +1537,6 @@ function showOdContentsModal(row, startPath) {
   document.body.appendChild(wrap);
   const close = () => wrap.remove();
   wrap.querySelector("#od-close").addEventListener("click", close);
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   const upBtn = wrap.querySelector("#od-up");
   upBtn.addEventListener("click", () => { if (stack.length) { curPath = stack.pop(); load(); } });
   wrap.querySelector("#od-open").addEventListener("click", async () => {
@@ -1616,7 +1614,6 @@ function showWorkLogModal(row) {
   document.body.appendChild(wrap);
   const close = () => wrap.remove();
   wrap.querySelector("#wl-close").addEventListener("click", close);
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   const saveBtn = wrap.querySelector("#wl-save");
   saveBtn.addEventListener("click", async () => {
     saveBtn.disabled = true; saveBtn.textContent = "Saving…";
@@ -5779,7 +5776,8 @@ function openNewLossModal() {
           const select = $$("#nl-loss_type");
           const priorKind = select.selectedOptions[0]?.dataset.kind || select.value || "water";
           select.innerHTML = templates.map((template) => `<option value="${escapeAttr(template.id)}" data-template-id="${escapeAttr(template.id)}" data-kind="${escapeAttr(template.kind || "water")}">${escapeHtml(template.name)}</option>`).join("");
-          const matching = Array.from(select.options).find((option) => option.dataset.kind === priorKind);
+          const matching = Array.from(select.options).find((option) => option.value === t.default_template_id)
+            || Array.from(select.options).find((option) => option.dataset.kind === priorKind);
           if (matching) select.value = matching.value;
         }
       } else {
@@ -5796,11 +5794,8 @@ function openNewLossModal() {
     if (!res?.ok) { $$("#nl-parse-status").textContent = res?.error || "Parse failed"; return; }
     const f = res.fields || {};
     NL_FIELD_GROUPS.forEach((g) => g.items.forEach(([key]) => setVal(key, f[key])));
-    if (f.loss_type) {
-      const select = $$("#nl-loss_type");
-      const matching = Array.from(select.options).find((option) => option.dataset.kind === f.loss_type);
-      if (matching) select.value = matching.value;
-    }
+    // Parsing an assignment must not replace the default or the user's
+    // explicitly chosen template. Loss details and template are separate.
     setVal("card_name", f.card_name);
     const got = Object.keys(f).filter((k) => f[k] && k !== "loss_type").length;
     $$("#nl-parse-status").innerHTML = `<span style="color:var(--green);">✓ Parsed ${got} field${got === 1 ? "" : "s"} — review below</span>`;
@@ -5866,7 +5861,9 @@ function openNewLossModal() {
     const incomplete = provisioning.complete === false;
     const incompleteNote = incomplete
       ? ` · ⚠ setup incomplete: ${(provisioning.failed || []).join(", ")}` : "";
-    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom)${folderNote}${ccNote}${incompleteNote}. ${res.url || ""}`,
+    const linkNote = res.companycam_trello_link?.error
+      ? ` · ${res.companycam_trello_link.error}` : "";
+    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom)${folderNote}${ccNote}${incompleteNote}${linkNote}. ${res.url || ""}`,
               (f.error || (cc && !cc.ok) || incomplete) ? "warn" : "ok");
     if (typeof runAudit === "function") { try { runAudit(true); } catch (e) {} }
   });

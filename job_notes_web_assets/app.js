@@ -288,7 +288,6 @@ function openComposeModal(prefillClient = "", prefillYear = "", prefillText = ""
   document.body.appendChild(w);
   const close = () => w.remove();
   $("#jn-cancel").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
   async function saveOnly() {
     const c = $("#jn-client").value.trim();
     const y = $("#jn-year").value.trim() || yearNow;
@@ -403,7 +402,6 @@ async function openAliasesModal(client) {
   document.body.appendChild(w);
   const close = () => w.remove();
   $("#al-cancel").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
   $("#al-save").addEventListener("click", async () => {
     const lines = $("#al-text").value.split("\n").map((s) => s.trim()).filter(Boolean);
     const res = await pywebview.api.set_aliases(client, lines);
@@ -458,7 +456,6 @@ async function openTrelloComposeModal(client) {
   document.body.appendChild(w);
   const close = () => w.remove();
   $("#jn-cmp-cancel").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
 
   const ta = $("#jn-cmp-body");
   const postBtn = $("#jn-cmp-post");
@@ -543,7 +540,6 @@ async function openTrelloPinModal(client) {
   document.body.appendChild(w);
   const close = () => w.remove();
   $("#jn-pin-close").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
 
   // Live state — manipulate the list in-place so multiple add/unpin
   // operations chain without re-fetching.

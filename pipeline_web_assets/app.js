@@ -77,6 +77,12 @@ const NEW_LOSS_TEXTAREAS = new Set(["address", "field_notes", "office_notes"]);
 window.addEventListener("pywebviewready", () => bootPipeline().catch(showPipelineStartupError));
 
 async function bootPipeline() {
+  if (pipelineQuery.get('intake_only') === '1') {
+    document.body.classList.add('intake-only');
+    $('#new-loss-btn').addEventListener('click', openNewLossModal);
+    window.linguarIntakeReady = true;
+    return;
+  }
   // Restore the view you left — board vs stages, which board tab, the
   // stage chip and the search box. The panel is destroyed on navigate,
   // so all four reset on every visit before this.
@@ -121,6 +127,7 @@ async function bootPipeline() {
     window.parent.postMessage({ type: "linguar-open-daily-run" }, "*");
   });
   $("#new-loss-btn").addEventListener("click", () => openNewLossModal());
+  window.linguarIntakeReady = true;
   $("#refresh-btn").addEventListener("click", () => loadBoard(true));
   $("#board-zoom-out").addEventListener("click", () => changeBoardZoom(-0.1));
   $("#board-zoom-in").addEventListener("click", () => changeBoardZoom(0.1));
@@ -539,10 +546,7 @@ async function refreshOpenWorkspaceComments() {
       document.visibilityState !== "visible") return;
   context.refreshing = true;
   try {
-    const result = await pywebview.api.refresh_job_comments(context.cardId);
-    if (result?.ok && state.openWorkspace === context && context.element.isConnected) {
-      context.applyComments(result.comments || []);
-    }
+    await context.conversation.refresh();
   } catch (_) {
     // The local conversation remains usable; the global sync indicator is
     // where adapter failures surface without disrupting the open job.
@@ -1074,9 +1078,8 @@ async function onLaneDrop(ev) {
     if (drag.source === "shelf") removeFromJobShelf(drag.cardId);
     return;
   }
-  const conflictNote = drag.conflict
-    ? `\n\nConflict: Trello moved this card to “${drag.actualLane || "another lane"}” while it was held.` : "";
-  if (!confirm(`Move "${drag.name}" to "${toLane}"?\n\nLinguar Hub saves this now and updates the shared Trello board in the background.${conflictNote}`))
+  // Dropping is the user's move action; only interrupt for a real conflict.
+  if (drag.conflict && !confirm(`Trello moved "${drag.name}" to “${drag.actualLane || "another lane"}” while it was held. Move it to “${toLane}” anyway?`))
     return;
   setStatus(`Moving "${drag.name}" → ${toLane}…`);
   const res = await pywebview.api.move_card(drag.cardId, toListId);
@@ -1148,9 +1151,8 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
     if (!fast?.ok) {
       modal.setDeferredError(fast?.error || "Shared job details unavailable");
       setStatus("Job details are temporarily limited", "warn");
-    } else if (!modal.hasUserInput()) {
-      modal.close();
-      modal = openAuditModal(fast, fast.selected_trello_url || resolvedUrl);
+    } else {
+      modal.applyRefresh(fast);
       setStatus("");
     }
     // The full request starts after the shared CRM payload is cached. Running
@@ -1174,18 +1176,8 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
       setStatus(`Job opened · some live details could not refresh`, "warn");
       return;
     }
-    const replace = () => {
-      if (!modal.element.isConnected) return;
-      modal.close();
-      openAuditModal(full, full.selected_trello_url || resolvedUrl);
-      setStatus("");
-    };
-    if (modal.hasUserInput()) {
-      modal.setDeferredReady(replace);
-      setStatus("Live details are ready · finish editing or click Load live details", "ok");
-    } else {
-      replace();
-    }
+    modal.applyRefresh(full);
+    setStatus("");
   } catch (error) {
     if (requestId !== workspaceRequestId) return;
     if (!modal.element.isConnected) return;
@@ -1276,7 +1268,6 @@ function openAuditLoadingModal(client) {
     w.remove();
   };
   w.querySelector("[data-close]").addEventListener("click", requestClose);
-  w.addEventListener("click", (event) => { if (event.target === w) requestClose(); });
   document.addEventListener("keydown", keyClose);
   return {
     element: w,
@@ -1393,7 +1384,6 @@ function openChangePinnedTrelloCard(cardEl, onPinned = null) {
   };
 
   modal.querySelector("[data-close]")?.addEventListener("click", close);
-  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
   document.addEventListener("keydown", onKeyDown);
   searchInput?.addEventListener("input", () => {
     if (searchTimer) clearTimeout(searchTimer);
@@ -1432,7 +1422,7 @@ async function openJobInfoEditor(data, audit, onSaved) {
   try {
     [schema, loaded] = await Promise.all([
       pywebview.api.job_settings_schema(),
-      pywebview.api.job_settings_load(client, ""),
+      pywebview.api.job_settings_load(client, "", data.card_id || ""),
     ]);
   } catch (error) {
     setStatus(`Job info could not load: ${error}`, "error");
@@ -1471,15 +1461,17 @@ async function openJobInfoEditor(data, audit, onSaved) {
   };
   modal.querySelector("[data-close]").addEventListener("click", closeEditor);
   modal.querySelector("[data-cancel]").addEventListener("click", closeEditor);
-  modal.addEventListener("click", (event) => { if (event.target === modal) closeEditor(); });
   modal.querySelector("[data-save]").addEventListener("click", async (event) => {
     const output = {};
-    modal.querySelectorAll("[data-job-info-input]").forEach((input) => { output[input.dataset.jobInfoInput] = input.value; });
+    modal.querySelectorAll("[data-job-info-input]").forEach((input) => {
+      const id = input.dataset.jobInfoInput;
+      if (input.value !== (values[id] || "")) output[id] = input.value;
+    });
     const button = event.currentTarget;
     const status = modal.querySelector("[data-job-info-status]");
     button.disabled = true;
     status.textContent = "Saving…";
-    const result = await pywebview.api.job_settings_save(client, output, "", loaded.card_desc || "");
+    const result = await pywebview.api.job_settings_save(client, output, "", loaded.card_desc || "", data.card_id || "");
     if (!result?.ok) {
       button.disabled = false;
       status.textContent = result?.error || "Job info could not be saved";
@@ -1494,7 +1486,109 @@ async function openJobInfoEditor(data, audit, onSaved) {
 }
 
 // ── Audit result modal (compact summary) ─────────────────────────
-function openAuditModal(data, trelloUrl = "") {
+function workspaceContentFingerprint(data) {
+  const {load_ms, cached, saved_at, source, deferred_loading, refresh_pending,
+    comments, ...content} = data;
+  return JSON.stringify(content);
+}
+
+// Partial projections can know less than the already-visible board preview.
+function mergeWorkspaceRefresh(current, next) {
+  const merge = (a, b) => {
+    const out = {...a};
+    for (const [key, value] of Object.entries(b || {})) {
+      if (value && !Array.isArray(value) && typeof value === 'object') out[key] = merge(a?.[key] || {}, value);
+      else if (!(next.deferred_loading && (value === '' || (Array.isArray(value) && !value.length)))) out[key] = value;
+    }
+    return out;
+  };
+  const result = merge(current, next);
+  const sections = (current.info_sections || []).map(s => ({...s, fields: (s.fields || []).map(f => ({...f}))}));
+  for (const section of next.info_sections || []) for (const field of section.fields || []) {
+    if (!String(field.value ?? '').trim()) continue;
+    const owner = sections.find(s => s.fields.some(f => f.id === field.id));
+    if (owner) Object.assign(owner.fields.find(f => f.id === field.id), field);
+    else {
+      let target = sections.find(s => s.name === section.name);
+      if (!target) { target = {...section, fields: []}; sections.push(target); }
+      target.fields.push({...field});
+    }
+  }
+  result.info_sections = sections;
+  result.deferred_loading = Boolean(next.deferred_loading);
+  result.refresh_pending = Boolean(next.refresh_pending);
+  return result;
+}
+
+function updateWorkspaceModel(target, source) {
+  // Retained buttons close over these objects. Keep their references current.
+  for (const [key, value] of Object.entries(source)) {
+    if (value && !Array.isArray(value) && typeof value === 'object' && target[key] && !Array.isArray(target[key]) && typeof target[key] === 'object') updateWorkspaceModel(target[key], value);
+    else target[key] = value;
+  }
+}
+
+function workspaceSectionKey(node) {
+  return node.tagName + ':' + [...node.classList].filter(c => c !== 'aud-section' && c !== 'compact-section').join('.');
+}
+
+function retainWorkspaceSectionView(previous, incoming) {
+  // Selection/expansion belongs to the reader, not to the refreshed payload.
+  // Apply it before comparing DOM so unchanged sections stay untouched.
+  const role = previous.querySelector('[data-checklist-role][aria-selected="true"]')?.dataset.checklistRole;
+  if (role && incoming.querySelector(`[data-checklist-role="${cssEsc(role)}"]`)) {
+    incoming.querySelectorAll('[data-checklist-role]').forEach(tab => {
+      const active = tab.dataset.checklistRole === role;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+    });
+    incoming.querySelectorAll('[data-checklist-pane]').forEach(pane => {
+      const active = pane.dataset.checklistPane === role;
+      pane.classList.toggle('active', active);
+      pane.hidden = !active;
+    });
+  }
+  const detailKey = node => JSON.stringify([
+    node.closest('[data-job-log-id]')?.dataset.jobLogId || '',
+    node.className, node.querySelector(':scope > summary')?.textContent || ''
+  ]);
+  const expanded = new Map([...previous.querySelectorAll('details')].map(node => [detailKey(node), node.open]));
+  incoming.querySelectorAll('details').forEach(node => {
+    if (expanded.has(detailKey(node))) node.open = expanded.get(detailKey(node));
+  });
+  if (previous.tagName === 'DETAILS') incoming.open = previous.open;
+}
+
+function patchWorkspaceSections(root, prepared, editedSections) {
+  const scrollPositions = [...root.querySelectorAll('.modal-body, .job-card-main, .job-workspace-panel')].map(node => [node, node.scrollTop, node.scrollLeft]);
+  for (const panel of prepared.querySelectorAll('.job-workspace-panel')) {
+    const live = root.querySelector('#' + panel.id);
+    if (!live) continue;
+    const existing = new Map([...live.children].map(node => [workspaceSectionKey(node), node]));
+    const incoming = new Set();
+    for (const node of [...panel.children]) {
+      const id = workspaceSectionKey(node); incoming.add(id);
+      const old = existing.get(id);
+      if (!old) { live.append(node); continue; }
+      if (editedSections.has(id) || old.contains(document.activeElement) || old.querySelector('[data-job-log-editor]:not([hidden])')) continue;
+      retainWorkspaceSectionView(old, node);
+      if (old.isEqualNode(node)) continue;
+      const scroll = old.scrollTop;
+      if (old.tagName === 'DETAILS') node.open = old.open;
+      old.replaceWith(node); node.scrollTop = scroll;
+    }
+    for (const [id, old] of existing) if (!incoming.has(id) && !editedSections.has(id) && !old.contains(document.activeElement)) old.remove();
+  }
+  for (const selector of ['.modal-head', '.modal-foot', '.division-conflict-banner']) {
+    const old = root.querySelector(selector), node = prepared.querySelector(selector);
+    if (old && node && !old.contains(document.activeElement) && !old.isEqualNode(node)) old.replaceWith(node);
+    else if (!old && node && selector === '.division-conflict-banner') root.querySelector('.job-card-main').prepend(node);
+    else if (old && !node && selector === '.division-conflict-banner') old.remove();
+  }
+  for (const [node, top, left] of scrollPositions) { node.scrollTop = top; node.scrollLeft = left; }
+}
+
+function openAuditModal(data, trelloUrl = "", preparation = null) {
   const res = data.audit || {};
   const crm = data.crm || {};
   const workspace = data.workspace || {};
@@ -1503,8 +1597,8 @@ function openAuditModal(data, trelloUrl = "") {
   (res.photo_issues || []).forEach((p) => issues.push({ kind: "Photos", text: p }));
   (res.requirements || []).forEach((r) => issues.push({ kind: "Photos", text: r }));
   const clean = res.found && !issues.length;
-  const missing = data.deferred_loading
-    ? `<div class="aud-loading-inline">Checking job folders and current requirements…</div>`
+  const missing = data.deferred_loading || res.audit_pending
+    ? `<div class="aud-empty">No saved folder audit yet. Run an audit when you need to check files.</div>`
     : !res.found
     ? `<div class="aud-bad">📁 No job folder found for this client.</div>`
     : clean
@@ -1655,7 +1749,7 @@ function openAuditModal(data, trelloUrl = "") {
     return `<div class="trello-checklist"><div class="checklist-title"><h4>${escapeHtml(list.name || "Checklist")}</h4><span>${done}/${items.length}</span></div>
       <div class="checklist-progress"><i style="width:${items.length ? Math.round((done / items.length) * 100) : 0}%"></i></div>
       ${items.map((item) => `<label class="check-row ${item.complete ? "checked" : ""}">
-        <input type="checkbox" data-check-item="${escapeAttr(item.id)}" ${item.complete ? "checked" : ""}/>
+        <input type="checkbox" data-check-item="${escapeAttr(item.id)}" data-check-name="${escapeAttr(item.name || "")}" ${item.complete ? "checked" : ""}/>
         <span>${escapeHtml(item.name || "")}</span></label>`).join("") || `<div class="aud-empty">No items</div>`}
     </div>`;
   };
@@ -1683,8 +1777,8 @@ function openAuditModal(data, trelloUrl = "") {
       <button class="text-btn danger" data-delete-job-log="${escapeAttr(entry.entry_id || "")}">Delete</button></div></article>`).join("") || `<div class="aud-empty">No Job Log updates yet.</div>`;
   const docs = data.documents || {};
   const dsRequest = docs.request || {};
-  const documentRows = data.deferred_loading
-    ? `<div class="aud-loading-inline">Reading document index…</div>`
+  const documentRows = (data.deferred_loading || res.audit_pending) && !(docs.files || []).length
+    ? `<div class="aud-empty">No saved document index yet. Run an audit to check files.</div>`
     : (docs.files || []).map((file) => `<button class="signature-file" data-document-path="${escapeAttr(file.path || "")}">
     <span class="signature-file-mark">${file.signed ? "✓" : "□"}</span><span><strong>${escapeHtml(file.name || "Document")}</strong>
     <small>${file.signed ? "Signed/final paperwork" : "Job document"}${file.modified_at ? " · " + escapeHtml(formatCommentDate(file.modified_at)) : ""}</small></span></button>`).join("") || `<div class="aud-empty">No PDFs or Word documents found in this job’s DOCS folders.</div>`;
@@ -1705,7 +1799,7 @@ function openAuditModal(data, trelloUrl = "") {
       ${divisionConflictBanner}
       <section class="aud-section job-info-section"><div class="section-title-row"><div><h3>Job info</h3><small>Click any field to copy</small></div><button type="button" class="btn compact" data-edit-job-info>Edit</button></div>
         ${facts || `<div class="aud-empty">No saved job information yet.</div>`}</section>
-      <section class="aud-section audit-summary"><div class="section-title-row"><h3>Current audit</h3>${!data.deferred_loading && issues.length ? `<span class="audit-missing-count">${issues.length} missing</span>` : ""}</div>${missing}${misplacedHtml}</section>
+      <section class="aud-section audit-summary"><div class="section-title-row"><h3>Saved audit</h3><button class="btn compact" data-run-folder-audit>Run audit</button>${!data.deferred_loading && issues.length ? `<span class="audit-missing-count">${issues.length} missing</span>` : ""}</div>${missing}${misplacedHtml}</section>
       <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
         <div class="section-actions">${data.card_id ? `<button class="btn compact" data-import-job-log>Refresh from ${escapeHtml(selectedDivision)} Trello</button>` : ""}<button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div></div>
         <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div></section>
@@ -1724,21 +1818,21 @@ function openAuditModal(data, trelloUrl = "") {
       <details class="aud-section compact-section job-run-section" open><summary>Run activity <span>${(res.activity || []).length}</span></summary>${activity}</details>
       <details class="aud-section compact-section job-attachments-section" open><summary>Other attachments <span>${(data.attachments || []).length}</span></summary>${attachments}</details>
     </div>
-    <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>${escapeHtml(selectedDivision)} job conversation</small></div>
+    <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>Linked job conversations</small></div>
       <span data-comment-count>${(data.comments || []).length}</span></div>
       <label class="comment-search"><span aria-hidden="true">⌕</span><input type="search" data-comment-search placeholder="Search comments" aria-label="Search comments"><small data-comment-search-count></small></label>
       <div class="comment-stream" data-comment-stream>${comments}</div>
       <div class="comment-compose"><textarea data-comment-input name="job-comment" rows="3" aria-label="Job comment" autocomplete="off" placeholder="Write an update for this job…"></textarea>
         <div><span data-comment-state></span><button class="btn btn-primary" data-post-comment>Add comment</button></div></div>
     </aside></div>`;
-  const w = document.createElement("div");
+  let w = document.createElement("div");
   w.className = "modal-scrim audit-overlay";
   w.innerHTML = `
     <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job workspace" tabindex="-1">
       <header class="modal-head">
         <div class="audit-head-main"><div class="audit-head-copy"><div class="modal-title-row"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div><button type="button" class="client-page-link" data-open-client-page>👤 Client page</button></div>
         <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div>${divisionDataTabs}</div>
-        <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Checking details…" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh details</button>`}</div>
+        <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Checking details…" : data.refresh_pending ? "Saved details · checking for updates" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh details</button>`}</div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button></div>
         <div class="card-quick-actions" aria-label="Job actions">
           <div class="quick-primary-actions" aria-label="Work actions">
@@ -1758,11 +1852,11 @@ function openAuditModal(data, trelloUrl = "") {
               <button data-copy-folder-path ${res.path ? "" : "disabled"}>Copy folder path</button>
             </div></div>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/xactanalysis.png" alt="">XA <small>⌄</small></button><div class="tool-menu-panel" role="menu">
-              <button data-open-xa ${data.card_id ? "" : "disabled"}>Open XactAnalysis</button>
+              <button data-open-xa ${data.card_id || data.client ? "" : "disabled"}>Open XactAnalysis</button>
               <button data-stage-xa ${res.path ? "" : "disabled"}>Stage files for XA</button>
             </div></div>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/companycam.png" alt="">CompanyCam <small>⌄</small></button><div class="tool-menu-panel" role="menu">
-              <button data-open-companycam ${data.card_id ? "" : "disabled"}>Open project</button>
+              <button data-open-companycam ${data.card_id || data.client ? "" : "disabled"}>Open project</button>
               <button data-pull-companycam ${data.card_id ? "" : "disabled"}>Pull photos</button>
               <button data-companycam-report ${data.card_id ? "" : "disabled"}>Create report</button>
               <button data-quick-photo-report ${data.card_id ? "" : "disabled"}>Build quick PDF</button>
@@ -1778,10 +1872,11 @@ function openAuditModal(data, trelloUrl = "") {
         <div class="visible-job-actions"><span class="footer-job-context">${escapeHtml(selectedDivision)} · ${claimNumber ? `Claim ${escapeHtml(claimNumber)}` : "Job workspace"}</span></div>
       </footer>
     </div>`;
-  document.body.appendChild(w);
-  const previousFocus = document.activeElement;
+  if (!preparation) document.body.appendChild(w);
+  const previousFocus = preparation ? null : document.activeElement;
   window.JobWorkspaceTabs.mount(w, `${state.department || ''}:${data.card_id || data.client || ''}`);
-  const dirtyDrafts = new Set();
+  const dirtyDrafts = preparation?.dirtyDrafts || new Set();
+  const editedSections = preparation?.editedSections || new Set();
   let workspaceContext = null;
   const markDraftDirty = (key, dirty = true) => {
     if (dirty) dirtyDrafts.add(key);
@@ -1789,6 +1884,7 @@ function openAuditModal(data, trelloUrl = "") {
   };
   const clearDraftDirty = (key) => dirtyDrafts.delete(key);
   const close = (force = false) => {
+    if (preparation) return preparation.close(force);
     if (!force && dirtyDrafts.size && !window.confirm("Discard your unsaved draft? Saved job changes will not be lost.")) return false;
     document.removeEventListener("keydown", keyClose);
     if (state.openWorkspace === workspaceContext) state.openWorkspace = null;
@@ -1798,10 +1894,19 @@ function openAuditModal(data, trelloUrl = "") {
   };
   const requestClose = () => { if (close()) notifyJobWorkspaceClosed(); };
   w.querySelector("[data-close]").addEventListener("click", requestClose);
-  w.addEventListener("click", (e) => { if (e.target === w) requestClose(); });
   const keyClose = (e) => { if (e.key === "Escape") requestClose(); };
-  document.addEventListener("keydown", keyClose);
-  w.querySelector(".audit-card")?.focus();
+  if (!preparation) {
+    document.addEventListener("keydown", keyClose);
+    w.querySelector(".audit-card")?.focus();
+    w.addEventListener('input', event => {
+      const section = event.target.closest('.aud-section');
+      if (section) editedSections.add(workspaceSectionKey(section));
+    });
+    w.addEventListener('change', event => {
+      const section = event.target.closest('.aud-section');
+      if (section) editedSections.add(workspaceSectionKey(section));
+    });
+  }
   w.querySelectorAll(".tool-quick-menu").forEach((menu) => {
     const trigger = menu.querySelector(".tool-menu-trigger");
     const setOpen = (open) => {
@@ -1877,7 +1982,7 @@ function openAuditModal(data, trelloUrl = "") {
     event.preventDefault(); event.stopPropagation();
     if (!window.showContextMenu) { repinFolder(); return; }
     window.showContextMenu(event, [
-      { label: "Open folder", action: () => pywebview.api.open_job_folder(data.client || "", res.path || ""), disabled: !res.path },
+      { label: "Open folder", action: () => pywebview.api.open_job_folder(data.client || "", res.path || "", data.card_id || ""), disabled: !res.path },
       { label: "Repin folder…", action: repinFolder },
       { label: "Copy folder path", action: copyFolderPath, disabled: !res.path },
     ], { minWidth: 210 });
@@ -1894,7 +1999,7 @@ function openAuditModal(data, trelloUrl = "") {
     if (!ok) setStatus("No XactAnalysis link is saved for this job", "warn");
   });
   w.querySelector("[data-open-companycam]")?.addEventListener("click", async () => {
-    const ok = await pywebview.api.open_companycam_link(data.client || res.client || "");
+    const ok = await pywebview.api.open_companycam_link(data.client || res.client || "", data.card_id || "");
     if (!ok) setStatus("No CompanyCam project is linked to this job", "warn");
   });
   w.querySelector("[data-xa-note]")?.addEventListener("click", () =>
@@ -1922,22 +2027,26 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelector("[data-link-job-folder]")?.addEventListener("click", repinFolder);
   w.querySelector("[data-repin-job-folder]")?.addEventListener("click", repinFolder);
   w.querySelector("[data-copy-folder-path]")?.addEventListener("click", copyFolderPath);
-  w.querySelector("[data-refresh-workspace]")?.addEventListener("click", async (event) => {
+  w.querySelectorAll("[data-refresh-workspace], [data-run-folder-audit]").forEach(control => control.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
     button.textContent = "Refreshing…";
-    const refreshed = await pywebview.api.refresh_job_card_workspace(
-      data.client || res.client || "", data.card_id || "", data.selected_division || "EMS");
+    let refreshed;
+    try { refreshed = await pywebview.api.refresh_job_card_workspace(
+      data.client || res.client || "", data.card_id || "", data.selected_division || "EMS"); }
+    catch (error) { refreshed = {ok:false, error:String(error)}; }
     if (!refreshed?.ok) {
       button.disabled = false;
       button.textContent = "Refresh live";
       setStatus(refreshed?.error || "Live refresh failed", "error");
       return;
     }
-    close();
-    openAuditModal(refreshed, refreshed.selected_trello_url || trelloUrl);
+    button.disabled = false;
+    button.textContent = 'Run audit';
+    if (!w.isConnected) return;
+    state.openWorkspace?.applyRefresh?.(refreshed);
     setStatus(`Live details refreshed in ${refreshed.load_ms || 0} ms`, "ok");
-  });
+  }));
   w.querySelector("[data-flag-job]")?.addEventListener("click", () => {
     onFlagCard({dataset: {client: data.client || res.client || "", cardId: data.card_id || ""}});
   });
@@ -2004,15 +2113,23 @@ function openAuditModal(data, trelloUrl = "") {
     const row = box.closest(".check-row");
     row?.classList.toggle("checked", box.checked);
     refreshChecklistProgress();
-    const result = await pywebview.api.set_job_check_item(data.card_id || "", box.dataset.checkItem, box.checked);
+    box.disabled = true;
+    let result;
+    try {
+      result = await pywebview.api.set_job_check_item(data.card_id || "", box.dataset.checkItem, box.checked,
+        box.dataset.checkName || "", data.client || res.client || "");
+    } catch (error) { result = {ok: false, error: String(error)}; }
+    finally { box.disabled = false; }
     if (!result?.ok) {
       box.checked = !box.checked; row?.classList.toggle("checked", box.checked);
       refreshChecklistProgress();
       setStatus(`Checklist update failed: ${result?.error || "Trello unavailable"}`, "error");
+    } else if (result.comment_ok === false) {
+      setStatus(`Checklist saved, but automatic comment failed: ${result.comment_error || "Trello unavailable"}`, "warn");
     } else if (result.warning) {
       setStatus(`Saved in Linguar Hub · Trello sync needs attention`, "warn");
     } else {
-      setStatus("Checklist saved", "ok");
+      setStatus(result.comment_ok ? "Checklist saved · automatic comment posted" : "Checklist saved", "ok");
     }
   }));
   const refreshAfterRequirement = async () => {
@@ -2072,7 +2189,6 @@ function openAuditModal(data, trelloUrl = "") {
       </div></form>`;
     w.querySelector(".audit-card")?.appendChild(editor);
     const dismiss = () => editor.remove();
-    editor.addEventListener("click", (event) => { if (event.target === editor) dismiss(); });
     editor.querySelector("[data-requirement-cancel]").addEventListener("click", dismiss);
     const stateSelect = editor.querySelector('[name="state"]');
     const updateBlockedFields = () => editor.querySelectorAll("[data-blocked-field]").forEach((field) =>
@@ -2177,8 +2293,7 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelectorAll("[data-division-trello-use]").forEach((button) =>
     button.addEventListener("click", () => {
       const division = button.dataset.divisionTrelloUse;
-      if (window.confirm(`Pin the currently open Trello card to ${division}?`))
-        pinDivisionCard(division, data.card_id || "");
+      pinDivisionCard(division, data.card_id || "");
     }));
   w.querySelectorAll("[data-division-trello-pin]").forEach((button) =>
     button.addEventListener("click", () => {
@@ -2217,7 +2332,7 @@ function openAuditModal(data, trelloUrl = "") {
   w.querySelectorAll("[data-quick-photo-report]").forEach((control) => control.addEventListener("click", () =>
     openQuickPhotoReportModal(data.client || res.client || "", res.path || "", selectedDivision)));
   w.querySelectorAll("[data-open-docs-folder]").forEach((button) => {
-    button.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || ""));
+    button.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || "", data.card_id || ""));
     button.addEventListener("contextmenu", showFolderContext);
   });
   w.querySelectorAll("[data-open-old-job]").forEach((button) => button.addEventListener("click", () => pywebview.api.open_url(button.dataset.openOldJob)));
@@ -2306,48 +2421,45 @@ function openAuditModal(data, trelloUrl = "") {
     if (count) count.textContent = query ? `${shown} found` : "";
   };
   commentSearch?.addEventListener("input", filterComments);
-  const commentFingerprint = (items) => (items || []).map((item) => [
-    item?.id || "", item?.external_id || "", item?.at || "", item?.text || "",
-  ].join("\u001f")).join("\u001e");
+  const conflictedDivisions = new Set((data.division_card_reconciliation?.divisions || [])
+    .filter(item => ['conflict', 'ambiguous'].includes(item.state))
+    .map(item => String(item.division || '').toUpperCase()));
+  const conversation = preparation?.conversation || window.JobConversation.mount(w, {
+    cardId: data.card_id || '', division: selectedDivision,
+    cards: workspaceDivisionCards.map(card => ({...card,
+      conflict: conflictedDivisions.has(String(card.division || '').toUpperCase())})),
+    comments: data.comments || [], render: renderJobComment,
+    fetch: cardId => pywebview.api.refresh_job_comments(cardId), onChange: filterComments,
+  });
   workspaceContext = {
     element: w,
     client: data.client || res.client || "",
     cardId: data.card_id || "",
     division: selectedDivision,
     refreshing: false,
-    commentsFingerprint: commentFingerprint(data.comments || []),
-    applyComments(nextComments) {
-      const nextFingerprint = commentFingerprint(nextComments);
-      if (nextFingerprint === this.commentsFingerprint) return;
-      const stream = w.querySelector("[data-comment-stream]");
-      if (!stream) return;
-      const scrollTop = stream.scrollTop;
-      stream.innerHTML = (nextComments || []).map(renderJobComment).join("") ||
-        `<div class="aud-empty activity-empty">No comments yet. Start the job conversation below.</div>`;
-      stream.scrollTop = scrollTop;
-      const count = w.querySelector("[data-comment-count]");
-      if (count) count.textContent = String((nextComments || []).length);
-      this.commentsFingerprint = nextFingerprint;
-      filterComments();
-    },
+    conversation,
   };
-  state.openWorkspace = workspaceContext;
+  if (!preparation) state.openWorkspace = workspaceContext;
   commentInput?.addEventListener("input", () => markDraftDirty("comment", Boolean(commentInput.value.trim())));
-  w.querySelector("[data-post-comment]")?.addEventListener("click", async () => {
+  w.querySelector("[data-post-comment]")?.addEventListener("click", async (event) => {
     const input = commentInput;
     const stateEl = w.querySelector("[data-comment-state]");
     const text = input.value.trim();
     if (!text) return;
+    const target = conversation.target();
+    if (!target.cardId) { stateEl.textContent = 'Choose a linked card first'; return; }
+    const button = event.currentTarget;
+    button.disabled = true;
     stateEl.textContent = "Saving…";
-    const result = await pywebview.api.post_job_comment(data.client || "", data.card_id || "", text);
-    if (!result?.ok) { stateEl.textContent = result?.error || "Could not save"; return; }
-    w.querySelector("[data-comment-stream]").insertAdjacentHTML("afterbegin", renderJobComment(result.comment));
-    const count = w.querySelector("[data-comment-count]");
-    if (count) count.textContent = String(Number(count.textContent || 0) + 1);
+    let result;
+    try { result = await pywebview.api.post_job_comment(data.client || "", target.cardId, text); }
+    catch (error) { stateEl.textContent = error?.message || 'Could not save'; return; }
+    finally { button.disabled = false; }
+    if (!result?.ok) { stateEl.textContent = result?.error || result?.warning || "Could not save"; return; }
+    conversation.add(target.cardId, result.comment);
     filterComments();
-    input.value = "";
-    clearDraftDirty("comment");
-    stateEl.textContent = result.warning || "Saved";
+    if (input.value.trim() === text) { input.value = ""; clearDraftDirty("comment"); }
+    stateEl.textContent = result.warning || (result.pending_sync ? `Saved to ${target.division} · Trello sync pending` : `Saved to ${target.division}`);
   });
   w.querySelector("[data-comment-stream]")?.addEventListener("click", async (event) => {
     const edit = event.target.closest("[data-comment-edit]");
@@ -2365,7 +2477,7 @@ function openAuditModal(data, trelloUrl = "") {
       button.disabled = true;
       const result = await pywebview.api.edit_job_comment(data.client || "", id, source, value, externalId);
       if (!result?.ok) { button.disabled = false; setStatus(result?.error || "Comment could not be edited", "error"); return; }
-      article.querySelector("p").textContent = result.text || value.trim();
+      conversation.update(article.dataset.commentCardId, id, result.text || value.trim());
       button.disabled = false;
       setStatus(result.warning || (source === "trello" || result.synced_trello ? "Comment updated in Linguar Hub and Trello" : "Linguar Hub comment updated"), result.warning ? "warn" : "ok");
     } else {
@@ -2374,15 +2486,40 @@ function openAuditModal(data, trelloUrl = "") {
       button.disabled = true;
       const result = await pywebview.api.delete_job_comment(data.client || "", id, source, externalId);
       if (!result?.ok) { button.disabled = false; setStatus(result?.error || "Comment could not be deleted", "error"); return; }
-      article.remove();
+      conversation.remove(article.dataset.commentCardId, id);
       setStatus(result.warning || (source === "trello" || result.synced_trello ? "Comment deleted from Linguar Hub and Trello" : "Linguar Hub comment deleted"), result.warning ? "warn" : "ok");
     }
   });
-  return {
+  const controller = {
     element: w,
     close,
+    adoptRoot(root) { w = root; },
+    applyRefresh(next) {
+      if (!w.isConnected || (next.card_id && data.card_id && next.card_id !== data.card_id)) return false;
+      const merged = mergeWorkspaceRefresh(data, next);
+      const prepared = openAuditModal(merged, next.selected_trello_url || trelloUrl, {close, dirtyDrafts, editedSections, conversation});
+      // Prepare bound sections off-screen; never detach the visible workspace.
+      patchWorkspaceSections(w, prepared.element, editedSections);
+      prepared.adoptRoot(w);
+      updateWorkspaceModel(data, merged);
+      if (!next.deferred_loading) {
+        const conflicts = new Set((data.division_card_reconciliation?.divisions || []).filter(row => ['conflict','ambiguous'].includes(row.state)).map(row => String(row.division || '').toUpperCase()));
+        conversation.updateCards((data.division_trello_cards || []).map(row => ({...row, conflict:conflicts.has(String(row.division || '').toUpperCase())})));
+      }
+      if ((!next.deferred_loading && !next.audit?.trello_error) || (next.comments || []).length) conversation.applyInitialRefresh(data.card_id, next.comments || []);
+      const host = w.querySelector('[data-workspace-load-state]');
+      if (host) host.textContent = next.audit?.trello_error ? 'Saved details · Trello refresh unavailable' : next.deferred_loading || next.refresh_pending ? 'Saved details · checking for updates' : 'Up to date';
+      return true;
+    },
     hasUserInput() {
       return dirtyDrafts.size > 0;
+    },
+    applyIfUnchanged(next) {
+      if (data.deferred_loading || workspaceContentFingerprint(data) !== workspaceContentFingerprint(next)) return false;
+      conversation.applyInitialRefresh(data.card_id, next.comments || []);
+      const host = w.querySelector('[data-workspace-load-state]');
+      if (host) host.textContent = next.cached ? 'Saved details' : 'Up to date';
+      return true;
     },
     setDeferredReady(load) {
       const host = w.querySelector("[data-workspace-load-state]");
@@ -2395,6 +2532,8 @@ function openAuditModal(data, trelloUrl = "") {
       if (host) host.textContent = message;
     },
   };
+  if (!preparation) workspaceContext.applyRefresh = controller.applyRefresh;
+  return controller;
 }
 
 function openXaNoteModal(client, cardId) {
@@ -2410,7 +2549,6 @@ function openXaNoteModal(client, cardId) {
   document.body.appendChild(modal);
   const close = () => modal.remove();
   modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
-  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
   const note = modal.querySelector("[data-xa-note-text]");
   note.focus();
   modal.querySelector("[data-submit-xa-note]").addEventListener("click", async (event) => {
@@ -2455,7 +2593,6 @@ function openJobLogHistoryModal(history) {
   document.body.appendChild(modal);
   const close = () => modal.remove();
   modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
-  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
 }
 
 function showMoveUndo(drag, toListId, toLane) {
@@ -2678,7 +2815,6 @@ function openQuickPhotoReportModal(client, jobPath, division) {
   document.body.appendChild(modal);
   const close = () => modal.remove();
   modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
-  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
   const photosHost = modal.querySelector("[data-report-photos]");
   const message = modal.querySelector("[data-report-message]");
   const generate = modal.querySelector("[data-generate-report]");
@@ -2773,7 +2909,6 @@ async function openXaStageModal(client) {
   document.body.appendChild(w);
   const close = () => w.remove();
   w.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
-  w.addEventListener("click", (event) => { if (event.target === w) close(); });
   w.querySelectorAll("[data-stage]").forEach((button) => button.addEventListener("click", async () => {
     button.disabled = true;
     const original = button.innerHTML;
@@ -2795,9 +2930,9 @@ function renderJobComment(comment) {
   const actor = comment?.actor || "Linguar Hub";
   const initial = actor.trim().charAt(0).toUpperCase() || "L";
   const source = comment?.source === "trello" ? "trello" : "linguar";
-  return `<article class="job-comment" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar">${escapeHtml(initial)}</div>
+  return `<article class="job-comment" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-card-id="${escapeAttr(comment?.card_id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar">${escapeHtml(initial)}</div>
     <div><header><strong>${escapeHtml(actor)}</strong><time>${escapeHtml(formatCommentDate(comment?.at || ""))}</time></header>
-    <p>${escapeHtml(comment?.text || "")}</p><footer><small>${source === "trello" ? "Trello" : "Linguar Hub"}</small>
+    <p>${escapeHtml(comment?.text || "")}</p><footer><small>${escapeHtml(comment?.division ? comment.division + ' · ' : '')}${source === "trello" ? "Trello" : "Linguar Hub"}</small>
     ${comment?.id && comment?.can_manage ? `<span><button class="text-btn" data-comment-edit>Edit</button><button class="text-btn danger" data-comment-delete>Delete</button></span>` : ""}</footer></div></article>`;
 }
 
@@ -2849,7 +2984,6 @@ async function openJobFolderLinkModal(data, closeWorkspace = () => {}, onLinked 
   document.body.appendChild(modal);
   const close = () => modal.remove();
   modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
-  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
   const list = modal.querySelector("[data-folder-list]");
   const message = modal.querySelector("[data-folder-message]");
   const filter = modal.querySelector("[data-folder-filter]");
@@ -3102,6 +3236,7 @@ const companyCamPullWatchers = new Set();
 
 async function openJobFileImportModal(data, audit) {
   const client = data.client || audit.client || "";
+  const cardId = data.card_id || "";
   const modal = document.createElement("div");
   modal.className = "modal-scrim";
   modal.innerHTML = `<div class="modal-box job-file-import-card" role="dialog" aria-modal="true" aria-label="Import files into job">
@@ -3112,7 +3247,7 @@ async function openJobFileImportModal(data, audit) {
         <label><span>Destination</span><select data-import-destination><option value="">Auto-sort</option><option value="Initial">PICS / Initial</option><option value="Monitor">PICS / Monitor</option><option value="Demo">PICS / Demo</option><option value="Mold Prep">PICS / Mold Prep</option><option value="Final">PICS / Final</option><option value="DOCS">DOCS</option></select></label>
         <label><span>Tech, if photos</span><input data-import-tech placeholder="Name"></label>
       </div>
-      <div class="job-file-import-actions"><button class="btn btn-primary" data-import-scan>Scan Downloads</button><button class="btn" data-import-pick>Choose files…</button><button class="btn" data-import-workcenter>Open WorkCenter</button><button class="btn" data-import-docusign>Open DocuSign</button></div>
+      <div class="job-file-import-actions"><button class="btn btn-primary" data-import-scan>Scan Downloads</button><button class="btn" data-import-pick>Choose files…</button><button class="btn" data-import-trello ${cardId ? "" : "disabled"} title="${cardId ? "Browse and pull attachments from this division's Trello card" : "Link a Trello card first"}">Pull from Trello attachments</button><button class="btn" data-import-workcenter>Open WorkCenter</button><button class="btn" data-import-docusign>Open DocuSign</button></div>
       <div class="job-file-import-path" data-import-path>Choose Scan Downloads or select files yourself.</div>
       <div class="job-file-import-candidates" data-import-candidates></div>
       <div class="job-file-import-result" data-import-result aria-live="polite"></div>
@@ -3121,7 +3256,6 @@ async function openJobFileImportModal(data, audit) {
   document.body.appendChild(modal);
   const close = () => modal.remove();
   modal.querySelector("[data-close]")?.addEventListener("click", close);
-  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
   const side = () => modal.querySelector("[data-import-side]")?.value || "ems";
   const destination = () => modal.querySelector("[data-import-destination]")?.value || "";
   const tech = () => modal.querySelector("[data-import-tech]")?.value.trim() || "";
@@ -3176,6 +3310,15 @@ async function openJobFileImportModal(data, audit) {
     }));
   };
   modal.querySelector("[data-import-scan]")?.addEventListener("click", scan);
+  modal.querySelector("[data-import-trello]")?.addEventListener("click", async () => {
+    try {
+      if (!cardId) return;
+      if (!window.openTrelloAttachmentsModal) throw new Error("Trello attachment picker did not load. Reopen Jobs and try again.");
+      await window.openTrelloAttachmentsModal({cardId, client});
+    } catch (error) {
+      showResult({ok: false, error: String(error)});
+    }
+  });
   modal.querySelector("[data-import-pick]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -3207,7 +3350,6 @@ async function openCompanyCamPullModal(data, audit) {
   document.body.appendChild(modal);
   const close = () => modal.remove();
   modal.querySelector("[data-close]").addEventListener("click", close);
-  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
 
   let plan;
   try {
@@ -3219,7 +3361,7 @@ async function openCompanyCamPullModal(data, audit) {
   const body = modal.querySelector(".cc-pull-body");
   if (!plan?.ok) {
     body.innerHTML = `<div class="job-card-load-error"><strong>CompanyCam import is unavailable</strong><p>${escapeHtml(plan?.error || "The project could not be matched.")}</p><div class="cc-pull-recovery"><button class="btn btn-primary" data-choose-job-folder>Choose exact folder…</button><button class="btn" data-open-cc-project>Open CompanyCam</button></div></div>`;
-    body.querySelector("[data-open-cc-project]")?.addEventListener("click", () => pywebview.api.open_companycam_link(client));
+    body.querySelector("[data-open-cc-project]")?.addEventListener("click", () => pywebview.api.open_companycam_link(client, cardId));
     body.querySelector("[data-choose-job-folder]")?.addEventListener("click", () => {
       close();
       openJobFolderLinkModal(data, () => {}, () => openCompanyCamPullModal(data, audit));
@@ -3310,7 +3452,6 @@ async function openSubcontractorDispatchModal(jobFields) {
   document.body.appendChild(modal);
   const close = () => modal.remove();
   modal.querySelector("[data-close]").addEventListener("click", close);
-  modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
   const value = (selector) => modal.querySelector(selector)?.value.trim() || "";
   let currentDraft = null;
   let sequence = 0;
@@ -3512,7 +3653,6 @@ async function openTimelineModal(row) {
     </div>`;
   document.body.appendChild(w);
   w.querySelector("#tl-close").addEventListener("click", () => w.remove());
-  w.addEventListener("click", (e) => { if (e.target === w) w.remove(); });
 }
 
 async function openThresholdsModal() {
@@ -3546,7 +3686,6 @@ async function openThresholdsModal() {
   document.body.appendChild(w);
   const close = () => w.remove();
   w.querySelector("#th-cancel").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
   w.querySelectorAll("[data-reset]").forEach((b) =>
     b.addEventListener("click", () => {
       const input = w.querySelector(`input[data-stage="${b.dataset.reset}"]`);
@@ -3640,6 +3779,14 @@ function openNewLossModal() {
   };
   let parent = "";
   let parentSearchTimer = null;
+  let lastSuggestedName = '';
+  const syncSuggestedName = () => {
+    const field = find('#nl-card_name');
+    const suggested = [find('#nl-insured_name')?.value.trim(), find('#nl-carrier')?.value.trim()].filter(Boolean).join(' - ');
+    if (!field.value.trim() || field.value === lastSuggestedName) field.value = suggested;
+    lastSuggestedName = suggested;
+  };
+  ['#nl-insured_name', '#nl-carrier'].forEach(selector => find(selector)?.addEventListener('input', syncSuggestedName));
 
   async function refreshFolderPlan() {
     const insured = (find("#nl-insured_name")?.value || "").trim();
@@ -3727,6 +3874,9 @@ function openNewLossModal() {
     const select = find("#nl-loss_type");
     select.innerHTML = templates.map((template) => `
       <option value="${escapeAttr(template.id || "")}" data-template-id="${escapeAttr(template.id || "")}" data-kind="${escapeAttr(template.kind || "water")}">${escapeHtml(template.name || "Template")}</option>`).join("");
+    if (result.default_template_id && [...select.options].some(option => option.value === result.default_template_id)) {
+      select.value = result.default_template_id;
+    }
   })();
 
   find("#nl-parse").addEventListener("click", async () => {
@@ -3740,11 +3890,9 @@ function openNewLossModal() {
     const fields = result.fields || {};
     NEW_LOSS_GROUPS.forEach(([, items]) => items.forEach(([key]) => put(key, fields[key])));
     put("card_name", fields.card_name);
-    if (fields.loss_type) {
-      const option = Array.from(find("#nl-loss_type").options)
-        .find((item) => item.dataset.kind === fields.loss_type);
-      if (option) find("#nl-loss_type").value = option.value;
-    }
+    lastSuggestedName = fields.card_name || '';
+    syncSuggestedName();
+    // Parsing job details must not replace the default or a user's template choice.
     find("#nl-parse-status").textContent = "Assignment read. Review the highlighted job details.";
     refreshFolderPlan();
   });
@@ -3792,7 +3940,7 @@ function openNewLossModal() {
         ? `Created ${result.name}, but ${((provisioning.failed || []).join(", ") || "part of setup")} needs attention.`
         : `Created and linked ${result.name}.`,
       incomplete ? "warn" : "ok");
-    await loadBoard(true);
+    if (pipelineQuery.get('intake_only') !== '1') await loadBoard(true);
   });
 }
 

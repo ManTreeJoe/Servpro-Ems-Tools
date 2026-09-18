@@ -382,7 +382,7 @@ def inherited_values(canon_key, child_rec):
     return out, inherited, parent
 
 
-def load(canon_key, child_name=""):
+def load(canon_key, child_name="", *, refresh=True, exact_card_id=""):
     """Current values for a job (or child), merged with its Trello card.
 
     Pulls the card ONCE — about half a second — because syncing all 300
@@ -406,10 +406,14 @@ def load(canon_key, child_name=""):
                     "conflicts": [], "synced": False, "error": ""}
 
     mine = stored_values(rec)
-    card_id = _card_id(rec, canon_key, child_name)
+    card_id = exact_card_id or _card_id(rec, canon_key, child_name)
     out = {"ok": True, "canon_key": canon_key, "child_name": child_name,
            "card_id": card_id, "values": mine, "conflicts": [],
            "synced": False, "error": ""}
+    if not refresh:
+        out.update(source='database', refresh_pending=bool(card_id),
+                   conflicts=list(_meta_of(rec).get('trello_import_conflicts') or []))
+        return out
     if not card_id:
         # No card: the Hub IS the record. Not an error — 115 of 415 jobs
         # and every child are in this state.
@@ -477,7 +481,7 @@ def pull_from_card(canon_key, card_id):
             "imported_count": len(imported), "conflicts": conflicts}
 
 
-def save(canon_key, values, child_name="", card_desc=""):
+def save(canon_key, values, child_name="", card_desc="", *, edited_only=False, exact_card_id=""):
     """Persist values, then push the changed fields to the card.
 
     THE DATABASE IS THE SOURCE OF TRUTH. Two things follow from that, and
@@ -506,6 +510,9 @@ def save(canon_key, values, child_name="", card_desc=""):
 
     values = {k: (v or "").strip() for k, v in (values or {}).items()
               if k in BY_ID}
+    if edited_only and not values:
+        return {"ok": True, "changed": [], "wrote_to_card": [],
+                "pushed": False, "pending_push": False, "error": ""}
     # Canonicalize the carrier on the way in, so "state farm" and
     # "State Farm" stop being two carriers. Unknown names pass through
     # untouched — see carriers.normalize.
@@ -523,8 +530,12 @@ def save(canon_key, values, child_name="", card_desc=""):
         # freeze a stale copy, so correcting the client later would leave
         # every unit still showing the old carrier.
         effective, _inh, parent = inherited_values(canon_key, rec)
-        overrides = {fid: v for fid, v in values.items()
-                     if v and v != (parent.get(fid) or "")}
+        overrides = dict(meta.get(_META_SETTINGS) or {}) if edited_only else {}
+        for fid, value in values.items():
+            if value and value != (parent.get(fid) or ""):
+                overrides[fid] = value
+            else:
+                overrides.pop(fid, None)
         changed = [fid for fid, v in values.items()
                    if v != (effective.get(fid) or "")]
         meta[_META_SETTINGS] = overrides
@@ -544,7 +555,7 @@ def save(canon_key, values, child_name="", card_desc=""):
     # the card holds), but the values themselves are safe from here on.
     _persist(canon_key, child_name, values, meta)
 
-    card_id = _card_id(rec, canon_key, child_name)
+    card_id = exact_card_id or _card_id(rec, canon_key, child_name)
     pushed, push_error, wrote, clobbered = False, "", [], []
     if card_id:
         try:
@@ -560,7 +571,9 @@ def save(canon_key, values, child_name="", card_desc=""):
             # field whose value never actually changed still flattened the
             # label somebody typed by hand. Comparing against the card means
             # an unchanged value is never rewritten and its markdown lives.
-            wrote = [fid for fid in settings
+            # DB-first editors submit only touched fields. Unknown or stale
+            # untouched values must not erase newer information in Trello.
+            wrote = [fid for fid in (values if edited_only else settings)
                      if (settings.get(fid) or "") != (on_card.get(fid) or "")]
             # Which of those had somebody ELSE changed on the card since
             # our last sync? The Hub still wins — that is what a source of
@@ -578,7 +591,8 @@ def save(canon_key, values, child_name="", card_desc=""):
                 # Card already says what we do. Nothing to send, and the
                 # baseline is now known-good.
                 pushed = True
-                meta[_META_BASE] = on_card
+                meta[_META_BASE] = ({**stored_base(rec), **{fid: on_card.get(fid, '') for fid in values}}
+                                    if edited_only else on_card)
             else:
                 new_desc = render_desc(desc, settings, changed_ids=wrote)
                 if tc.update_card_desc(card_id, new_desc):
@@ -587,7 +601,9 @@ def save(canon_key, values, child_name="", card_desc=""):
                     # Advancing it on a failed push would make the next merge
                     # read our unsent edit as already agreed and silently
                     # discard whatever the card said.
-                    meta[_META_BASE] = from_card(new_desc)
+                    synced = from_card(new_desc)
+                    meta[_META_BASE] = ({**stored_base(rec), **{fid: synced.get(fid, '') for fid in values}}
+                                        if edited_only else synced)
         except Exception as ex:
             push_error = f"{type(ex).__name__}: {ex}"
 
@@ -597,7 +613,7 @@ def save(canon_key, values, child_name="", card_desc=""):
         _persist(canon_key, child_name, values, meta)
     return {"ok": True, "changed": changed, "wrote_to_card": wrote,
             "pushed": pushed,
-            "pending_push": bool(card_id and wrote and not pushed),
+            "pending_push": bool(card_id and (values if edited_only else wrote) and not pushed),
             "clobbered": clobbered,
             "error": push_error}
 

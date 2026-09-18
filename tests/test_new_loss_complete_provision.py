@@ -20,6 +20,7 @@ def test_new_loss_defaults_to_folder_trello_and_companycam(monkeypatch):
         "ok": True, "path": r"X:\IE_Public\2026 Jobs\Doe, Jane",
         "mode": "new_client",
     })
+    monkeypatch.setattr(nli, "publish_companycam_link", lambda *a, **k: {"ok": True})
     cc_calls = []
     monkeypatch.setattr(nli, "create_companycam_project", lambda *a, **k: (
         cc_calls.append(k) or {

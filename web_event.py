@@ -1,6 +1,6 @@
 """Shared web-event helpers — dispatch CustomEvents from Python so
 they fire BOTH in the home shell's window AND inside the embedded
-tool iframe's contentWindow.
+tool iframes' contentWindows, including hidden warm panels.
 
 Why both: the home_web shell loads each tool's HTML inside an
 iframe. The tool's event listeners (e.g. `audit:done`) live on the
@@ -15,15 +15,15 @@ failure in one context doesn't block the other.
 
 Single-window tools (when the panel is launched standalone, not
 inside the shell) just hit the first branch — the second branch
-no-ops because there's no `#content-frame` element.
+no-ops because there are no mounted tool frames.
 """
 from __future__ import annotations
 
 
 def dispatch(window, dispatch_js: str) -> None:
     """Run `dispatch_js` (a `window.dispatchEvent(new CustomEvent(...))`
-    snippet) on both the home shell window AND the active tool
-    iframe's contentWindow. Swallows all errors — event dispatch is
+    snippet) on the home shell and every mounted tool frame, including
+    hidden warm panels still awaiting a background result. Swallows errors — event dispatch is
     fire-and-forget UI plumbing, not a critical path."""
     if window is None or not dispatch_js:
         return
@@ -34,11 +34,12 @@ def dispatch(window, dispatch_js: str) -> None:
         "(function(){"
         "try{" + dispatch_js + "}catch(e){}"
         "try{"
-        "var __f=document.getElementById('content-frame');"
+        "var __frames=document.querySelectorAll('#content-frame, iframe.tool-frame, iframe.tool-workspace-frame');"
+        "__frames.forEach(function(__f){try{"
         "if(__f && __f.contentWindow){"
         "var __ems_iframe_win__=__f.contentWindow;"
         + iframe_js +
-        "}"
+        "}}catch(e){}});"
         "}catch(e){}"
         "})();"
     )

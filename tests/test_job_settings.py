@@ -288,6 +288,15 @@ def test_markdown_links_survive_a_save(monkeypatch):
     assert "](mailto:brenda@yahoo.com" in sent["desc"]
 
 
+def test_db_first_editor_only_mirrors_edited_fields(monkeypatch):
+    db, sent = _wire(monkeypatch, CARD)
+    result = js.save('k', {'deductible': '1500'}, edited_only=True)
+    assert result['wrote_to_card'] == ['deductible']
+    assert js.from_card(sent['desc'])['claim_number'] == 'ABC-123'
+    assert js.from_card(sent['desc'])['carrier'] == 'Mercury'
+    assert db.job['metadata']['trello_base'] == {'deductible': '1500'}
+
+
 def test_baseline_is_not_advanced_when_the_push_fails(monkeypatch):
     """If the baseline moved on a failed push, the next merge would read our
     unsent edit as already agreed and silently discard the card's value."""

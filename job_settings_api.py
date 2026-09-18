@@ -48,15 +48,18 @@ class JobSettingsApi:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
-    def job_settings_load(self, client: str, child_name: str = "") -> dict:
-        """Values for a job (or one of its units/claims), merged per field
-        with the Trello card. Pulls the card once — about half a second."""
+    def job_settings_load(self, client: str, child_name: str = "", card_id: str = "") -> dict:
+        """Show stored values immediately, without a provider round trip."""
         try:
             import job_settings
-            key = _resolve(client)
+            if card_id:
+                import job_saved_data
+                key = job_saved_data.resolve(client, card_id)[0].get('canon_key')
+            else:
+                key = _resolve(client)
             if not key:
-                return {"ok": False, "error": "no job name"}
-            return job_settings.load(key, child_name or "")
+                return {"ok": False, "error": "This card is not linked to a saved job yet." if card_id else "no job name"}
+            return job_settings.load(key, child_name or "", refresh=False, exact_card_id=card_id)
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
@@ -81,7 +84,7 @@ class JobSettingsApi:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def job_settings_save(self, client: str, values: dict,
-                          child_name: str = "", card_desc: str = "") -> dict:
+                          child_name: str = "", card_desc: str = "", card_id: str = "") -> dict:
         """Save, and push only the fields that differ from the card.
 
         `card_desc` is the description the edit was based on, handed back
@@ -91,11 +94,22 @@ class JobSettingsApi:
         """
         try:
             import job_settings
-            key = _resolve(client)
+            if card_id:
+                import job_saved_data
+                key = job_saved_data.resolve(client, card_id)[0].get('canon_key')
+            else:
+                key = _resolve(client)
             if not key:
-                return {"ok": False, "error": "no job name"}
+                return {"ok": False, "error": "This card is not linked to a saved job yet." if card_id else "no job name"}
             res = job_settings.save(key, values or {}, child_name or "",
-                                    card_desc or "")
+                                    card_desc or "", edited_only=True, exact_card_id=card_id)
+            # The shared save can succeed locally while its Trello mirror is
+            # pending. Invalidate even then; never reopen an older read copy.
+            import job_workspace_cache
+            job_workspace_cache.invalidate(client=client)
+            invalidate_workspace = getattr(self, '_invalidate_workspace', None)
+            if invalidate_workspace:
+                invalidate_workspace(client=client)
             try:
                 import job_search
                 job_search.invalidate_cache()   # a display name may have moved

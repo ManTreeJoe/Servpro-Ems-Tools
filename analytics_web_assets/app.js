@@ -90,6 +90,12 @@ function render(){
    if(legacy.length) html+=`<details class="panel"><summary>Earlier general reviews (${legacy.length})</summary><p>Preserved history; not counted as a new department review.</p>${legacy.map(([,r])=>`<article><strong>${esc(r.name)}</strong><p>${esc(r.week)} · ${esc(r.outcome)} · ${esc(r.note)}</p></article>`).join('')}</details>`;
  }
  $('#view').innerHTML=html;
+ if(state.view==='weekly' && window.LogsAuditUI){
+   const launch=document.createElement('button');launch.type='button';launch.className='primary';launch.textContent='Logs audit · To Be Preserved';
+   launch.disabled=state.snapshot;
+   launch.onclick=()=>window.LogsAuditUI.open(state.data.filters);
+   $('#view .section-head .actions').prepend(launch);
+ }
  if(state.view==='weekly'){
   const total=d.rows.length,done=reviewed.length,percent=total?Math.round(done/total*100):0;
   const progress=document.createElement('div');progress.className='review-progress';

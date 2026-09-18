@@ -520,4 +520,15 @@ def write_doc(path, today_date, sections, section_order=None):
             else:
                 _add_run(p, text, highlighted=highlighted)
 
-    doc.save(path)
+    # Retain immutable raw + JSON recovery copies before replacing the live file.
+    # A backup failure stops the write rather than silently losing the prior version.
+    from io import BytesIO
+    from apa_digital_archive import snapshot, atomic_write
+    if os.path.exists(path):
+        snapshot(path)
+        Document(path)  # An unreadable existing document must never be treated as empty.
+    stream = BytesIO()
+    doc.save(stream)
+    payload = stream.getvalue()
+    snapshot(path, payload=payload)
+    atomic_write(path, payload)

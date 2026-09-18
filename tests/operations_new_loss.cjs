@@ -1,0 +1,21 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+(async()=>{
+ const source=fs.readFileSync('operations_web_assets/app.js','utf8');
+ const start=source.indexOf('async function launchTool(');
+ const end=source.indexOf('\n',start);
+ const messages=[],launches=[];
+ const parent={postMessage:msg=>messages.push(msg)};
+ const ctx={window:{parent,pywebview:{api:{}}},location:{origin:'http://127.0.0.1:6000'},closeTools(){},resolveTransport:async()=> 'desktop',transport:async(...a)=>{launches.push(a);return {ok:true};},toast(){}};
+ vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);
+ await ctx.launchTool('new_job',{innerHTML:'New loss'});
+ assert.equal(launches.length,0,'Embedded New Loss must not spawn a second desktop window');
+ assert.equal(messages[0]?.type,'linguar-open-new-loss');
+ const shell=fs.readFileSync('home_web_assets/app.js','utf8');
+ let route='';
+ const shellCtx={openToolWorkspace:(...args)=>{route=args[3];return {querySelector:()=>({})}},openNewLossWhenReady(){}};
+ vm.createContext(shellCtx);
+ vm.runInContext(shell.slice(shell.indexOf('function openNewLossWorkspace('),shell.indexOf('// One shared job record')),shellCtx);
+ shellCtx.openNewLossWorkspace();
+ assert.match(route,/pipeline_web_assets/,'Operations must reuse the Jobs intake dialog');
+ console.log('PASS: Operations uses the same embedded Jobs intake, without another window.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

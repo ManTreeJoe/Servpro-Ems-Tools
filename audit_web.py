@@ -73,34 +73,21 @@ from web_helpers import (
 
 def _emit_js_all(js: str) -> None:
     """Dispatch `js` on every open webview window AND forward it into the
-    embedded tool iframe (panel event listeners live on the iframe's
+    mounted tool iframes (panel event listeners live on the iframe's
     window, not the shell's — see `Api._emit`).
 
     Unlike `Api._emit`, this is instance-free: it targets
     `webview.windows` directly. `do_import` needs that because the IUQ
     and Snapshot panels delegate imports to a freshly-built, *windowless*
     `audit_web.Api()`, so `self._window` is None there and per-instance
-    emits silently no-op. There's a single shell window hosting whichever
-    tool iframe is active, so emitting to all windows reaches the panel
-    the user actually clicked in. Best-effort; failures are swallowed."""
-    iframe_js = js.replace(
-        "window.dispatchEvent(", "__ems_iframe_win__.dispatchEvent(")
-    wrapped = (
-        "(function(){"
-        "try{" + js + "}catch(e){}"
-        "try{"
-        "var __f=document.getElementById('content-frame');"
-        "if(__f && __f.contentWindow){"
-        "var __ems_iframe_win__=__f.contentWindow;"
-        + iframe_js +
-        "}"
-        "}catch(e){}"
-        "})();"
-    )
+    emits silently no-op. Hidden warm panels can still be waiting for an
+    import, so use the shared dispatcher to reach those too. Best-effort;
+    failures are swallowed."""
+    import web_event
     try:
         for _w in (webview.windows or []):
             try:
-                _w.evaluate_js(wrapped)
+                web_event.dispatch(_w, js)
             except Exception:
                 pass
     except Exception:
@@ -1339,7 +1326,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": str(ex)}
 
     def open_od_for_client(self, client: str,
-                             hint_path: str = "") -> dict:
+                             hint_path: str = "", card_id: str = "") -> dict:
         """Smart open. Resolution order: persistence pin → hint path
         → audit-row caches → audit_jobs resolver. Each candidate is
         validated with `os.path.isdir` so stale entries fall through
@@ -1362,7 +1349,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         # (most authoritative — user explicitly pinned), then the
         # caller's hint, then the resolver's findings.
         candidates: list[tuple[str, str]] = []  # (label, path)
-        if client:
+        try:
+            import job_saved_data
+            saved = job_saved_data.destination(client, card_id, 'folder')
+            if saved:
+                candidates.append(('database', saved))
+        except Exception:
+            pass
+        if client and not card_id:
             try:
                 pin = persistence.get_folder_path(client) or ""
                 if pin:
@@ -1371,7 +1365,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 pass
         if hint_path:
             candidates.append(("hint", hint_path))
-        if client:
+        if client and not card_id:
             try:
                 resolved = self._resolve_client_path(client) or ""
                 if resolved:
@@ -3316,6 +3310,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "board":   (t.get("_board") or {}).get("name", ""),
                 "intake":  (t.get("_intake") or {}).get("name", ""),
                 "templates": t.get("_all") or [],
+                "default_template_id": (t.get("_default") or {}).get("id", ""),
             }
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
@@ -3378,6 +3373,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 if not cc.is_configured():
                     return {"ok": False,
                             "error": "CompanyCam is not connected. Connect it in Settings before creating a new loss."}
+                cc.require_personal_connection()
             except Exception as ex:
                 return {"ok": False,
                         "error": f"CompanyCam preflight failed: {type(ex).__name__}: {ex}"}
@@ -3426,17 +3422,21 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 companycam_project=project_id,
                 create=True,
                 source="new_loss")
+            linked = nli.save_intake_facts(linked, fields, str(res.get('name') or ''))
             graph = {"ok": bool(linked), "job": linked or {}}
             if not linked:
                 graph["error"] = "shared job record was not returned"
         except Exception as ex:
             graph = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
         res["job_links"] = graph
+        res["companycam_trello_link"] = nli.publish_companycam_link(
+            str(res.get("card_id") or ""), project_id)
         steps = {
             "trello": bool(res.get("card_id")),
             "folder": bool((res.get("folder") or {}).get("ok") and folder_path),
             "companycam": bool((res.get("companycam") or {}).get("ok") and project_id),
             "links": bool(graph.get("ok")),
+            "companycam_trello_link": bool(res["companycam_trello_link"].get("ok")),
         }
         res["provisioning"] = {
             "complete": all(steps.values()),
@@ -3453,6 +3453,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         uses) — re-looking it up by name via get_trello_card_id is fragile
         (a display-name / pin-key drift makes it silently miss). Fall back to
         the name lookup only when the caller didn't pass an id."""
+        try:
+            import job_saved_data
+            url = job_saved_data.destination(client, card_id, 'xa')
+            if url:
+                dept_browser.open_url(url)
+                return True
+        except Exception:
+            pass
         card_id = (card_id or "").strip()
         if not card_id:
             if not client:
@@ -3475,20 +3483,29 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             pass
         return False
 
-    def open_companycam_link(self, client: str) -> bool:
-        """Open the client's CompanyCam project link, read from the
-        pinned Trello card's LINKS section (parallel to open_xa_link).
-        Returns False — so the UI can toast 'no link' — when the client
-        has no pinned card or the card carries no CompanyCam link yet."""
-        if not client:
+    def open_companycam_link(self, client: str, card_id: str = "") -> bool:
+        """Open the saved project first; Trello is a missing-link fallback.
+
+        New intake publishes a URL attachment, not necessarily a description
+        link. Read both when importing an older card's missing destination.
+        """
+        if not client and not card_id:
             return False
 
         try:
+            import job_saved_data
+            url = job_saved_data.destination(client, card_id, 'companycam')
+            if url:
+                dept_browser.open_url(url)
+                return True
+        except Exception:
+            pass
+        try:
             import trello_client as tc
-            card_id = persistence.get_trello_card_id(client) or ""
+            card_id = (card_id or "").strip() or persistence.get_trello_card_id(client) or ""
             if not card_id:
                 return False
-            card = tc.get_card_lite(card_id) or {}      # desc-only reader
+            card = tc.get_card(card_id) or {}  # Include intake's URL attachment.
             url = (tc.card_companycam_link(card)
                    if hasattr(tc, "card_companycam_link") else "")
             if url:
@@ -4397,7 +4414,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
 
     def toggle_checklist_item(self, card_id: str, item_id: str,
                                complete, item_name: str = "",
-                               client: str = "") -> dict:
+                               client: str = "", *, saved_local: bool = False,
+                               previous_complete=None) -> dict:
         """Tick / un-tick one checklist item on a Trello card. `complete`
         is truthy for done. Updates the in-memory checklist cache so a
         subsequent re-render shows the new state without a re-fetch.
@@ -4409,10 +4427,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         if not card_id or not item_id:
             return {"ok": False, "error": "card_id + item_id required"}
         state = "complete" if complete else "incomplete"
-        was_complete = self._item_is_complete(card_id, item_id)
+        was_complete = (self._item_is_complete(card_id, item_id)
+                        if previous_complete is None else bool(previous_complete))
         try:
             import trello_client as tc
-            ok = bool(tc.set_check_item_state(card_id, item_id, state))
+            ok = saved_local or bool(tc.set_check_item_state(card_id, item_id, state))
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
         if ok:
@@ -5245,6 +5264,9 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         try:
             import trello_client as tc
             action = tc.post_comment(card_id, text) or {}
+            if not action.get("id"):
+                return {"ok": False, "text": text,
+                        "error": "Trello did not confirm the automatic comment"}
             return {"ok": True, "text": text,
                     "action_id": str(action.get("id") or "")}
         except Exception as ex:

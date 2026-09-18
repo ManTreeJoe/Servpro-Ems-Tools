@@ -114,7 +114,7 @@ def test_jobs_ui_uses_quiet_sync_cadence_and_section_updates():
     html = (ROOT / "pipeline_web_assets" / "index.html").read_text(encoding="utf-8")
 
     for marker in ("120_000", "60_000", "background_trello_sync()",
-                   "refresh_job_comments(context.cardId)", "applyComments(nextComments)",
+                   "context.conversation.refresh()", "refresh_job_comments(cardId)",
                    "data-comment-stream", "Hub current"):
         assert marker in js or marker in html
     assert "Loading boards from Trello" not in html

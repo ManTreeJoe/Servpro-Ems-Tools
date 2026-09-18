@@ -2789,7 +2789,6 @@ function mkSnapModal({ title, body, width }) {
       <div style="padding:18px 20px;overflow-y:auto;">${body}</div>
     </div>`;
   document.body.appendChild(w);
-  w.addEventListener("click", (e) => { if (e.target === w) closeSnapModal(); });
   w.querySelectorAll(".modal-close").forEach((b) =>
     b.addEventListener("click", closeSnapModal));
   return w;
@@ -2822,7 +2821,6 @@ function openFindCardModal() {
   document.body.appendChild(wrap);
   const close = () => wrap.remove();
   $("#fc-close").addEventListener("click", close);
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
 
   function renderResults(rows) {
     const el = $("#fc-results");
@@ -3034,7 +3032,6 @@ function openMultiUnitPicker(mu) {
     document.body.appendChild(w);
     const close = (val) => { w.remove(); resolve(val); };
     document.getElementById("mu-cancel").addEventListener("click", () => close(null));
-    w.addEventListener("click", (e) => { if (e.target === w) close(null); });
     document.getElementById("mu-rollup").addEventListener("click",
       () => close({ insured: mu.property_name, path: mu.umbrella_path || "" }));
     document.getElementById("mu-units").innerHTML = (mu.units || []).map((u) => `

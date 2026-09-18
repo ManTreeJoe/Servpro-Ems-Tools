@@ -23,6 +23,10 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 // ── Boot ─────────────────────────────────────────────────────────
 window.addEventListener("pywebviewready", async () => {
+  $("#paste-review-btn").addEventListener("click", () => {
+    if (!state.active_date) { setStatus('Choose an APA date first.', 'error'); return; }
+    ApaPasteReview.open(state.active_date, () => loadDate(state.active_date));
+  });
   $("#refresh-btn").addEventListener("click", () => loadDate(state.active_date));
   $("#create-doc-btn").addEventListener("click", createTodayDoc);
   $("#refresh-lanes-btn").addEventListener("click", refreshLanesFromTrello);
@@ -208,7 +212,6 @@ function teamsComposeModal({ title, sub, message, email, loop }) {
       w.querySelector('[data-act="skip"]').addEventListener("click", () => fin("skip"));
       w.querySelector('[data-act="stop"]').addEventListener("click", () => fin("stop"));
     }
-    w.addEventListener("click", (e) => { if (e.target === w) fin(loop ? "skip" : "next"); });
     setTimeout(() => ta.focus(), 30);
   });
 }
@@ -807,7 +810,6 @@ async function showItemPopover({ title, section, text, highlighted, extended, on
       </footer>
     </div>`;
   document.body.appendChild(wrap);
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) closeEditPopover(); });
   const close = () => closeEditPopover();
   document.getElementById("apa-pop-close").addEventListener("click", close);
   document.getElementById("apa-pop-cancel").addEventListener("click", close);
@@ -856,7 +858,7 @@ function closeEditPopover() {
 
 let saveTimer = null;
 async function saveDoc() {
-  if (!state.doc) return;
+  if (!state.doc) return false;
   if (saveTimer) clearTimeout(saveTimer);
   setStatus("Saving…");
   // Re-render immediately so the user sees their change, then
@@ -868,15 +870,18 @@ async function saveDoc() {
       text: it.text, highlighted: !!it.highlighted,
     })),
   }));
-  const res = await pywebview.api.save_doc(state.doc.date_iso, sectionsPayload);
+  let res;
+  try { res = await pywebview.api.save_doc(state.doc.date_iso, sectionsPayload); }
+  catch (error) { setStatus(`Save failed: ${error.message || error}`, "error"); return false; }
   if (!res?.ok) {
     setStatus(`Save failed: ${res?.error || "?"}`, "error");
-    return;
+    return false;
   }
   // Re-sync local state from the freshly-parsed doc on disk
   state.doc = res.doc;
   renderBoard();
   setStatus("✓ Saved", "ok");
+  return true;
 }
 
 // ── Search / toggle ─────────────────────────────────────────────
@@ -904,9 +909,10 @@ async function openInWord() {
 
 async function printAPA() {
   if (!state.doc?.doc_path) { setStatus('No saved APA document for this day.', 'error'); return; }
-  if (!window.confirm('Print the saved APA for this day? Unsaved edits are not included.')) return;
   const button = $('#print-btn'); button.disabled = true;
   try {
+    // Print the current edits, not a stale saved copy. A failed save stops here.
+    if (!await saveDoc()) return;
     const result = await pywebview.api.print_preview(state.doc.doc_path);
     setStatus(result.ok ? 'Print preview opened in Word. Choose File → Print to select a printer.' : result.error, result.ok ? 'ok' : 'error');
   } catch (_) { setStatus('Print preview could not open. Try Open in Word.', 'error'); }
@@ -1053,7 +1059,6 @@ async function openContactsModal() {
       </footer>
     </div>`;
   document.body.appendChild(w);
-  w.addEventListener("click", (e) => { if (e.target === w) w.remove(); });
   document.getElementById("cn-close").addEventListener("click", () => w.remove());
   document.getElementById("cn-cancel").addEventListener("click", () => w.remove());
   document.getElementById("cn-save").addEventListener("click", async () => {
@@ -1106,7 +1111,6 @@ async function openBulkPasteModal() {
       </footer>
     </div>`;
   document.body.appendChild(w);
-  w.addEventListener("click", (e) => { if (e.target === w) w.remove(); });
   document.getElementById("bp-close").addEventListener("click", () => w.remove());
   document.getElementById("bp-cancel").addEventListener("click", () => w.remove());
   const addButton = document.getElementById("bp-add");
@@ -1339,7 +1343,6 @@ async function openAddToApaConfirmModal(sug) {
   document.body.appendChild(w);
   const close = () => w.remove();
   w.querySelector("#aa-cancel").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
 
   // Repopulate sub + status dropdowns whenever section changes.
   // Hides the entire Sub row when the section is an estimator
@@ -1540,6 +1543,7 @@ function attachApaSectionDrop(body) {
         break;
       }
     }
+    const beforeDrop = JSON.parse(JSON.stringify(state.doc));
     const moved = src.items.splice(_apaDragRef.index, 1)[0];
     if (!moved) return;
     src.count = src.items.length;
@@ -1550,7 +1554,11 @@ function attachApaSectionDrop(body) {
     dst.items.splice(insertIdx, 0, moved);
     dst.count = dst.items.length;
     _apaDragRef = null;
-    await saveDoc();
+    if (!await saveDoc()) {
+      state.doc = beforeDrop;
+      renderBoard();
+      return;
+    }
     setStatus(
       src === dst
         ? `↕ Reordered in ${targetSection}`
@@ -1847,7 +1855,6 @@ async function openCarryPlacementModal(rows) {
     </div>`;
   document.body.appendChild(w);
   const close = () => w.remove();
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
   document.getElementById("ap-skip").addEventListener("click", close);
 
   document.getElementById("ap-go").addEventListener("click", async () => {
@@ -2240,7 +2247,6 @@ async function openTrelloPinPicker(itemText, currentCardId) {
   document.body.appendChild(w);
   const close = () => w.remove();
   w.querySelector("#apa-pin-cancel").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
   const q = w.querySelector("#apa-pin-q");
   const results = w.querySelector("#apa-pin-results");
   let timer = null;
@@ -2309,7 +2315,6 @@ async function openItemNoteModal(client, section, anchor) {
   document.body.appendChild(w);
   const close = () => w.remove();
   w.querySelector("#an-cancel").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
   w.querySelector("#an-clear").addEventListener("click", async () => {
     const res = await pywebview.api.set_item_note(client, section, "");
     if (res?.ok && anchor) anchor.classList.remove("has-text");
@@ -2377,7 +2382,6 @@ async function openManageFranchisesModal() {
   document.body.appendChild(w);
   const close = () => w.remove();
   w.querySelector("#mf-close").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
   // Local in-memory tag list (mutates with add/remove, persisted on
   // each change). Persisting per-action keeps the modal feeling
   // responsive + survives an accidental close.
@@ -2465,7 +2469,6 @@ async function openManageSectionsModal() {
   document.body.appendChild(w);
   const close = () => w.remove();
   w.querySelector("#ms-cancel").addEventListener("click", close);
-  w.addEventListener("click", (e) => { if (e.target === w) close(); });
   // Drag-reorder list items
   let dragLi = null;
   w.querySelectorAll("li[data-section]").forEach((li) => {

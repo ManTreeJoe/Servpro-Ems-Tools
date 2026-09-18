@@ -25,9 +25,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     async save_review(id,f,note,owner,due,outcome){savedReviews['v2:'+JSON.stringify([f.start,f.end,f.review_role])]={note,owner,due,outcome,reviewer_name:'Test Reviewer',updated_at:'2026-09-11T10:30:00',filters:f,role:f.review_role,evidence:{review_source:{list_name:'TO BE PRESERVED'}}};return {ok:true};}
    }};
   });
+  await page.addScriptTag({path:path.resolve('analytics_web_assets/logs_audit.js')});
   await page.addScriptTag({path:path.resolve('analytics_web_assets/app.js')});
   await page.evaluate(()=>window.dispatchEvent(new Event('pywebviewready')));
   await page.waitForFunction(()=>document.querySelector('#rows button'));
+  assert.equal(await page.getByRole('button',{name:'Logs audit · To Be Preserved',exact:true}).count(),1);
   const range=await page.evaluate(()=>[document.querySelector('[name=start]').value,document.querySelector('[name=end]').value]);
   assert.equal((new Date(range[1])-new Date(range[0]))/86400000,6);
   await page.locator('[data-action=open]').click();

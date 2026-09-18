@@ -4,9 +4,24 @@
 .job-workspace-tabs button:hover { background:var(--surface-2); }
 .job-workspace-tabs button:focus-visible,.job-workspace-panel:focus-visible { outline:2px solid var(--green); outline-offset:-2px; }
 .job-workspace-panel[hidden] { display:none !important; }
-.tabbed-job-layout { display:block; overflow-y:auto; }
-.tabbed-job-layout .job-card-main { overflow:visible; }
-.tabbed-job-layout .job-card-activity { border:1px solid var(--border); background:var(--surface); margin-top:16px; }
-.tabbed-job-layout .comment-stream { flex:none; overflow:visible; }
+body.intake-only > :not(.overlay):not(script):not(style):not(.statusbar) { display:none !important; }
+.tabbed-job-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,36%); overflow:hidden; }
+.tabbed-job-layout .job-card-main { overflow-y:auto; min-width:0; }
+.tabbed-job-layout .job-card-activity { background:var(--surface); }
+.tabbed-job-layout .comment-stream { flex:1; min-height:0; overflow-y:auto; }
 .tabbed-job-layout .section-title-row small { font-size:12px; }
+.job-comment[hidden] { display:none !important; }
+.comment-division-controls { display:flex; flex-wrap:wrap; gap:6px; padding:0 14px 10px; }
+.comment-division-controls button { border:1px solid var(--border); border-radius:6px; padding:5px 10px; background:var(--surface); color:var(--text); font:inherit; font-size:12px; cursor:pointer; }
+.comment-division-controls button[aria-pressed="true"] { background:var(--green); color:white; border-color:var(--green); }
+.comment-division-controls button:disabled { opacity:.5; cursor:default; }
+.comment-division-controls button:focus-visible { outline:2px solid var(--text); outline-offset:2px; }
+.comment-division-status:not(:empty) { padding:0 14px 10px; color:var(--text); }
+.comment-post-destination { display:flex; align-items:center; gap:8px; padding-bottom:8px; font-size:12px; }
+.comment-post-destination select { border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); font:inherit; padding:5px 8px; }
+@media(max-width:950px) {
+  .tabbed-job-layout { grid-template-columns:minmax(0,1fr); overflow-y:auto; }
+  .tabbed-job-layout .job-card-main { overflow:visible; }
+  .tabbed-job-layout .job-card-activity { height:560px; min-height:480px; border-left:0; border-top:1px solid var(--border); }
+}
 @media(max-width:700px) { .job-workspace-tabs { padding-inline:8px; } .job-workspace-tabs button { padding:11px 10px; } }

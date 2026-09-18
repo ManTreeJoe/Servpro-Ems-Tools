@@ -1,0 +1,23 @@
+.apa-review { width:min(760px,92vw);max-height:88vh;overflow:auto;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:22px;font:14px/1.5 system-ui,sans-serif; }
+.apa-review::backdrop { background:#0009; }
+.apa-review header,.apa-review .review-actions { display:flex;gap:10px;align-items:center;flex-wrap:wrap; }
+.apa-review header { justify-content:space-between; }
+.apa-review h2 { margin:0;font-size:20px; }
+.apa-review h3 { margin-bottom:12px;font-size:18px; }
+.apa-review label:not(.review-check) { display:block;margin-top:12px;margin-bottom:5px; }
+.apa-review input:not([type=checkbox]):not([type=radio]),.apa-review select,.apa-review textarea { box-sizing:border-box;padding:9px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:5px;font:inherit;max-width:100%; }
+.apa-review textarea { width:100%;resize:vertical;min-height:140px; }
+.apa-review button { padding:9px 13px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:5px;font:inherit;cursor:pointer; }
+.apa-review button:disabled { opacity:.55;cursor:default; }
+.apa-review :focus-visible { outline:2px solid #e9bd64;outline-offset:3px; }
+.apa-review .review-actions { margin:14px 0; }
+.apa-review dl { display:grid;grid-template-columns:150px 1fr;gap:5px 12px; }
+.apa-review dd { margin:0;overflow-wrap:anywhere; }
+.apa-review .review-matches { max-height:210px;overflow:auto;margin:12px 0; }
+.apa-review .review-matches button { display:block;width:100%;text-align:left;margin-bottom:6px; }
+.apa-review small { display:block;font-size:13px; }
+.apa-review .review-check { display:flex;gap:8px;align-items:baseline;margin:12px 0; }
+.apa-review fieldset { margin:18px 0;border:1px solid var(--border); }
+.apa-review pre { white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:220px;overflow:auto; }
+.apa-review [data-status] { min-height:22px;overflow-wrap:anywhere; }
+@media(max-width:550px) { .apa-review { padding:14px; }.apa-review dl { grid-template-columns:1fr;gap:2px; }.apa-review dd { margin-bottom:8px; } }

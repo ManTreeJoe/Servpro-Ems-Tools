@@ -1,6 +1,6 @@
 {
-  "version": "1.8.20",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.20",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.20/Linguar-Hub-Setup-1.8.20.exe",
-  "notes": "Improved job workspace tabs with an always-available comment box, whole-board zoom from 50% to 140%, Schedule arrival windows and crew selection, and Word print preview for APA and Schedule. Weekly reviews preserve department-specific audit evidence and correction history locally. Fixes Operations loading/return navigation, backup scheduling, and APA date-switching races. No database migration or shared weekly-review storage is included."
+  "version": "1.8.21",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.21",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.21/Linguar-Hub-Setup-1.8.21.exe",
+  "notes": "Saved job details stay visible while Trello refreshes in the background. Fixes popup dismissal, card-loading resets, folder/CompanyCam actions and shared New Loss entry. Restores Trello attachment import and initial-checklist comments. Adds row-by-row APA paste review with Initial/Final and Contents routing, plus evidence-backed weekly Logs audits and filled Excel export. Review queues and audit history remain local to each PC; no database migration or QuickBooks integration is included."
 }

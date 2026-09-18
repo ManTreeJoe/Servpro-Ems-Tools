@@ -24,6 +24,77 @@ class Api:
     def attach(self, window):
         self._window = window
 
+    def _logs_call(self, method, *args):
+        from logs_audit import LogsAudit
+        import trello_client
+        try:
+            return getattr(LogsAudit(trello_client, persistence, config.active_department), method)(*args)
+        except ValueError as ex:
+            return {'ok': False, 'error': str(ex)}
+        except Exception:
+            # Transport errors may contain credential-bearing URLs.
+            return {'ok': False, 'error': 'Trello or local storage could not complete the request. Refresh and check publication status before retrying.'}
+
+    def logs_queue(self):
+        return self._logs_call('queue')
+
+    def logs_inspect(self, card_id, period_start=None, period_end=None):
+        return self._logs_call('inspect', card_id, period_start, period_end)
+
+    def logs_save(self, card_id, revision, fields):
+        return self._logs_call('save', card_id, revision, fields)
+
+    def logs_preview(self, card_id):
+        return self._logs_call('preview', card_id)
+
+    def logs_publish(self, operation_id, confirmed=False):
+        return self._logs_call('publish', operation_id, confirmed)
+
+    def logs_cancel_preview(self, operation_id):
+        return self._logs_call('cancel_preview', operation_id)
+
+    def logs_create_month_lane(self, month, confirmed=False):
+        return self._logs_call('create_month_lane', month, confirmed)
+
+    def logs_ar_candidates(self, card_id):
+        return self._logs_call('ar_candidates', card_id)
+
+    def logs_ar_review(self, card_id, ar_id, confirmed=False):
+        return self._logs_call('ar_review', card_id, ar_id, confirmed)
+
+    def logs_export_excel(self, start, end):
+        """Export local period history, including cards already moved out of Logs."""
+        if not self._window:
+            return {'ok':False,'error':'Open Analytics in the desktop app to export Excel.'}
+        import webview
+        from logs_audit import LogsAudit, LOCK
+        from logs_audit_excel import records_for_period, save_new_copy
+        import trello_client
+        try:
+            location=config.active_department()
+            with LOCK:
+                store=LogsAudit(trello_client,persistence,config.active_department)._store()
+                records=records_for_period(store,start,end)
+            if not records:
+                return {'ok':False,'error':'No saved audit forms for this period. Save the reviews first; exporting does not mark them audited.'}
+            source=self._window.create_file_dialog(webview.OPEN_DIALOG,allow_multiple=False,
+                file_types=('Weekly Audit template (*.xlsx)',))
+            if not source:return {'ok':True,'cancelled':True}
+            source=source[0] if isinstance(source,(list,tuple)) else source
+            destination=self._window.create_file_dialog(webview.SAVE_DIALOG,
+                save_filename=f'Weekly Logs Review - {location} - {start} to {end}.xlsx',
+                file_types=('Excel workbook (*.xlsx)',))
+            if not destination:return {'ok':True,'cancelled':True}
+            destination=destination[0] if isinstance(destination,(list,tuple)) else destination
+            count=save_new_copy(source,destination,records,start,end,location)
+            return {'ok':True,'count':count,'path':str(destination)}
+        except FileExistsError:
+            return {'ok':False,'error':'That file already exists. Choose a new name; existing weekly copies are never overwritten.'}
+        except ValueError as ex:
+            return {'ok':False,'error':str(ex)}
+        except Exception:
+            return {'ok':False,'error':'Excel export failed. Check the selected template and destination folder.'}
+
     def _key(self, location=None):
         return 'analytics_reviews_v1_' + (location or config.active_department())
 

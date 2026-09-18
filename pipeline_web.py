@@ -21,6 +21,7 @@ import os
 import re
 import sys
 import time
+import threading
 import webbrowser
 from typing import Any
 
@@ -419,6 +420,7 @@ class Api(JobSettingsApi):
         self._crm_workspace_cache = {}
         self._old_jobs_cache = {}
         self._companycam_report_window = None
+        self._check_item_lock = threading.RLock()
 
     def _department_changed(self):
         """Drop API-instance state that belongs to the previous franchise."""
@@ -434,11 +436,20 @@ class Api(JobSettingsApi):
 
     def _workspace_cache_key(self, client: str, card_id: str = "",
                              division: str = ""):
+        import job_workspace_cache
+        scope = job_workspace_cache.scope()
+        previous_scope = getattr(self, '_workspace_scope', None)
+        if previous_scope is not None and previous_scope != scope:
+            self._department_changed()
+        self._workspace_scope = scope
         return ((client or "").strip().casefold(),
                 (card_id or "").strip().casefold(),
-                (division or "EMS").strip().upper())
+                (division or "EMS").strip().upper(),
+                scope, job_workspace_cache.generation(scope))
 
     def _invalidate_workspace(self, client: str = "", card_id: str = ""):
+        import job_workspace_cache
+        job_workspace_cache.invalidate(client=client, card=card_id)
         client_key = (client or "").strip().casefold()
         card_key = (card_id or "").strip().casefold()
         for key in list(self._workspace_cache):
@@ -820,9 +831,12 @@ class Api(JobSettingsApi):
         return shaped
 
     def job_card_workspace(self, client: str, card_id: str = "",
-                           division: str = "") -> dict:
+                           division: str = "", scan: bool = False) -> dict:
         """Full Pipeline card: audit + CRM + Trello transition material."""
         started = time.monotonic()
+        import job_workspace_cache
+        request_scope = job_workspace_cache.scope()
+        request_generation = job_workspace_cache.generation(request_scope)
         workspace_key = self._workspace_cache_key(client, card_id, division)
         cached_workspace = self._workspace_cache.get(workspace_key)
         if cached_workspace and time.monotonic() - cached_workspace[0] < 45:
@@ -854,7 +868,10 @@ class Api(JobSettingsApi):
         reconcile_future = reconcile_pool.submit(load_division_reconciliation)
         old_jobs_future = reconcile_pool.submit(
             self._old_ems_jobs, client, card_id)
-        summary = self.audit_card(client)
+        saved_workspace = self.job_card_workspace_fast(client, card_id, division) if not scan else {}
+        summary = self.audit_card(client) if scan else dict(saved_workspace.get('audit') or {})
+        if not scan:
+            summary['audit_pending'] = bool(saved_workspace.get('deferred_loading') or summary.get('audit_pending'))
         if not summary.get("ok"):
             reconcile_pool.shutdown(wait=False, cancel_futures=True)
             return summary
@@ -891,7 +908,8 @@ class Api(JobSettingsApi):
         job = {}
         try:
             import ems_db
-            job = ems_db.find_job_by_name(client) or {}
+            import job_saved_data
+            job = job_saved_data.resolve(client, card_id)[0]
             info_sections = _job_info_sections(job)
         except Exception:
             pass
@@ -927,9 +945,10 @@ class Api(JobSettingsApi):
                                 thread_name_prefix="workspace") as pool:
             checklist_future = pool.submit(pipeline_store.list_checklists, cid)
             activity_future = pool.submit(pipeline_store.list_activity, cid)
-            document_future = pool.submit(
-                self._document_signature_workspace,
-                client, cid, summary.get("path") or "")
+            document_future = (pool.submit(
+                self._document_signature_workspace, client, cid, summary.get("path") or "")
+                if scan else pool.submit(lambda: saved_workspace.get('documents') or {
+                    'provider': 'DocuSign', 'request': {}, 'files': [], 'connected': False}))
             if cid:
                 import trello_client as tc
                 trello_future = pool.submit(tc.get_card, cid)
@@ -1026,6 +1045,16 @@ class Api(JobSettingsApi):
                                  "source": activity.get("source") or "linguar",
                                  "can_manage": bool(current_user_id and
                                                     owner_id == current_user_id)})
+        if summary.get("trello_error"):
+            # An unsuccessful provider read is not evidence of deletion.
+            # Preserve the last known projection, including for the next open.
+            seen = {row.get("id") for row in comments if row.get("id")}
+            comments.extend(row for row in saved_workspace.get("comments", [])
+                            if row.get("id") and row["id"] not in seen)
+            checklists = checklists or saved_workspace.get("checklists", [])
+            attachments = saved_workspace.get("attachments", [])
+            members = saved_workspace.get("members", [])
+            info_sections = info_sections or saved_workspace.get("info_sections", [])
         comments.sort(key=lambda c: c.get("at") or "", reverse=True)
         from job_workspace_contract import build_job_workspace
         workspace = build_job_workspace(
@@ -1051,11 +1080,18 @@ class Api(JobSettingsApi):
                 "documents": documents,
                 "workspace": workspace,
                 "load_ms": round((time.monotonic() - started) * 1000)}
+        if job_workspace_cache.scope() != request_scope:
+            self._department_changed()
+            return {"ok": False, "error": "Your account or workspace changed. Reopen the job in the current workspace."}
         if len(self._workspace_cache) >= 80:
             oldest = min(self._workspace_cache,
                          key=lambda key: self._workspace_cache[key][0])
             self._workspace_cache.pop(oldest, None)
         self._workspace_cache[workspace_key] = (time.monotonic(), result)
+        if not summary.get("trello_error"):
+            job_workspace_cache.save(cid, selected_division, client, result,
+                                     scope_id=request_scope,
+                                     expected_generation=request_generation)
         return result
 
     def _old_ems_jobs(self, client: str, current_card_id: str = "") -> list:
@@ -1125,7 +1161,7 @@ class Api(JobSettingsApi):
         for cache_key in list(self._document_cache):
             if not card_id or cache_key[0] == card_id:
                 self._document_cache.pop(cache_key, None)
-        return self.job_card_workspace(client, card_id, division)
+        return self.job_card_workspace(client, card_id, division, scan=True)
 
     def job_card_workspace_fast(self, client: str, card_id: str = "",
                                 division: str = "") -> dict:
@@ -1136,7 +1172,11 @@ class Api(JobSettingsApi):
         workspace request while the user can already read or edit CRM data.
         """
         started = time.monotonic()
+        import job_workspace_cache
         workspace_key = self._workspace_cache_key(client, card_id, division)
+        stored = job_workspace_cache.load((card_id or "").strip(), division)
+        if stored:
+            return {**stored, "load_ms": round((time.monotonic() - started) * 1000)}
         cached_workspace = self._workspace_cache.get(workspace_key)
         if cached_workspace and time.monotonic() - cached_workspace[0] < 45:
             return {**cached_workspace[1], "cached": True,
@@ -1146,12 +1186,31 @@ class Api(JobSettingsApi):
         summary = {"ok": True, "client": client, "found": True,
                    "form_issues": [], "photo_issues": [], "requirements": [],
                    "activity": [], "path": "", "trello_card_id": card_id or ""}
-        # First paint must stay one cheap identity read. The previous "fast"
-        # path called crm_job_workspace, which waited on master-job joins,
-        # logs, events, audit history and division-card queries (~3 seconds
-        # on the office connection) before showing basic facts. The full
-        # request that follows still hydrates all of that in the background.
-        job = ems_db.find_job_by_name(client) or {}
+        # Read already-stored facts/activity in parallel, without waiting for
+        # provider calls, master-job joins or any filesystem scan.
+        import job_saved_data
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="saved-workspace") as pool:
+            identity = pool.submit(job_saved_data.resolve, client, card_id)
+            saved_activity = pool.submit(pipeline_store.list_activity, card_id) if card_id else None
+            saved_checklists = pool.submit(pipeline_store.list_checklists, card_id) if card_id else None
+            job = identity.result()[0]
+            local_activity = saved_activity.result() if saved_activity else []
+            checklists = saved_checklists.result() if saved_checklists else []
+        comments = []
+        for activity in local_activity:
+            if activity.get("action_type") != "comment":
+                continue
+            comments.append({"id": activity.get("external_id") or activity.get("activity_key") or "",
+                             "text": activity.get("body") or "",
+                             "actor": activity.get("actor_name") or "Linguar Hub",
+                             "at": activity.get("happened_at") or "",
+                             "source": activity.get("source") or "linguar",
+                             "can_manage": False})
+        comments.sort(key=lambda row: row.get("at") or "", reverse=True)
+        try:
+            summary['path'] = job_saved_data.destination(client, card_id, 'folder')
+        except Exception:
+            pass
         from ems_db_common import normalize_division
         selected_division = normalize_division(division) if division else "EMS"
         cid = (card_id or "").strip()
@@ -1193,7 +1252,7 @@ class Api(JobSettingsApi):
                 "audit": summary, "crm": crm, "info_sections": info_sections,
                 "division_trello_cards": division_cards,
                 "division_card_reconciliation": {"ok": True, "divisions": []},
-                "checklists": [], "comments": [], "attachments": [], "members": [],
+                "checklists": checklists, "comments": comments, "attachments": [], "members": [],
                 "documents": {"provider": "DocuSign", "request": {}, "files": [],
                               "connected": False},
                 "workspace": workspace,
@@ -1377,8 +1436,8 @@ class Api(JobSettingsApi):
             self._document_cache.clear()
         return {**context, **result}
 
-    def open_job_folder(self, client: str, path: str = "") -> dict:
-        return self._audit_api().open_od_for_client(client, path)
+    def open_job_folder(self, client: str, path: str = "", card_id: str = "") -> dict:
+        return self._audit_api().open_od_for_client(client, path, card_id)
 
     def list_job_folder_candidates(self, client: str, year: str = "") -> dict:
         """Visible folder-link flow for Pipeline cards; no context menu required."""
@@ -1439,6 +1498,21 @@ class Api(JobSettingsApi):
     def scan_downloads(self, client: str = "") -> dict:
         return self._audit_api().scan_downloads(client)
 
+    def list_card_attachments(self, card_id: str) -> dict:
+        return self._audit_api().list_card_attachments(card_id)
+
+    def fetch_trello_image(self, url: str, max_bytes: int = 6_000_000) -> dict:
+        return self._audit_api().fetch_trello_image(url, max_bytes)
+
+    def download_card_attachments(self, card_id: str, attachment_ids,
+                                  client: str = "") -> dict:
+        result = self._audit_api().download_card_attachments(
+            card_id, attachment_ids, client)
+        if result.get("ok"):
+            self._document_cache.clear()
+            self._invalidate_workspace(client=client)
+        return result
+
     def do_import(self, client: str, kind: str, paths: list,
                   destination: str = "", tech: str = "",
                   side: str = "ems") -> dict:
@@ -1461,8 +1535,8 @@ class Api(JobSettingsApi):
     def open_workcenter(self) -> dict:
         return self._audit_api().open_workcenter()
 
-    def open_companycam_link(self, client: str) -> bool:
-        return self._audit_api().open_companycam_link(client)
+    def open_companycam_link(self, client: str, card_id: str = "") -> bool:
+        return self._audit_api().open_companycam_link(client, card_id)
 
     def companycam_plan_pull(self, client: str, tech: str = "",
                              card_id: str = "",
@@ -1518,14 +1592,40 @@ class Api(JobSettingsApi):
         return result
 
     def set_job_check_item(self, card_id: str, item_id: str,
-                           complete: bool) -> dict:
+                           complete: bool, item_name: str = "",
+                           client: str = "") -> dict:
+        with self._check_item_lock:
+            return self._set_job_check_item(card_id, item_id, complete, item_name, client)
+
+    def _set_job_check_item(self, card_id, item_id, complete, item_name, client):
+        previous_complete = None
+        if item_name:
+            for group in pipeline_store.list_checklists(card_id):
+                for item in group.get("items") or []:
+                    if str(item.get("id")) == str(item_id):
+                        previous_complete = bool(item.get("complete"))
+                        item_name = item.get("name") or item_name
         local = pipeline_store.set_check_item(card_id, item_id, complete)
         if local.get("ok"):
             self._invalidate_workspace(card_id=card_id)
             self._board_view_cache = None
-            return {"ok": True, "saved_local": True, "pending_sync": True,
-                    "synced": False}
+            result = {"ok": True, "saved_local": True, "pending_sync": True,
+                      "synced": False}
+            if item_name:
+                result.update(self._audit_api().toggle_checklist_item(
+                    card_id, item_id, complete, item_name, client,
+                    saved_local=True, previous_complete=previous_complete))
+            return result
         # Compatibility fallback for an installation without shared tables.
+        if item_name:
+            result = self._audit_api().toggle_checklist_item(
+                card_id, item_id, complete, item_name, client,
+                previous_complete=previous_complete)
+            if result.get("ok"):
+                pipeline_store.mark_card_sync(card_id, ok=True)
+                self._invalidate_workspace(card_id=card_id)
+                self._board_view_cache = None
+            return result
         synced = False
         error = ""
         try:

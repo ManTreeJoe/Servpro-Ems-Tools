@@ -3053,7 +3053,7 @@
     document.getElementById("ji-save").addEventListener("click", async () => {
       const out = {};
       document.querySelectorAll(".ji-f").forEach((i) => {
-        out[i.dataset.fid] = i.value;
+        if (i.value !== ((data.values || {})[i.dataset.fid] || "")) out[i.dataset.fid] = i.value;
       });
       const msg = document.getElementById("ji-msg");
       msg.textContent = "Saving…";
@@ -3113,7 +3113,6 @@
     // body once the async content lands, and a Close button wired at
     // creation is gone by then, leaving a button that does nothing.
     w.addEventListener("click", (e) => {
-      if (e.target === w) { w.remove(); return; }
       const btn = e.target && e.target.closest
         ? e.target.closest(".modal-close") : null;
       if (btn && w.contains(btn)) w.remove();
@@ -3815,7 +3814,6 @@
     document.body.appendChild(wrap);
     const close = () => wrap.remove();
     wrap.querySelector("#od-close").addEventListener("click", close);
-    wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
     const upBtn = wrap.querySelector("#od-up");
     upBtn.addEventListener("click", () => { if (stack.length) { curPath = stack.pop(); load(); } });
     wrap.querySelector("#od-open").addEventListener("click", async () => {
@@ -3903,7 +3901,6 @@
     }
     document.addEventListener("keydown", onKey);
     wrap.querySelector("#fv-close").addEventListener("click", close);
-    wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
     wrap.querySelector("#fv-prev").addEventListener("click", () => step(-1));
     wrap.querySelector("#fv-next").addEventListener("click", () => step(1));
     wrap.querySelector("#fv-open").addEventListener("click", async () => {
@@ -3990,7 +3987,6 @@
     document.body.appendChild(wrap);
     const close = () => wrap.remove();
     wrap.querySelector("#wl-close").addEventListener("click", close);
-    wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
     const saveBtn = wrap.querySelector("#wl-save");
     saveBtn.addEventListener("click", async () => {
       saveBtn.disabled = true; saveBtn.textContent = "Saving…";

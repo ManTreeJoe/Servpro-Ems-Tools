@@ -9,7 +9,7 @@
 <script src="../web_shared/iframe_shim.js?v=20260818b"></script>
 <script src="../web_shared/text_context_menu.js?v=20260903a"></script>
 <script src="../web_shared/usage_track.js?v=20260825a"></script>
-<link rel="stylesheet" href="app.css?v=20260911a">
+<link rel="stylesheet" href="app.css?v=20260917audit-neutral-green">
 <link rel="stylesheet" href="workspace_layout.css?v=20260911a"></head>
 <body class="responsive-ui"><header><div><small id="location">Linguar Hub</small><h1>Analytics</h1></div><div class="actions"><button id="apa">APA monitor</button><button id="export">Export CSV</button><button id="refresh">Refresh</button></div></header>
 <main><nav id="tabs" aria-label="Analytics views"></nav>
@@ -18,4 +18,5 @@
 <section class="panel" id="records"><div class="section-head results-heading"><div><h2 id="record-title">Records</h2><span id="record-count" role="status"></span></div><div class="actions"><button id="reset-results" type="button">Reset selection</button><label>Find in results<input id="result-search" type="search" placeholder="Job, name or carrier"></label></div></div><div class="table-wrap"><table><thead><tr><th>Loss / job</th><th>Division</th><th>Stage</th><th>Carrier</th><th>Received</th><th>Review</th></tr></thead><tbody id="rows"></tbody></table></div></section>
 </main>
 <dialog id="review"><form method="dialog"><div class="section-head"><h2 id="review-title">Weekly review</h2><button value="cancel" aria-label="Close review">×</button></div><p>Review notes are saved on this PC for the current workspace.</p><label>Correction / review note<textarea id="review-note" rows="5"></textarea></label><div class="review-fields"><label>Owner<input id="review-owner"></label><label>Due date<input id="review-due" type="date"></label><label>Outcome<select id="review-outcome"><option value="reviewed">Reviewed</option><option value="follow_up">Follow-up required</option><option value="resolved">Correction resolved</option></select></label></div><p id="review-error" role="alert"></p><button type="button" class="primary" id="save-review">Save review</button></form></dialog>
-<script src="app.js?v=20260911layout"></script></body></html>
+<script src="logs_audit.js?v=20260918release1821"></script>
+<script src="app.js?v=20260917logs"></script></body></html>

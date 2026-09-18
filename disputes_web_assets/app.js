@@ -257,7 +257,6 @@ async function openPasteDisputeModal() {
     </div>`;
   document.body.appendChild(wrap);
   const close = () => wrap.remove();
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   wrap.querySelector("#pd-cancel").addEventListener("click", close);
   const txt = wrap.querySelector("#pd-text");
   const insEl = wrap.querySelector("#pd-insured");
@@ -353,7 +352,6 @@ async function openDisputeModal(existing) {
   document.body.appendChild(wrap);
   const close = () => wrap.remove();
   $("#disp-cancel").addEventListener("click", close);
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   $("#disp-save").addEventListener("click", async () => {
     const payload = {};
     wrap.querySelectorAll("[data-key]").forEach((el) => {
@@ -416,7 +414,6 @@ async function openLocationModal() {
   document.body.appendChild(wrap);
   const close = () => wrap.remove();
   $("#loc-close").addEventListener("click", close);
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   $("#loc-move").addEventListener("click", async () => {
     setStatus("Opening folder picker…");
     const r = await pywebview.api.relocate_workbook();

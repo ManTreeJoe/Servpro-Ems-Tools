@@ -6,10 +6,9 @@ name, hit CompanyCam's live API, find the matching PROJECT, and hand back its
 `id` so downstream code can pull photos (`GET /v2/projects/{id}/photos`) or
 check for new ones without a manual export.
 
-Auth: one organization Application Key per franchise, stored in config as
-`companycam_api_token`. Employees do not paste personal keys. On writes, the
-signed-in Linguar Hub email is sent as CompanyCam's ``X_COMPANYCAM_USER``
-header so CompanyCam can attribute the action to the employee.
+Auth: signed-in Hub users use the authenticated gateway and their connected
+CompanyCam OAuth account. A PC's legacy organization token cannot override
+that session. Legacy unsigned installations retain the local-token adapter.
 
 Rate limits (per token): GET 240/min. We retry 429/503 with backoff, honoring
 Retry-After, exactly like trello_client._call.
@@ -69,6 +68,8 @@ def _cloud_call(path, *, params=None, method="GET", data=None):
     """Call CompanyCam without bringing its organization key to this PC."""
     import supabase_client
     department = str(config.active_department() or "IE").strip().upper()
+    if str(method).upper() not in {'GET', 'HEAD', 'OPTIONS'}:
+        require_personal_connection()
     return supabase_client.invoke_function("companycam-gateway", {
         "department": department,
         "path": path,
@@ -78,17 +79,25 @@ def _cloud_call(path, *, params=None, method="GET", data=None):
     })
 
 
+def require_personal_connection():
+    """Fail before creating records if the signed-in user has not connected CC."""
+    if not cloud_gateway_available():
+        return  # Compatibility adapter for unsigned, organization-key installs.
+    import supabase_client
+    department = str(config.active_department() or 'IE').strip().upper()
+    status = supabase_client.external_connection_status('companycam', department) or {}
+    if status.get('status') != 'connected':
+        raise RuntimeError('Connect your own CompanyCam account for this workspace in Settings before creating a job.')
+
+
 def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
     """One request against the CompanyCam API. Bearer auth header, JSON
     body for writes, parsed-JSON return. Retries 429 (rate limit) and 503
     (transient, idempotent methods only) with Retry-After / exponential
     backoff. Raises urllib HTTPError on other non-2xx."""
-    # Existing installations with a local organization key remain usable
-    # during rollout. Fresh/co-worker installations use the authenticated
-    # Supabase gateway, so the key is configured once per franchise instead
-    # of once per Windows profile.
-    local_token = (config.load().get("companycam_api_token") or "").strip()
-    if not local_token and cloud_gateway_available():
+    # Session identity wins over stale machine credentials. Do not fall back
+    # to the PC key after a gateway failure: that would change who owns a write.
+    if cloud_gateway_available():
         return _cloud_call(path, params=params, method=method, data=data)
 
     qs = urllib.parse.urlencode(params or {}, doseq=True)

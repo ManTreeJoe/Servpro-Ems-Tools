@@ -43,12 +43,9 @@ window.JobWorkspaceTabs = (() => {
         : section.matches('.job-run-section') ? 'run' : 'overview';
       panels.get(key).append(section);
     }
-    // History belongs to its tab; the original composer stays outside the
-    // scrolling body so it is usable from every tab and retains its draft.
-    const body = root.querySelector('.modal-body');
-    const composer = activity?.querySelector('.comment-compose');
-    if (composer) body.after(composer);
-    if (activity) panels.get('log').append(activity);
+    // Comments remain a sibling of the tabbed main pane. Do not move or
+    // recreate the composer: it stays available, with its draft, on every tab.
+    if (activity) activity.setAttribute('aria-label', 'Job comments');
     layout.classList.add('tabbed-job-layout');
     root.querySelector('.modal-body').before(nav);
     function select(key, focus = false) {

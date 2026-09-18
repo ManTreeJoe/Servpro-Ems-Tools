@@ -209,6 +209,14 @@ def list_templates():
             out.setdefault("fire", item)
         elif "property" in nm:
             out.setdefault("property", item)
+    # Prefer the actual EMS residential template, regardless of Trello's
+    # card order or another template containing the word "Water".
+    residential = [item for item in out["_all"] if
+                   re.sub(r"[^a-z0-9]+", " ", item["name"].casefold()).strip()
+                   == "ems residential template"]
+    if len(residential) == 1:
+        out["water"] = residential[0]
+        out["_default"] = residential[0]
     out["_all"].sort(key=lambda item: item["name"].casefold())
     return out
 
@@ -442,6 +450,59 @@ def _pin_companycam(name, project_id, *, trello_card="", folder_path=""):
         return False
 
 
+def save_intake_facts(linked, fields, card_name):
+    """Keep customer facts on the exact job linked during intake, not a second name-only record."""
+    import ems_db
+    import job_settings
+    key = (linked or {}).get('canon_key')
+    record = ems_db.get_job(key) if key else None
+    if not record:
+        return linked
+    metadata = dict(job_settings._meta_of(record))
+    values = dict(metadata.get('settings') or {})
+    incoming = dict(fields)
+    incoming['customer_name'] = fields.get('insured_name') or ''
+    incoming['adjuster_phone'] = fields.get('adjuster_number') or fields.get('adjuster_phone') or ''
+    incoming['addl_contacts'] = fields.get('additional_contacts') or fields.get('addl_contacts') or ''
+    valid_fields = {item['id'] for item in job_settings.schema()}
+    values.update({k: v for k, v in incoming.items() if k in valid_fields and v})
+    metadata['settings'] = values
+    metadata['intake_identity'] = {'job_name': card_name,
+                                   'customer_name': incoming['customer_name']}
+    columns = {column: values[field] for field, column in job_settings.COLUMN_FIELDS.items()
+               if values.get(field)}
+    ems_db.upsert_job(display_name=record['display_name'], metadata=metadata, **columns)
+    return ems_db.get_job(key) or linked
+
+
+def publish_companycam_link(card_id, project_id):
+    """Add the exact project as a Trello URL attachment without editing notes.
+
+    Read first so a retry (including an uncertain prior POST) does not add a
+    duplicate. Report failure separately from successful project creation.
+    """
+    import trello_client as tc
+    from urllib.parse import quote
+    if not card_id or not project_id:
+        return {"ok": False, "error": "Missing Trello card or CompanyCam project ID."}
+    url = "https://app.companycam.com/projects/" + quote(str(project_id), safe="")
+    try:
+        path = f"/cards/{card_id}/attachments"
+        attachments = tc._call(path, params={"fields": "id,name,url"})
+        if not isinstance(attachments, list):
+            raise ValueError("Trello did not return the card's attachments.")
+        existing = next((a for a in attachments
+                         if str(a.get("url") or "").rstrip("/") == url), None)
+        if existing:
+            return {"ok": True, "url": url, "attachment_id": existing.get("id"), "existing": True}
+        attachment = tc._call(path, method="POST", data={"name": "CompanyCam", "url": url})
+        if not isinstance(attachment, dict) or not attachment.get("id"):
+            raise ValueError("Trello did not acknowledge the CompanyCam link.")
+        return {"ok": True, "url": url, "attachment_id": attachment["id"]}
+    except Exception as ex:
+        return {"ok": False, "url": url, "error": f"CompanyCam link was not confirmed on Trello: {ex}"}
+
+
 def create_new_loss(fields, loss_type=None, *, pin=True):
     """Clone the chosen template into the intake list (bottom), fill its desc
     from `fields`, name it, and (optionally) pin it to the insured so the audit
@@ -455,12 +516,10 @@ def create_new_loss(fields, loss_type=None, *, pin=True):
     import trello_client as tc
 
     fields = dict(fields or {})
-    loss_type = (loss_type or loss_type_from(fields.get("type_of_loss"))).lower()
+    loss_type = (loss_type or "water").lower()
 
-    # NOTE: the XA ID and every LINKS field (Xactanalysis / CompanyCam / video
-    # links) are deliberately NOT written to the card — the office supplies
-    # those links manually outside this flow. The XA ID is parsed only so it
-    # shows in the dialog for reference.
+    # CompanyCam is published after its project exists by the provisioning
+    # orchestrator. Other provider links are not inferred from assignment text.
 
     tmpls = list_templates()
     if not tmpls:

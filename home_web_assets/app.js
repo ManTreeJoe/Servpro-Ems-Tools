@@ -109,7 +109,7 @@ function openNewLossWhenReady(frame) {
     if (opened) return;
     try {
       const button = frame.contentDocument?.getElementById("new-loss-btn");
-      if (button) {
+      if (button && frame.contentWindow?.linguarIntakeReady) {
         opened = true;
         button.click();
         return;
@@ -356,7 +356,7 @@ function openDailyRunWorkspace() {
 
 function openNewLossWorkspace() {
   const wrap = openToolWorkspace("new-loss", "Jobs", "New Loss",
-    "../audit_web_assets/index.html?surface=daily&new_loss=1");
+    "../pipeline_web_assets/index.html?intake_only=1");
   openNewLossWhenReady(wrap.querySelector("iframe"));
 }
 
@@ -549,6 +549,7 @@ function findItem(key) {
 // not an implementation detour through Clients.
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "linguar-open-new-loss") return;
+  if (event.origin !== window.location.origin) return;
   openNewLossWorkspace();
 });
 

@@ -233,8 +233,8 @@ class Api:
 
     # ── Explicit passthroughs (pywebview only binds declared methods) ─
     # Each forwards to the full audit backend so behavior is identical.
-    def open_od_for_client(self, client, path=""):
-        return self._aw().open_od_for_client(client, path)
+    def open_od_for_client(self, *a, **k):
+        return self._aw().open_od_for_client(*a, **k)
     def open_folder(self, path):
         return self._aw().open_folder(path)
 
@@ -256,8 +256,8 @@ class Api:
         return self._aw().open_trello_card(card_id)
     def open_xa_link(self, client, card_id=""):
         return self._aw().open_xa_link(client, card_id)
-    def open_companycam_link(self, client):
-        return self._aw().open_companycam_link(client)
+    def open_companycam_link(self, *a, **k):
+        return self._aw().open_companycam_link(*a, **k)
     def open_workcenter(self):
         return self._aw().open_workcenter()
     def get_claim_number(self, client):

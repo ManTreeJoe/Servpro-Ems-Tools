@@ -15,6 +15,27 @@ Target: Linguar Hub Windows desktop. L OPS is a visual reference only.
 
 ## Not production-complete
 
+- Weekly Review now includes **Logs audit · To Be Preserved** (IE only): exact-card
+  queue, complete comment/checklist reads, structured weekly spreadsheet fields,
+  department confirmations, dated Trello note preview, and confirmed month/Questions
+  moves. Billed month is user-verified; invoice creation and payment alone do not
+  determine it. Drafts remain local. Individual and selected-batch approval are
+  supported. Not-billed cards get a dated audit comment without moving. Missing
+  paperwork is recorded but does not independently block an explicitly billed card.
+- New periods carry forward findings and clear confirmations; full-history reads
+  highlight new/edited comments. Combined cards require both billed dates and use
+  the last division's month. Missing month lanes have a separate approval action.
+- Evidence gathering suggests explicitly labeled fields and quotes relevant notes
+  with source references. Conflicting values are not auto-filled, and saved edits
+  are preserved. AR candidate search and confirmed-link history comparison are
+  available in Billing & finish. No automatic pass or ambiguous date inference is
+  performed. Reviewers must verify candidates and resolve historical conflicts.
+  Initial-note timing uses explicit completion/sent timestamps and a 60-minute limit.
+  Separate Contents queue support and shared drafts remain future work.
+- Interrupted publications reconcile the exact audit marker before retrying.
+  Changed evidence or an unresolved comment result stops the move for manual review;
+  only an unstarted preview can be discarded. No production cards were moved during tests.
+
 - Reviews and snapshots are currently local to this PC, not a shared management workflow.
 - The current IE graph has 444 legacy records with no explicit Loss IDs. Confirm identities
   through a reviewed migration; never merge names or claim numbers automatically.
