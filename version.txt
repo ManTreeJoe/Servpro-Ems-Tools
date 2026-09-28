@@ -1,6 +1,6 @@
 {
-  "version": "1.8.22",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.22",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.22/Linguar-Hub-Setup-1.8.22.exe",
-  "notes": "Job Log reliability, app-owned card placement, linked division tabs, rich comments and @mentions, local draft recovery, CompanyCam workflow updates, and quieter loading feedback. Stages latency remains under investigation. Historical Run Activity and CompanyCam receipts are not newly shared across PCs. No database migrations are applied by this installer."
+  "version": "1.8.23",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.23",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.23/Linguar-Hub-Setup-1.8.23.exe",
+  "notes": "Removes the Saved audit section from the job card Overview. Requirements keeps Check files; existing audit tools and saved data are unchanged. Includes the fixes in 1.8.22."
 }

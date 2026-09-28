@@ -295,13 +295,13 @@ def test_pipeline_checklists_use_daily_run_role_tabs_inside_division():
     assert ".checklist-role-pane[hidden]" in css
 
 
-def test_current_audit_labels_missing_and_requirement_states_explicitly():
+def test_overview_omits_saved_audit_and_retains_requirement_states():
     js = _asset("app.js")
     css = _asset("app.css")
-    for marker in ('missing item${issues.length === 1',
-                   "Missing ${escapeHtml(i.kind.toLowerCase())}",
-                   'item.status === "blocked" ? "Blocked"',
-                   ': "Missing"', "audit-missing-count", "req-status"):
+    assert 'Saved audit' not in js
+    assert 'audit-missing-count' not in js
+    for marker in ('item.status === "blocked" ? "Blocked"',
+                   ': "Missing"', "req-status", 'data-run-folder-audit>Check files'):
         assert marker in js
     assert ".aud-tag.aud-missing" in css
     assert ".req-status.status-completed" in css

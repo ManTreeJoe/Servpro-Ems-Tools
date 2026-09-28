@@ -1909,19 +1909,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     ? `${subject} could not be checked. Try refreshing.`
     : data.deferred_loading || data.refresh_pending ? `Loading ${subject.toLowerCase()}…` : empty;
   const workspace = data.workspace || {};
-  const issues = [];
-  (res.form_issues || []).forEach((f) => issues.push({ kind: "Form", text: f }));
-  (res.photo_issues || []).forEach((p) => issues.push({ kind: "Photos", text: p }));
-  (res.requirements || []).forEach((r) => issues.push({ kind: "Photos", text: r }));
+  const issues = [...(res.form_issues || []), ...(res.photo_issues || []), ...(res.requirements || [])];
   const clean = res.found && !issues.length;
-  const missing = data.deferred_loading || res.audit_pending
-    ? `<div class="aud-empty">No saved folder audit yet. Run an audit when you need to check files.</div>`
-    : !res.found
-    ? `<div class="aud-bad">📁 No job folder found for this client.</div>`
-    : clean
-      ? `<div class="aud-ok">✓ All required forms &amp; photos present.</div>`
-      : `<div class="audit-missing-summary"><strong>${issues.length} missing item${issues.length === 1 ? "" : "s"}</strong><span>Complete these before this job can move forward.</span></div><ul class="aud-list missing-audit-list">${issues.map((i) =>
-          `<li><span class="aud-tag aud-missing">Missing ${escapeHtml(i.kind.toLowerCase())}</span> ${escapeHtml(i.text)}</li>`).join("")}</ul>`;
   const currentPlacement = appCardPlacement(data.card_id);
   const placement = currentPlacement.lane ? currentPlacement : (data.app_placement || {});
   const locationSection = {name: 'App location', fields: [
@@ -1968,10 +1957,6 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   const activity = (res.activity || []).length
     ? `<div class="aud-chips">${res.activity.map((a) => `<span>${escapeHtml(a)}</span>`).join("")}</div>`
     : `<div class="aud-empty">No activity recorded for this run.</div>`;
-  const misplaced = [...(res.misplaced_forms || []), ...(res.misplaced_photos || [])];
-  const misplacedHtml = misplaced.length
-    ? `<ul class="aud-list">${misplaced.map((item) => `<li><span class="aud-tag aud-warn">Moved</span> ${escapeHtml(item.label || item)}${item.where ? ` <small>${escapeHtml(item.where)}</small>` : ""}</li>`).join("")}</ul>`
-    : "";
   const progress = crm.progress || {};
   const paperwork = crm.paperwork || { items: [], counts: {} };
   const capabilities = crm.capabilities || { items: {}, configured: false };
@@ -2175,7 +2160,6 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       ${divisionConflictBanner}
       <section class="aud-section job-info-section"><div class="section-title-row"><div><h3>Job info</h3><small>Click location to move · other fields to copy</small></div><button type="button" class="btn compact" data-edit-job-info>Edit</button></div>
         ${facts || `<div class="aud-empty">${emptyWorkspaceText('Job information', 'No saved job information yet.')}</div>`}</section>
-      <section class="aud-section audit-summary"><div class="section-title-row"><h3>Saved audit</h3><button class="btn compact" data-run-folder-audit>Run audit</button>${!data.deferred_loading && issues.length ? `<span class="audit-missing-count">${issues.length} missing</span>` : ""}</div>${missing}${misplacedHtml}</section>
       <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
         <div class="section-actions">${data.card_id ? `<button class="btn compact" data-refresh-job-log>Refresh saved log</button><button class="btn compact" data-import-job-log>Pull from ${escapeHtml(selectedDivision)} Trello</button>` : ""}<button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div></div>
         <small data-job-log-status role="status">${crm.job_log_dismissal_pending ? 'Dismissal saved on this PC · waiting to sync' : crm.job_log_error || crm.ok === false ? 'Showing saved entries — refresh unavailable' : crm.job_log_saved_at ? `Saved on this PC${data.deferred_loading || data.refresh_pending ? ' · Checking for changes…' : ''}` : data.deferred_loading ? 'Checking for saved Job Log entries…' : ''}</small>
