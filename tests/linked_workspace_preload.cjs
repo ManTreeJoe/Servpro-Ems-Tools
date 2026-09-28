@@ -15,8 +15,9 @@ const {chromium}=require('playwright');const path=require('node:path'),assert=re
  assert.deepEqual(await page.evaluate(()=>calls.filter(c=>c[0]==='full')),[['full','EMS']]);
  assert.ok((await page.locator('[data-comment-stream]').innerText()).includes('EMS saved'));
  await page.locator('[data-comment-input]').fill('Keep my EMS draft');
- await page.locator('[data-comment-division="CONTENTS"]').click();
- assert.ok((await page.locator('[data-comment-stream]').innerText()).includes('CONTENTS preloaded'));
+ page.once('dialog',d=>d.dismiss());
+ await page.locator('[data-division-data="CONTENTS"]').click();
+ assert.ok((await page.locator('[data-comment-stream]').innerText()).includes('EMS saved'));
  assert.equal(await page.locator('[data-comment-input]').inputValue(),'Keep my EMS draft');
  assert.equal(await page.evaluate(()=>calls.filter(c=>c[0]==='comments'&&c[1]==='CONTENTS').length),1);
  await page.locator('[data-comment-input]').fill('');

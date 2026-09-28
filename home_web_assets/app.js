@@ -259,7 +259,7 @@ window.addEventListener("message", async (ev) => {
     const item = findItem(key) || (fallback && {src: fallback[2]});
     if (item) navigate(key, item.src, d.focus || "");
   } else if (d.type === "ems-open-tool-modal" && d.key === "snapshot") {
-    openSnapshotModal(d.focus || "");
+    openSnapshotModal(d.focus || "", d.create ? d.cardId || "" : "", d.division || "EMS");
   } else if (d.type === "linguar-open-daily-run") {
     openDailyRunWorkspace();
   } else if (d.type === "linguar-open-job") {
@@ -272,7 +272,7 @@ window.addEventListener("message", async (ev) => {
 // Snapshot is a job-ending task, not a separate place people need to
 // navigate to. Open it as a focused workspace above Jobs and return the
 // user to the exact job when it closes.
-function openSnapshotModal(focus) {
+function openSnapshotModal(focus, cardId = "", division = "EMS") {
   closeSnapshotModal();
   const returnFocus = document.activeElement;
   const wrap = document.createElement("div");
@@ -281,8 +281,10 @@ function openSnapshotModal(focus) {
   wrap.setAttribute("role", "dialog");
   wrap.setAttribute("aria-modal", "true");
   wrap.setAttribute("aria-labelledby", "snapshot-workspace-title");
-  const url = "../snapshot_web_assets/index.html"
-    + (focus ? "?focus=" + encodeURIComponent(focus) : "");
+  const params = new URLSearchParams();
+  if (focus) params.set('focus', focus);
+  if (cardId) { params.set('create_card', cardId); params.set('division', division); }
+  const url = "../snapshot_web_assets/index.html" + (params.size ? '?' + params.toString() : '');
   wrap.innerHTML = `
     <header class="tool-workspace-head">
       <div>

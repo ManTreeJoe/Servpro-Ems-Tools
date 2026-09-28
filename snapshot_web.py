@@ -1529,7 +1529,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
-    def prefill_from_trello_card(self, card_id, client_fallback=""):
+    def prefill_from_trello_card(self, card_id, client_fallback="", division="EMS"):
         """Pull EVERY auto-fillable field from a Trello card — mirrors
         what the Tk snapshot does in HygieneApp._fetch_trello_card_and_fill.
 
@@ -1683,7 +1683,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
 
         try:
             from job_log_records import snapshot_rows
-            out["logs"] = snapshot_rows(out.get("insured") or client_fallback or "", card_id)
+            out["logs"] = snapshot_rows(client_fallback or out.get("insured") or "", card_id, division)
             out["job_log_source"] = "saved"
         except Exception as ex:
             out["logs"] = []
@@ -1713,23 +1713,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception:
             pass
 
-        # ── Auto-pin the Trello card to the resolved insured name ──
-        # When the user picks a card from the snapshot search, the
-        # downstream flows (Open Trello, Docusketch, CLOSE OUT,
-        # Post comment) look up the pin via persistence — they
-        # shouldn't have to fuzzy-search again. Pin only when no
-        # existing pin is set so a manual override stays sticky.
-        pin_name = (out["insured"] or client_fallback or "").strip()
-        if pin_name and card_id:
-            try:
-                existing = persistence.get_trello_card_id(pin_name) or ""
-                if not existing:
-                    persistence.set_trello_card_id(pin_name, card_id)
-                    out["auto_pinned"] = True
-                else:
-                    out["auto_pinned"] = False
-            except Exception:
-                out["auto_pinned"] = False
+        # Opening a report must not change the job's saved card links.
+        out["auto_pinned"] = False
         return out
 
     def prefill_for(self, client):
@@ -1892,6 +1877,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         insured = (payload.get("insured") or "").strip()
         if not insured:
             return {"ok": False, "error": "Insured name is required"}
+        source_client = str(payload.get('source_client') or insured).strip()
+        card_id = str(payload.get('card_id') or '').strip()
+        division = str(payload.get('division') or 'EMS').upper()
+        if division not in ('EMS', 'CONTENTS', 'RECON'):
+            return {'ok': False, 'error': 'Choose a valid Snapshot division.'}
         carrier = payload.get("carrier") or ""
         dol     = payload.get("dol") or ""
         first   = payload.get("first_visit") or ""
@@ -1935,10 +1925,9 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         revision_result = {"ok": False, "error": "revision was not saved"}
         try:
             import snapshot_revisions as _sr
-            card_id = persistence.get_trello_card_id(insured) or ""
             revision_result = _sr.save_revision(
-                insured, payload, pdf_path=output_path, card_id=card_id,
-                source_refs={"trello_card_id": card_id})
+                source_client, payload, pdf_path=output_path, card_id=card_id,
+                source_refs={"trello_card_id": card_id, 'division': division})
         except Exception as ex:
             revision_result = {"ok": False,
                                "error": f"{type(ex).__name__}: {ex}"}
@@ -1947,55 +1936,32 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         # Mirrors snapshot_gui.py:4679 — generating IS the strongest
         # possible "done" signal, no manual click required.
         try:
-            card_id = persistence.get_trello_card_id(insured) or ""
             if card_id:
                 import closeout_watcher as _cw
                 _cw.mark_drafted(card_id)
         except Exception:
             pass
-        # Snapshot's daily log is the closeout view of the durable Job Log.
-        # Save edits after the PDF succeeds; a log outage should be visible
-        # but must not discard a successfully written closeout document.
-        try:
-            import supabase_client as _sb
-            user = _sb.current_user() or {}
-            actor = user.get("display_name") or user.get("email") or ""
-        except Exception:
-            actor = ""
-        try:
-            log_sync = sync_snapshot_logs_to_job_log(insured, logs, actor)
-        except Exception as ex:
-            log_sync = {"ok": False, "rows": logs,
-                        "error": f"{type(ex).__name__}: {ex}"}
+        # A generated report is an output, never a write-back to Job Log.
         return {"ok": True, "path": output_path,
                 "rows_logs": len(logs), "rows_subs": len(subs),
                 "revision": revision_result.get("revision"),
                 "snapshot_id": revision_result.get("snapshot_id", ""),
                 "revision_saved": bool(revision_result.get("ok")),
                 "revision_error": revision_result.get("error", ""),
-                "job_log_synced": bool(log_sync.get("ok")),
-                "job_log_error": log_sync.get("error", ""),
-                "synced_logs": log_sync.get("rows", logs)}
+                "job_log_unchanged": True}
 
     def sync_snapshot_job_log(self, client: str, rows: list) -> dict:
-        """Debounced edit path used by the Snapshot table."""
-        try:
-            import supabase_client as _sb
-            user = _sb.current_user() or {}
-            actor = user.get("display_name") or user.get("email") or ""
-        except Exception:
-            actor = ""
-        try:
-            return sync_snapshot_logs_to_job_log(client, rows, actor,
-                                                 strict=False)
-        except Exception as ex:
-            return {"ok": False, "rows": rows or [],
-                    "error": f"{type(ex).__name__}: {ex}"}
+        """Reject write-back from an older cached Snapshot frontend."""
+        return {'ok': False, 'rows': rows or [], 'error':
+                'Snapshot is a report draft. Edit the Job Log in Jobs to change its saved records.'}
 
-    def snapshot_history(self, client: str, limit: int = 100) -> dict:
+    def snapshot_history(self, client: str, limit: int = 100, card_id: str = '', division: str = '') -> dict:
         try:
             import snapshot_revisions as _sr
             rows = _sr.list_revisions(client, limit=limit)
+            if card_id:
+                rows = [row for row in rows if row.get('card_id') == card_id
+                        and (not division or (row.get('source_refs') or {}).get('division', 'EMS') == division)]
             return {"ok": True, "revisions": rows, "count": len(rows)}
         except Exception as ex:
             return {"ok": False, "revisions": [],

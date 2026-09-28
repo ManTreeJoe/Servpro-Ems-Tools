@@ -1,0 +1,20 @@
+const {chromium}=require('playwright');
+const path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage();
+ await page.setContent('<div class="comment-compose"><textarea id="source"></textarea></div>');
+ for(const f of ['web_shared/theme.css','pipeline_web_assets/comment_editor.css'])await page.addStyleTag({path:path.resolve(f)});
+ for(const f of ['web_shared/vendor/markdown-it/markdown-it.min.js','pipeline_web_assets/comment_markdown.js','web_shared/vendor/comment-editor.js'])await page.addScriptTag({path:path.resolve(f)});
+ await page.evaluate(()=>CommentRichEditor.mount(document.querySelector('textarea')));
+ const hint=()=>page.locator('.comment-editor').evaluate(el=>el.classList.contains('is-empty'));
+ assert.equal(await hint(),true);
+ await page.locator('[data-comment-format="number"]').click();
+ assert.equal(await hint(),false,'Numbered list marker must hide the placeholder');
+ await page.evaluate(()=>document.querySelector('textarea').value='');assert.equal(await hint(),true);
+ await page.locator('[data-comment-format="bullet"]').click();assert.equal(await hint(),false);
+ await page.evaluate(()=>document.querySelector('textarea').value='Restored draft');assert.equal(await hint(),false);
+ await page.evaluate(()=>document.querySelector('textarea').value='');
+ await page.locator('.comment-editor-content').fill('Typed text');assert.equal(await hint(),false);
+ await page.evaluate(()=>document.querySelector('textarea').value='');assert.equal(await hint(),true);
+ console.log('PASS: placeholder only in plain empty editor');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

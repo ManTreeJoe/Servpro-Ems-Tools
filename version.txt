@@ -1,6 +1,6 @@
 {
-  "version": "1.8.23",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.23",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.23/Linguar-Hub-Setup-1.8.23.exe",
-  "notes": "Removes the Saved audit section from the job card Overview. Requirements keeps Check files; existing audit tools and saved data are unchanged. Includes the fixes in 1.8.22."
+  "version": "1.8.24",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.24",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.24/Linguar-Hub-Setup-1.8.24.exe",
+  "notes": "Simpler Photos/Documents gallery, stage albums and folder opening; searchable Trello reaction picker; clearer division tabs and Job Log toolbar; corrected comment placeholder and spinner. Create Snapshot from Jobs with report-only edits and exact card/division tracking."
 }

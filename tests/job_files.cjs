@@ -14,9 +14,9 @@ const {chromium}=require('playwright'),path=require('node:path'),assert=require(
  assert.deepEqual(await page.evaluate(()=>calls),[],'Mount must not load before Files selected');
  await page.evaluate(()=>viewer.activate());
  assert.match(await page.locator('[data-files-status]').textContent(),/Loading/);
- await page.evaluate(()=>finishList({ok:true,files:[{name:'Photos',relative:'Photos',directory:true,kind:'folder'},{name:'Policy.pdf',relative:'Policy.pdf',kind:'document',size:1500}]}));
- await page.getByRole('button',{name:/Photos Folder/}).click();
- assert.deepEqual(await page.evaluate(()=>calls),['','Photos']);
+ await page.evaluate(()=>finishList({ok:true,files:[{name:'Albums',relative:'Photos',directory:true,kind:'folder'},{name:'Policy.pdf',relative:'Policy.pdf',kind:'document',size:1500}]}));
+ await page.getByRole('button',{name:/Albums Open album/}).click();
+ assert.equal((await page.evaluate(()=>calls)).at(-1),'Photos');
  await page.evaluate(()=>finishList({ok:true,files:[{name:'Kitchen.jpg',relative:'Photos/Kitchen.jpg',kind:'photo',offline:true,size:24000},{name:'Hall.jpg',relative:'Photos/Hall.jpg',kind:'photo',offline:true,size:24000}]}));
  await page.getByRole('button',{name:/Kitchen.jpg/}).click();
  await page.waitForFunction(()=>document.querySelector('[data-preview-content]').textContent.includes('online-only'));
@@ -31,10 +31,10 @@ const {chromium}=require('playwright'),path=require('node:path'),assert=require(
  await page.getByRole('button',{name:/Hall.jpg/}).click();
  await page.locator('[data-preview-content] iframe').waitFor();
  assert.equal(await page.locator('[data-preview-content] iframe').getAttribute('title'),'Hall.jpg');
- await page.locator('[data-files-source]').selectOption('trello');
+ await page.locator('[data-attachments]').click();
  await page.getByRole('button',{name:/Policy.pdf/}).click();
  assert.deepEqual(await page.evaluate(()=>opened),['https://trello.com/fixture']);
- await page.locator('[data-files-source]').selectOption('folder');
+ await page.locator('[data-library="photo"]').click();
  await page.evaluate(()=>finishList({ok:false,error:'Folder is unavailable'}));
  await page.waitForFunction(()=>document.querySelector('[data-files-status]').textContent==='Folder is unavailable');
  assert.equal(await page.locator('.job-file-row').count(),0);
@@ -43,13 +43,13 @@ const {chromium}=require('playwright'),path=require('node:path'),assert=require(
  for(const file of ['web_shared/theme.css','pipeline_web_assets/app.css','web_shared/modal.css','pipeline_web_assets/job_workspace_tabs.css','pipeline_web_assets/job_files.css'])await page.addStyleTag({path:path.resolve(file)});
  for(const file of ['web_shared/modal.js','pipeline_web_assets/job_files.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(file)});
  await page.evaluate(()=>{
-   window.calls=[]; window.pywebview={api:{job_files:async()=>{calls.push('list');return {ok:true,files:[{name:'Docs',relative:'Docs',directory:true,kind:'folder'}]}}}};
+   window.calls=[]; window.pywebview={api:{job_files:async(_,p)=>{calls.push('list');return {ok:true,files:p?[]:[{name:'Stages',relative:'Stages',directory:true,kind:'folder',offline:true}]}}}};
    window.fixture={ok:true,client:'Fixture job',card_id:'fixture-card',selected_division:'EMS',audit:{found:true},crm:{job_log:[]},comments:[],attachments:[]};
    window.workspace=openAuditModal(fixture);
  });
  assert.equal(await page.evaluate(()=>calls.length),0);
  await page.getByRole('tab',{name:'Files',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.job-files-list')?.textContent.includes('Docs'));
+ await page.waitForFunction(()=>document.querySelector('.job-files-list')?.textContent.includes('Stages'));
  await page.locator('[data-comment-input]').fill('Preserve this draft');
  await page.evaluate(()=>{window.originalFiles=document.querySelector('.job-files-section');workspace.applyRefresh({...fixture,attachments:[{name:'New.pdf',url:'https://trello.com/new'}]});});
  assert.equal(await page.evaluate(()=>originalFiles===document.querySelector('.job-files-section')),true);

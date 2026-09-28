@@ -33,7 +33,7 @@ def _creds():
     return key, token
 
 
-def _call(path, *, params=None, method="GET", data=None, _max_retries=5, _timeout=15):
+def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_retries=5, _timeout=15):
     """GET (or POST/PUT) against Trello API. Auth params appended automatically.
     `data` is form-encoded for write methods. Raises urllib HTTPError on non-2xx.
 
@@ -43,6 +43,8 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5, _timeou
     Snapshots reconcile fires ~1.7k calls and WILL trip that without this,
     so closed jobs near the end of the workbook were misrouting to Needs
     Attention on a transient 429 rather than their real sheet."""
+    if data is not None and json_data is not None:
+        raise ValueError("Choose either form data or JSON")
     key, token = _creds()
     if method.upper() not in ('GET', 'HEAD'):
         # Fail closed for server reads if the durable write barrier cannot be
@@ -58,6 +60,9 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5, _timeou
     if data is not None:
         body = urllib.parse.urlencode(data).encode("utf-8")
         headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if json_data is not None:
+        body = json.dumps(json_data).encode("utf-8")
+        headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
     attempt = 0
     while True:

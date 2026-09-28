@@ -24,6 +24,18 @@ def _offline(stat):
     return bool(getattr(stat, 'st_file_attributes', 0) & (0x1000 | 0x40000 | 0x400000))
 
 
+def open_folder(root, relative=''):
+    """Open only a verified directory within the saved job root."""
+    try:
+        _, folder = _target(root, relative)
+        if not folder.is_dir():
+            raise ValueError('This folder is unavailable. Check OneDrive or refresh the listing.')
+        os.startfile(str(folder))
+        return {'ok': True}
+    except (OSError, ValueError) as error:
+        return {'ok': False, 'error': str(error)}
+
+
 def list_folder(root, relative=''):
     try:
         base, folder = _target(root, relative)

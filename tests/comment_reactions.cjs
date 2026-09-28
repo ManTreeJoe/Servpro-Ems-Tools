@@ -1,0 +1,67 @@
+const {chromium}=require('playwright');
+const path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try {
+  const page=await browser.newPage({viewport:{width:420,height:700}});
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.setContent('<main style="background:#1f2429;color:#eee;padding:16px;font:14px Arial"><div id="stream"></div></main>');
+  for (const file of ['web_shared/theme.css','pipeline_web_assets/app.css']) await page.addStyleTag({path:path.resolve(file)});
+  await page.addStyleTag({path:path.resolve('pipeline_web_assets/comment_reactions.css')});
+  await page.addScriptTag({path:path.resolve('pipeline_web_assets/comment_reactions.js')});
+  await page.addScriptTag({path:path.resolve('pipeline_web_assets/app.js')});
+  const choices=JSON.parse(require('node:child_process').execFileSync('C:/Users/NathanBupte/AppData/Local/Programs/Python/Python312/python.exe',['-c','import json; from comment_emoji import CHOICES; print(json.dumps(CHOICES))'],{encoding:'utf8'}));
+  await page.evaluate(choices=>window.choices=choices,choices);
+  await page.evaluate(()=>{
+   window.calls=[];window.mine=false;window.fail=false;
+   window.pywebview={api:{job_comment_reactions:async(...args)=>{
+    calls.push(args);if(fail)return {ok:false,error:'Trello could not confirm the reaction. Refresh reactions before trying again.'};
+    if(args[2])mine=args[3];
+    return {ok:true,account:'Test member',choices:window.choices,reactions:[{code:'1F44D',emoji:'👍',count:mine?2:1,mine,people:['Test member']}]};
+   }}};
+   document.documentElement.dataset.theme='dark';
+   window.draw=()=>document.querySelector('#stream').innerHTML=renderJobComment({card_id:'a'.repeat(24),id:'b'.repeat(24),source:'trello',text:'Photos uploaded. Ready for review.',actor:'Test member',at:'2026-09-28T18:00:00Z'});
+   draw();
+  });
+  assert.deepEqual(await page.evaluate(()=>calls),[],'No comment-load requests');
+  await page.locator('[data-reactions-open]').click();
+  await page.waitForFunction(()=>document.querySelector('[data-reaction-code]'));
+  assert.equal(await page.locator('[data-emoji-code]').count(),choices.length);
+  const before=await page.locator('#stream').boundingBox();
+  await page.getByRole('searchbox',{name:'Search emojis'}).fill('thumbs');
+  assert.equal(await page.locator('[data-emoji-code]').count(),2);
+  assert.equal((await page.locator('#stream').boundingBox()).height,before.height,'Search popup never resizes comments');
+  await page.getByRole('searchbox',{name:'Search emojis'}).fill('');
+  await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-emoji-picker.png')});
+  const bounds=await page.locator('.emoji-picker').boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=420&&bounds.y+bounds.height<=700);
+  await page.locator('[data-emoji-code="1F44D"]').click();
+  await page.waitForFunction(()=>document.querySelector('[data-reaction-code="1F44D"]').getAttribute('aria-pressed')==='true');
+  assert.deepEqual((await page.evaluate(()=>calls)).at(-1),['a'.repeat(24),'b'.repeat(24),'1F44D',true]);
+  assert.equal(await page.locator('.emoji-picker').count(),0,'Selection closes picker');
+  await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-comment-reactions.png')});
+  await page.locator('[data-reaction-code="1F44D"]').click();
+  await page.waitForFunction(()=>document.querySelector('[data-reaction-code="1F44D"]').getAttribute('aria-pressed')==='false');
+  await page.evaluate(()=>fail=true);
+  await page.locator('[data-reaction-code="1F44D"]').click();
+  await page.waitForFunction(()=>document.querySelector('.reaction-message').textContent.includes('could not confirm'));
+  assert.equal(await page.locator('[data-reaction-code]').isDisabled(),true,'Uncertain state requires refresh, not another toggle');
+  await page.evaluate(()=>fail=false);
+  await page.locator('[data-reactions-open]').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-reaction-code]').disabled);
+  await page.getByRole('button',{name:'Recent',exact:true}).click();
+  assert.equal(await page.locator('[data-emoji-code]').count(),1);
+  await page.locator('[data-reactions-refresh]').focus();await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.emoji-picker').count(),0);
+  await page.locator('[data-reactions-open]').click();
+  await page.mouse.click(415,680);
+  assert.equal(await page.locator('.emoji-picker').count(),0,'Outside click dismisses picker');
+  await page.evaluate(()=>draw());await page.locator('[data-reactions-open]').click();
+  await page.waitForFunction(()=>document.querySelector('[data-reaction-code]'));
+  await page.evaluate(()=>draw());
+  await page.waitForFunction(()=>!document.querySelector('.emoji-picker'));
+  assert.equal(await page.evaluate(()=>CommentReactions.markup({source:'linguar',id:'123'})), '');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  assert.deepEqual(errors,[]);
+  console.log('comment reactions: PASS');
+ } finally {await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});

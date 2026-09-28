@@ -1786,6 +1786,11 @@ class Api(JobSettingsApi):
         except (OSError, ValueError) as error:
             return {"ok": False, "error": str(error)}
 
+    def job_folder_open(self, client: str, relative: str = "") -> dict:
+        import persistence
+        import job_file_browser
+        return job_file_browser.open_folder(persistence.get_folder_path(client) or "", relative)
+
     def open_document(self, path: str) -> dict:
         path = os.path.abspath(path or "")
         if not path or not os.path.isfile(path):
@@ -1934,6 +1939,10 @@ class Api(JobSettingsApi):
     def job_comment_members(self, card_id: str) -> dict:
         from job_comment_mentions import members
         return members(card_id)
+
+    def job_comment_reactions(self, card_id: str, action_id: str, code=None, active=None) -> dict:
+        from job_comment_reactions import reactions
+        return reactions(card_id, action_id, code, active)
 
     def post_job_comment(self, client: str, card_id: str, text: str) -> dict:
         text = (text or "").strip()

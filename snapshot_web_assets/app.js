@@ -24,7 +24,6 @@ const pad2 = (n) => String(n).padStart(2, "0");
 let _queueSyncBusy = false;
 let _queueSyncPromise = null;
 let _queueSyncTimer = null;
-let _jobLogSyncTimer = null;
 
 // Live HEIC→JPEG conversion progress from the backend (do_import emits
 // `import:progress` per file). Updates the running import button so a
@@ -108,12 +107,7 @@ window.addEventListener("pywebviewready", async () => {
     clearTimeout(_draftTimer);
     _draftTimer = setTimeout(saveSnapshotDraft, 400);
   });
-  // The Snapshot daily-log table is a closeout view of Job Log, not a
-  // separate copy. Save complete edited rows after the user pauses typing.
-  $("#logs-body")?.addEventListener("input", () => {
-    clearTimeout(_jobLogSyncTimer);
-    _jobLogSyncTimer = setTimeout(syncSnapshotJobLog, 900);
-  });
+  // Snapshot rows are report drafts. Editing never writes back to Job Log.
   // Snapshot list-view tabs (Today vs Tracked)
   document.querySelectorAll("#snap-tabs .tab-btn").forEach((b) =>
     b.addEventListener("click", () => snapshotShowTab(b.dataset.tab)));
@@ -146,6 +140,11 @@ window.addEventListener("pywebviewready", async () => {
     const cb = $("#tracked-auto-recon");
     if (cb) cb.checked = !!auto;
   } catch { /* optional */ }
+  const requestedSnapshot = new URLSearchParams(window.location.search);
+  if (requestedSnapshot.get('create_card') && requestedSnapshot.get('focus')) {
+    await startNew(requestedSnapshot.get('focus'), requestedSnapshot.get('create_card'), requestedSnapshot.get('division') || 'EMS');
+    return; // Direct job entry does not wait for or poll the unrelated queue.
+  }
   await loadList();
   // Trello is the queue's source of truth. Coworkers can move cards into the
   // Snapshot lane at any time, so keep this screen current without requiring
@@ -770,6 +769,8 @@ function serializeSnapshotDraft() {
     subs:     collectRows("subs"),
     logs:     collectRows("logs"),
     cardId:   state.cardId || "",
+    sourceClient: state.sourceClient || '',
+    division: state.division || 'EMS',
     ts:       Date.now(),
   };
 }
@@ -815,6 +816,8 @@ function restoreSnapshotDraft(d) {
   if (!$("#subs-body").children.length) addRow("subs", {});
   if (!$("#logs-body").children.length) addRow("logs", {});
   state.cardId = d.cardId || "";
+  state.sourceClient = d.sourceClient || d.insured || '';
+  state.division = d.division || 'EMS';
   refreshSnapshotCommentsButton();
   showDraftBanner();
 }
@@ -842,7 +845,7 @@ function hideDraftBanner() {
   document.getElementById("draft-banner")?.remove();
 }
 
-async function startNew(client = "", cardId = "") {
+async function startNew(client = "", cardId = "", division = "EMS") {
   const requestId = ++state.openRequest;
   hideDraftBanner();
   switchTo("gen");
@@ -859,6 +862,9 @@ async function startNew(client = "", cardId = "") {
   state.lastPdfPath = null;
   state.lastClient = null;
   state.cardId = cardId || "";   // for the DocuSign-email city lookup
+  state.sourceClient = client;
+  state.division = division;
+  setJobLogSyncState('Report draft only · Job Log is unchanged', '');
   $("#move-snapshot-btn").disabled = !state.cardId;
   refreshSnapshotCommentsButton();
   $("#f-insured").value = client || "";
@@ -875,7 +881,7 @@ async function startNew(client = "", cardId = "") {
     try {
       try {
         fill = cardId
-          ? await pywebview.api.prefill_from_trello_card(cardId, client)
+          ? await pywebview.api.prefill_from_trello_card(cardId, client, division)
           : await pywebview.api.prefill_for(client);
       } catch (ex) {
         if (requestId !== state.openRequest) return;
@@ -909,10 +915,10 @@ async function startNew(client = "", cardId = "") {
         ? ` · 📌 pinned card to ${fill.insured || client}`
         : "";
       setStatus(
-        cardId && bits.length
+        fill.job_log_error ? fill.job_log_error : cardId && bits.length
           ? `📋 Parsed from Trello: ${bits.join(" · ")}${pinNote}`
-          : `Pre-filled ${fill.logs.length} log rows from recent run-docs`,
-        "ok");
+          : `Pre-filled ${fill.logs.length} saved Job Log rows`,
+        fill.job_log_error ? "warn" : "ok");
     } catch (ex) {
       if (requestId === state.openRequest) {
         setStatus(`Snapshot details could not be displayed: ${ex}. You can still complete it manually.`, "warn");
@@ -1271,6 +1277,9 @@ async function generate() {
   } catch (_) { /* fall through — degrade to single-unit generate */ }
   const payload = {
     insured,
+    source_client: state.sourceClient || insured,
+    card_id: state.cardId || '',
+    division: state.division || 'EMS',
     carrier:     $("#f-carrier").value,
     dol:         $("#f-dol").value,
     first_visit: $("#f-first").value,
@@ -1298,11 +1307,7 @@ async function generate() {
       `✓ Saved to <code>${esc(res.path)}</code> · ${res.rows_logs} log rows, ${res.rows_subs} subs${revisionNote}`;
     $("#gen-status").className = res.revision_saved ? "ok" : "warn";
     state.lastPdfPath = res.path;
-    state.lastClient = insured;
-    applySyncedLogRows(res.synced_logs || []);
-    if (!res.job_log_synced && res.job_log_error) {
-      setStatus(`PDF saved · Job Log sync pending: ${res.job_log_error}`, "warn");
-    }
+    state.lastClient = state.sourceClient || insured;
     // Snapshot generated — the draft is no longer "unsaved work".
     clearSnapshotDraft();
     // Open the PDF immediately so the user can review
@@ -1392,7 +1397,7 @@ async function finishSnapshotTransition() {
 }
 
 async function openSnapshotHistory() {
-  const client = state.lastClient || $("#f-insured")?.value.trim();
+  const client = state.lastClient || state.sourceClient || $("#f-insured")?.value.trim();
   if (!client) { setStatus("Choose a job first", "warn"); return; }
   const wrap = mkSnapModal({
     title: "Snapshot history — " + client,
@@ -1400,7 +1405,7 @@ async function openSnapshotHistory() {
   });
   const body = wrap.querySelector("#snapshot-history-body");
   let res;
-  try { res = await pywebview.api.snapshot_history(client, 100); }
+  try { res = await pywebview.api.snapshot_history(client, 100, state.cardId || '', state.division || 'EMS'); }
   catch (ex) { res = { ok: false, error: String(ex) }; }
   if (!res?.ok) {
     body.textContent = "History unavailable: " + (res?.error || "?"); return;

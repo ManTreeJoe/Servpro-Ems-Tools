@@ -1,0 +1,19 @@
+.comment-reactions,.reaction-counts{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.comment-reactions{margin-top:4px;min-height:24px}
+.reaction-counts button{border:1px solid var(--border);border-radius:14px;background:var(--surface-2);color:var(--text);padding:3px 8px;cursor:pointer}
+.reaction-counts button[aria-pressed=true],.emoji-grid button[aria-pressed=true]{background:#205d50;border-color:#92c5b5;color:white}
+.reaction-message{flex-basis:100%;font-size:11px;color:var(--text-muted)}
+.reaction-message:empty{display:none}
+.emoji-picker{position:fixed;z-index:2147483000;width:min(340px,calc(100vw - 16px));max-height:calc(100dvh - 16px);display:flex;flex-direction:column;gap:10px;padding:12px;box-sizing:border-box;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface-2);color:var(--text);box-shadow:0 10px 35px #0008;font:13px var(--font-sans,sans-serif)}
+.emoji-picker header,.emoji-picker footer{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.emoji-picker header button,.emoji-picker footer button{background:transparent;color:inherit;border:0;cursor:pointer;min-height:28px}
+.emoji-picker input{width:100%;box-sizing:border-box;background:var(--surface);color:var(--text);border:1px solid var(--border-strong);border-radius:6px;padding:9px;font:inherit}
+.emoji-categories{display:flex;gap:4px;overflow-x:auto;flex-shrink:0;padding-bottom:3px}
+.emoji-categories button{white-space:nowrap;padding:6px 8px;border:0;border-radius:4px;color:var(--text-muted);background:transparent;cursor:pointer}
+.emoji-categories button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:inset 0 -2px var(--text)}
+.emoji-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;overflow-y:auto;height:220px;min-height:50px;align-content:start}
+.emoji-grid button{font-size:24px;min-height:36px;padding:2px;border:1px solid transparent;border-radius:5px;background:transparent;cursor:pointer}
+.emoji-grid button:hover:not(:disabled){background:var(--surface);border-color:var(--border-strong)}
+.emoji-picker footer small{font-size:11px;color:var(--text-muted);overflow-wrap:anywhere}
+.emoji-picker button:focus-visible,.emoji-picker input:focus-visible,.comment-reactions button:focus-visible{outline:2px solid #8cbef5;outline-offset:1px}
+.emoji-picker button:disabled,.reaction-counts button:disabled{opacity:.5;cursor:wait}

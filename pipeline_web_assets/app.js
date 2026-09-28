@@ -1859,9 +1859,10 @@ function patchJobLogSection(previous, incoming) {
   desired.forEach((node, index) => {
     if (list.children[index] !== node) list.insertBefore(node, list.children[index] || null);
   });
-  const oldExport = previous.querySelector('[data-job-log-export]');
-  const nextExport = incoming.querySelector('[data-job-log-export]');
-  if (oldExport && nextExport) oldExport.replaceWith(nextExport);
+  // Keep the incoming handlers/current division attached to all toolbar actions.
+  const oldToolbar = previous.querySelector('.job-log-toolbar');
+  const nextToolbar = incoming.querySelector('.job-log-toolbar');
+  if (oldToolbar && nextToolbar) oldToolbar.replaceWith(nextToolbar);
   for (const selector of ['.section-title-row', '[data-job-log-status]']) {
     const old = previous.querySelector(selector), node = incoming.querySelector(selector);
     if (old && node && !old.isEqualNode(node)) old.replaceWith(node);
@@ -1954,6 +1955,9 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     ["Trello link", trelloUrl],
   ].filter((item) => item[1]);
   const claimNumber = copyField("claim_number");
+  const headerTags = [...new Set([copyField('carrier'), ...String(copyField('loss_type') || '').split(',')]
+    .map(value => String(value || '').trim()).filter(Boolean))];
+  const headerTagsHtml = headerTags.length ? `<div class="job-header-tags" aria-label="Insurance and loss types">${headerTags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : '';
   const activity = (res.activity || []).length
     ? `<div class="aud-chips">${res.activity.map((a) => `<span>${escapeHtml(a)}</span>`).join("")}</div>`
     : `<div class="aud-empty">No activity recorded for this run.</div>`;
@@ -2161,9 +2165,11 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       <section class="aud-section job-info-section"><div class="section-title-row"><div><h3>Job info</h3><small>Click location to move · other fields to copy</small></div><button type="button" class="btn compact" data-edit-job-info>Edit</button></div>
         ${facts || `<div class="aud-empty">${emptyWorkspaceText('Job information', 'No saved job information yet.')}</div>`}</section>
       <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
-        <div class="section-actions">${data.card_id ? `<button class="btn compact" data-refresh-job-log>Refresh saved log</button><button class="btn compact" data-import-job-log>Pull from ${escapeHtml(selectedDivision)} Trello</button>` : ""}<button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div></div>
+        <button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div>
+        <div class="job-log-toolbar" role="group" aria-label="Job Log actions">${data.card_id ? `<button class="btn compact" data-refresh-job-log title="Reload saved Job Log entries without importing Trello comments">Refresh saved log</button><button class="btn compact" data-import-job-log title="Manually import comments from this division's Trello card">Pull from ${escapeHtml(selectedDivision)} Trello</button>` : ""}
+        <button class="btn compact" data-create-snapshot ${data.card_id ? '' : 'disabled'} title="Open the Snapshot editor for this card and its saved completed Job Log entries">Create Snapshot</button>
+        <div data-job-log-export><button class="btn compact" data-print-job-log ${(crm.job_log || []).length ? '' : 'disabled'} title="${(crm.job_log || []).length ? 'Save the currently loaded division Job Log as a Snapshot-style PDF' : 'Add or import a Job Log entry before printing'}">Print / PDF</button><small data-job-log-export-status role="status"></small></div></div>
         <small data-job-log-status role="status">${crm.job_log_dismissal_pending ? 'Dismissal saved on this PC · waiting to sync' : crm.job_log_error || crm.ok === false ? 'Showing saved entries — refresh unavailable' : crm.job_log_saved_at ? `Saved on this PC${data.deferred_loading || data.refresh_pending ? ' · Checking for changes…' : ''}` : data.deferred_loading ? 'Checking for saved Job Log entries…' : ''}</small>
-        <div class="section-actions" data-job-log-export><button class="btn compact" data-print-job-log ${(crm.job_log || []).length ? '' : 'disabled'} title="Save the currently loaded division Job Log as a Snapshot-style PDF">Print / PDF</button><small data-job-log-export-status role="status"></small></div>
         <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div></section>
       <section class="aud-section paperwork-section"><div class="section-title-row"><div><h3>Forms &amp; paperwork</h3><small>${escapeHtml(paperworkSummary)}</small></div><button class="btn compact" data-run-folder-audit>Check files</button></div>
         <div class="paperwork-list">${paperworkRows || `<div class="aud-empty">The paperwork list is unavailable for this saved job.</div>`}</div>
@@ -2184,7 +2190,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       <details class="aud-section compact-section job-run-section" open><summary>Run activity <span>${(res.activity || []).length}</span></summary>${activity}</details>
       <details class="aud-section compact-section job-attachments-section" open><summary>Other attachments <span>${(data.attachments || []).length}</span></summary>${attachments}</details>
     </div>
-    <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>Linked job conversations</small></div>
+    <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>${escapeHtml(selectedDivision === 'CONTENTS' ? 'Contents' : selectedDivision === 'RECON' ? 'Recon' : 'EMS')} conversation</small></div>
       <span data-comment-count>${(data.comments || []).length}</span></div>
       <label class="comment-search"><span aria-hidden="true">⌕</span><input type="search" data-comment-search placeholder="Search comments" aria-label="Search comments"><small data-comment-search-count></small></label>
       <div class="comment-stream" data-comment-stream>${comments}</div>
@@ -2196,11 +2202,12 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   w.innerHTML = `
     <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job workspace" tabindex="-1">
       <header class="modal-head">
-        ${divisionDataTabs}
         <div class="audit-head-main"><div class="audit-head-copy"><div class="modal-title-row"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div><button type="button" class="client-page-link" data-open-client-page>👤 Client page</button></div>
         <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div></div>
         <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Checking details…" : data.refresh_pending ? "Saved details · checking for updates" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh details</button>`}</div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button></div>
+        ${headerTagsHtml}
+        ${divisionDataTabs}
         <div class="card-quick-actions" aria-label="Job actions">
           <div class="quick-main-actions">
           <div class="quick-primary-actions" aria-label="Work actions">
@@ -2839,6 +2846,10 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     if (!result?.ok) { button.disabled = false; button.textContent = "Mark envelope sent"; setStatus(result?.error || "Could not track DocuSign request", "error"); return; }
     close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("DocuSign request marked sent", "ok");
   });
+  w.querySelector('[data-create-snapshot]')?.addEventListener('click', () => {
+    if (dirtyDrafts.has('job-log')) { setStatus('Save or cancel the Job Log edit before creating a Snapshot.', 'warn'); return; }
+    window.parent.postMessage({type:'ems-open-tool-modal', key:'snapshot', focus:data.client || res.client || '', cardId:data.card_id || '', division:selectedDivision, create:true}, '*');
+  });
   w.querySelector('[data-print-job-log]')?.addEventListener('click', async (event) => {
     const button = event.currentTarget;
     const status = w.querySelector('[data-job-log-export-status]');
@@ -3015,6 +3026,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     .filter(item => ['conflict', 'ambiguous'].includes(item.state))
     .map(item => String(item.division || '').toUpperCase()));
   const conversation = preparation?.conversation || window.JobConversation.mount(w, {
+    followWorkspace: true,
     cardId: data.card_id || '', division: selectedDivision,
     cards: workspaceDivisionCards.map(card => ({...card,
       conflict: conflictedDivisions.has(String(card.division || '').toUpperCase())})),
@@ -3697,7 +3709,7 @@ function renderJobComment(comment) {
   return `<article class="job-comment" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-card-id="${escapeAttr(comment?.card_id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar">${escapeHtml(initial)}</div>
     <div><header><strong>${escapeHtml(actor)}</strong><time>${escapeHtml(formatCommentDate(comment?.at || ""))}</time></header>
     <div class="comment-markdown" data-comment-raw="${escapeAttr(comment?.text || '')}">${window.CommentMarkdown ? window.CommentMarkdown.render(comment?.text) : `<p>${escapeHtml(comment?.text || '')}</p>`}</div><footer><small>${escapeHtml(comment?.division ? comment.division + ' · ' : '')}${source === "trello" ? "Trello" : "OneLoss"}</small>
-    ${comment?.id && comment?.can_manage ? `<span><button class="text-btn" data-comment-edit>Edit</button><button class="text-btn danger" data-comment-delete>Delete</button></span>` : ""}</footer></div></article>`;
+    ${comment?.id && comment?.can_manage ? `<span><button class="text-btn" data-comment-edit>Edit</button><button class="text-btn danger" data-comment-delete>Delete</button></span>` : ""}</footer>${window.CommentReactions?.markup(comment) || ''}</div></article>`;
 }
 
 function formatCommentDate(value) {

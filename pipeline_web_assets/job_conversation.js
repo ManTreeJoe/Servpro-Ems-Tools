@@ -31,7 +31,7 @@ window.JobConversation = (() => {
     controls.setAttribute('role', 'group');
     controls.setAttribute('aria-label', 'Choose one comments division');
     const buttons = new Map();
-    for (const division of divisions) {
+    for (const division of options.followWorkspace ? [] : divisions) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = label(division);
@@ -46,16 +46,19 @@ window.JobConversation = (() => {
       controls.append(button);
       buttons.set(division, button);
     }
-    root.querySelector('.comment-search').before(controls);
+    if (!options.followWorkspace) root.querySelector('.comment-search').before(controls);
     const status = document.createElement('small');
     status.className = 'comment-division-status';
     status.setAttribute('role', 'status');
-    controls.append(status);
+    if (options.followWorkspace) {
+      status.classList.add('workspace-comment-status');
+      root.querySelector('.activity-head').append(status);
+    } else controls.append(status);
     const errorStatus = document.createElement('small');
     errorStatus.className = 'comment-division-error';
     errorStatus.setAttribute('role', 'alert');
     errorStatus.hidden = true;
-    controls.after(errorStatus);
+    root.querySelector('.comment-search').before(errorStatus);
     const selectedDestinations = new Set([current]);
     const destination = document.createElement('div');
     destination.className = 'comment-post-destination';

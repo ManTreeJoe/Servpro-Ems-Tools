@@ -9,6 +9,10 @@ const path=require('node:path'),assert=require('node:assert/strict');
   for(const file of ['web_shared/theme.css','pipeline_web_assets/app.css','pipeline_web_assets/job_workspace_tabs.css']) await page.addStyleTag({path:path.resolve(file)});
   for(const file of ['web_shared/modal.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js']) await page.addScriptTag({path:path.resolve(file)});
   await page.evaluate(()=>{
+   // Exercise the reusable standalone conversation selector here. The actual
+   // workspace's single shared switcher is covered by job_division_tabs.cjs.
+   const mount=JobConversation.mount;
+   JobConversation.mount=(root,options)=>mount(root,{...options,followWorkspace:false});
    document.documentElement.dataset.theme='dark';
    window.calls=[];window.posts=[];window.multiPosts=[];window.projectOpens=[];window.savedLogs=[];
    const row=(id,text)=>({id,text,source:'trello',actor:'Example coordinator',at:'2026-09-18T10:00:00Z'});

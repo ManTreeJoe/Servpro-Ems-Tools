@@ -26,7 +26,11 @@ function mount(source) {
   let updating = false;
   const buttons = [];
   function paint(editor) {
-    box.classList.toggle('is-empty',editor.isEmpty);
+    // Lists/quotes can be text-empty while still showing a marker or structure.
+    // The placeholder belongs only to the initial single empty paragraph.
+    const doc = editor.state.doc;
+    const plainEmpty = doc.childCount === 1 && doc.firstChild.type.name === 'paragraph' && doc.firstChild.content.size === 0;
+    box.classList.toggle('is-empty',plainEmpty);
     for (const [button,active] of buttons) button.setAttribute('aria-pressed',String(editor.isActive(active)));
   }
   const editor = new Editor({
