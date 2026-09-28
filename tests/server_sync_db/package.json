@@ -1,0 +1,6 @@
+{
+  "name": "linguar-server-sync-db-tests",
+  "private": true,
+  "scripts": { "test": "node --experimental-transform-types mirror.test.cjs && node reader.test.cjs" },
+  "devDependencies": { "@electric-sql/pglite": "0.5.8" }
+}

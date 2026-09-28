@@ -24,6 +24,19 @@
   var IS_TOP = window.parent === window;
   var POLL_MS = 30000;
   var api = null;
+  var feedbackUrl = new URL('toast_log.js', document.currentScript.src).href;
+  // Every panel already loads this shared module. Install feedback on pages
+  // without an explicit toast-log script too; never install it twice.
+  function ensureFeedback() {
+    if (window.OneLossNotice || Array.from(document.scripts).some(function (s) {
+      return s.src.split('?')[0] === feedbackUrl;
+    })) return;
+    var script = document.createElement('script');
+    script.src = feedbackUrl;
+    document.head.appendChild(script);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensureFeedback, {once:true});
+  else ensureFeedback();
 
   function whenApi(cb) {
     if (window.pywebview && window.pywebview.api) { cb(window.pywebview.api); return; }
@@ -55,6 +68,13 @@
     if (seen[key]) { seen[key]++; return; }
     seen[key] = 1;
     sent++;
+    try {
+      if (window.OneLossNotice) window.OneLossNotice.show({
+        panel:panelName(), kind:'error', title:'Something went wrong on this page',
+        msg:'Check your last action before trying again. Error details are available below.',
+        details:message + '\n' + (detail || '')
+      });
+    } catch (_) { /* feedback must not break error reporting */ }
     try {
       if (api && api.log_js_error) api.log_js_error(panelName(), message, detail || "");
     } catch (_) { /* reporting must never throw */ }

@@ -78,7 +78,7 @@ def test_full_dev_shell_uses_main_data_with_an_isolated_runtime(monkeypatch):
     assert home_web._runtime_channel() == "Dev"
     assert home_web._instance_mutex_name() == (
         "Local\\LinguarHub.Dev.SingleInstance")
-    assert home_web._window_title() == "Linguar Hub — DEV"
+    assert home_web._window_title() == "OneLoss — DEV"
 
 
 def test_state_replace_retries_a_brief_windows_lock(tmp_path, monkeypatch):

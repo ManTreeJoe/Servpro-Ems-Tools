@@ -158,7 +158,7 @@ class Api:
 def main(argv=None):
     api = Api()
     win = webview.create_window(
-        title="EMS Cheat Sheet — Linguar Hub (web)",
+        title="EMS Cheat Sheet — OneLoss",
         url=INDEX_HTML, js_api=api,
         width=1100, height=820, min_size=(720, 500))
     api.attach(win)

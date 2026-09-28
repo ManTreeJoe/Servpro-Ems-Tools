@@ -233,8 +233,10 @@ def test_job_log_writes_shared_event_when_optional_tables_are_missing(monkeypatc
     saved = sup.save_job_log_entry("smith", {
         "work_date": "2026-08-27", "work_type": "Monitor",
         "status": "completed", "note": "Dry",
+        "placement_card_id": "wip-card",
     })
     assert saved["work_type"] == "Monitor"
+    assert saved["placement_card_id"] == "wip-card"
     assert captured[0][0:2] == ("smith", "crm_job_log_revision")
     assert captured[0][2]["after"]["note"] == "Dry"
 

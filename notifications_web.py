@@ -171,7 +171,7 @@ class Api:
 def main(argv=None):
     api = Api()
     window = webview.create_window(
-        title="Trello Notifications — Linguar Hub",
+        title="Trello Notifications — OneLoss",
         url=INDEX_HTML,
         js_api=api,
         width=1100, height=820,

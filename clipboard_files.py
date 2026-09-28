@@ -171,16 +171,19 @@ def stage_files_in_temp(paths, *, label: str = "xa_upload",
     timer.start()
     _STAGED_FOLDERS[folder] = timer
 
+    open_error = ""
     if open_in_explorer:
         try:
             _os.startfile(folder)
-        except Exception:
-            pass
+        except Exception as ex:
+            open_error = f"Files staged at {folder}, but Explorer could not open: {ex}"
 
     deletes_at = (_dt.datetime.now()
                   + _dt.timedelta(seconds=int(ttl_seconds))).strftime("%I:%M:%S %p")
     return {
-        "ok":          True,
+        "ok":          not bool(open_error),
+        "error":       open_error,
+        "opened":      bool(open_in_explorer and not open_error),
         "count":       copied,
         "failed_count": len(failed),
         "folder":      folder,
@@ -243,3 +246,23 @@ def list_image_files(folder: str, recursive: bool = True) -> list:
             return []
     out.sort(key=lambda p: os.path.basename(p).lower())
     return out
+
+
+def list_xa_stage_files(folder: str, recursive: bool = True) -> list:
+    """Return media plus PDF reports that can be staged for XA upload."""
+    out = list_image_files(folder, recursive=recursive)
+    if not folder or not os.path.isdir(folder):
+        return out
+    if recursive:
+        for dirpath, _dirs, fnames in os.walk(folder):
+            out.extend(os.path.join(dirpath, name) for name in fnames
+                       if os.path.splitext(name)[1].lower() == ".pdf")
+    else:
+        try:
+            with os.scandir(folder) as it:
+                out.extend(entry.path for entry in it
+                           if entry.is_file(follow_symlinks=False)
+                           and os.path.splitext(entry.name)[1].lower() == ".pdf")
+        except OSError:
+            pass
+    return sorted(set(out), key=lambda path: os.path.basename(path).lower())

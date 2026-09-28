@@ -48,6 +48,7 @@ let stagesLoadPromise = null;
 let archiveLoadPromise = null;
 let quietBoardSyncTimer = null;
 let quietCommentSyncTimer = null;
+let placementMutationGeneration = 0;
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -129,6 +130,7 @@ async function bootPipeline() {
   $("#new-loss-btn").addEventListener("click", () => openNewLossModal());
   window.linguarIntakeReady = true;
   $("#refresh-btn").addEventListener("click", () => loadBoard(true));
+  $("#archived-cards-btn")?.addEventListener("click", openArchivedCards);
   $("#board-zoom-out").addEventListener("click", () => changeBoardZoom(-0.1));
   $("#board-zoom-in").addEventListener("click", () => changeBoardZoom(0.1));
   $("#board-zoom-reset").addEventListener("click", () => setBoardZoom(1));
@@ -227,6 +229,7 @@ function setView(v, loadOnEnter = true) {
 //  BOARD VIEW
 // ════════════════════════════════════════════════════════════════
 async function loadBoard(isRefresh) {
+  const placementGeneration = placementMutationGeneration;
   const btn = $("#refresh-btn");
   if (isRefresh) { btn.disabled = true; btn.textContent = "Refreshing…"; }
   if (!isRefresh) $("#board-loading")?.classList.remove("hidden");
@@ -243,12 +246,13 @@ async function loadBoard(isRefresh) {
       if (!isRefresh) showBoardLoadError(message);
       return;
     }
+    if (placementGeneration !== placementMutationGeneration) return;
     state.board = res;
     state.board_loaded = true;
     reconcileJobShelfWithBoard();
     renderBoard();
     const total = boardCardTotal();
-    setStatus(isRefresh ? `✓ ${total} jobs refreshed` : "", "ok");
+    setStatus(res.placement_warning || (isRefresh ? `✓ ${total} jobs refreshed` : ""), res.placement_warning ? 'warn' : 'ok');
     if (res.stale_cache && !isRefresh) refreshSavedBoardInBackground(true);
   } catch (ex) {
     setStatus(`Board error: ${ex}`, "error");
@@ -294,8 +298,10 @@ function onBoardZoomShortcut(event) {
 }
 
 async function refreshSavedBoardInBackground(quiet = false) {
+  const placementGeneration = placementMutationGeneration;
   try {
     const fresh = await pywebview.api.board_view_shared_refresh();
+    if (placementGeneration !== placementMutationGeneration) return;
     if (!fresh?.ok || !(fresh.boards || []).length) return;
     const changed = boardFingerprint(state.board) !== boardFingerprint(fresh);
     const priorScroll = $(".lanes-row")?.scrollLeft || 0;
@@ -345,10 +351,12 @@ function boardFingerprint(payload) {
 }
 
 async function refreshOneBoard(key) {
+  const placementGeneration = placementMutationGeneration;
   const name = (state.board.boards || []).find((b) => b.key === key)?.name || key;
   setStatus(`Refreshing ${name}…`);
   try {
     const res = await pywebview.api.board_view_one(key);
+    if (placementGeneration !== placementMutationGeneration) return;
     if (!res?.ok) { setStatus(`Refresh failed: ${res?.error || "?"}`, "error"); return; }
     const idx = (state.board.boards || []).findIndex((b) => b.key === key);
     if (idx >= 0) state.board.boards[idx] = res.board;
@@ -388,6 +396,35 @@ function cardMatchesBoardFilter(card) {
 // ESTIMATING; only the active board's lanes render. The lanes row is
 // `data-hdrag` so h_scroll.js gives it Trello-style grab-to-scroll.
 function renderBoard() {
+  const root=$("#board-view");
+  const key=(state.board.boards || []).find(b=>b.key===state.activeBoardKey)?.key || state.board.boards?.[0]?.key || '';
+  if (!window.BoardViewState) return renderBoardContent();
+  window.BoardViewState.render(root,key,()=>[
+    ['root',root],
+    ...Array.from(root.querySelectorAll('.lanes-row')).map(el=>['row',el]),
+    ...Array.from(root.querySelectorAll('.lane-cards')).map(el=>['lane:'+el.closest('.lane').dataset.listId,el]),
+  ],renderBoardContent);
+  paintPendingCardDrop();
+}
+
+let pendingCardDrop = null;
+function paintPendingCardDrop() {
+  if (!pendingCardDrop) return;
+  const {cardId,toListId,beforeId}=pendingCardDrop;
+  const card=document.querySelector(`.kcard[data-card-id="${CSS.escape(cardId)}"]`);
+  const lane=document.querySelector(`.lane[data-list-id="${CSS.escape(toListId)}"] .lane-cards`);
+  if (!card || !lane) return;
+  const before=beforeId ? lane.querySelector(`.kcard[data-card-id="${CSS.escape(beforeId)}"]`) : null;
+  lane.insertBefore(card,before);
+  card.setAttribute('aria-busy','true');
+  if (!card.querySelector('[data-drop-saving]')) {
+    const label=document.createElement('small');label.dataset.dropSaving='';
+    label.textContent='Saving move…';label.setAttribute('role','status');
+    card.append(label);
+  }
+}
+
+function renderBoardContent() {
   const root = $("#board-view");
   const boards = state.board.boards || [];
   if (!boards.length) {
@@ -519,6 +556,8 @@ async function onBackgroundSyncDone(event) {
   const detail = event?.detail || {};
   state.backgroundSync.running = false;
   state.backgroundSync.error = detail.ok ? "" : String(detail.error || "Sync needs attention");
+  state.backgroundSync.mode = detail.mode || "shared";
+  state.backgroundSync.queueReason = detail.queue_reason || "";
   if (detail.ok) {
     state.backgroundSync.lastSuccessAt = detail.at || new Date().toISOString();
     await refreshSavedBoardInBackground(true);
@@ -533,11 +572,15 @@ function updateBackgroundSyncIndicator() {
   const sync = state.backgroundSync;
   const mode = sync.error ? "attention" : sync.running ? "syncing" : "current";
   indicator.dataset.state = mode;
-  indicator.querySelector("span").textContent = sync.error ? "Sync needs attention" : "Hub current";
+  indicator.querySelector("span").textContent = sync.error ? "Sync needs attention"
+    : !sync.lastSuccessAt ? "Checking sync"
+    : sync.mode === "direct" ? "Trello connected" : "Hub current";
   const last = sync.lastSuccessAt ? formatCommentDate(sync.lastSuccessAt) : "not synced yet";
   indicator.title = sync.error
-    ? `Linguar Hub is usable. Trello background sync: ${sync.error}`
-    : `Linguar Hub is the source of truth · Trello last checked ${last}`;
+    ? `OneLoss is usable. Trello background sync: ${sync.error}`
+    : sync.mode === "direct"
+      ? `Direct Trello connection · Last checked ${last}. Shared background write queue is not enabled${sync.queueReason === "workspace_unscoped" ? " for this workspace" : " on this server"}. Changes are sent directly to Trello.`
+      : `Shared Hub queue · Trello last checked ${last}`;
 }
 
 async function refreshOpenWorkspaceComments() {
@@ -827,8 +870,8 @@ function renderCard(c, board = {}) {
     ? `<span class="chip-mini stall-${escapeAttr(c.stall)}" title="Days since last activity">${c.days_in_lane}d</span>`
     : "";
   const syncChip = c.sync_status === "conflict"
-    ? `<span class="chip-mini sync-conflict" title="Trello and Linguar Hub need review">⚠ Sync</span>`
-    : "";
+    ? `<span class="chip-mini sync-conflict" title="Trello and OneLoss need review">⚠ Sync</span>`
+    : c.sync_status === 'pending' ? '<span class="chip-mini" title="Saved in OneLoss; Trello sync queued">Sync pending</span>' : "";
   const chips = [loss, carrierChip, ckChip, dueChip, stallChip, syncChip].filter(Boolean).join("");
   const starred = isJobStarred(c.card_id);
   return `<div class="kcard stall-border-${escapeAttr(c.stall)}" draggable="false" data-no-drag
@@ -906,7 +949,7 @@ function wireCardClickAndHold(cardEl) {
       pointerDragging = false;
       pressActive = false;
       cardEl.classList.remove("drag-ready");
-      finishPointerCardDrag(event);
+      finishPointerCardDrag(event, !allowOpen);
       return;
     }
     const shouldOpen = allowOpen && event.button === 0 && !interactive(event.target)
@@ -956,51 +999,69 @@ function dragDetailsFromCard(el) {
 }
 
 function beginPointerCardDrag(cardEl, event) {
+  if (pendingCardDrop) { setStatus('Finishing the previous move…'); return; }
   const ghost = document.createElement("div");
   ghost.className = "card-drag-ghost";
-  ghost.innerHTML = `<strong>${escapeHtml(cardEl.dataset.client || "Job")}</strong><span>Release at the bottom to hold</span>`;
+  ghost.innerHTML = `<strong>${escapeHtml(cardEl.dataset.client || "Job")}</strong><span>Drop between cards · shelf to hold</span>`;
   document.body.appendChild(ghost);
   cardEl.dataset.didDrag = "true";
   cardEl.classList.add("dragging");
   state.drag = dragDetailsFromCard(cardEl);
-  pointerCardDrag = { cardEl, ghost, drag: { ...state.drag } };
+  const rect = cardEl.getBoundingClientRect();
+  ghost.style.width = `${rect.width}px`;
+  pointerCardDrag = { cardEl, ghost, offsetX:event.clientX-rect.left,
+    offsetY:event.clientY-rect.top, drag: { ...state.drag } };
   showShelfForDrag();
   updatePointerCardDrag(event);
 }
 
+function inJobShelfDropZone(event) {
+  const rect = document.querySelector('.job-shelf-drop-hint')?.getBoundingClientRect();
+  return !!rect && rect.width > 0 && event.clientX >= rect.left && event.clientX <= rect.right
+    && event.clientY >= rect.top && event.clientY <= rect.bottom;
+}
+
 function updatePointerCardDrag(event) {
   if (!pointerCardDrag) return;
-  pointerCardDrag.ghost.style.transform = `translate3d(${event.clientX + 14}px,${event.clientY + 14}px,0) rotate(2deg)`;
-  const inHandZone = event.clientY >= window.innerHeight - 175;
+  pointerCardDrag.ghost.style.transform = `translate3d(${event.clientX-pointerCardDrag.offsetX}px,${event.clientY-pointerCardDrag.offsetY}px,0)`;
+  const inHandZone = inJobShelfDropZone(event);
   $("#job-shelf").classList.toggle("drop-ready", inHandZone);
   $$(".lane.drop-target").forEach((lane) => lane.classList.remove("drop-target"));
   const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".lane");
   if (!inHandZone && target) target.classList.add("drop-target");
+  window.CardDropPreview?.show(!inHandZone && target?.querySelector('.lane-cards'), '.kcard[data-card-id]', pointerCardDrag.cardEl, event.clientY);
 }
 
-function finishPointerCardDrag(event) {
+function finishPointerCardDrag(event, cancelled = false) {
   if (!pointerCardDrag) return;
   const active = pointerCardDrag;
   const drag = active.drag;
-  const inHandZone = event.clientY >= window.innerHeight - 175;
+  const inHandZone = inJobShelfDropZone(event);
   const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".lane");
   active.ghost.remove();
   active.cardEl.classList.remove("dragging", "drag-ready");
   pointerCardDrag = null;
   $$(".lane.drop-target").forEach((lane) => lane.classList.remove("drop-target"));
+  if (cancelled) {
+    window.CardDropPreview?.clear();
+    state.drag = null; hideShelfAfterDrag(); return;
+  }
   if (inHandZone) {
+    window.CardDropPreview?.clear();
     holdDraggedCard(drag);
   } else if (target) {
     hideShelfAfterDrag();
     state.drag = drag;
-    void onLaneDrop({ preventDefault() {}, currentTarget: target });
+    void onLaneDrop({ preventDefault() {}, currentTarget: target, clientY:event.clientY });
   } else {
+    window.CardDropPreview?.clear();
     state.drag = null;
     hideShelfAfterDrag();
   }
 }
 
 function onCardDragStart(ev) {
+  if (pendingCardDrop) { ev.preventDefault(); return; }
   const el = ev.currentTarget;
   el.dataset.didDrag = "true";
   state.drag = {
@@ -1017,6 +1078,7 @@ function onCardDragStart(ev) {
 }
 
 function onCardDragEnd(ev) {
+  window.CardDropPreview?.clear();
   ev.currentTarget.classList.remove("dragging", "drag-ready");
   state.drag = null;
   hideShelfAfterDrag();
@@ -1039,6 +1101,7 @@ function onLaneDragOver(ev) {
   ev.preventDefault();
   try { ev.dataTransfer.dropEffect = "move"; } catch (_) {}
   ev.currentTarget.classList.add("drop-target");
+  window.CardDropPreview?.show(ev.currentTarget.querySelector('.lane-cards'), '.kcard[data-card-id]', document.querySelector('.kcard.dragging'), ev.clientY);
 }
 
 function onLaneDragLeave(ev) {
@@ -1047,6 +1110,7 @@ function onLaneDragLeave(ev) {
 
 async function onLaneDrop(ev) {
   ev.preventDefault();
+  if (pendingCardDrop) { window.CardDropPreview?.clear(); state.drag=null; setStatus('Finishing the previous move…'); return; }
   const laneEl = ev.currentTarget;
   if (state.laneDrag) {
     const moving = state.laneDrag;
@@ -1070,37 +1134,61 @@ async function onLaneDrop(ev) {
   laneEl.classList.remove("drop-target");
   const drag = state.drag;
   state.drag = null;
+  const preview = window.CardDropPreview?.selection(laneEl.querySelector('.lane-cards'));
+  window.CardDropPreview?.clear();
   if (!drag) return;
   const toListId = laneEl.dataset.listId;
   const toLane = laneEl.dataset.laneName;
   if (!toListId) return;
-  if (toListId === drag.fromListId) {
-    if (drag.source === "shelf") removeFromJobShelf(drag.cardId);
-    return;
+  const targetCards = (state.board.boards || []).flatMap(b => b.lanes || [])
+    .find(l => l.list_id === toListId)?.cards?.filter(c => c.card_id !== drag.cardId) || [];
+  const before = preview ? preview.before : Array.from(laneEl.querySelectorAll('.kcard[data-card-id]')).find(el => {
+    const rect = el.getBoundingClientRect();
+    return el.dataset.cardId !== drag.cardId && ev.clientY < rect.top + rect.height/2;
+  });
+  const insertIndex = before ? targetCards.findIndex(c => c.card_id === before.dataset.cardId) : targetCards.length;
+  if (insertIndex < 0 || [targetCards[insertIndex-1], targetCards[insertIndex]]
+      .some(card => card && (!Number.isFinite(card.pos) || card.pos <= 0))) {
+    setStatus('Card order is not ready. Refresh Jobs before dropping again.', 'warn'); return;
+  }
+  const previous = targetCards[insertIndex-1]?.pos ?? 0;
+  const next = targetCards[insertIndex]?.pos;
+  const position = next == null ? previous + 65536 : (previous + next)/2;
+  if (!(position > previous) || (next != null && !(position < next))) {
+    setStatus('Card order changed. Refresh Jobs before dropping again.', 'warn'); return;
   }
   // Dropping is the user's move action; only interrupt for a real conflict.
   if (drag.conflict && !confirm(`Trello moved "${drag.name}" to “${drag.actualLane || "another lane"}” while it was held. Move it to “${toLane}” anyway?`))
     return;
   setStatus(`Moving "${drag.name}" → ${toLane}…`);
-  const res = await pywebview.api.move_card(drag.cardId, toListId);
+  const knownPlacement = (state.board.placement_snapshot?.placements || []).find(r => r.card_id === drag.cardId);
+  pendingCardDrop={cardId:drag.cardId,toListId,beforeId:before?.dataset.cardId || null};
+  paintPendingCardDrop();
+  window.CardDropPreview?.land(document.querySelector(`.kcard[data-card-id="${CSS.escape(drag.cardId)}"]`));
+  let res;
+  try { res = await pywebview.api.move_card(drag.cardId, toListId, knownPlacement?.version || 0, position); }
+  catch (error) { res={ok:false,error:`Move could not be confirmed: ${error.message || error}. Check before retrying.`}; }
+  finally { pendingCardDrop=null; }
   if (!res?.ok) {
+    renderBoard();
     setStatus(`Move failed: ${res?.error || "?"}`, "error");
-    await loadBoard(true);   // re-pull truth from Trello
+    await loadBoard(true);   // reload the saved app placement
     return;
   }
-  // Optimistic local move so the board updates instantly.
-  moveCardLocally(drag.cardId, drag.fromListId, toListId, toLane);
+  // Commit confirmed state; the pending preview already appeared at release.
+  moveCardLocally(drag.cardId, drag.fromListId, toListId, toLane, insertIndex, position);
+  acceptPlacementResult(res);
   if (drag.source === "shelf") removeFromJobShelf(drag.cardId);
   renderBoard();
   showMoveUndo(drag, toListId, toLane);
   setStatus(res.pending_sync
     ? `✓ Moved "${drag.name}" → ${toLane}`
     : res.synced === false
-      ? `✓ Moved in Linguar Hub · ${res.warning || "sync needs review"}`
+      ? `✓ Moved in OneLoss · ${res.warning || "sync needs review"}`
       : `✓ Moved "${drag.name}" → ${toLane}`, res.warning ? "warn" : "ok");
 }
 
-function moveCardLocally(cardId, fromListId, toListId, toLane) {
+function moveCardLocally(cardId, fromListId, toListId, toLane, insertIndex = 0, position = null) {
   let moved = null;
   for (const b of state.board.boards || []) {
     for (const l of b.lanes || []) {
@@ -1112,6 +1200,7 @@ function moveCardLocally(cardId, fromListId, toListId, toLane) {
   }
   if (!moved) return;
   moved.list_id = toListId; moved.lane = toLane;
+  if (position != null) moved.pos = position;
   const shelfItem = state.jobShelf.find((item) => item.cardId === cardId);
   if (shelfItem) {
     shelfItem.fromListId = toListId;
@@ -1120,23 +1209,32 @@ function moveCardLocally(cardId, fromListId, toListId, toLane) {
   }
   for (const b of state.board.boards || []) {
     for (const l of b.lanes || []) {
-      if (l.list_id === toListId) { (l.cards = l.cards || []).unshift(moved); return; }
+      if (l.list_id === toListId) { (l.cards = l.cards || []).splice(insertIndex, 0, moved); return; }
     }
   }
 }
 
 // ── Per-card actions ─────────────────────────────────────────────
-async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division = "") {
+async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division = "", navigation = null) {
   const isCard = cardOrClient && typeof cardOrClient === "object" && cardOrClient.dataset;
   const client = isCard ? cardOrClient.dataset.client : String(cardOrClient || "");
   const resolvedCardId = isCard ? (cardOrClient.dataset.cardId || "") : cardId;
   const resolvedUrl = isCard ? (cardOrClient.dataset.url || "") : trelloUrl;
   const resolvedDivision = isCard ? (cardOrClient.dataset.division || division) : division;
   const requestId = ++workspaceRequestId;
-  const instant = instantWorkspaceData(cardOrClient, client, resolvedCardId, resolvedDivision);
+  const loadSession = navigation?.loadSession || window.LinkedWorkspacePreload?.create(pywebview.api,
+    () => state.openWorkspace?.element?.isConnected && state.openWorkspace.element._divisionLoadSession === loadSession);
+  const warmed = loadSession?.peek(resolvedCardId, resolvedDivision);
+  const instant = warmed ? {...warmed, deferred_loading:true} : instantWorkspaceData(cardOrClient, client, resolvedCardId, resolvedDivision);
+  if (navigation) {
+    instant.division_trello_cards = navigation.cards;
+    instant.division_card_reconciliation = navigation.reconciliation;
+    instant.initial_workspace_tab = navigation.tab;
+  }
   let modal;
   try {
     modal = openAuditModal(instant, resolvedUrl);
+    modal.element._divisionLoadSession = loadSession;
   } catch (error) {
     // Never let a job-specific data shape turn a click into apparent silence.
     modal = openAuditLoadingModal(client);
@@ -1146,7 +1244,11 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   }
   setStatus("");
   try {
-    const fast = await pywebview.api.job_card_workspace_fast(client, resolvedCardId, resolvedDivision);
+    const [fast, placement] = await Promise.all([
+      loadSession ? loadSession.load(client, resolvedCardId, resolvedDivision) : pywebview.api.job_card_workspace_fast(client, resolvedCardId, resolvedDivision),
+      pywebview.api.job_card_placement?.(resolvedCardId).catch(() => ({})) || Promise.resolve({})
+    ]);
+    if (fast && placement?.lane) fast.app_placement = placement;
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (!fast?.ok) {
       modal.setDeferredError(fast?.error || "Shared job details unavailable");
@@ -1177,6 +1279,9 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
       return;
     }
     modal.applyRefresh(full);
+    loadSession?.schedule(full, (id, result) => {
+      if (modal.element.isConnected) modal.applyLinkedComments(id, result);
+    });
     setStatus("");
   } catch (error) {
     if (requestId !== workspaceRequestId) return;
@@ -1186,12 +1291,24 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   }
 }
 
+function appCardPlacement(cardId) {
+  if (!cardId) return {};
+  for (const board of state.board.boards || []) {
+    for (const lane of board.lanes || []) {
+      if ((lane.cards || []).some(card => card.card_id === cardId))
+        return {board: board.name || '', lane: lane.name || '', source: 'app_board'};
+    }
+  }
+  return {};
+}
+
 function instantWorkspaceData(cardOrClient, client, cardId, division) {
   let summary = {};
   if (cardOrClient?.dataset?.cardSummary) {
     try { summary = JSON.parse(cardOrClient.dataset.cardSummary); } catch (_) {}
   }
-  const lane = cardOrClient?.closest?.(".lane")?.dataset?.laneName || "Pipeline";
+  const placement = appCardPlacement(cardId);
+  const lane = placement.lane || '';
   const selected = division || "EMS";
   const chips = [
     ...(summary.loss_types || []),
@@ -1216,14 +1333,14 @@ function instantWorkspaceData(cardOrClient, client, cardId, division) {
       {id: "date_received", label: "Date received", value: jobInfo.date_received || ""},
       {id: "cause_of_loss", label: "Cause of loss", value: jobInfo.cause_of_loss || ""},
     ]),
-    section("Pipeline", [
+    section("App location", [
       {id: "pipeline_lane", label: "Current lane", value: lane},
       ...(summary.loss_types?.length ? [{id: "loss_type", label: "Loss type", value: summary.loss_types.join(", ")}] : []),
       ...(summary.due ? [{id: "due", label: "Due", value: fmtDue(summary.due)}] : []),
     ]),
   ].filter((item) => item.fields.length);
   return {
-    ok: true, client, card_id: cardId, selected_division: selected,
+    ok: true, client, card_id: cardId, selected_division: selected, app_placement: placement,
     selected_trello_url: cardOrClient?.dataset?.url || "",
     deferred_loading: true, load_ms: 0,
     audit: {ok: true, client, found: true, form_issues: [], photo_issues: [],
@@ -1293,6 +1410,13 @@ async function onFlagCard(cardEl) {
   setStatus(res.posted_trello ? `🚩 Flagged "${item.trim()}" + commented Trello` : `🚩 Flagged "${item.trim()}"`, "ok");
 }
 
+const pendingTrelloPins = new Map();
+window.addEventListener('pipeline:pin-info', (event) => {
+  const {client, info} = event.detail || {};
+  if (!info?.ok) setStatus(`${client}: card pinned; Job Info refresh failed. ${info?.error || ''}`, 'warn');
+  else if (info.conflicts?.length) setStatus(`${client}: card pinned; Job Info has conflicts to review.`, 'warn');
+});
+
 function openChangePinnedTrelloCard(cardEl, onPinned = null) {
   const client = String(cardEl?.dataset?.client || "").trim();
   const division = String(cardEl?.dataset?.division || "EMS").trim().toUpperCase();
@@ -1335,28 +1459,44 @@ function openChangePinnedTrelloCard(cardEl, onPinned = null) {
   const pinCard = async (cardIdOrUrl, cardName = "") => {
     const value = String(cardIdOrUrl || "").trim();
     if (!value || pinning) return;
+    const pendingKey = JSON.stringify([client, division]);
+    const previous = pendingTrelloPins.get(pendingKey);
+    if (previous && previous.value !== value) {
+      resultsEl.textContent = 'A pin change for this job is still saving. Wait for its result before changing it again.';
+      return;
+    }
     pinning = true;
+    ++searchSequence;
+    if (searchTimer) clearTimeout(searchTimer);
     resultsEl.innerHTML = `<div class="trello-pin-message">Saving ${escapeHtml(division)} card…</div>`;
+    const waitingTimer = setTimeout(() => {
+      if (modal.isConnected) resultsEl.textContent = 'Still waiting for the pin save result. Do not retry; this request is still running.';
+    }, 12000);
     try {
-      const result = await withTimeout(
-        pywebview.api.pin_crm_division_trello(client, division, value),
-        12000, "Saving the Trello card took too long");
+      const pending = previous || {value, promise: pywebview.api.pin_crm_division_trello(client, division, value)};
+      pendingTrelloPins.set(pendingKey, pending);
+      const result = await pending.promise;
+      pendingTrelloPins.delete(pendingKey);
       if (!result?.ok) throw new Error(result?.error || "The card could not be pinned");
       close();
       const imported = Number(result.imported_count || 0);
       const conflicts = (result.conflicts || []).length;
       const pullFailed = result.info_pull && !result.info_pull.ok;
-      const detail = pullFailed
+      const detail = result.info_pull_pending ? ' · Job Info refresh is running in the background' : pullFailed
         ? ` · card pinned; Job Info could not be read (${result.info_pull.error || "Trello unavailable"})`
         : ` · ${imported} Job Info field${imported === 1 ? "" : "s"} pulled${conflicts ? ` · ${conflicts} conflict${conflicts === 1 ? "" : "s"} need review` : ""}`;
       setStatus(`${division} Trello card changed${cardName ? ` to ${cardName}` : ""}${detail}.`, pullFailed || conflicts ? "warn" : "ok");
       if (typeof onPinned === "function") await onPinned(result);
     } catch (error) {
+      pendingTrelloPins.delete(pendingKey);
       pinning = false;
       resultsEl.innerHTML = `<div class="trello-pin-message error">${escapeHtml(error?.message || String(error))}</div>`;
+    } finally {
+      clearTimeout(waitingTimer);
     }
   };
   const search = async () => {
+    if (pinning) return;
     const query = String(searchInput?.value || "").trim();
     const sequence = ++searchSequence;
     if (query.length < 2) {
@@ -1365,7 +1505,7 @@ function openChangePinnedTrelloCard(cardEl, onPinned = null) {
     }
     resultsEl.innerHTML = `<div class="trello-pin-message">Searching…</div>`;
     try {
-      const result = await withTimeout(pywebview.api.global_card_search(query, 24), 12000,
+      const result = await withTimeout(pywebview.api.global_card_search(query, 24, division), 12000,
         "Trello search took too long");
       if (sequence !== searchSequence) return;
       if (!result?.ok) throw new Error(result?.error || "Search is unavailable");
@@ -1403,11 +1543,126 @@ function openCardMenu(ev, cardEl) {
   if (!window.emsOpenInMenu) return;
   window.emsOpenInMenu(ev, client, {
     extra: [
+      { label: "Move to board / section…", action: () => openPlacementAction(cardId, "move") },
+      { label: "Archive card…", action: () => openPlacementAction(cardId, "archive") },
       { label: "🔎 Run audit on this job", action: () => onAuditCard(cardEl) },
       { iconImg: "../web_shared/trello.png", label: "Change pinned Trello card…", action: () => openChangePinnedTrelloCard(cardEl) },
       { label: "🚩 Flag missing item…", action: () => onFlagCard(cardEl) },
     ],
   });
+}
+
+function acceptPlacementResult(result) {
+  placementMutationGeneration++;
+  if (result.board?.ok) state.board = result.board;
+  const removed = new Set((state.board.placement_snapshot?.placements || []).filter(r => r.state !== 'active').map(r => r.card_id));
+  const priorShelfCount = state.jobShelf.length;
+  state.jobShelf = state.jobShelf.filter(item => !removed.has(item.cardId));
+  if (state.jobShelf.length !== priorShelfCount) persistJobShelf();
+  if (state.board_loaded) { reconcileJobShelfWithBoard(); renderBoard(); }
+}
+
+async function openPlacementAction(cardId, action, options = {}) {
+  const modalId = 'placement-action';
+  const titles = {move:'Move card', archive:'Archive card', restore:'Restore card', delete:'Delete archived card'};
+  const modal = openModal({id:modalId, title:titles[action], body:loadingIndicator('Loading saved card location…')});
+  const body = modal.querySelector('.overlay-body');
+  try {
+    const data = await pywebview.api.card_placement_context(cardId);
+    if (!modal.isConnected) return;
+    if (!data?.ok) throw new Error(data?.error || 'Card details unavailable');
+    const row = data.placement;
+    const isDestination = action === 'move' || action === 'restore';
+    if (action === 'delete' && (!data.can_delete || row?.state !== 'archived'))
+      throw new Error('Only an administrator can delete an archived card.');
+    const boards = data.boards || [];
+    body.innerHTML = `<p>${escapeHtml(row?.title || 'Selected job card')}</p>
+      <p>${action === 'archive' ? 'Hide this card from its board. The job, files, history and other cards stay unchanged.' :
+        action === 'delete' ? 'Remove this archived placement from OneLoss. The job and other cards are preserved. Its Trello card stays archived.' :
+        'Choose where this card belongs. Other cards for the same job will not move.'}</p>
+      ${isDestination ? `<label class="placement-field">Board<select data-board class="input">${boards.map(b =>
+        `<option value="${escapeAttr(b.board_id)}">${escapeHtml(b.name)}</option>`).join('')}</select></label>
+        <label class="placement-field">Section<select data-section class="input"></select></label>` : ''}
+      <p data-error role="alert"></p><div class="placement-actions"><button class="btn modal-cancel">Cancel</button>
+      <button class="btn ${action === 'delete' ? 'danger' : 'btn-primary'}" data-save>${titles[action]}</button></div>`;
+    body.querySelector('.modal-cancel').onclick = () => closeModal(modalId);
+    const boardSelect = body.querySelector('[data-board]');
+    const sectionSelect = body.querySelector('[data-section]');
+    const save = body.querySelector('[data-save]');
+    if (isDestination) {
+      if (row?.board_id) boardSelect.value = row.board_id;
+      const fill = () => {
+        const board = boards.find(b => b.board_id === boardSelect.value);
+        const lanes = (board?.lists || []).filter(l => !l.closed).sort((a,b) => (a.pos||0)-(b.pos||0));
+        sectionSelect.innerHTML = lanes.map(l => `<option value="${escapeAttr(l.id)}">${escapeHtml(l.name)}</option>`).join('');
+        if (lanes.some(l => l.id === row?.list_id)) sectionSelect.value = row.list_id;
+        save.disabled = !lanes.length;
+      };
+      boardSelect.onchange = fill; fill();
+      (options.focus === 'app_lane' ? sectionSelect : boardSelect)?.focus({preventScroll:true});
+    }
+    save.onclick = async () => {
+      if (save.disabled) return;
+      save.disabled = true; save.textContent = 'Saving…';
+      const selectedBoard = boardSelect?.value || null;
+      const selectedSection = sectionSelect?.value || null;
+      const destination = {board:boardSelect?.selectedOptions[0]?.textContent || '',
+        lane:sectionSelect?.selectedOptions[0]?.textContent || '',board_id:selectedBoard,list_id:selectedSection};
+      if (boardSelect) boardSelect.disabled = true;
+      if (sectionSelect) sectionSelect.disabled = true;
+      try {
+        const result = await pywebview.api.card_placement_change(cardId, action, row?.version || 0,
+          selectedBoard, selectedSection);
+        if (!result?.ok) throw new Error(result?.error || 'Save failed');
+        acceptPlacementResult(result);
+        closeModal(modalId);
+        options.onSaved?.(destination, result);
+        setStatus('Saved in OneLoss · Trello sync queued', 'ok');
+        if (document.getElementById('archived-cards')) await openArchivedCards();
+      } catch (error) {
+        body.querySelector('[data-error]').textContent = error.message || String(error);
+        save.disabled = false; save.textContent = titles[action];
+        if (boardSelect) boardSelect.disabled = false;
+        if (sectionSelect) sectionSelect.disabled = false;
+      }
+    };
+  } catch (error) { body.textContent = error.message || String(error); }
+}
+
+async function openArchivedCards() {
+  const modal = openModal({id:'archived-cards', title:'Archived cards', width:760,
+    body:loadingIndicator('Loading archived cards…')});
+  const body = modal.querySelector('.overlay-body');
+  try {
+    const data = await pywebview.api.card_placement_context('');
+    if (!modal.isConnected) return;
+    if (!data?.ok) throw new Error(data?.error || 'Archive unavailable');
+    const rows = (data.placements || []).filter(r => r.state === 'archived');
+    body.innerHTML = `<label class="placement-field">Find archived card<input type="search" data-search class="input" placeholder="Job name"></label>
+      <div class="placement-archive-list"></div><p data-sync role="status"></p>
+      <button class="btn" data-retry>Retry pending Trello sync</button>`;
+    const render = () => {
+      const query = body.querySelector('[data-search]').value.toLowerCase();
+      const filtered = rows.filter(r => r.title.toLowerCase().includes(query));
+      body.querySelector('.placement-archive-list').innerHTML = filtered.length ? filtered.map(r => {
+        const board = data.boards.find(b => b.board_id === r.board_id);
+        const lane = (board?.lists || []).find(l => l.id === r.list_id);
+        return `<article class="placement-archive-row"><div><strong>${escapeHtml(r.title)}</strong>
+          <p>${escapeHtml([board?.name,lane?.name].filter(Boolean).join(' / '))}</p>
+          <small>${escapeHtml(r.sync_error || (r.synced_version < r.version ? 'Saved · Trello sync pending' : 'Synced'))}</small></div>
+          <div class="placement-actions"><button class="btn" data-restore="${escapeAttr(r.card_id)}">Restore…</button>
+          ${data.can_delete ? `<button class="btn danger" data-delete="${escapeAttr(r.card_id)}">Delete…</button>` : ''}</div></article>`;
+      }).join('') : '<p>No archived cards match this search.</p>';
+      body.querySelectorAll('[data-restore]').forEach(b => b.onclick = () => openPlacementAction(b.dataset.restore,'restore'));
+      body.querySelectorAll('[data-delete]').forEach(b => b.onclick = () => openPlacementAction(b.dataset.delete,'delete'));
+    };
+    body.querySelector('[data-search]').oninput = render;
+    body.querySelector('[data-retry]').onclick = async () => {
+      await pywebview.api.retry_card_placement_sync();
+      body.querySelector('[data-sync]').textContent = 'Retry started. Reopen Archived cards to check the result.';
+    };
+    render();
+  } catch(error) { body.textContent = error.message || String(error); }
 }
 
 function onCardContext(ev) {
@@ -1493,7 +1748,7 @@ function workspaceContentFingerprint(data) {
 }
 
 // Partial projections can know less than the already-visible board preview.
-function mergeWorkspaceRefresh(current, next) {
+function mergeWorkspaceRefresh(current, next, refreshJobLog = false) {
   const merge = (a, b) => {
     const out = {...a};
     for (const [key, value] of Object.entries(b || {})) {
@@ -1503,6 +1758,37 @@ function mergeWorkspaceRefresh(current, next) {
     return out;
   };
   const result = merge(current, next);
+  const logLoaded = Array.isArray(current.crm?.job_log) &&
+    (current.crm.job_log_source === 'local_db' || current.crm.job_log_saved_at || !current.deferred_loading);
+  if (logLoaded && !refreshJobLog) {
+    result.crm = {...result.crm};
+    for (const [key, value] of Object.entries(current.crm)) {
+      if (key === 'job_log' || key.startsWith('job_log_')) result.crm[key] = value;
+    }
+  }
+  if (current.local_folder_override) result.audit = {...result.audit, path: current.local_folder_override};
+  if (logLoaded && !refreshJobLog) {
+    // User-controlled log: unrelated card updates cannot replace its rows.
+  } else if ((next.crm?.job_log_error || next.crm?.ok === false) && current.crm?.job_log?.length) {
+    result.crm = {...result.crm, job_log: current.crm?.job_log || []};
+  } else if (Array.isArray(next.crm?.job_log)) {
+    // Missing rows in a late/partial response are not deletion evidence.
+    const rows = new Map((current.crm?.job_log || []).map(row => [row.entry_id, row]));
+    for (const row of next.crm.job_log) {
+      const old = rows.get(row.entry_id);
+      if (!old || (Date.parse(row.updated_at) || 0) >= (Date.parse(old.updated_at) || 0)) rows.set(row.entry_id, row);
+    }
+    const deleted = [...new Set([...(current.crm?.job_log_deleted_ids || []), ...(next.crm.job_log_deleted_ids || [])])];
+    const sourceKey = value => { try { return JSON.stringify(JSON.parse(value)); } catch (_) { return value; } };
+    const deletedSources = [...new Set([...(current.crm?.job_log_deleted_sources || []), ...(next.crm.job_log_deleted_sources || [])].map(sourceKey))];
+    for (const [id, row] of rows) {
+      if (row.source === 'trello' && row.source_id && deletedSources.includes(JSON.stringify([row.placement_card_id || '', row.source_id]))) {
+        rows.delete(id); if (!deleted.includes(id)) deleted.push(id);
+      }
+    }
+    for (const id of deleted) rows.delete(id);
+    result.crm = {...result.crm, job_log:[...rows.values()], job_log_deleted_ids:deleted, job_log_deleted_sources:deletedSources};
+  }
   const sections = (current.info_sections || []).map(s => ({...s, fields: (s.fields || []).map(f => ({...f}))}));
   for (const section of next.info_sections || []) for (const field of section.fields || []) {
     if (!String(field.value ?? '').trim()) continue;
@@ -1559,7 +1845,31 @@ function retainWorkspaceSectionView(previous, incoming) {
   if (previous.tagName === 'DETAILS') incoming.open = previous.open;
 }
 
-function patchWorkspaceSections(root, prepared, editedSections) {
+function patchJobLogSection(previous, incoming) {
+  const list = previous.querySelector('[data-job-log-list]');
+  const nextList = incoming.querySelector('[data-job-log-list]');
+  if (!list || !nextList) return false;
+  const existing = new Map([...list.querySelectorAll('[data-job-log-id]')].map(node => [node.dataset.jobLogId, node]));
+  const desired = [...nextList.children].map(node => {
+    const old = existing.get(node.dataset.jobLogId);
+    return old?.isEqualNode(node) ? old : node;
+  });
+  const keep = new Set(desired);
+  for (const node of [...list.children]) if (!keep.has(node)) node.remove();
+  desired.forEach((node, index) => {
+    if (list.children[index] !== node) list.insertBefore(node, list.children[index] || null);
+  });
+  const oldExport = previous.querySelector('[data-job-log-export]');
+  const nextExport = incoming.querySelector('[data-job-log-export]');
+  if (oldExport && nextExport) oldExport.replaceWith(nextExport);
+  for (const selector of ['.section-title-row', '[data-job-log-status]']) {
+    const old = previous.querySelector(selector), node = incoming.querySelector(selector);
+    if (old && node && !old.isEqualNode(node)) old.replaceWith(node);
+  }
+  return true;
+}
+
+function patchWorkspaceSections(root, prepared, editedSections, refreshJobLog = false) {
   const scrollPositions = [...root.querySelectorAll('.modal-body, .job-card-main, .job-workspace-panel')].map(node => [node, node.scrollTop, node.scrollLeft]);
   for (const panel of prepared.querySelectorAll('.job-workspace-panel')) {
     const live = root.querySelector('#' + panel.id);
@@ -1570,9 +1880,13 @@ function patchWorkspaceSections(root, prepared, editedSections) {
       const id = workspaceSectionKey(node); incoming.add(id);
       const old = existing.get(id);
       if (!old) { live.append(node); continue; }
-      if (editedSections.has(id) || old.contains(document.activeElement) || old.querySelector('[data-job-log-editor]:not([hidden])')) continue;
+      if (old.classList.contains('job-files-section')) continue;
+      if (old.classList.contains('job-run-section') && old._runActivity) continue;
+      const explicitLogRefresh = refreshJobLog && old.classList.contains('job-log-section');
+      if ((!explicitLogRefresh && (editedSections.has(id) || old.contains(document.activeElement))) || old.querySelector('[data-job-log-editor]:not([hidden])')) continue;
       retainWorkspaceSectionView(old, node);
       if (old.isEqualNode(node)) continue;
+      if (old.classList.contains('job-log-section') && patchJobLogSection(old, node)) continue;
       const scroll = old.scrollTop;
       if (old.tagName === 'DETAILS') node.open = old.open;
       old.replaceWith(node); node.scrollTop = scroll;
@@ -1591,6 +1905,9 @@ function patchWorkspaceSections(root, prepared, editedSections) {
 function openAuditModal(data, trelloUrl = "", preparation = null) {
   const res = data.audit || {};
   const crm = data.crm || {};
+  const emptyWorkspaceText = (subject, empty, error = res.trello_error) => error
+    ? `${subject} could not be checked. Try refreshing.`
+    : data.deferred_loading || data.refresh_pending ? `Loading ${subject.toLowerCase()}…` : empty;
   const workspace = data.workspace || {};
   const issues = [];
   (res.form_issues || []).forEach((f) => issues.push({ kind: "Form", text: f }));
@@ -1605,15 +1922,23 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       ? `<div class="aud-ok">✓ All required forms &amp; photos present.</div>`
       : `<div class="audit-missing-summary"><strong>${issues.length} missing item${issues.length === 1 ? "" : "s"}</strong><span>Complete these before this job can move forward.</span></div><ul class="aud-list missing-audit-list">${issues.map((i) =>
           `<li><span class="aud-tag aud-missing">Missing ${escapeHtml(i.kind.toLowerCase())}</span> ${escapeHtml(i.text)}</li>`).join("")}</ul>`;
-  const populatedInfoSections = (data.info_sections || []).map((section) => ({
+  const currentPlacement = appCardPlacement(data.card_id);
+  const placement = currentPlacement.lane ? currentPlacement : (data.app_placement || {});
+  const locationSection = {name: 'App location', fields: [
+    {id:'app_board',label:'Board',value:placement.board || ''},
+    {id:'app_lane',label:'Lane / section',value:placement.lane || 'App location not loaded'}
+  ]};
+  const populatedInfoSections = [locationSection, ...(data.info_sections || []).filter(section => !['Pipeline','App location'].includes(section.name))].map((section) => ({
     ...section,
     fields: (section.fields || []).filter((field) => String(field.value || "").trim()),
   })).filter((section) => section.fields.length);
   const facts = populatedInfoSections.map((section) => `
     <div class="job-info-group"><h4>${escapeHtml(section.name)}</h4>
       <div class="job-info-grid">${section.fields.map((field) =>
-        `<button type="button" class="job-info-field" data-copy-job-field="${escapeAttr(field.value)}" data-copy-job-label="${escapeAttr(field.label)}" title="Copy ${escapeAttr(field.label)}">
-          <span>${escapeHtml(field.label)}</span><strong>${escapeHtml(field.value)}</strong><i aria-hidden="true">Copy</i>
+        `<button type="button" class="job-info-field" ${['app_board','app_lane'].includes(field.id)
+          ? `data-move-job-location="${field.id}" aria-haspopup="dialog" title="Change ${escapeAttr(field.label)}" ${data.card_id ? '' : 'disabled'}`
+          : `data-copy-job-field="${escapeAttr(field.value)}" data-copy-job-label="${escapeAttr(field.label)}" title="Copy ${escapeAttr(field.label)}"`}>
+          <span>${escapeHtml(field.label)}</span><strong>${escapeHtml(field.value)}</strong><i aria-hidden="true">${['app_board','app_lane'].includes(field.id) ? 'Move ▾' : 'Copy'}</i>
         </button>`).join("")}</div>
     </div>`).join("");
   const oldJobs = (data.old_jobs || []).map((job) => `<article class="old-job-row">
@@ -1648,6 +1973,26 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     ? `<ul class="aud-list">${misplaced.map((item) => `<li><span class="aud-tag aud-warn">Moved</span> ${escapeHtml(item.label || item)}${item.where ? ` <small>${escapeHtml(item.where)}</small>` : ""}</li>`).join("")}</ul>`
     : "";
   const progress = crm.progress || {};
+  const paperwork = crm.paperwork || { items: [], counts: {} };
+  const capabilities = crm.capabilities || { items: {}, configured: false };
+  const canUseDocuSketch = capabilities.items?.docusketch === true;
+  const paperworkState = {
+    present: ["✓", "On file"], missing: ["!", "Missing"],
+    unknown: ["?", "Not checked"], not_due: ["–", "Not due"],
+    not_applicable: ["–", "N/A"],
+  };
+  const paperworkRows = (paperwork.items || []).map((item) => {
+    const state = paperworkState[item.status] || paperworkState.unknown;
+    return `<div class="paperwork-row paperwork-${escapeAttr(item.status || "unknown")}">
+      <span class="paperwork-mark" aria-hidden="true">${state[0]}</span>
+      <span><strong>${escapeHtml(item.label || "")}</strong><small>${escapeHtml(item.source || "Stored job data")}</small></span>
+      <b>${state[1]}</b>
+    </div>`;
+  }).join("");
+  const paperworkSummary = paperwork.audit_complete
+    ? `${paperwork.counts?.present || 0} on file · ${paperwork.counts?.missing || 0} missing`
+    : "Showing the standard list · file evidence not checked yet";
+  const docuSketchAccess = `<span class="tool-access pending" data-docusketch-folder>${res.path ? 'Checking for a DocuSketch folder…' : 'Pin a job folder to check for DocuSketch files'}</span>`;
   const requirementRows = (items) => items.map((item) => {
     const statusLabel = item.status === "completed" ? "Complete"
       : item.status === "not_applicable" ? "N/A"
@@ -1691,16 +2036,37 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     : (data.division_trello_cards || []);
   const divisionCards = Object.fromEntries(workspaceDivisionCards.map((card) =>
     [String(card.division || "").toLowerCase(), card]));
-  const workTypeStages = [
-    ["not_applicable", "Not part of this job"], ["planned", "Planned"],
-    ["scheduled", "Scheduled"], ["active", "Active"], ["waiting", "Waiting"],
-    ["ready_for_billing", "Ready for billing"], ["closeout", "Closeout"], ["closed", "Complete"],
+  const workTypeStagesFor = (name) => [
+    ["not_applicable", "Not part of this job"],
+    ...(name === "EMS" ? [] : [["interested", "Interested"]]),
+    ["scheduled", "Scheduled"], ["active", "Active"],
+    ["ready_for_billing", "Ready to bill"], ["on_hold", "On hold"],
+    ["closeout", "Closeout / completed"],
   ];
+  const visibleWorkStage = (stage) => ({
+    planned: "scheduled", waiting: "scheduled", billing: "ready_for_billing",
+    closed: "closeout",
+  })[stage] || stage;
   const pinnedDivisionCards = workspaceDivisionCards.filter((card) => card.pinned);
-  const selectedDivision = workspace.selected_division || data.selected_division || "EMS";
-  const divisionDataTabs = pinnedDivisionCards.length > 1 ? `<div class="division-data-tabs" role="tablist" aria-label="Trello card data">
-    ${pinnedDivisionCards.map((card) => `<button type="button" role="tab" data-division-data="${escapeAttr(card.division)}" aria-selected="${card.division === selectedDivision ? "true" : "false"}" class="${card.division === selectedDivision ? "active" : ""}">${card.division === "EMS" ? "💧 EMS" : card.division === "CONTENTS" ? "▣ Contents" : "🔨 Recon"}</button>`).join("")}
-  </div>` : "";
+  const divisionPlacements = data.division_trello_placements || [];
+  const selectedDivision = String(workspace.selected_division || data.selected_division || "EMS").toUpperCase();
+  const blockedDivisionTargets = new Set((data.division_card_reconciliation?.divisions || [])
+    .filter(item => ['conflict', 'ambiguous'].includes(item.state)).map(item => String(item.division).toUpperCase()));
+  const divisionTargets = {};
+  for (const division of ['EMS', 'CONTENTS', 'RECON']) {
+    const candidates = workspaceDivisionCards.filter(card => String(card.division).toUpperCase() === division && card.card_id && card.pinned !== false && !card.conflict);
+    const ids = new Set(candidates.map(card => card.card_id));
+    const target = candidates[0];
+    const shared = target && workspaceDivisionCards.some(card => String(card.division).toUpperCase() !== division && card.card_id === target.card_id);
+    if (ids.size === 1 && !shared && !blockedDivisionTargets.has(division)) divisionTargets[division] = target;
+  }
+  const divisionDataTabs = `<div class="job-division-folder-tabs" role="tablist" aria-label="Job division">
+    ${['EMS', 'CONTENTS', 'RECON'].map(division => {
+      const active = division === selectedDivision;
+      const disabled = !active && !divisionTargets[division];
+      return `<button type="button" role="tab" data-division-data="${division}" aria-selected="${active}" tabindex="${active ? 0 : -1}" ${disabled ? 'disabled' : ''} title="${disabled ? 'No verified linked card for this division' : 'Open ' + division + ' job and comments'}">${division === 'CONTENTS' ? 'Contents' : division === 'RECON' ? 'Recon' : 'EMS'}</button>`;
+    }).join('')}
+  </div>`;
   const checklistDivisionTabs = `<div class="checklist-division-tabs" role="tablist" aria-label="Checklist division">
     ${["EMS", "CONTENTS", "RECON"].map((division) => {
       const linked = pinnedDivisionCards.some((card) => card.division === division);
@@ -1712,7 +2078,11 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     .map(([name, icon, label]) => {
       const env = workTypeState[name.toLowerCase()] || {};
       const trello = divisionCards[name.toLowerCase()] || {};
-      const stage = env.stage || "not_applicable";
+      const extraPlacements = divisionPlacements.filter((item) =>
+        String(item.division || "").toLowerCase() === name.toLowerCase() &&
+        item.card_id && !item.primary && item.card_id !== trello.card_id);
+      const stage = visibleWorkStage(env.stage || "not_applicable");
+      const workTypeStages = workTypeStagesFor(name);
       return `<div class="work-type work-type-${name.toLowerCase()} ${stage !== "not_applicable" ? "has-stage" : ""}" data-work-type-card="${name}">
         <div class="work-type-head"><span aria-hidden="true">${icon}</span><div><strong>${label}</strong><small>${name}${env.inferred ? ` · Detected from ${(env.detected_sources || []).join(" + ")}` : ""}</small></div></div>
         <select data-work-env="${name}" aria-label="${label} status">${workTypeStages.map(([value, text]) => `<option value="${value}" ${value === stage ? "selected" : ""}>${text}</option>`).join("")}</select>
@@ -1723,6 +2093,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
           ${data.card_id && data.card_id !== trello.card_id ? `<button class="text-btn" data-division-trello-use="${name}">Use open card</button>` : ""}
           <button class="text-btn" data-division-trello-pin="${name}">${trello.pinned ? "Change" : "Pin"}</button>
           ${trello.pinned ? `<button class="text-btn danger" data-division-trello-remove="${name}">Remove</button>` : ""}</div>
+          ${name === "EMS" && trello.pinned ? `<button class="text-btn" data-link-ems-copy>Link WIP / Estimating copy</button>` : ""}
+          ${extraPlacements.length ? `<div class="division-placement-list">${extraPlacements.map((item) => `<button class="division-placement" data-placement-open="${escapeAttr(item.url || `https://trello.com/c/${item.card_id}`)}"><span>Also on ${escapeHtml(item.board || item.purpose || "linked board")}</span><small>${escapeHtml(item.lane || "Open card")}</small></button>`).join("")}</div>` : ""}
         </div>
       </div>`;
     }).join("");
@@ -1748,9 +2120,13 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     const done = items.filter((item) => item.complete).length;
     return `<div class="trello-checklist"><div class="checklist-title"><h4>${escapeHtml(list.name || "Checklist")}</h4><span>${done}/${items.length}</span></div>
       <div class="checklist-progress"><i style="width:${items.length ? Math.round((done / items.length) * 100) : 0}%"></i></div>
-      ${items.map((item) => `<label class="check-row ${item.complete ? "checked" : ""}">
-        <input type="checkbox" data-check-item="${escapeAttr(item.id)}" data-check-name="${escapeAttr(item.name || "")}" ${item.complete ? "checked" : ""}/>
-        <span>${escapeHtml(item.name || "")}</span></label>`).join("") || `<div class="aud-empty">No items</div>`}
+      ${items.map((item) => {
+        const needsDocuSketch = /docusketch/i.test(String(item.name || ""));
+        const blockedByAccess = needsDocuSketch && !canUseDocuSketch;
+        return `<label class="check-row ${item.complete ? "checked" : ""} ${blockedByAccess ? "access-disabled" : ""}" ${blockedByAccess ? 'title="DocuSketch is not assigned to your account"' : ""}>
+        <input type="checkbox" data-check-item="${escapeAttr(item.id)}" data-check-name="${escapeAttr(item.name || "")}" ${item.complete ? "checked" : ""} ${blockedByAccess ? "disabled" : ""}/>
+        <span>${escapeHtml(item.name || "")}${blockedByAccess ? `<small>Access not assigned</small>` : ""}</span></label>`;
+      }).join("") || `<div class="aud-empty">No items</div>`}
     </div>`;
   };
   const checklistGroups = visibleChecklistRoles.length ? `
@@ -1765,8 +2141,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     <div class="checklist-role-panes">${visibleChecklistRoles.map(([key]) => `
       <div class="checklist-role-pane ${key === firstChecklistRole ? "active" : ""}" data-checklist-pane="${key}" ${key === firstChecklistRole ? "" : "hidden"}>
         ${checklistByRole[key].map(renderChecklist).join("")}
-      </div>`).join("")}</div>` : `<div class="aud-empty">No checklist has been added to this job.</div>`;
-  const logs = (crm.job_log || []).slice().reverse().slice(0, 40).map((entry) => `
+      </div>`).join("")}</div>` : `<div class="aud-empty">${emptyWorkspaceText('Checklists', 'No checklist has been added to this job.')}</div>`;
+  const logs = (crm.job_log || []).slice().reverse().map((entry) => `
     <article class="job-log-row snapshot-log-row" data-job-log-id="${escapeAttr(entry.entry_id || "")}">
       <div class="job-log-date"><time>${escapeHtml(formatAppDate(entry.work_date || ""))}</time><span>${escapeHtml((entry.status || "completed").replaceAll("_", " "))}</span></div><div class="job-log-copy">
       <div class="job-log-title"><strong>${escapeHtml(entry.work_type || "Job update")}</strong>${entry.technicians ? `<span>Crew · ${escapeHtml(entry.technicians)}</span>` : ""}</div>
@@ -1774,7 +2150,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       ${entry.equipment ? `<div class="job-log-field"><b>Equipment / readings</b><p>${escapeHtml(entry.equipment)}</p></div>` : ""}
       ${entry.source === "trello" && entry.note ? `<details class="job-log-source"><summary>Original Trello comment</summary><div><small>Imported from the ${escapeHtml(selectedDivision)} card${entry.updated_by ? ` · ${escapeHtml(entry.updated_by)}` : ""}</small><p>${escapeHtml(entry.note)}</p></div></details>` : ""}</div>
       <div class="job-log-actions"><button class="text-btn" data-history-job-log="${escapeAttr(entry.entry_id || "")}">History</button><button class="text-btn" data-edit-job-log="${escapeAttr(entry.entry_id || "")}">Edit</button>
-      <button class="text-btn danger" data-delete-job-log="${escapeAttr(entry.entry_id || "")}">Delete</button></div></article>`).join("") || `<div class="aud-empty">No Job Log updates yet.</div>`;
+      <button class="text-btn danger" data-delete-job-log="${escapeAttr(entry.entry_id || "")}">Delete log entry</button></div></article>`).join("") || `<div class="aud-empty">${emptyWorkspaceText('Job Log entries', 'No Job Log updates yet.', crm.job_log_error || crm.ok === false)}</div>`;
   const docs = data.documents || {};
   const dsRequest = docs.request || {};
   const documentRows = (data.deferred_loading || res.audit_pending) && !(docs.files || []).length
@@ -1786,8 +2162,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     : dsRequest.state === "pending_email" ? "Needs customer email"
     : (docs.files || []).some((file) => file.signed) ? "Signed file received" : "Not sent";
   const attachments = (data.attachments || []).map((a) =>
-    `<button class="attachment-row" data-attachment-url="${escapeAttr(a.url || "")}">📎 ${escapeHtml(a.name || "Attachment")}</button>`).join("") || `<div class="aud-empty">No attachments.</div>`;
-  const comments = (data.comments || []).map(renderJobComment).join("") || `<div class="aud-empty activity-empty">No comments yet. Start the job conversation below.</div>`;
+    `<button class="attachment-row" data-attachment-url="${escapeAttr(a.url || "")}">📎 ${escapeHtml(a.name || "Attachment")}</button>`).join("") || `<div class="aud-empty">${emptyWorkspaceText('Attachments', 'No attachments.')}</div>`;
+  const comments = (data.comments || []).map(renderJobComment).join("");
   const divisionConflicts = (data.division_card_reconciliation?.divisions || [])
     .filter((item) => item.state === "conflict");
   const divisionConflictBanner = divisionConflicts.length ? `<div class="division-conflict-banner" role="alert">
@@ -1797,18 +2173,24 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   const body = `<div class="job-card-layout">
     <div class="job-card-main">
       ${divisionConflictBanner}
-      <section class="aud-section job-info-section"><div class="section-title-row"><div><h3>Job info</h3><small>Click any field to copy</small></div><button type="button" class="btn compact" data-edit-job-info>Edit</button></div>
-        ${facts || `<div class="aud-empty">No saved job information yet.</div>`}</section>
+      <section class="aud-section job-info-section"><div class="section-title-row"><div><h3>Job info</h3><small>Click location to move · other fields to copy</small></div><button type="button" class="btn compact" data-edit-job-info>Edit</button></div>
+        ${facts || `<div class="aud-empty">${emptyWorkspaceText('Job information', 'No saved job information yet.')}</div>`}</section>
       <section class="aud-section audit-summary"><div class="section-title-row"><h3>Saved audit</h3><button class="btn compact" data-run-folder-audit>Run audit</button>${!data.deferred_loading && issues.length ? `<span class="audit-missing-count">${issues.length} missing</span>` : ""}</div>${missing}${misplacedHtml}</section>
       <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
-        <div class="section-actions">${data.card_id ? `<button class="btn compact" data-import-job-log>Refresh from ${escapeHtml(selectedDivision)} Trello</button>` : ""}<button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div></div>
+        <div class="section-actions">${data.card_id ? `<button class="btn compact" data-refresh-job-log>Refresh saved log</button><button class="btn compact" data-import-job-log>Pull from ${escapeHtml(selectedDivision)} Trello</button>` : ""}<button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div></div>
+        <small data-job-log-status role="status">${crm.job_log_dismissal_pending ? 'Dismissal saved on this PC · waiting to sync' : crm.job_log_error || crm.ok === false ? 'Showing saved entries — refresh unavailable' : crm.job_log_saved_at ? `Saved on this PC${data.deferred_loading || data.refresh_pending ? ' · Checking for changes…' : ''}` : data.deferred_loading ? 'Checking for saved Job Log entries…' : ''}</small>
+        <div class="section-actions" data-job-log-export><button class="btn compact" data-print-job-log ${(crm.job_log || []).length ? '' : 'disabled'} title="Save the currently loaded division Job Log as a Snapshot-style PDF">Print / PDF</button><small data-job-log-export-status role="status"></small></div>
         <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div></section>
+      <section class="aud-section paperwork-section"><div class="section-title-row"><div><h3>Forms &amp; paperwork</h3><small>${escapeHtml(paperworkSummary)}</small></div><button class="btn compact" data-run-folder-audit>Check files</button></div>
+        <div class="paperwork-list">${paperworkRows || `<div class="aud-empty">The paperwork list is unavailable for this saved job.</div>`}</div>
+        <div class="paperwork-access">${docuSketchAccess}</div></section>
       <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
         <span class="progress-label">${progress.counts?.overdue || 0} overdue · ${progress.counts?.blocked || 0} blocked · ${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div><span class="job-save-mode" data-job-save-state>Changes save automatically</span></div><div class="work-types">${workTypes}</div></section>
       <section class="aud-section checklist-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} requirements</small></div>${checklistDivisionTabs}</div>${checklistGroups}</section>
       ${oldJobsSection}
+      <section class="aud-section job-files-section"></section>
       <section class="aud-section signatures-section"><div class="section-title-row"><div><h3>Documents &amp; signatures</h3><small>DocuSign sends · job folder keeps the completed files</small></div><span class="signature-state state-${escapeAttr((dsRequest.state || "not_sent").replaceAll("_", "-"))}">${escapeHtml(signatureState)}</span></div>
         <div class="signature-flow"><span class="${dsRequest.requested ? "done" : "active"}">1 Prepare</span><i></i><span class="${dsRequest.requested ? "active" : ""}">2 Send</span><i></i><span class="${(docs.files || []).some((file) => file.signed) ? "done" : ""}">3 Signed copy</span></div>
         ${dsRequest.email ? `<div class="signature-recipient">Sent to <strong>${escapeHtml(dsRequest.email)}</strong> · ${Number(dsRequest.days_pending || 0)} day(s) pending</div>` : ""}
@@ -1823,21 +2205,22 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       <label class="comment-search"><span aria-hidden="true">⌕</span><input type="search" data-comment-search placeholder="Search comments" aria-label="Search comments"><small data-comment-search-count></small></label>
       <div class="comment-stream" data-comment-stream>${comments}</div>
       <div class="comment-compose"><textarea data-comment-input name="job-comment" rows="3" aria-label="Job comment" autocomplete="off" placeholder="Write an update for this job…"></textarea>
-        <div><span data-comment-state></span><button class="btn btn-primary" data-post-comment>Add comment</button></div></div>
+        <div class="comment-send-row"><button class="btn btn-primary" data-post-comment>Add comment</button></div><span data-comment-state role="status"></span></div>
     </aside></div>`;
   let w = document.createElement("div");
   w.className = "modal-scrim audit-overlay";
   w.innerHTML = `
     <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job workspace" tabindex="-1">
       <header class="modal-head">
+        ${divisionDataTabs}
         <div class="audit-head-main"><div class="audit-head-copy"><div class="modal-title-row"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div><button type="button" class="client-page-link" data-open-client-page>👤 Client page</button></div>
-        <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div>${divisionDataTabs}</div>
+        <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div></div>
         <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Checking details…" : data.refresh_pending ? "Saved details · checking for updates" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh details</button>`}</div>
         <button class="audit-close" data-close aria-label="Close job audit">×</button></div>
         <div class="card-quick-actions" aria-label="Job actions">
+          <div class="quick-main-actions">
           <div class="quick-primary-actions" aria-label="Work actions">
             <button class="action-btn primary" data-add-job-log><span class="quick-action-icon">＋</span>Add update</button>
-            <button class="action-btn" data-xa-note ${data.card_id ? "" : "disabled"}>🗒 XA note</button>
             <button class="action-btn" data-initial-notes ${data.card_id ? "" : "disabled"}>📋 Initial notes</button>
             <button class="action-btn" data-import-files title="Import downloaded or selected files into this job's OD folder">📥 Import files</button>
           </div>
@@ -1848,11 +2231,12 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
             </div></div>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">📁</span>Folder <small>⌄</small></button><div class="tool-menu-panel" role="menu" aria-label="Job folder actions">
               <button data-open-docs-folder ${res.path ? "" : "disabled"}>Open folder</button>
-              <button data-repin-job-folder>Choose exact folder</button>
-              <button data-copy-folder-path ${res.path ? "" : "disabled"}>Copy folder path</button>
+              <button data-repin-job-folder>Pin / repin folder</button>
+              <button data-copy-folder-path ${res.path ? "" : "disabled"}>Copy path</button>
             </div></div>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/xactanalysis.png" alt="">XA <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-xa ${data.card_id || data.client ? "" : "disabled"}>Open XactAnalysis</button>
+              <button data-xa-note ${data.card_id ? "" : "disabled"}>Add XA note</button>
               <button data-stage-xa ${res.path ? "" : "disabled"}>Stage files for XA</button>
             </div></div>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/companycam.png" alt="">CompanyCam <small>⌄</small></button><div class="tool-menu-panel" role="menu">
@@ -1862,8 +2246,9 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
               <button data-quick-photo-report ${data.card_id ? "" : "disabled"}>Build quick PDF</button>
             </div></div>
           </div>
-          <div class="quick-utility-actions"><div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu">
-            <button data-dispatch-subcontractor>Dispatch subcontractor</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
+          </div>
+          <div class="quick-utility-actions"><div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu" aria-label="More job actions">
+            <button data-dispatch-subcontractor>Dispatch subcontractor</button><button data-import-existing-initial-notes>Copy existing initial notes</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
           </div></div></div>
         </div>
       </header>
@@ -1874,8 +2259,12 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     </div>`;
   if (!preparation) document.body.appendChild(w);
   const previousFocus = preparation ? null : document.activeElement;
-  window.JobWorkspaceTabs.mount(w, `${state.department || ''}:${data.card_id || data.client || ''}`);
+  window.JobFiles?.mount(w.querySelector('.job-files-section'), {client:data.client || res.client || '', attachments:data.attachments || []});
+  window.SavedRunActivity?.mount(w.querySelector('.job-run-section'), data.client || res.client || '', selectedDivision);
+  const workspaceTabs = window.JobWorkspaceTabs.mount(w, `${state.department || ''}:${data.card_id || data.client || ''}`);
+  if (!preparation && data.initial_workspace_tab) workspaceTabs.select(data.initial_workspace_tab);
   const dirtyDrafts = preparation?.dirtyDrafts || new Set();
+  const recoveredDrafts = preparation?.recoveredDrafts || new Set();
   const editedSections = preparation?.editedSections || new Set();
   let workspaceContext = null;
   const markDraftDirty = (key, dirty = true) => {
@@ -1885,17 +2274,36 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   const clearDraftDirty = (key) => dirtyDrafts.delete(key);
   const close = (force = false) => {
     if (preparation) return preparation.close(force);
-    if (!force && dirtyDrafts.size && !window.confirm("Discard your unsaved draft? Saved job changes will not be lost.")) return false;
+    if (!force && dirtyDrafts.size) {
+      if (!window.confirm("Discard your unsaved draft? Saved job changes will not be lost.")) return false;
+      recoveredDrafts.forEach(draft => draft.clear());
+    }
+    recoveredDrafts.forEach(draft => draft.dispose());
+    w.querySelector('[data-comment-input]')?._richEditor?.destroy();
     document.removeEventListener("keydown", keyClose);
+    if (w._contentsListener) window.removeEventListener("pipeline:contents-card", w._contentsListener);
     if (state.openWorkspace === workspaceContext) state.openWorkspace = null;
+    w.querySelector('.job-files-section')?._jobFiles?.dispose();
     w.remove();
     previousFocus?.focus?.();
     return true;
   };
   const requestClose = () => { if (close()) notifyJobWorkspaceClosed(); };
   w.querySelector("[data-close]").addEventListener("click", requestClose);
-  const keyClose = (e) => { if (e.key === "Escape") requestClose(); };
+  const keyClose = (e) => {
+    if (e.key !== "Escape") return;
+    const openMenus = w.querySelectorAll(".tool-quick-menu.is-open");
+    if (openMenus.length) {
+      openMenus.forEach((menu) => {
+        menu.classList.remove("is-open");
+        menu.querySelector(".tool-menu-trigger")?.setAttribute("aria-expanded", "false");
+      });
+      return;
+    }
+    requestClose();
+  };
   if (!preparation) {
+    window.bindBackdropClick?.(w, requestClose);
     document.addEventListener("keydown", keyClose);
     w.querySelector(".audit-card")?.focus();
     w.addEventListener('input', event => {
@@ -1922,9 +2330,6 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       });
       setOpen(opening);
     });
-    menu.addEventListener("pointerleave", (event) => {
-      if (event.pointerType !== "touch") setOpen(false);
-    });
     menu.querySelectorAll(".tool-menu-panel button").forEach((button) =>
       button.addEventListener("click", () => setOpen(false)));
   });
@@ -1943,13 +2348,29 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   });
   w.querySelectorAll("[data-division-data]").forEach((button) => button.addEventListener("click", async () => {
     if (button.dataset.divisionData === selectedDivision) return;
+    const target = divisionTargets[button.dataset.divisionData];
+    if (!target) { setStatus('Choose a linked card for that division first.', 'warn'); return; }
+    const tab = w.querySelector('.job-workspace-tabs [aria-selected="true"]')?.id.replace('job-tab-', '');
     if (!close()) return;
-    await onAuditCard(data.client || res.client || "", "", "", button.dataset.divisionData || "EMS");
+    await onAuditCard(data.client || res.client || "", target.card_id, target.url || "", button.dataset.divisionData || "EMS", {
+      cards: workspaceDivisionCards, reconciliation: data.division_card_reconciliation, tab,
+      loadSession: w._divisionLoadSession
+    });
   }));
+  w.querySelector('.job-division-folder-tabs').addEventListener('keydown', event => {
+    const buttons = [...w.querySelectorAll('[data-division-data]:not(:disabled)')];
+    const index = buttons.indexOf(event.target);
+    if (index < 0 || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next].focus();
+  });
   w.querySelectorAll("[data-checklist-division]").forEach((button) => button.addEventListener("click", async () => {
     if (button.dataset.checklistDivision === selectedDivision) return;
+    const target = workspaceDivisionCards.find(card => card.division === button.dataset.checklistDivision && card.card_id && card.pinned !== false);
+    if (!target) { setStatus('Choose a linked card for that division first.', 'warn'); return; }
     if (!close()) return;
-    await onAuditCard(data.client || res.client || "", "", "", button.dataset.checklistDivision || "EMS");
+    await onAuditCard(data.client || res.client || "", target.card_id, target.url || "", button.dataset.checklistDivision || "EMS");
   }));
   const linkedCardTarget = { dataset: {
     client: data.client || res.client || "",
@@ -1972,19 +2393,46 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       selectedDivision,
     );
   });
-  const repinFolder = () => openJobFolderLinkModal(data, close);
+  const checkDocuSketchFolder = async () => {
+    const path = data.audit?.path || res.path || '';
+    const badge = w.querySelector('[data-docusketch-folder]');
+    if (!badge || !path) return;
+    badge.textContent = 'Checking for a DocuSketch folder…';
+    try {
+      const result = await pywebview.api.job_docusketch_folder(path);
+      if ((data.audit?.path || res.path) !== path || !badge.isConnected) return;
+      badge.textContent = result.status === 'found' ? 'DocuSketch folder found'
+        : result.status === 'not_found' ? 'No DocuSketch folder found in the checked job folders'
+        : 'DocuSketch folder could not be verified';
+      badge.title = result.path || 'Checks the job folder and two nested folder levels; does not verify account access.';
+    } catch (_) { if (badge.isConnected) badge.textContent = 'DocuSketch folder could not be verified'; }
+  };
+  if (!preparation) checkDocuSketchFolder();
+  const repinFolder = () => openJobFolderLinkModal(data, null, async (result) => {
+    res.path = result.path;
+    data.audit = {...(data.audit || {}), path: result.path};
+    data.local_folder_override = result.path;
+    w.querySelectorAll('[data-open-docs-folder], [data-copy-folder-path], [data-stage-xa]').forEach(button => { button.disabled = false; });
+    checkDocuSketchFolder();
+  });
+  const openFolder = async () => {
+    const result = await localFileAction(() => pywebview.api.open_job_folder(data.client || "", res.path || "", data.card_id || ""));
+    if (!result?.ok) setStatus(result?.error || "The job folder could not open. Pin the exact folder and try again.", "error");
+    else if (result.path) res.path = result.path;
+  };
   const copyFolderPath = async () => {
     if (!res.path) return;
-    await pywebview.api.copy_to_clipboard(res.path);
+    try { await pywebview.api.copy_to_clipboard(res.path); }
+    catch (error) { setStatus(error?.message || String(error), "error"); return; }
     setStatus("Job folder path copied", "ok");
   };
   const showFolderContext = (event) => {
     event.preventDefault(); event.stopPropagation();
     if (!window.showContextMenu) { repinFolder(); return; }
     window.showContextMenu(event, [
-      { label: "Open folder", action: () => pywebview.api.open_job_folder(data.client || "", res.path || "", data.card_id || ""), disabled: !res.path },
-      { label: "Repin folder…", action: repinFolder },
-      { label: "Copy folder path", action: copyFolderPath, disabled: !res.path },
+      { label: "Open folder", action: openFolder, disabled: !res.path },
+      { label: "Pin / repin folder…", action: repinFolder },
+      { label: "Copy path", action: copyFolderPath, disabled: !res.path },
     ], { minWidth: 210 });
   };
   w.querySelectorAll("[data-open-trello]").forEach((button) => button.addEventListener("click", () => {
@@ -2004,21 +2452,20 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   });
   w.querySelector("[data-xa-note]")?.addEventListener("click", () =>
     openXaNoteModal(data.client || res.client || "", data.card_id || ""));
-  w.querySelector("[data-initial-notes]")?.addEventListener("click", async (event) => {
+  w.querySelector("[data-initial-notes]")?.addEventListener("click", () =>
+    openInitialNoteModal(data.client || res.client || "", data.card_id || "", selectedDivision));
+  w.querySelector("[data-import-existing-initial-notes]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    const prior = button.innerHTML;
     button.disabled = true;
-    button.textContent = "Reading…";
     const result = await pywebview.api.import_initial_notes(
       data.client || res.client || "", data.card_id || "");
     button.disabled = false;
-    button.innerHTML = prior;
     if (!result?.ok || !result.summary) {
-      setStatus(result?.error || "No initial notes were found on this job", "warn");
+      setStatus(result?.error || "No existing initial notes were found", "warn");
       return;
     }
     await pywebview.api.copy_to_clipboard(result.summary);
-    setStatus("Initial notes copied", "ok");
+    setStatus("Existing initial notes copied", "ok");
   });
   w.querySelector("[data-import-files]")?.addEventListener("click", () =>
     openJobFileImportModal(data, res));
@@ -2051,13 +2498,27 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     onFlagCard({dataset: {client: data.client || res.client || "", cardId: data.card_id || ""}});
   });
   w.querySelector("[data-stage-xa]")?.addEventListener("click", () => {
-    openXaStageModal(data.client || res.client || "");
+    openXaStageModal(data.client || res.client || "", res.path || "");
   });
   w.querySelectorAll("[data-copy-job-field]").forEach((button) => button.addEventListener("click", async () => {
     await pywebview.api.copy_to_clipboard(button.dataset.copyJobField || "");
     button.classList.add("copied");
     window.setTimeout(() => button.classList.remove("copied"), 900);
     setStatus(`Copied ${button.dataset.copyJobLabel || "job info"}`, "ok");
+  }));
+  w.querySelectorAll('[data-move-job-location]').forEach(button => button.addEventListener('click', () => {
+    if (!data.card_id) return;
+    void openPlacementAction(data.card_id, 'move', {
+      focus:button.dataset.moveJobLocation,
+      onSaved(destination) {
+        data.app_placement = {...(data.app_placement || {}), ...destination};
+        if (!w.isConnected) return;
+        const board = w.querySelector('[data-move-job-location="app_board"] strong');
+        const lane = w.querySelector('[data-move-job-location="app_lane"] strong');
+        if (board) board.textContent = destination.board;
+        if (lane) lane.textContent = destination.lane;
+      }
+    });
   }));
   w.querySelector("[data-edit-job-info]")?.addEventListener("click", () => openJobInfoEditor(data, res, async () => {
     close(true);
@@ -2127,7 +2588,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     } else if (result.comment_ok === false) {
       setStatus(`Checklist saved, but automatic comment failed: ${result.comment_error || "Trello unavailable"}`, "warn");
     } else if (result.warning) {
-      setStatus(`Saved in Linguar Hub · Trello sync needs attention`, "warn");
+      setStatus(`Saved in OneLoss · Trello sync needs attention`, "warn");
     } else {
       setStatus(result.comment_ok ? "Checklist saved · automatic comment posted" : "Checklist saved", "ok");
     }
@@ -2243,6 +2704,40 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       await refreshAfterRequirement();
       showRequirementUndo(item, previousState);
     }));
+  let contentsJobKey = crm.canon_key || "";
+  if (w._contentsListener) window.removeEventListener("pipeline:contents-card", w._contentsListener);
+  w._contentsListener = event => {
+    if (!w.isConnected) { window.removeEventListener("pipeline:contents-card", w._contentsListener); return; }
+    const result = event.detail || {};
+    if (!contentsJobKey || result.job_key !== contentsJobKey) return;
+    const division = String(result.division || "CONTENTS").toUpperCase();
+    const label = {EMS: "EMS", CONTENTS: "Contents", RECON: "Recon"}[division];
+    if (!label) return;
+    const saveState = w.querySelector("[data-job-save-state]");
+    if (!result.ok) {
+      if (saveState) saveState.textContent = `Saved · ${label} card waiting to sync`;
+      setStatus(result.error || `${label} is saved. Card creation will retry in the background.`, "warn");
+      return;
+    }
+    divisionCards[division.toLowerCase()] = { card_id: result.card_id, url: result.url, pinned: true };
+    const section = w.querySelector(`[data-work-type-card="${label}"] .division-trello`);
+    if (section) {
+      section.classList.add("is-pinned");
+      section.querySelector("span").textContent = "📌 Trello card pinned";
+      const pin = section.querySelector(`[data-division-trello-pin="${label}"]`);
+      if (pin) pin.textContent = "Change";
+      if (!section.querySelector(`[data-division-trello-open="${label}"]`)) {
+        const open = document.createElement("button");
+        open.className = "text-btn"; open.textContent = "Open";
+        open.dataset.divisionTrelloOpen = label;
+        open.addEventListener("click", () => pywebview.api.open_url(divisionCards[division.toLowerCase()].url));
+        section.querySelector("div").prepend(open);
+      }
+    }
+    if (saveState) saveState.textContent = `Saved · ${label} card linked`;
+    setStatus(`${label} card is linked to this job`, "ok");
+  };
+  window.addEventListener("pipeline:contents-card", w._contentsListener);
   const saveWorkType = async (select) => {
     const name = select.dataset.workEnv;
     const ownerDraftKey = `work-owner-${name}`;
@@ -2260,9 +2755,13 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       return;
     }
     clearDraftDirty(ownerDraftKey);
+    if (result.job_key) contentsJobKey = result.job_key;
     if (saveState) saveState.textContent = "Saved";
     tile?.classList.toggle("has-stage", select.value !== "not_applicable");
-    setStatus(`${name} updated for this job`, "ok");
+    if ((result.division_card || result.contents_card)?.pending) {
+      if (saveState) saveState.textContent = `Saved · Linking ${name} card…`;
+      setStatus(`${name} saved. Creating or linking its card in the background.`, "ok");
+    } else setStatus(`${name} updated for this job`, "ok");
   };
   w.querySelectorAll("[data-work-env]").forEach((select) =>
     select.addEventListener("change", () => saveWorkType(select)));
@@ -2290,6 +2789,15 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       const card = divisionCards[button.dataset.divisionTrelloOpen.toLowerCase()] || {};
       if (card.url) pywebview.api.open_url(card.url);
     }));
+  w.querySelectorAll("[data-placement-open]").forEach((button) =>
+    button.addEventListener("click", () => pywebview.api.open_url(button.dataset.placementOpen || "")));
+  w.querySelector("[data-link-ems-copy]")?.addEventListener("click", () => {
+    const source = divisionCards.ems?.card_id || "";
+    openEmsCopyLinkModal(data.client || res.client || "", source, async () => {
+      close();
+      await onAuditCard(data.client || res.client || "", data.card_id || "", "", "EMS");
+    });
+  });
   w.querySelectorAll("[data-division-trello-use]").forEach((button) =>
     button.addEventListener("click", () => {
       const division = button.dataset.divisionTrelloUse;
@@ -2332,7 +2840,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   w.querySelectorAll("[data-quick-photo-report]").forEach((control) => control.addEventListener("click", () =>
     openQuickPhotoReportModal(data.client || res.client || "", res.path || "", selectedDivision)));
   w.querySelectorAll("[data-open-docs-folder]").forEach((button) => {
-    button.addEventListener("click", () => pywebview.api.open_job_folder(data.client || "", res.path || "", data.card_id || ""));
+    button.addEventListener("click", openFolder);
     button.addEventListener("contextmenu", showFolderContext);
   });
   w.querySelectorAll("[data-open-old-job]").forEach((button) => button.addEventListener("click", () => pywebview.api.open_url(button.dataset.openOldJob)));
@@ -2347,44 +2855,113 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     if (!result?.ok) { button.disabled = false; button.textContent = "Mark envelope sent"; setStatus(result?.error || "Could not track DocuSign request", "error"); return; }
     close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("DocuSign request marked sent", "ok");
   });
+  w.querySelector('[data-print-job-log]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const status = w.querySelector('[data-job-log-export-status]');
+    button.disabled = true;
+    status.textContent = 'Preparing PDF…';
+    try {
+      const result = await pywebview.api.export_job_log_pdf({
+        client: data.client || res.client || '', division: selectedDivision,
+        carrier: copyField('carrier'), dol: copyField('dol'),
+        entries: crm.job_log || []
+      });
+      status.textContent = !result?.ok ? result?.error || 'Could not create PDF.'
+        : result.cancelled ? '' : `PDF saved${result.opened ? ' — print from the PDF viewer' : ''}: ${result.path}`;
+    } catch (error) { status.textContent = `Could not create PDF: ${error.message || error}`; }
+    finally { button.disabled = false; }
+  });
   const openJobLogEditor = (entry = {}) => {
     const host = w.querySelector("[data-job-log-editor]");
+    host._draft?.dispose(); recoveredDrafts.delete(host._draft);
     const today = new Date().toISOString().slice(0, 10);
-    const activities = ["Initial inspection", "Demo", "Monitor", "Equipment placed", "Equipment pickup", "Contents", "Recon", "Final inspection", "Other"];
+    const activities = ["Initial inspection", "Demo", "Monitor", "Equipment placed", "Equipment pickup", "Contents", "Recon", "Final inspection"];
+    const knownActivity = activities.includes(entry.work_type || "");
     const statuses = ["scheduled", "completed", "rescheduled", "cancelled", "skipped", "needs_review"];
     host.hidden = false;
     host.innerHTML = `<div class="job-log-form">
       <label>Date<input type="date" data-log-field="work_date" value="${escapeAttr(entry.work_date || today)}"></label>
-      <label>Activity<select data-log-field="work_type">${activities.map((x) => `<option ${x === entry.work_type ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      <label>Activity<select data-log-field="work_type">${activities.map((x) => `<option ${x === entry.work_type ? "selected" : ""}>${x}</option>`).join("")}<option value="__custom__" ${entry.work_type && !knownActivity ? "selected" : ""}>Custom activity…</option></select></label>
+      <label data-log-custom-row ${entry.work_type && !knownActivity ? "" : "hidden"}>Custom activity<input data-log-custom value="${escapeAttr(entry.work_type && !knownActivity ? entry.work_type : "")}" placeholder="Type the activity name"></label>
       <label>Status<select data-log-field="status">${statuses.map((x) => `<option value="${x}" ${x === (entry.status || "completed") ? "selected" : ""}>${x.replaceAll("_", " ")}</option>`).join("")}</select></label>
       <label>Technician / crew<input data-log-field="technicians" value="${escapeAttr(entry.technicians || "")}" placeholder="Who completed the work?"></label>
       <label class="wide">Work completed / update<textarea rows="3" data-log-field="note" placeholder="Areas worked, findings, what was completed, and the next step">${escapeHtml(entry.note || "")}</textarea></label>
       <label class="wide">Equipment / readings<input data-log-field="equipment" value="${escapeAttr(entry.equipment || "")}" placeholder="Equipment placed, moved, readings, or pickup"></label>
+      ${!entry.entry_id ? `<label class="wide job-log-post-option"><input type="checkbox" data-log-post-trello checked><span>Also post this new entry as a Trello comment<small>Uncheck to save in OneLoss only.</small></span></label>` : entry.source === 'pc_only' ? `<p class="wide">OneLoss-only entry · no Trello comment will be created.</p>` : ''}
       <div class="job-log-form-actions"><button class="btn btn-primary" data-save-job-log>Save update</button><button class="btn" data-cancel-job-log>Cancel</button></div></div>`;
+    host.querySelector('[data-log-post-trello]')?.addEventListener('change', () => markDraftDirty('job-log', true));
     host.querySelectorAll("[data-log-field]").forEach((field) =>
       field.addEventListener("input", () => markDraftDirty("job-log", true)));
+    const activitySelect = host.querySelector('[data-log-field="work_type"]');
+    const customRow = host.querySelector("[data-log-custom-row]");
+    const customActivity = host.querySelector("[data-log-custom]");
+    activitySelect.addEventListener("change", () => {
+      customRow.hidden = activitySelect.value !== "__custom__";
+      if (!customRow.hidden) customActivity.focus();
+    });
+    customActivity.addEventListener("input", () => markDraftDirty("job-log", true));
+    const logDraft = window.JobDrafts?.mount(host, [data.card_id || '', selectedDivision, 'job-log', entry.entry_id || ''], () => {
+      const fields = Object.fromEntries([...host.querySelectorAll('[data-log-field]')].map(field => [field.dataset.logField, field.value]));
+      return {...fields, custom: customActivity.value, post_to_trello: host.querySelector('[data-log-post-trello]')?.checked};
+    }, saved => {
+      host.querySelectorAll('[data-log-field]').forEach(field => { if (saved[field.dataset.logField] !== undefined) field.value = saved[field.dataset.logField]; });
+      customActivity.value = saved.custom || ''; customRow.hidden = activitySelect.value !== '__custom__';
+      const post = host.querySelector('[data-log-post-trello]'); if (post) post.checked = saved.post_to_trello === true;
+      markDraftDirty('job-log', true);
+    });
+    host._draft = logDraft;
+    if (logDraft) recoveredDrafts.add(logDraft);
     host.querySelector("[data-cancel-job-log]").addEventListener("click", () => {
+      logDraft?.clear(); logDraft?.dispose(); recoveredDrafts.delete(logDraft);
       clearDraftDirty("job-log"); host.hidden = true; host.innerHTML = "";
     });
     host.querySelector("[data-save-job-log]").addEventListener("click", async (event) => {
       const payload = {entry_id: entry.entry_id || "", source: entry.source || "pc", source_id: entry.source_id || "", trello_comment_id: entry.trello_comment_id || ""};
       host.querySelectorAll("[data-log-field]").forEach((field) => { payload[field.dataset.logField] = field.value; });
+      if (!entry.entry_id) payload.post_to_trello = host.querySelector('[data-log-post-trello]').checked;
+      if (payload.work_type === "__custom__") payload.work_type = customActivity.value.trim();
+      if (!payload.work_type) { customActivity.focus(); return; }
       const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
-      const result = await pywebview.api.save_job_log_update(
-        data.client || "", payload, data.card_id || "");
-      if (!result?.ok) { button.disabled = false; button.textContent = "Save update"; setStatus(result?.error || "Job Log could not be saved", "error"); return; }
+      let result;
+      try { result = await pywebview.api.save_job_log_update(
+        data.client || "", payload, data.card_id || "", selectedDivision); }
+      catch (_) { result = {ok:false,error:'Save could not be confirmed. Your draft is still here; check before retrying.'}; }
+      if (!result?.ok || !result.entry?.entry_id) {
+        button.disabled = false; button.textContent = "Save update";
+        let notice = host.querySelector('[data-log-save-status]');
+        if (!notice) { notice=document.createElement('p'); notice.dataset.logSaveStatus=''; notice.setAttribute('role','alert'); host.append(notice); }
+        notice.textContent = result?.error || 'Job Log save could not be confirmed.';
+        setStatus(notice.textContent, "error"); return;
+      }
       clearDraftDirty("job-log");
-      close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("Job Log updated", "ok");
+      logDraft?.clear(); logDraft?.dispose(); recoveredDrafts.delete(logDraft);
+      host.hidden = true; host.innerHTML = '';
+      controller.applyJobLogSave(result);
     });
     host.scrollIntoView({ behavior: "smooth", block: "start" });
     window.setTimeout(() => host.querySelector('[data-log-field="work_type"]')?.focus(), 250);
   };
   w.querySelectorAll("[data-add-job-log]").forEach((button) => button.addEventListener("click", () => openJobLogEditor({})));
+  w.querySelector('[data-refresh-job-log]')?.addEventListener('click', async (event) => {
+    if (w.querySelector('[data-job-log-editor]:not([hidden])')) {
+      setStatus('Save or cancel the open Job Log edit before refreshing.', 'error');
+      return;
+    }
+    const button = event.currentTarget;
+    button.disabled = true; button.textContent = 'Refreshing saved log…';
+    try {
+      const result = await pywebview.api.refresh_saved_job_log(data.card_id || '', selectedDivision);
+      if (!result?.ok) throw new Error(result?.error || 'Saved log could not refresh');
+      controller.applyRefresh({...data, crm:{...crm, ...result.crm}}, true);
+      setStatus('Saved Job Log refreshed. No Trello comments imported.', 'ok');
+    } catch (error) { setStatus(error.message || 'Refresh failed; your saved log was kept.', 'error'); }
+    finally { button.disabled = false; button.textContent = 'Refresh saved log'; }
+  });
   w.querySelector("[data-import-job-log]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget; button.disabled = true; button.textContent = "Reading Trello…";
     const result = await pywebview.api.import_job_log_from_trello(
-      data.client || "", data.card_id || "");
-    if (!result?.ok) { button.disabled = false; button.textContent = `Refresh from ${selectedDivision} Trello`; setStatus(result?.error || "Could not import the job log", "error"); return; }
+      data.client || "", data.card_id || "", selectedDivision);
+    if (!result?.ok) { button.disabled = false; button.textContent = `Pull from ${selectedDivision} Trello`; setStatus(result?.error || "Could not import the job log", "error"); return; }
     close();
     await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS");
     setStatus(result.imported ? `Added ${result.imported} ${selectedDivision} job-log event(s)` : `${selectedDivision} Job Log is up to date`, "ok");
@@ -2397,14 +2974,43 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     if (!result?.ok) { setStatus(result?.error || "Could not load revision history", "error"); return; }
     openJobLogHistoryModal(result.history || []);
   }));
-  w.querySelectorAll("[data-delete-job-log]").forEach((button) => button.addEventListener("click", async () => {
-    const entry = (crm.job_log || []).find((item) => item.entry_id === button.dataset.deleteJobLog) || {};
-    if (!window.confirm(`Delete the ${entry.work_type || "Job Log"} update from ${entry.work_date || "this job"}?\n\nThis removes the Linguar Hub entry. It does not delete the original Trello comment.`)) return;
-    button.disabled = true; button.textContent = "Deleting…";
-    const result = await pywebview.api.delete_job_log_update(
-      data.client || "", entry.entry_id || "", data.card_id || "");
-    if (!result?.ok) { button.disabled = false; button.textContent = "Delete"; setStatus(result?.error || "Job Log entry could not be deleted", "error"); return; }
-    close(); await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS"); setStatus("Job Log entry deleted", "ok");
+  w.querySelectorAll("[data-delete-job-log], [data-dismiss-job-log]").forEach((button) => button.addEventListener("click", async () => {
+    const dismiss = button.hasAttribute('data-dismiss-job-log');
+    const entry = (crm.job_log || []).find((item) => item.entry_id === (button.dataset.dismissJobLog || button.dataset.deleteJobLog)) || {};
+    const message = dismiss
+      ? `Dismiss the incorrect ${entry.work_type || "Job Log"} interpretation?\n\nThe original Trello comment and other interpretations from it will stay.`
+      : `Delete the ${entry.work_type || "Job Log"} update from ${entry.work_date || "this job"}?\n\nOnly this OneLoss log entry will be removed. Trello comments will not be changed.`;
+    if (!window.confirm(message)) return;
+    const originalLabel = button.textContent;
+    button.disabled = true; button.textContent = dismiss ? "Dismissing…" : "Deleting…";
+    let result;
+    try { result = await pywebview.api[dismiss ? 'dismiss_job_log_update' : 'delete_job_log_update'](
+      data.client || "", entry.entry_id || "", data.card_id || "", selectedDivision);
+    } catch (_) { result = {ok: false, error: 'Deletion could not be confirmed. The entry was kept; check the original comment before retrying.'}; }
+    if (!result?.ok) {
+      button.disabled = false; button.textContent = originalLabel;
+      const message = result?.error || "Job Log change could not be confirmed";
+      let notice = button.closest('[data-job-log-id]').querySelector('[data-log-action-error]');
+      if (!notice) { notice = document.createElement('p'); notice.dataset.logActionError = ''; notice.setAttribute('role','alert'); button.closest('[data-job-log-id]').append(notice); }
+      notice.textContent = message;
+      setStatus(message, "error"); return;
+    }
+    const deletedIds = new Set(result.deleted_ids || [entry.entry_id]);
+    crm.job_log_deleted_ids = [...new Set([...(crm.job_log_deleted_ids || []), ...deletedIds])];
+    crm.job_log_deleted_sources = [...new Set([...(crm.job_log_deleted_sources || []), ...(result.deleted_sources || [])])];
+    crm.job_log = (crm.job_log || []).filter(item => !deletedIds.has(item.entry_id));
+    w.querySelectorAll('[data-job-log-id]').forEach(row => {
+      if (deletedIds.has(row.dataset.jobLogId)) row.remove();
+    });
+    if (result.deleted_comment_id) w.querySelectorAll('[data-comment-id]').forEach(row => {
+      if (row.dataset.commentId === result.deleted_comment_id) row.remove();
+    });
+    if (dismiss) {
+      let notice = w.querySelector('[data-log-dismissal-state]');
+      if (!notice) { notice = document.createElement('p'); notice.dataset.logDismissalState = ''; notice.setAttribute('role','status'); w.querySelector('#job-panel-log').prepend(notice); }
+      notice.textContent = result.pending_sync ? 'Dismissed on this PC · waiting to sync. Original Trello comment kept.' : 'Dismissed · original Trello comment kept.';
+    }
+    setStatus(result.pending_sync ? "Removed from this PC · shared sync pending. Trello comment unchanged." : "Job Log entry deleted · Trello comment unchanged", "ok");
   }));
   const commentInput = w.querySelector("[data-comment-input]");
   const commentSearch = w.querySelector("[data-comment-search]");
@@ -2428,8 +3034,12 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     cardId: data.card_id || '', division: selectedDivision,
     cards: workspaceDivisionCards.map(card => ({...card,
       conflict: conflictedDivisions.has(String(card.division || '').toUpperCase())})),
+    placements: data.division_trello_placements || [],
     comments: data.comments || [], render: renderJobComment,
-    fetch: cardId => pywebview.api.refresh_job_comments(cardId), onChange: filterComments,
+    initialComplete: !data.deferred_loading && !data.refresh_pending && !data.audit?.trello_error && Array.isArray(data.comments),
+    initialError: data.audit?.trello_error || '',
+    fetchSaved: cardId => pywebview.api.saved_job_comments?.(cardId),
+    fetch: (cardId, force) => !force && w._divisionLoadSession?.comments(cardId) || pywebview.api.refresh_job_comments(cardId), onChange: filterComments,
   });
   workspaceContext = {
     element: w,
@@ -2440,28 +3050,70 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     conversation,
   };
   if (!preparation) state.openWorkspace = workspaceContext;
+  const commentDraft = preparation?.commentDraft || (!preparation && window.JobDrafts?.mount(w.querySelector('.comment-compose'), [data.card_id || '', selectedDivision, 'comment', ''], () =>
+    commentInput.value.trim() ? {text:commentInput.value, targets:conversation.targets().map(target => target.cardId)} : null,
+    saved => { commentInput.value = saved.text || ''; conversation.restoreTargets?.(saved.targets || []); markDraftDirty('comment', !!commentInput.value.trim()); }));
+  if (commentDraft) recoveredDrafts.add(commentDraft);
+  if (!preparation) {
+    commentInput._mentionTargets = () => conversation.targets();
+    window.CommentMarkdown?.mount(commentInput);
+  }
+  w.querySelector('.comment-compose')?.addEventListener('click', event => {
+    if (event.target.closest('[data-comment-destination],[data-comment-placement]')) commentDraft?.capture();
+  });
   commentInput?.addEventListener("input", () => markDraftDirty("comment", Boolean(commentInput.value.trim())));
   w.querySelector("[data-post-comment]")?.addEventListener("click", async (event) => {
     const input = commentInput;
     const stateEl = w.querySelector("[data-comment-state]");
     const text = input.value.trim();
     if (!text) return;
-    const target = conversation.target();
+    const targets = conversation.targets?.() || [conversation.target()];
+    const target = targets[0] || {};
     if (!target.cardId) { stateEl.textContent = 'Choose a linked card first'; return; }
     const button = event.currentTarget;
     button.disabled = true;
     stateEl.textContent = "Saving…";
     let result;
-    try { result = await pywebview.api.post_job_comment(data.client || "", target.cardId, text); }
+    try {
+      result = targets.length > 1
+        ? await pywebview.api.post_job_comment_multi(
+            data.client || "", targets.map(item => item.cardId), text)
+        : await pywebview.api.post_job_comment(data.client || "", target.cardId, text);
+    }
     catch (error) { stateEl.textContent = error?.message || 'Could not save'; return; }
     finally { button.disabled = false; }
-    if (!result?.ok) { stateEl.textContent = result?.error || result?.warning || "Could not save"; return; }
-    conversation.add(target.cardId, result.comment);
+    if (!result?.ok) {
+      if (result?.partial) {
+        for (const row of result.results || []) if (row.ok && row.comment) conversation.add(row.card_id, row.comment);
+        conversation.retainFailedTargets((result.failed || []).map(row => row.card_id));
+        commentDraft?.capture();
+      }
+      stateEl.textContent = result?.partial ? 'Saved to some destinations. Only failed destinations remain selected; retry to send there.' : result?.error || result?.warning || "Could not save";
+      return;
+    }
+    if (targets.length > 1) {
+      for (const row of result.results || []) {
+        if (row.ok && row.comment) conversation.add(row.card_id, row.comment);
+      }
+    } else conversation.add(target.cardId, result.comment);
     filterComments();
-    if (input.value.trim() === text) { input.value = ""; clearDraftDirty("comment"); }
-    stateEl.textContent = result.warning || (result.pending_sync ? `Saved to ${target.division} · Trello sync pending` : `Saved to ${target.division}`);
+    if (input.value.trim() === text) { input.value = ""; clearDraftDirty("comment"); commentDraft?.clear(); }
+    conversation.resetTargets();
+    stateEl.textContent = targets.length > 1
+      ? `Saved to ${result.posted || targets.length} linked cards · Trello sync pending`
+      : result.warning || (result.pending_sync ? `Saved to ${target.division} · Trello sync pending` : `Saved to ${target.division}`);
   });
   w.querySelector("[data-comment-stream]")?.addEventListener("click", async (event) => {
+    const link = event.target.closest('.comment-markdown a');
+    if (link) {
+      event.preventDefault();
+      const url = link.getAttribute('href') || '';
+      if (/^(https?:\/\/|mailto:)/i.test(url)) {
+        try { await pywebview.api.open_url(url); }
+        catch (_) { setStatus('The comment link could not be opened.', 'error'); }
+      }
+      return;
+    }
     const edit = event.target.closest("[data-comment-edit]");
     const remove = event.target.closest("[data-comment-delete]");
     const button = edit || remove;
@@ -2470,45 +3122,72 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     const id = article?.dataset.commentId || "";
     const source = article?.dataset.commentSource || "linguar";
     const externalId = article?.dataset.commentExternalId || "";
-    const current = article?.querySelector("p")?.textContent || "";
+    const current = article?.querySelector('[data-comment-raw]')?.dataset.commentRaw ?? article?.querySelector("p")?.textContent ?? "";
     if (edit) {
-      const value = window.prompt(`Edit this ${source === "trello" ? "Trello" : "Linguar Hub"} comment:`, current);
+      const value = window.prompt(`Edit this ${source === "trello" ? "Trello" : "OneLoss"} comment:`, current);
       if (value === null || !value.trim() || value.trim() === current.trim()) return;
       button.disabled = true;
       const result = await pywebview.api.edit_job_comment(data.client || "", id, source, value, externalId);
       if (!result?.ok) { button.disabled = false; setStatus(result?.error || "Comment could not be edited", "error"); return; }
       conversation.update(article.dataset.commentCardId, id, result.text || value.trim());
       button.disabled = false;
-      setStatus(result.warning || (source === "trello" || result.synced_trello ? "Comment updated in Linguar Hub and Trello" : "Linguar Hub comment updated"), result.warning ? "warn" : "ok");
+      setStatus(result.warning || (source === "trello" || result.synced_trello ? "Comment updated in OneLoss and Trello" : "OneLoss comment updated"), result.warning ? "warn" : "ok");
     } else {
-      const warning = source === "trello" || externalId ? "This permanently deletes the comment from Trello and Linguar Hub." : "This deletes the Linguar Hub comment only.";
+      const warning = source === "trello" || externalId ? "This permanently deletes the comment from Trello and OneLoss." : "This deletes the OneLoss comment only.";
       if (!window.confirm(`${warning}\n\nContinue?`)) return;
       button.disabled = true;
       const result = await pywebview.api.delete_job_comment(data.client || "", id, source, externalId);
       if (!result?.ok) { button.disabled = false; setStatus(result?.error || "Comment could not be deleted", "error"); return; }
       conversation.remove(article.dataset.commentCardId, id);
-      setStatus(result.warning || (source === "trello" || result.synced_trello ? "Comment deleted from Linguar Hub and Trello" : "Linguar Hub comment deleted"), result.warning ? "warn" : "ok");
+      setStatus(result.warning || (source === "trello" || result.synced_trello ? "Comment deleted from OneLoss and Trello" : "OneLoss comment deleted"), result.warning ? "warn" : "ok");
     }
   });
   const controller = {
     element: w,
     close,
     adoptRoot(root) { w = root; },
-    applyRefresh(next) {
+    applyLinkedComments(cardId, result) {
+      if (w.isConnected) conversation.applyInitialRefresh(cardId, result.comments || [], true);
+    },
+    applyJobLogSave(result) {
+      if (!w.isConnected) return;
+      const saved = result.entry;
+      const rows = (crm.job_log || []).filter(row => row.entry_id !== saved.entry_id);
+      rows.push(saved);
+      rows.sort((a,b) => String(a.work_date || '').localeCompare(String(b.work_date || '')) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+      crm.job_log = rows;
+      const next = {...data, crm};
+      const prepared = openAuditModal(next, trelloUrl, {close,dirtyDrafts,editedSections,conversation,recoveredDrafts,commentDraft});
+      const currentSection = w.querySelector('.job-log-section');
+      const nextSection = prepared.element.querySelector('.job-log-section');
+      retainWorkspaceSectionView(currentSection, nextSection);
+      patchJobLogSection(currentSection, nextSection);
+      prepared.adoptRoot(w);
+      updateWorkspaceModel(data, next);
+      const message = result.pending_sync ? 'Job Log saved · Trello comment pending sync'
+        : saved.source === 'pc_only' ? 'Job Log saved in OneLoss only' : 'Job Log saved';
+      const notice = w.querySelector('[data-job-log-status]');
+      if (notice) notice.textContent = message;
+      setStatus(message, 'ok');
+    },
+    applyRefresh(next, refreshJobLog = false) {
       if (!w.isConnected || (next.card_id && data.card_id && next.card_id !== data.card_id)) return false;
-      const merged = mergeWorkspaceRefresh(data, next);
-      const prepared = openAuditModal(merged, next.selected_trello_url || trelloUrl, {close, dirtyDrafts, editedSections, conversation});
+      const merged = mergeWorkspaceRefresh(data, next, refreshJobLog);
+      const prepared = openAuditModal(merged, next.selected_trello_url || trelloUrl, {close, dirtyDrafts, editedSections, conversation,recoveredDrafts,commentDraft});
       // Prepare bound sections off-screen; never detach the visible workspace.
-      patchWorkspaceSections(w, prepared.element, editedSections);
+      patchWorkspaceSections(w, prepared.element, editedSections, refreshJobLog);
       prepared.adoptRoot(w);
       updateWorkspaceModel(data, merged);
+      w.querySelector('.job-files-section')?._jobFiles?.update({client:data.client || '', attachments:data.attachments || []});
       if (!next.deferred_loading) {
         const conflicts = new Set((data.division_card_reconciliation?.divisions || []).filter(row => ['conflict','ambiguous'].includes(row.state)).map(row => String(row.division || '').toUpperCase()));
         conversation.updateCards((data.division_trello_cards || []).map(row => ({...row, conflict:conflicts.has(String(row.division || '').toUpperCase())})));
       }
-      if ((!next.deferred_loading && !next.audit?.trello_error) || (next.comments || []).length) conversation.applyInitialRefresh(data.card_id, next.comments || []);
+      conversation.applyInitialRefresh(data.card_id, next.comments || [],
+        !next.deferred_loading && !next.refresh_pending && !next.audit?.trello_error && Array.isArray(next.comments), next.audit?.trello_error || '');
       const host = w.querySelector('[data-workspace-load-state]');
       if (host) host.textContent = next.audit?.trello_error ? 'Saved details · Trello refresh unavailable' : next.deferred_loading || next.refresh_pending ? 'Saved details · checking for updates' : 'Up to date';
+      checkDocuSketchFolder();
       return true;
     },
     hasUserInput() {
@@ -2516,7 +3195,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     },
     applyIfUnchanged(next) {
       if (data.deferred_loading || workspaceContentFingerprint(data) !== workspaceContentFingerprint(next)) return false;
-      conversation.applyInitialRefresh(data.card_id, next.comments || []);
+      conversation.applyInitialRefresh(data.card_id, next.comments || [],
+        !next.deferred_loading && !next.refresh_pending && !next.audit?.trello_error && Array.isArray(next.comments), next.audit?.trello_error || '');
       const host = w.querySelector('[data-workspace-load-state]');
       if (host) host.textContent = next.cached ? 'Saved details' : 'Up to date';
       return true;
@@ -2534,6 +3214,45 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   };
   if (!preparation) workspaceContext.applyRefresh = controller.applyRefresh;
   return controller;
+}
+
+function openEmsCopyLinkModal(client, sourceId, onLinked) {
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay";
+  modal.innerHTML = `<div class="modal-box compact-dialog" role="dialog" aria-modal="true" aria-label="Link EMS card copy">
+    <header class="modal-head"><div class="modal-title">Link EMS card copy</div><button class="audit-close" data-close aria-label="Close">×</button></header>
+    <form class="modal-body job-log-form">
+      <p class="wide">Paste the other card's Trello link. This connects the same EMS job on main Work in Progress and main Estimating. Comments will be copied both ways in the background; checklists and Job Logs stay separate.</p>
+      <label class="wide">Copied card link<input data-copy-link type="text" required autocomplete="off" placeholder="https://trello.com/c/…"></label>
+      <p class="wide" data-message role="status"></p>
+      <div class="job-log-form-actions"><button class="btn btn-primary" type="submit">Link copy</button><button class="btn" type="button" data-close>Cancel</button></div>
+    </form></div>`;
+  document.body.appendChild(modal);
+  const priorFocus = document.activeElement;
+  const close = () => { document.removeEventListener("keydown", onKey, true); modal.remove(); priorFocus?.focus(); };
+  const onKey = event => { if (event.key === "Escape") { event.stopImmediatePropagation(); close(); } };
+  document.addEventListener("keydown", onKey, true);
+  modal.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", close));
+  const input = modal.querySelector("[data-copy-link]");
+  input.focus();
+  modal.querySelector("form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = modal.querySelector("[type=submit]");
+    if (button.disabled) return;
+    button.disabled = true;
+    const message = modal.querySelector("[data-message]");
+    message.textContent = "Checking the two EMS cards…";
+    try {
+      const result = await pywebview.api.link_ems_card_copy(client, sourceId, input.value.trim());
+      if (!result?.ok) throw new Error(result?.error || "Could not link this copy.");
+      close();
+      await onLinked();
+      setStatus("EMS copy linked. Comment sharing uses the background sync.", "ok");
+    } catch (error) {
+      message.textContent = error?.message || String(error);
+      button.disabled = false;
+    }
+  });
 }
 
 function openXaNoteModal(client, cardId) {
@@ -2573,13 +3292,64 @@ function openXaNoteModal(client, cardId) {
   });
 }
 
+async function openInitialNoteModal(client, cardId, division = "EMS") {
+  const loaded = await pywebview.api.initial_note_templates(division);
+  if (!loaded?.ok || !(loaded.templates || []).length) {
+    setStatus(loaded?.error || `No ${division} Initial Note templates are configured`, "warn");
+    return;
+  }
+  const templates = loaded.templates || [];
+  const today = new Date().toLocaleDateString([], {month:"2-digit", day:"2-digit", year:"numeric"});
+  const expand = (body) => String(body || "")
+    .replaceAll("{customer}", client).replaceAll("{division}", division)
+    .replaceAll("{date}", today);
+  const modal = document.createElement("div");
+  modal.className = "modal-scrim audit-overlay initial-note-overlay";
+  modal.innerHTML = `<div class="modal-box compact-dialog" role="dialog" aria-modal="true" aria-label="Create Initial Note">
+    <header class="modal-head"><div><div class="modal-title">Initial Note</div><div class="modal-sub">${escapeHtml(client)} · saved in OneLoss first, then synced to ${escapeHtml(division)} Trello</div></div><button class="audit-close" data-close aria-label="Close Initial Note">×</button></header>
+    <div class="modal-body job-log-form">
+      <label class="wide">Template<select data-initial-template>${templates.map((template, index) => `<option value="${index}">${escapeHtml(template.name || "Initial note")}</option>`).join("")}</select></label>
+      <label class="wide">Note<textarea rows="12" data-initial-note-text>${escapeHtml(expand(templates[0].body))}</textarea></label>
+      <small class="wide">Review the note before saving. You can change every field.</small>
+      <div class="job-log-form-actions"><button class="btn btn-primary" data-save-initial-note>Save Initial Note</button><button class="btn" data-close>Cancel</button></div>
+    </div></div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", close));
+  const picker = modal.querySelector("[data-initial-template]");
+  const note = modal.querySelector("[data-initial-note-text]");
+  picker.addEventListener("change", () => {
+    note.value = expand(templates[Number(picker.value) || 0]?.body);
+    note.focus();
+  });
+  modal.querySelector("[data-save-initial-note]").addEventListener("click", async (event) => {
+    const text = note.value.trim();
+    if (!text) { note.focus(); return; }
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Saving…";
+    const result = await pywebview.api.post_job_comment(client, cardId, text);
+    if (!result?.ok) {
+      button.disabled = false;
+      button.textContent = "Save Initial Note";
+      setStatus(result?.error || "Initial Note could not be saved", "error");
+      return;
+    }
+    close();
+    setStatus(result.pending_sync
+      ? "Initial Note saved · Trello sync pending"
+      : "Initial Note saved", "ok");
+  });
+  note.focus();
+}
+
 function openJobLogHistoryModal(history) {
   const rows = (history || []).map((revision, index) => {
     let after = {};
     try { after = JSON.parse(revision.after_json || "{}"); } catch (_) {}
     return `<article class="revision-row">
       <div><strong>${index === 0 ? "Current version" : `Revision ${history.length - index}`}</strong><time>${escapeHtml(formatCommentDate(revision.changed_at || ""))}</time></div>
-      <small>${escapeHtml(revision.changed_by || "Linguar Hub")}</small>
+      <small>${escapeHtml(revision.changed_by || "OneLoss")}</small>
       <p>${escapeHtml(after.note || after.work_type || "Saved update")}</p>
       <span>${escapeHtml((after.status || "").replaceAll("_", " "))}</span>
     </article>`;
@@ -2607,9 +3377,11 @@ function showMoveUndo(drag, toListId, toLane) {
     window.clearTimeout(timer);
     const button = undo.querySelector("button");
     button.disabled = true; button.textContent = "Undoing…";
-    const result = await pywebview.api.move_card(drag.cardId, drag.fromListId);
+    const placement = (state.board.placement_snapshot?.placements || []).find(r => r.card_id === drag.cardId);
+    const result = await pywebview.api.move_card(drag.cardId, drag.fromListId, placement?.version || 0);
     if (!result?.ok) { setStatus(`Undo failed: ${result?.error || "?"}`, "error"); undo.remove(); return; }
     moveCardLocally(drag.cardId, toListId, drag.fromListId, drag.fromLane || "Previous lane");
+    acceptPlacementResult(result);
     renderBoard(); undo.remove(); setStatus(`Returned “${drag.name}” to ${drag.fromLane || "its previous lane"}`, "ok");
   });
 }
@@ -2893,13 +3665,21 @@ function openQuickPhotoReportModal(client, jobPath, division) {
   });
 }
 
-async function openXaStageModal(client) {
+// Local file actions must surface bridge/OS failures instead of leaving
+// controls permanently loading. Do not retry writes automatically.
+async function localFileAction(action) {
+  try { return await action(); }
+  catch (error) { return {ok: false, error: error?.message || String(error)}; }
+}
+
+async function openXaStageModal(client, jobPath = "") {
   setStatus(`Loading photo stages for ${client}…`);
-  const info = await pywebview.api.list_pics_stages(client);
+  const info = await localFileAction(() => pywebview.api.list_pics_stages(client, jobPath));
   if (!info?.ok || !(info.stages || []).length) {
     setStatus(info?.error || `No PICS folders with images found for ${client}`, "warn");
     return;
   }
+  jobPath = info.job_path || jobPath;
   const w = document.createElement("div");
   w.className = "modal-scrim audit-overlay xa-picker-overlay";
   w.innerHTML = `<div class="modal-box xa-picker" role="dialog" aria-modal="true" aria-label="Stage photos for XA">
@@ -2913,7 +3693,7 @@ async function openXaStageModal(client) {
     button.disabled = true;
     const original = button.innerHTML;
     button.textContent = "Staging photos…";
-    const result = await pywebview.api.copy_pics_to_clipboard(client, button.dataset.stage || "");
+    const result = await localFileAction(() => pywebview.api.copy_pics_to_clipboard(client, button.dataset.stage || "", jobPath));
     if (!result?.ok) {
       button.disabled = false;
       button.innerHTML = original;
@@ -2921,18 +3701,18 @@ async function openXaStageModal(client) {
       return;
     }
     close();
-    setStatus(`Staged ${result.count || 0} photos for XA · temporary folder opened`, "ok");
+    setStatus(`Staged ${result.count || 0} files for XA · temporary folder opened${result.failed_count ? ` · ${result.failed_count} files failed` : ""}`, result.failed_count ? "warn" : "ok");
   }));
   setStatus("");
 }
 
 function renderJobComment(comment) {
-  const actor = comment?.actor || "Linguar Hub";
+  const actor = comment?.actor || "OneLoss";
   const initial = actor.trim().charAt(0).toUpperCase() || "L";
   const source = comment?.source === "trello" ? "trello" : "linguar";
   return `<article class="job-comment" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-card-id="${escapeAttr(comment?.card_id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar">${escapeHtml(initial)}</div>
     <div><header><strong>${escapeHtml(actor)}</strong><time>${escapeHtml(formatCommentDate(comment?.at || ""))}</time></header>
-    <p>${escapeHtml(comment?.text || "")}</p><footer><small>${escapeHtml(comment?.division ? comment.division + ' · ' : '')}${source === "trello" ? "Trello" : "Linguar Hub"}</small>
+    <div class="comment-markdown" data-comment-raw="${escapeAttr(comment?.text || '')}">${window.CommentMarkdown ? window.CommentMarkdown.render(comment?.text) : `<p>${escapeHtml(comment?.text || '')}</p>`}</div><footer><small>${escapeHtml(comment?.division ? comment.division + ' · ' : '')}${source === "trello" ? "Trello" : "OneLoss"}</small>
     ${comment?.id && comment?.can_manage ? `<span><button class="text-btn" data-comment-edit>Edit</button><button class="text-btn danger" data-comment-delete>Delete</button></span>` : ""}</footer></div></article>`;
 }
 
@@ -2990,7 +3770,7 @@ async function openJobFolderLinkModal(data, closeWorkspace = () => {}, onLinked 
   let candidates = [];
   const linkPath = async (path, button = null) => {
     if (button) button.disabled = true;
-    let result = await pywebview.api.link_job_folder(client, path || "", false);
+    let result = await localFileAction(() => pywebview.api.link_job_folder(client, path || "", false));
     if (result?.needs_confirm) {
       const accepted = await confirmJobFolderLink(result.warning);
       if (!accepted) {
@@ -2999,7 +3779,7 @@ async function openJobFolderLinkModal(data, closeWorkspace = () => {}, onLinked 
         message.className = "folder-link-message";
         return;
       }
-      result = await pywebview.api.link_job_folder(client, path || "", true);
+      result = await localFileAction(() => pywebview.api.link_job_folder(client, path || "", true));
     }
     if (!result?.ok) {
       if (button) button.disabled = false;
@@ -3026,7 +3806,7 @@ async function openJobFolderLinkModal(data, closeWorkspace = () => {}, onLinked 
   const load = async (scope = "") => {
     message.textContent = scope === "all" ? "Searching every job year…" : "Finding current-year job folders…";
     message.className = "folder-link-message";
-    const result = await pywebview.api.list_job_folder_candidates(client, scope);
+    const result = await localFileAction(() => pywebview.api.list_job_folder_candidates(client, scope));
     if (!result?.ok) {
       message.textContent = result?.error || "Job folders could not be read";
       message.className = "folder-link-message error"; candidates = []; render(); return;
@@ -3042,7 +3822,7 @@ async function openJobFolderLinkModal(data, closeWorkspace = () => {}, onLinked 
     button.disabled = true;
     message.textContent = "Opening the Windows folder picker…";
     const startPath = candidates[0]?.path || "";
-    const picked = await pywebview.api.choose_exact_job_folder(startPath);
+    const picked = await localFileAction(() => pywebview.api.choose_exact_job_folder(startPath));
     button.disabled = false;
     if (!picked?.ok) {
       message.textContent = picked?.error || "The folder picker could not open";
@@ -3232,7 +4012,7 @@ function notifyJobWorkspaceClosed() {
   }
 }
 
-const companyCamPullWatchers = new Set();
+const companyCamPullWatchers = new Map();
 
 async function openJobFileImportModal(data, audit) {
   const client = data.client || audit.client || "";
@@ -3279,7 +4059,7 @@ async function openJobFileImportModal(data, audit) {
     const list = modal.querySelector("[data-import-candidates]");
     button.disabled = true;
     button.textContent = "Scanning…";
-    list.innerHTML = `<div class="aud-loading-inline">Checking Downloads…</div>`;
+    list.innerHTML = loadingIndicator('Checking Downloads…');
     let response;
     try { response = await pywebview.api.scan_downloads(client); }
     catch (error) { response = {candidates: [], error: String(error)}; }
@@ -3338,29 +4118,69 @@ async function openJobFileImportModal(data, audit) {
     pywebview.api.open_url("https://app.docusign.com/"));
 }
 
-async function openCompanyCamPullModal(data, audit) {
+async function openCompanyCamPullModal(data, audit, reviewedPlan = null, skipReceipt = false) {
   const client = data.client || audit.client || "";
   const cardId = data.card_id || "";
   const modal = document.createElement("div");
   modal.className = "modal-scrim audit-overlay cc-pull-overlay";
   modal.innerHTML = `<div class="modal-box cc-pull-card" role="dialog" aria-modal="true" aria-label="Pull CompanyCam photos">
     <header class="modal-head"><div><div class="modal-title">Pull CompanyCam photos</div><div class="modal-sub">${escapeHtml(client)}</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
-    <div class="modal-body cc-pull-body"><div class="aud-loading-inline">Checking CompanyCam and the job folder…</div></div>
+    <div class="modal-body cc-pull-body">${loadingIndicator('Checking CompanyCam and the job folder…')}</div>
   </div>`;
   document.body.appendChild(modal);
-  const close = () => modal.remove();
+  const requestId = `cc-plan-${crypto.randomUUID()}`;
+  const progress = (event) => {
+    const detail = event.detail || {};
+    if (detail.request_id !== requestId || !modal.isConnected) return;
+    const body = modal.querySelector(".cc-pull-body");
+    if (detail.phase === "photos") {
+      body.innerHTML = `<div class="cc-pull-summary"><strong>${Number(detail.total || 0)} CompanyCam photos found</strong><span data-plan-status role="status">Checking which are already filed. Choose visits next; tags are checked only for your selection.</span></div>
+        <div class="cc-pull-groups">${(detail.shoots || []).map((shoot) => `<article class="cc-pull-group"><div class="cc-pull-shoot"><strong>${escapeHtml(shoot.date || "Unknown date")}</strong><small>${Number(shoot.count || 0)} photos · ${escapeHtml(shoot.tech || "Unknown technician")}</small></div></article>`).join("")}</div>`;
+    } else if (detail.phase === "tags") {
+      const status = body.querySelector("[data-plan-status]");
+      if (status) status.textContent = `Checking stage and room tags: ${Number(detail.done || 0)} of ${Number(detail.total || 0)} photos. Import choices appear when checked.`;
+    }
+  };
+  window.addEventListener("companycam:plan-progress", progress);
+  const close = () => {
+    window.removeEventListener("companycam:plan-progress", progress);
+    modal.remove();
+  };
   modal.querySelector("[data-close]").addEventListener("click", close);
+
+  if (!reviewedPlan && !skipReceipt && pywebview.api.companycam_import_status) {
+    let receipt;
+    try { receipt = await pywebview.api.companycam_import_status(client, cardId); }
+    catch (_) { receipt = {ok:false}; }
+    if (!modal.isConnected) return;
+    if (!receipt?.ok || receipt.found) {
+      const running = receipt?.state === "running";
+      const result = receipt?.result || {};
+      const message = !receipt?.ok ? "Previous import status could not be checked. Check again before starting another pull."
+        : running ? "An import is running. You can close this window; do not start another pull."
+        : receipt.state === "interrupted" ? "The app restarted before a final result was saved. Some photos may already be filed. Review the folder before choosing another pull."
+        : `Last import ${receipt.state === "complete" ? "complete" : "failed"} · ${result.pulled || 0} pulled · ${result.skipped || 0} skipped${result.error ? ` · ${result.error}` : ""}`;
+      modal.querySelector(".cc-pull-body").innerHTML = `<div class="cc-pull-summary"><strong role="status">${escapeHtml(message)}</strong>${result.pics ? `<span>Photo folder: ${escapeHtml(result.pics)}</span>` : ''}</div><div class="cc-pull-recovery"><button class="btn" data-check-import>Check status</button>${receipt?.ok && !running ? '<button class="btn btn-primary" data-next-preview>Choose visits for another pull</button>' : ''}</div>`;
+      modal.querySelector("[data-check-import]").addEventListener("click", () => {close(); openCompanyCamPullModal(data, audit);});
+      modal.querySelector("[data-next-preview]")?.addEventListener("click", () => {close(); openCompanyCamPullModal(data, audit, null, true);});
+      if (running) watchCompanyCamPull(client, cardId, receipt.operation_id);
+      return;
+    }
+  }
 
   let plan;
   try {
-    plan = await pywebview.api.companycam_plan_pull(client, "", cardId, "");
+    plan = reviewedPlan || await pywebview.api.companycam_plan_pull(client, "", cardId, "", requestId, null, '', true);
   } catch (error) {
     plan = {ok:false, error:String(error)};
+  } finally {
+    window.removeEventListener("companycam:plan-progress", progress);
   }
   if (!modal.isConnected) return;
   const body = modal.querySelector(".cc-pull-body");
   if (!plan?.ok) {
-    body.innerHTML = `<div class="job-card-load-error"><strong>CompanyCam import is unavailable</strong><p>${escapeHtml(plan?.error || "The project could not be matched.")}</p><div class="cc-pull-recovery"><button class="btn btn-primary" data-choose-job-folder>Choose exact folder…</button><button class="btn" data-open-cc-project>Open CompanyCam</button></div></div>`;
+    body.innerHTML = `<div class="job-card-load-error"><strong>CompanyCam import is unavailable</strong><p>${escapeHtml(plan?.error || "The project could not be matched.")}</p><div class="cc-pull-recovery">${plan?.recovery === "folder" ? '<button class="btn btn-primary" data-choose-job-folder>Choose exact folder…</button>' : '<button class="btn btn-primary" data-retry-cc-preview>Retry preview</button>'}<button class="btn" data-open-cc-project>Open CompanyCam</button></div></div>`;
+    body.querySelector("[data-retry-cc-preview]")?.addEventListener("click", () => {close(); openCompanyCamPullModal(data, audit);});
     body.querySelector("[data-open-cc-project]")?.addEventListener("click", () => pywebview.api.open_companycam_link(client, cardId));
     body.querySelector("[data-choose-job-folder]")?.addEventListener("click", () => {
       close();
@@ -3369,12 +4189,55 @@ async function openCompanyCamPullModal(data, audit) {
     return;
   }
   if (!plan.missing) {
-    body.innerHTML = `<div class="cc-pull-ready"><strong>All ${Number(plan.total || 0)} photos are already filed.</strong><span>Nothing new needs to be imported from CompanyCam.</span></div>`;
+    body.innerHTML = `<div class="cc-pull-ready"><strong>${reviewedPlan ? 'The selected photos are already filed.' : `All ${Number(plan.total || 0)} photos are already filed.`}</strong><span>Nothing new needs to be imported from this selection.</span></div>`;
+    return;
+  }
+
+  if (plan.tags_pending) {
+    const visits = plan.groups || [];
+    body.innerHTML = `<div class="cc-pull-summary"><strong>${Number(plan.missing || 0)} photos available</strong><span>Select visits first. Stage and room tags have not been checked.</span></div>
+      <div class="cc-pull-groups">${visits.map((visit, i) => `<article class="cc-pull-group"><input type="checkbox" data-cc-visit="${i}" aria-label="Select visit ${escapeAttr(visit.date || '')} ${escapeAttr(visit.tech || '')}"><div class="cc-pull-shoot"><strong>${escapeHtml(visit.date || 'Unknown date')}</strong><small>${Number(visit.count || 0)} photos · ${escapeHtml(visit.tech || 'Unknown technician')}</small></div></article>`).join('')}</div>
+      <footer class="cc-pull-actions"><span data-review-status role="status"></span><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-review-visits disabled>Choose visits</button></footer>`;
+    const chosen = () => [...body.querySelectorAll('[data-cc-visit]:checked')].flatMap(box => visits[Number(box.dataset.ccVisit)].photo_ids || []);
+    const button = body.querySelector('[data-review-visits]');
+    const status = body.querySelector('[data-review-status]');
+    const updateSelection = () => {
+      const count = chosen().length;
+      button.disabled = !count;
+      button.textContent = count ? `Review ${count} photos` : 'Choose visits';
+    };
+    body.querySelectorAll('[data-cc-visit]').forEach(box => box.addEventListener('change', updateSelection));
+    body.querySelector('[data-cancel]').addEventListener('click', close);
+    button.addEventListener('click', async () => {
+      const ids = chosen();
+      button.disabled = true;
+      body.querySelectorAll('[data-cc-visit]').forEach(box => {box.disabled = true;});
+      status.textContent = `Checking the saved folder, then tags for ${ids.length} selected photos…`;
+      const reviewId = `cc-review-${crypto.randomUUID()}`;
+      const reviewProgress = event => {
+        if (event.detail?.request_id === reviewId && event.detail.phase === 'tags' && modal.isConnected)
+          status.textContent = `Checking selected tags: ${Number(event.detail.done)} of ${Number(event.detail.total)}`;
+      };
+      window.addEventListener('companycam:plan-progress', reviewProgress);
+      try {
+        const result = await pywebview.api.companycam_plan_pull(client, '', cardId, '', reviewId, ids, plan.project_id, true, plan.preview_id || '');
+        if (!modal.isConnected) return;
+        if (!result?.ok) throw new Error(result?.error || 'Selected photos could not be checked.');
+        close();
+        await openCompanyCamPullModal(data, audit, result);
+      } catch (error) {
+        if (modal.isConnected) status.textContent = error.message || 'Review failed. Your selection is kept; try again.';
+      } finally {
+        window.removeEventListener('companycam:plan-progress', reviewProgress);
+        body.querySelectorAll('[data-cc-visit]').forEach(box => {box.disabled = false;});
+        updateSelection();
+      }
+    });
     return;
   }
 
   const groups = plan.groups || [];
-  const stages = ["Initial", "Monitor", "Demo", "Final", "Equipment", "Contents", "Scope"];
+  const stages = ["Initial", "Demo", "Monitor", "Abatement Prep", "Mold Prep", "Reinspection", "Contents", "Scope", "Post", "Cleaning"];
   body.innerHTML = `<div class="cc-pull-summary"><strong>${Number(plan.missing || 0)} photos to import</strong><span>${groups.length} shoot${groups.length === 1 ? "" : "s"} · added tags sync to CompanyCam; existing tags stay</span></div>
     <div class="cc-pull-groups">${groups.map((group, index) => {
       const tagged = group.stage && group.stage !== "(no stage tag)";
@@ -3420,15 +4283,25 @@ async function openCompanyCamPullModal(data, audit) {
     const assignments = selectedAssignments();
     event.currentTarget.disabled = true;
     body.querySelector("[data-cc-pull-status]").textContent = "Starting import…";
-    const started = await pywebview.api.companycam_pull_assigned_bg(client, assignments, "", cardId);
+    const operationId = crypto.randomUUID();
+    const watcher = watchCompanyCamPull(client, cardId, operationId);
+    let started;
+    try {
+      started = await pywebview.api.companycam_pull_assigned_bg(client, assignments, "", cardId, plan.project_id || "", operationId);
+    } catch (error) {
+      // The worker may have started even if the bridge acknowledgement was lost.
+      close();
+      if (!watcher.finished) setStatus("CompanyCam start confirmation was lost. Reopen the pull to check its saved status before retrying.", "warn");
+      return;
+    }
     if (!started?.ok) {
+      watcher.stop();
       body.querySelector("[data-cc-pull-status]").textContent = started?.error || "Import could not start.";
       refresh();
       return;
     }
-    watchCompanyCamPull(client);
     close();
-    setStatus(`Pulling ${started.total || 0} CompanyCam photos in the background…`, "ok");
+    if (!watcher.finished) setStatus(`Pulling ${started.total || 0} CompanyCam photos in the background…`, "ok");
   });
 }
 
@@ -3497,26 +4370,58 @@ async function openSubcontractorDispatchModal(jobFields) {
   await build();
 }
 
-function watchCompanyCamPull(client) {
-  if (companyCamPullWatchers.has(client)) return;
-  companyCamPullWatchers.add(client);
+function watchCompanyCamPull(client, cardId = "", operationId = "") {
+  const key = operationId || client;
+  if (companyCamPullWatchers.has(key)) return companyCamPullWatchers.get(key);
+  let timer;
+  const controller = {finished:false, stop:() => {
+    clearTimeout(timer);
+    window.removeEventListener("companycam:pull-progress", progress);
+    window.removeEventListener("companycam:pull-done", done);
+    companyCamPullWatchers.delete(key);
+  }};
+  const matches = (detail) => operationId ? detail.operation_id === operationId : detail.client === client;
   const progress = (event) => {
     const detail = event.detail || {};
-    if (detail.client !== client) return;
+    if (!matches(detail) || controller.finished) return;
     setStatus(`CompanyCam · ${detail.stage || "photos"} · shoot ${detail.i || 0}/${detail.n || 0}`, "");
   };
   const done = (event) => {
     const result = event.detail || {};
-    if (result.client !== client) return;
-    window.removeEventListener("companycam:pull-progress", progress);
-    window.removeEventListener("companycam:pull-done", done);
-    companyCamPullWatchers.delete(client);
+    if (!matches(result) || controller.finished) return;
+    controller.finished = true;
+    controller.stop();
     setStatus(result.ok
       ? `CompanyCam import complete · ${result.pulled || 0} pulled${result.error ? ` · ${result.error}` : ""}`
-      : `CompanyCam import failed · ${result.error || "Unknown error"}`, result.ok && !result.error ? "ok" : "warn");
+      : `CompanyCam import failed · ${result.pulled || 0} pulled · ${result.error || "Unknown error"}`, result.ok && !result.error ? "ok" : "warn");
+    if (result.receipt_error) setStatus(result.receipt_error, "warn");
   };
+  companyCamPullWatchers.set(key, controller);
   window.addEventListener("companycam:pull-progress", progress);
   window.addEventListener("companycam:pull-done", done);
+  let missedChecks = 0;
+  const poll = async () => {
+    if (controller.finished || !companyCamPullWatchers.has(key)) return;
+    try {
+      const receipt = await pywebview.api.companycam_import_status(client, cardId, operationId);
+      if (companyCamPullWatchers.get(key) !== controller) return;
+      missedChecks = receipt?.ok && receipt.found ? 0 : missedChecks + 1;
+      if (receipt?.found && ["complete", "failed"].includes(receipt.state)) {
+        done({detail:{...receipt.result, client, operation_id:operationId}});
+      }
+      if (receipt?.state === "interrupted") {
+        controller.stop();
+        setStatus("CompanyCam import was interrupted. Reopen the pull and check the folder before retrying.", "warn");
+      }
+    } catch (_) { missedChecks += 1; }
+    if (missedChecks >= 3 && companyCamPullWatchers.get(key) === controller) {
+      controller.stop();
+      setStatus("CompanyCam import status is unavailable. Reopen the pull to check before retrying; no import was restarted.", "warn");
+    }
+    if (!controller.finished && companyCamPullWatchers.has(key)) timer = setTimeout(poll, 5000);
+  };
+  if (operationId && pywebview.api.companycam_import_status) timer = setTimeout(poll, 5000);
+  return controller;
 }
 
 async function runGlobalCardSearch(rawQuery) {
@@ -3780,9 +4685,15 @@ function openNewLossModal() {
   let parent = "";
   let parentSearchTimer = null;
   let lastSuggestedName = '';
-  const syncSuggestedName = () => {
+  let namePreviewSequence = 0;
+  const syncSuggestedName = async () => {
+    const sequence = ++namePreviewSequence;
     const field = find('#nl-card_name');
-    const suggested = [find('#nl-insured_name')?.value.trim(), find('#nl-carrier')?.value.trim()].filter(Boolean).join(' - ');
+    let preview;
+    try { preview = await pywebview.api.preview_intake_names({insured_name: find('#nl-insured_name')?.value.trim(), carrier: find('#nl-carrier')?.value.trim()}); }
+    catch (_) { return; }
+    if (sequence !== namePreviewSequence) return;
+    const suggested = preview.trello || '';
     if (!field.value.trim() || field.value === lastSuggestedName) field.value = suggested;
     lastSuggestedName = suggested;
   };
@@ -3927,6 +4838,12 @@ function openNewLossModal() {
         true, true, parent);
     } catch (error) { result = { ok: false, error: String(error) }; }
     if (!result?.ok) {
+      if (result?.partial) {
+        window.closeModal("modal-overlay");
+        setStatus(result.error || `Created ${result.name}, but setup needs attention. Do not create it again.`, "warn");
+        if (pipelineQuery.get('intake_only') !== '1') await loadBoard(true);
+        return;
+      }
       button.disabled = false;
       status.textContent = result?.error || "The job could not be created.";
       status.classList.add("error");
@@ -3937,7 +4854,7 @@ function openNewLossModal() {
     const incomplete = provisioning.complete === false;
     setStatus(
       incomplete
-        ? `Created ${result.name}, but ${((provisioning.failed || []).join(", ") || "part of setup")} needs attention.`
+        ? (result.warning || `Created ${result.name}, but ${((provisioning.failed || []).join(", ") || "part of setup")} needs attention.`)
         : `Created and linked ${result.name}.`,
       incomplete ? "warn" : "ok");
     if (pipelineQuery.get('intake_only') !== '1') await loadBoard(true);
@@ -3958,5 +4875,8 @@ function esc(s) {
   return String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 function escapeHtml(s) { return esc(s); }
+function loadingIndicator(label) {
+  return `<div class="ui-loading-state" role="status" title="${escapeAttr(label)}"><span class="ui-spinner" aria-hidden="true"></span><span class="ui-loading-label">${escapeHtml(label)}</span></div>`;
+}
 function escapeAttr(s) { return esc(s); }
 function cssEsc(s) { return String(s ?? "").replace(/["\\\]]/g, "\\$&"); }

@@ -42,5 +42,5 @@ def test_settings_explains_and_labels_the_shortcut():
     html = Path(__file__).resolve().parents[1].joinpath(
         "settings_web_assets", "index.html").read_text(encoding="utf-8")
     assert "Ctrl + Alt + Space" in html
-    assert "Works while Linguar Hub is open" in html
+    assert "Works while OneLoss is open" in html
     assert "hotkey_status" in html

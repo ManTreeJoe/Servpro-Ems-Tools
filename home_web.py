@@ -61,10 +61,10 @@ def _runtime_channel():
 def _window_title():
     channel = _runtime_channel()
     if channel == "Trial":
-        return "Linguar Hub — TRIAL"
+        return "OneLoss — TRIAL"
     if channel == "Dev":
-        return "Linguar Hub — DEV"
-    return "Linguar Hub"
+        return "OneLoss — DEV"
+    return "OneLoss"
 
 
 def _set_windows_app_identity(is_trial=False):
@@ -152,7 +152,7 @@ def _ensure_root_index():
         '<!DOCTYPE html><html><head>'
         '<meta http-equiv="refresh" '
         'content="0; url=home_web_assets/index.html">'
-        '<title>Linguar Hub</title>'
+        '<title>OneLoss</title>'
         '</head><body></body></html>\n')
     try:
         with open(ROOT_INDEX_HTML, "w", encoding="utf-8") as fh:

@@ -82,12 +82,12 @@ def statuses(*, access=None, cfg=None, platform_name=None,
     cards = []
     if signed_in:
         cards.append(_card(
-            "linguar", "Linguar Hub", "LH", "connected", "Signed in",
+            "linguar", "OneLoss", "OL", "connected", "Signed in",
             "Your app permissions and activity history use this identity.",
             identity=actor, action="sign_out", action_label="Sign out"))
     else:
         cards.append(_card(
-            "linguar", "Linguar Hub", "LH", "sign_in_required",
+            "linguar", "OneLoss", "OL", "sign_in_required",
             "Sign in required", "Sign in once with your SERVPRO work account.",
             action="sign_in", action_label="Sign in"))
 
@@ -121,7 +121,7 @@ def statuses(*, access=None, cfg=None, platform_name=None,
         cards.append(_card(
             "companycam", "CompanyCam", "CC", "sign_in_required",
             "Sign in to identify your work",
-            (f"{franchise} is connected. Sign into Linguar Hub so CompanyCam "
+            (f"{franchise} is connected. Sign into OneLoss so CompanyCam "
              "actions can be recorded under your work email."),
             action="sign_in", action_label="Sign in",
             scope="organization"))
@@ -155,12 +155,12 @@ def statuses(*, access=None, cfg=None, platform_name=None,
     elif trello_key:
         cards.append(_card(
             "trello", "Trello", "TR", "disconnected", "Not connected",
-            "Sign into Trello and approve Linguar Hub. No token typing is needed.",
+            "Sign into Trello and approve OneLoss. No token typing is needed.",
             action="connect_trello", action_label="Connect Trello"))
     else:
         cards.append(_card(
             "trello", "Trello", "TR", "admin_required", "Office setup needed",
-            "An admin must configure Linguar Hub's Trello application first.",
+            "An admin must configure OneLoss's Trello application first.",
             action=("admin_setup" if is_admin else ""),
             action_label=("Admin setup" if is_admin else ""), admin_only=True))
 
@@ -189,7 +189,57 @@ def companycam_actor_headers(method="GET", *, access=None) -> dict:
     if not access.get("signed_in"):
         return {}
     email = str(access.get("email") or "").strip().lower()
-    return {"X_COMPANYCAM_USER": email} if email else {}
+    return {"X-CompanyCam-User": email} if email else {}
+
+
+def test_companycam_project_access() -> dict:
+    """Prove this employee can create a project through the real gateway.
+
+    There is no non-mutating CompanyCam endpoint that proves write access.
+    This creates at most one clearly named test project per user/franchise;
+    later tests reuse it instead of leaving duplicates behind.
+    """
+    access = _access()
+    if not access.get("signed_in"):
+        return {"ok": False, "error": "Sign into OneLoss first."}
+    department = _franchise()
+    if not department:
+        return {"ok": False, "error": "Choose a franchise first."}
+    actor = (str(access.get("display_name") or "").strip()
+             or str(access.get("email") or "").split("@", 1)[0].strip()
+             or "User")
+    name = f"OneLoss Connection Test - {actor} - {department}"
+    try:
+        import companycam_api as cc
+        cc.require_personal_connection()
+        found = cc.find_project(name)
+        match = (found or {}).get("match") if isinstance(found, dict) else None
+        if isinstance(match, dict) and match.get("id"):
+            project_id = str(match["id"])
+            return {
+                "ok": True, "created": False, "project_id": project_id,
+                "name": match.get("name") or name,
+                "url": (match.get("photo_url") or
+                        f"https://app.companycam.com/projects/{project_id}"),
+                "message": "CompanyCam project creation was already verified for this account.",
+            }
+        result = cc.create_project(name, contact_name=actor)
+        if not result.get("ok"):
+            return result
+        project = result.get("project") or {}
+        project_id = str(project.get("id") or "")
+        if not project_id:
+            return {"ok": False,
+                    "error": "CompanyCam created no verifiable project ID."}
+        return {
+            "ok": True, "created": True, "project_id": project_id,
+            "name": project.get("name") or name,
+            "url": (project.get("photo_url") or
+                    f"https://app.companycam.com/projects/{project_id}"),
+            "message": "CompanyCam project creation works for this account.",
+        }
+    except Exception as ex:
+        return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
 
 def open_target(provider: str) -> str:

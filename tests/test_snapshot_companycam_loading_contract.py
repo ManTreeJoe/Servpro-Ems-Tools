@@ -63,8 +63,9 @@ def test_companycam_background_progress_happens_during_real_pull(monkeypatch):
     monkeypatch.setattr(api, "_cc_emit",
                         lambda event, payload: events.append((event, payload)))
 
-    def pull(_client, groups, _tech, _card_id, progress_cb=None):
+    def pull(_client, groups, _tech, _card_id, progress_cb=None, project_id=""):
         assert progress_cb is not None
+        assert project_id == "preview-project"
         progress_cb(1, len(groups), "Demo", 0, 2)
         events.append(("download", {}))
         progress_cb(1, len(groups), "Demo", 2, 2)
@@ -75,7 +76,8 @@ def test_companycam_background_progress_happens_during_real_pull(monkeypatch):
     monkeypatch.setattr(web_helpers, "run_bg", lambda fn: fn())
 
     result = api.companycam_pull_assigned_bg(
-        "Hoffman, Carol", [{"stage": "Demo", "photo_ids": ["1", "2"]}])
+        "Hoffman, Carol", [{"stage": "Demo", "photo_ids": ["1", "2"]}],
+        project_id="preview-project")
 
     assert result["ok"]
     assert [event for event, _ in events] == [

@@ -158,7 +158,7 @@ class Api:
 def main(argv=None):
     api = Api()
     window = webview.create_window(
-        title="KPI — Linguar Hub",
+        title="KPI — OneLoss",
         url=INDEX_HTML,
         js_api=api,
         width=1180, height=820,

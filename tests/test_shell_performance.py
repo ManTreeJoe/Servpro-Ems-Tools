@@ -27,7 +27,8 @@ def test_pipeline_reuses_fast_crm_before_starting_deep_workspace_read():
     handler = js[js.index("async function onAuditCard"):js.index(
         "function instantWorkspaceData")]
     deep = handler.index("const fullPromise = Promise.resolve(pywebview.api.job_card_workspace")
-    fast = handler.index("await pywebview.api.job_card_workspace_fast")
+    fast = handler.index("loadSession ? loadSession.load(client, resolvedCardId, resolvedDivision)")
+    assert "pywebview.api.job_card_workspace_fast(client, resolvedCardId, resolvedDivision)" in handler
     consume = handler.index("await fullPromise")
     assert fast < deep < consume
     py = (ROOT / "pipeline_web.py").read_text(encoding="utf-8")

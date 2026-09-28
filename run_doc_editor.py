@@ -18,6 +18,7 @@ import shutil
 import uuid
 
 import paths
+from shared_file_read import open_read
 
 
 SECTION_DEFS = (
@@ -50,7 +51,7 @@ class RunDocConflict(RuntimeError):
 
 def file_version(path: str) -> str:
     digest = hashlib.sha256()
-    with open(path, "rb") as stream:
+    with open_read(path) as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
@@ -91,7 +92,10 @@ def _scan(document):
 def read_document(path: str) -> dict:
     from docx import Document
 
-    document = Document(path)
+    # Opening explicitly preserves Windows access/lock errors. Passing a path
+    # makes python-docx misreport those failures as PackageNotFoundError.
+    with open_read(path) as stream:
+        document = Document(stream)
     headings, slots = _scan(document)
     present = [name for name in SECTIONS if name in headings]
     sections = {}

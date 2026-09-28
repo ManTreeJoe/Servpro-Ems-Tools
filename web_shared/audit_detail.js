@@ -462,6 +462,8 @@
     }).filter(Boolean);
     const latestLog = logEntries.length ? logEntries[logEntries.length - 1] : null;
     const progress = data.progress || { items: [], counts: {}, percent_complete: 0 };
+    const profileSuggestions = data.job_profile_suggestions || [];
+    const appliedProfiles = data.applied_job_profiles || [];
     const progressGroups = { overdue: [], required_now: [], completed: [] };
     (progress.items || []).forEach((item) => (progressGroups[item.status] || progressGroups.required_now).push(item));
     const requirementRows = (items, emptyText) => items.length ? items.map((item) =>
@@ -526,6 +528,12 @@
         <span class="crm-summary-latest">${latestLog ? `<small>Latest</small><strong>${esc(ctx, latestLog.work_type || "Update")}</strong>${latestLog.work_date ? ` · ${esc(ctx, latestLog.work_date)}` : ""}${latestLog.status ? ` · ${esc(ctx, latestLog.status.replaceAll("_", " "))}` : ""}` : `<span class="muted">No job-log entries yet</span>`}</span>
       </div>
       <div class="crm-workspace-body" ${workspaceExpanded ? "" : "hidden"}>
+      ${(profileSuggestions.length || appliedProfiles.length) ? `<section class="crm-profile-strip" aria-label="Job Profiles">
+        <div><strong>Job Profiles</strong>
+          ${appliedProfiles.length ? `<span class="muted">Applied: ${appliedProfiles.map((profile) => esc(ctx, profile.profile_name || "Profile")).join(" · ")}</span>` : `<span class="muted">Matching defaults are ready to apply.</span>`}
+        </div>
+        <div>${profileSuggestions.map((profile) => `<button class="action-btn" type="button" data-apply-profile="${escA(ctx, profile.profile_id || "")}">Apply ${esc(ctx, profile.name || "profile")}</button>`).join("")}</div>
+      </section>` : ""}
       <section class="crm-progress-detail" aria-label="Job requirements">
         ${progressGroups.overdue.length ? `<div class="crm-requirement-group overdue"><h4>Overdue from earlier stages</h4>${requirementRows(progressGroups.overdue, "")}</div>` : ""}
         <div class="crm-requirement-group"><h4>Required now</h4>${requirementRows(progressGroups.required_now, "Nothing new is required at this stage.")}</div>
@@ -642,6 +650,7 @@
           <label>Technician / crew<input data-log-field="technicians" value="${escA(ctx, entry.technicians || "")}" placeholder="FB, PG, crew…"></label>
           <label class="wide">Work completed / update<textarea data-log-field="note" rows="3" placeholder="Areas worked, findings, what was completed, and the next step">${esc(ctx, entry.note || "")}</textarea></label>
           <label class="wide">Equipment / readings<input data-log-field="equipment" value="${escA(ctx, entry.equipment || "")}" placeholder="Equipment placed, moved, readings, or pickup"></label>
+          ${!entry.entry_id ? `<label class="wide" style="display:flex;flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-log-post-trello checked style="width:auto">Also post this new entry as a Trello comment — uncheck for OneLoss only.</label>` : entry.source === 'pc_only' ? `<p class="wide">OneLoss-only entry · no Trello comment will be created.</p>` : ''}
           <div class="crm-log-actions"><button class="action-btn primary" type="button" data-log-save>Save entry</button>
           <button class="action-btn" type="button" data-log-cancel>Cancel</button>
           ${entry.entry_id ? `<button class="action-btn" type="button" data-log-history>History</button>` : ""}</div>
@@ -652,6 +661,7 @@
         const payload = { entry_id: entry.entry_id || "", source: entry.source || "pc",
           source_id: entry.source_id || "", trello_comment_id: entry.trello_comment_id || "" };
         editor.querySelectorAll("[data-log-field]").forEach((field) => { payload[field.dataset.logField] = field.value; });
+        if (!entry.entry_id) payload.post_to_trello = editor.querySelector('[data-log-post-trello]').checked;
         const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
         let result; try { result = await pywebview.api.save_crm_job_log(r.client, payload); }
         catch (ex) { result = { ok:false, error:String(ex) }; }
@@ -701,6 +711,21 @@
           return;
         }
         setStatus(ctx, "Job workspace updated", "ok");
+        loadCrmWorkspace(container, r, ctx, true);
+      });
+    });
+    box.querySelectorAll("[data-apply-profile]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        button.disabled = true; button.textContent = "Applying…";
+        let result;
+        try { result = await pywebview.api.apply_job_profile(r.client, button.dataset.applyProfile); }
+        catch (ex) { result = {ok:false, error:String(ex)}; }
+        if (!result?.ok) {
+          button.disabled = false; button.textContent = "Try again";
+          setStatus(ctx, result?.error || "Could not apply Job Profile", "error");
+          return;
+        }
+        setStatus(ctx, `${result.profile_name || "Job Profile"} applied`, "ok");
         loadCrmWorkspace(container, r, ctx, true);
       });
     });
@@ -888,6 +913,7 @@
         ".crm-workspace-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:0;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer}.crm-workspace-toggle:focus-visible{outline:2px solid var(--accent,#4c9aff);outline-offset:5px;border-radius:4px}.crm-workspace-title{display:flex;flex-direction:column;gap:2px}.crm-workspace-title>strong{font-size:14px}.crm-workspace-title>.muted{font-size:11px}.crm-workspace-toggle-end{display:flex;align-items:center;gap:8px}.crm-workspace-chevron{font-size:20px;line-height:1;color:var(--text-muted);transition:transform .14s ease}.crm-workspace.is-expanded .crm-workspace-chevron{transform:rotate(180deg)}" +
         ".crm-workspace-summary{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px;font-size:10.5px}.crm-summary-pill,.crm-summary-env,.crm-summary-trello{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid var(--border);border-radius:999px;background:var(--bg)}.crm-summary-pill small,.crm-summary-latest small{color:var(--text-muted);text-transform:uppercase;font-size:8px;font-weight:700;letter-spacing:.04em}.crm-summary-pill.priority-high,.crm-summary-pill.priority-urgent{border-color:#b7791f;color:#ffe5a1}.crm-summary-envs{display:inline-flex;gap:4px;flex-wrap:wrap}.crm-summary-env-ems{border-color:#4aa8e8}.crm-summary-env-contents{border-color:#d7a72e}.crm-summary-env-recon{border-color:#c67b47}.crm-summary-trello.linked{border-color:#287a50;color:#baf2d0}.crm-summary-trello.conflict{border-color:#b7791f;color:#ffe5a1}.crm-summary-trello.missing{border-style:dashed}.crm-summary-latest{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)}.crm-summary-latest strong{color:var(--text);margin-left:4px}.crm-workspace-body{margin-top:11px;padding-top:11px;border-top:1px solid var(--border)}.crm-workspace-body[hidden]{display:none}" +
         ".crm-progress-rail{flex:0 0 58px;height:5px;border-radius:4px;background:var(--surface-2);overflow:hidden}.crm-progress-rail>i{display:block;height:100%;background:#46a66b}.crm-summary-count{padding:3px 7px;border-radius:999px;font-size:10px;font-weight:700}.crm-summary-count.overdue{background:#5b280f;color:#ffd2b5}.crm-summary-count.due{background:#183b60;color:#c9e4ff}.crm-progress-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}.crm-requirement-group{padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg)}.crm-requirement-group.overdue{border-color:#8a4a24}.crm-requirement-group h4,.crm-history-grid h4{margin:0 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)}.crm-requirement{display:flex;align-items:flex-start;gap:7px;padding:5px 0;border-top:1px solid color-mix(in srgb,var(--border) 65%,transparent)}.crm-requirement:first-of-type{border-top:0}.crm-requirement-mark{display:grid;place-items:center;flex:0 0 18px;height:18px;border-radius:50%;background:var(--surface-2);font-weight:800;font-size:10px}.crm-requirement-overdue .crm-requirement-mark{background:#6a3014;color:#ffd2b5}.crm-requirement-completed .crm-requirement-mark{background:#184e34;color:#baf2d0}.crm-requirement>span:last-child{display:flex;min-width:0;flex-direction:column}.crm-requirement strong{font-size:11px}.crm-requirement small{font-size:9px;color:var(--text-muted);text-transform:capitalize}.crm-requirement-empty{font-size:10px;padding:4px 0}.crm-progress-history{grid-column:1/-1;border-top:1px solid var(--border);padding-top:7px}.crm-progress-history>summary{cursor:pointer;font-size:11px;font-weight:700}.crm-progress-history>summary span{margin-left:5px;color:var(--text-muted);font-weight:400}.crm-history-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:9px 2px 2px}.crm-timeline-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:7px;padding:4px 0;font-size:10px}.crm-timeline-row time{color:var(--text-muted)}" +
+        ".crm-profile-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px;padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg)}.crm-profile-strip>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.crm-profile-strip strong{font-size:11px}.crm-profile-strip .muted{font-size:10px}" +
         ".crm-job-log{margin-top:12px;padding-top:11px;border-top:1px solid var(--border)}" +
         ".crm-log-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}.crm-log-head>div:first-child{display:flex;flex-direction:column;gap:2px}" +
         ".crm-log-list{display:flex;flex-direction:column;gap:5px}.crm-log-row{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}" +
@@ -1254,7 +1280,7 @@
         }
         try {
           started = await pywebview.api.companycam_pull_assigned_bg(
-            row.client, assignments(), tech || "", row.trello_card_id || "");
+            row.client, assignments(), tech || "", row.trello_card_id || "", v.project_id || "");
         } catch (e) {
           stopWatching();
           if (window.Progress) window.Progress.fail();
@@ -1818,10 +1844,24 @@
       // the bar appeared only after the wait everyone was watching.
       if (window.Progress) window.Progress.start();
       let v;
-      try { v = await pywebview.api.companycam_plan_pull(row.client, "", cardId); }
+      const planRequest = `cc-plan-${crypto.randomUUID()}`;
+      const planProgress = (event) => {
+        const detail = event.detail || {};
+        if (detail.request_id !== planRequest) return;
+        if (detail.phase === "photos") {
+          const techs = [...new Set((detail.shoots || []).map(s => s.tech).filter(Boolean))];
+          setStatus(ctx, `${detail.total} photos found · ${techs.join(", ")} · Checking filed photos and tags…`, "");
+        } else if (detail.phase === "tags") {
+          setStatus(ctx, `Checking CompanyCam stage and room tags: ${detail.done} of ${detail.total} photos…`, "");
+        }
+      };
+      window.addEventListener("companycam:plan-progress", planProgress);
+      try { v = await pywebview.api.companycam_plan_pull(row.client, "", cardId, "", planRequest); }
       catch (e) {
         if (window.Progress) window.Progress.fail();
         setStatus(ctx, "CompanyCam check failed: " + e, "error"); return;
+      } finally {
+        window.removeEventListener("companycam:plan-progress", planProgress);
       }
       if (!v || !v.ok) {
         if (window.Progress) window.Progress.fail();
@@ -2982,7 +3022,7 @@
 
     const note = !data.card_id
       ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">
-           No Trello card linked — this is stored in Linguar Hub only.</div>`
+           No Trello card linked — this is stored in OneLoss only.</div>`
       : (data.error
         ? `<div style="font-size:11px;color:var(--amber);margin-bottom:12px;">
              ${_escapeHtml(data.error)}</div>`
@@ -2996,9 +3036,9 @@
       sub: child
         ? (inherited.size
             ? `${inherited.size} field${inherited.size === 1 ? "" : "s"} shown from the client — type to override just this one`
-            : "Stored in Linguar Hub")
+            : "Stored in OneLoss")
         : (data.card_id ? "Saving updates the Trello card too"
-                        : "Stored in Linguar Hub"),
+                        : "Stored in OneLoss"),
       width: 720,
       body: `
         ${conflicts}${note}
@@ -3335,7 +3375,7 @@
           <summary style="cursor:pointer;color:var(--red);font-weight:650;">
             Delete this mistaken Hub record</summary>
           <div style="font-size:12px;margin-top:10px;">
-            This removes <b>${esc(ctx, name)}</b> from Linguar Hub, including
+            This removes <b>${esc(ctx, name)}</b> from OneLoss, including
             ${current.aliases.length} aliases, ${current.links.length} links, and
             ${current.children.length} claims/units.
           </div>
@@ -3450,7 +3490,7 @@
         delGo.disabled = false; delGo.textContent = "Delete Hub record"; return;
       }
       w.remove();
-      setStatus(ctx, `Deleted ${name} from Linguar Hub${res.undo_id ? " · undo saved" : ""}. External jobs were untouched.`, "ok");
+      setStatus(ctx, `Deleted ${name} from OneLoss${res.undo_id ? " · undo saved" : ""}. External jobs were untouched.`, "ok");
     });
     search.focus();
   }

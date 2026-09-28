@@ -261,7 +261,7 @@ class Api:
 def main(argv=None):
     api = Api()
     win = webview.create_window(
-        title="Photo Folders — Linguar Hub (web)",
+        title="Photo Folders — OneLoss",
         url=INDEX_HTML, js_api=api,
         width=1100, height=820, min_size=(640, 500))
     api.attach(win)

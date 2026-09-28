@@ -347,7 +347,7 @@ class Api:
 def main(argv=None):
     api = Api()
     win = webview.create_window(
-        title="Spreadsheets — Linguar Hub (web)",
+        title="Spreadsheets — OneLoss",
         url=INDEX_HTML, js_api=api,
         width=900, height=720, min_size=(560, 400))
     api.attach(win)

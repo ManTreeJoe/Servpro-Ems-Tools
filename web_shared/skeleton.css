@@ -39,3 +39,6 @@
   0%   { background-position: -100% 0; }
   100% { background-position:  100% 0; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .ems-skel { animation:none; }
+}

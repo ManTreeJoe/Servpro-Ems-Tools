@@ -139,6 +139,23 @@ def _params(fn):
 
 
 @pytest.mark.parametrize("panel_name", ["snapshot_web", "quickimport_web"])
+@pytest.mark.parametrize("method,args", [
+    ("list_pics_stages", ("Fixture", "C:/fixture/exact-job")),
+    ("copy_pics_to_clipboard", ("Fixture", "Initial", "C:/fixture/exact-job")),
+])
+def test_photo_actions_forward_exact_folder(panel_name, method, args, monkeypatch):
+    import importlib
+    from types import SimpleNamespace
+    panel = importlib.import_module(panel_name)
+    api = panel.Api.__new__(panel.Api)
+    calls = []
+    backend = SimpleNamespace(**{method: lambda *a: calls.append(a) or {"ok": True}})
+    monkeypatch.setattr(api, "_aw", lambda: backend)
+    assert getattr(api, method)(*args) == {"ok": True}
+    assert calls == [args]
+
+
+@pytest.mark.parametrize("panel_name", ["snapshot_web", "quickimport_web"])
 def test_proxies_accept_everything_the_real_method_does(panel_name):
     import importlib
 

@@ -9,15 +9,16 @@
  */
 :root {
   /* Palette */
-  --bg:           #101613;
-  --surface:      #17201B;
-  --surface-2:    #202B25;
-  --surface-3:    #2A382F;
-  --border:       #34453B;
-  --border-strong:#50665A;
-  --text:         #EDF3EF;
-  --text-muted:   #A9B9B0;
-  --text-dim:     #718278;
+  color-scheme: dark;
+  --bg:           #17191C;
+  --surface:      #202328;
+  --surface-2:    #292D33;
+  --surface-3:    #343941;
+  --border:       #48515D;
+  --border-strong:#87919E;
+  --text:         #F2F4F7;
+  --text-muted:   #C0C6CE;
+  --text-dim:     #AAB3BF;
   --green:        #1C5541;
   --green-hover:  #246C52;
   --green-dark:   #123D2E;
@@ -29,13 +30,13 @@
   --link:         #8DAFCE;
   --cobalt:       #6687A5;
   --violet:       #967EAA;
-  --chip-bg:      #26342C;
-  --chip-active:  #294638;
+  --chip-bg:      #343941;
+  --chip-active:  #414A56;
   --highlight:   #FAEB6B;
   --highlight-fg: #2A2410;
   --extended:    #FF6B6B;
-  --row-hover:   #1D2923;
-  --row-active:  #243A30;
+  --row-hover:   #292D33;
+  --row-active:  #343941;
 
   /* Activity palette (used by audit + APA web) */
   --act-demo:       #708A53;
@@ -246,3 +247,9 @@ option, optgroup {
   .topbar .btn { font-size: 10px; }
   .topbar-actions { gap: 4px; }
 }
+/* Shared, fixed-size loading feedback. Labels remain available to screen readers. */
+.ui-spinner { display:inline-block; width:16px; height:16px; flex:none; box-sizing:border-box; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:ui-loading-spin .8s linear infinite; vertical-align:middle; }
+.ui-loading-label { position:absolute!important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+.ui-loading-state { display:flex; align-items:center; justify-content:center; min-height:44px; color:var(--text-muted); }
+@keyframes ui-loading-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .ui-spinner { animation:none; } }

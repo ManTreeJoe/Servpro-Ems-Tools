@@ -155,7 +155,7 @@ class Api:
 def main(argv=None):
     api = Api()
     win = webview.create_window(
-        title="📚 Resources — Linguar Hub",
+        title="📚 Resources — OneLoss",
         url=INDEX_HTML, js_api=api,
         width=1180, height=860, min_size=(760, 520))
     api.attach(win)

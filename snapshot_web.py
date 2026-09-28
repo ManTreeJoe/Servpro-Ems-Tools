@@ -179,6 +179,9 @@ def sync_snapshot_logs_to_job_log(client: str, rows: list,
         })
         try:
             saved = ems_db.save_job_log_entry(job["canon_key"], payload)
+            if saved.get('deleted'):
+                errors.append(f"row {index + 1} was deleted; refresh the saved Job Log")
+                continue
             row.update({
                 "entry_id": saved.get("entry_id") or entry_id,
                 "source": saved.get("source") or payload["source"],
@@ -610,6 +613,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().get_job_contacts(client, card_id)
     def crm_job_workspace(self, *a, **k):
         return self._aw().crm_job_workspace(*a, **k)
+    def apply_job_profile(self, *a, **k):
+        return self._aw().apply_job_profile(*a, **k)
     def save_crm_job_workspace(self, client, patch):
         return self._aw().save_crm_job_workspace(client, patch)
     def save_crm_work_environment(self, *a, **k):
@@ -970,10 +975,10 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
     def sp_open_folder(self, sp_path):
         return self._aw().sp_open_folder(sp_path)
     # 📋 Copy PICS to clipboard (XA upload helper)
-    def list_pics_stages(self, client):
-        return self._aw().list_pics_stages(client)
-    def copy_pics_to_clipboard(self, client, stage=""):
-        return self._aw().copy_pics_to_clipboard(client, stage)
+    def list_pics_stages(self, *a, **k):
+        return self._aw().list_pics_stages(*a, **k)
+    def copy_pics_to_clipboard(self, *a, **k):
+        return self._aw().copy_pics_to_clipboard(*a, **k)
     # 📎 Trello attachments manager
     def list_card_attachments(self, card_id):
         return self._aw().list_card_attachments(card_id)
@@ -1672,96 +1677,17 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                                         "techs": v.title()})
                     already.add(v)
 
-            for (d_, w_, a_, t_) in (parsed_logs or []):
-                out["logs"].append({"date": d_ or "", "weekday": w_ or "",
-                                    "activity": a_ or "", "techs": t_ or ""})
-
-            # Also mine the email-aware, comment-DATED job log. parse_comments
-            # needs a date on each line, but a card that's mostly quoted email
-            # threads (estimate negotiations) has none — extract_job_log dates
-            # each field event by its COMMENT timestamp and strips the quoted
-            # chains, so events like an EQ pickup or a bare "Air scrubber
-            # picked up" note still land on the log. Status-only events (lost /
-            # on-hold / cancelled) aren't daily-log activity, so skip them.
-            # The dedupe sweeps below collapse any overlap with the rows above.
-            _skip_status = {"Cancelled", "On hold", "Resumed",
-                            "Job lost — went with another firm"}
-            try:
-                for e in (sg.extract_job_log(comment_actions) or []):
-                    if e.get("activity") in _skip_status:
-                        continue
-                    out["logs"].append({
-                        "date":     e.get("date") or "",
-                        "weekday":  e.get("weekday") or "",
-                        "activity": e.get("activity") or "",
-                        "techs":    e.get("who") or "",
-                    })
-            except Exception:
-                pass
+            # Work-log suggestions are imported explicitly in Jobs, not here.
         except Exception as ex:
             out["error"] = f"{type(ex).__name__}: {ex}"
 
-        # The PC Job Workspace owns the durable editable job log. Snapshot
-        # reads completed entries from that same record, so a correction made
-        # during the job survives closeout and does not depend on reparsing a
-        # Trello comment perfectly later.
         try:
-            import ems_db
-            job = ems_db.find_job_by_name(
-                out.get("insured") or client_fallback or "")
-            if job:
-                for entry in ems_db.list_job_log_entries(job["canon_key"]):
-                    if (entry.get("status") or "").lower() != "completed":
-                        continue
-                    ds = entry.get("work_date") or ""
-                    try:
-                        ds = datetime.datetime.strptime(ds, "%Y-%m-%d").strftime(
-                            "%-m/%-d/%y")
-                    except (ValueError, OSError):
-                        try:
-                            parsed = datetime.datetime.strptime(ds, "%Y-%m-%d")
-                            ds = f"{parsed.month}/{parsed.day}/{parsed.strftime('%y')}"
-                        except ValueError:
-                            pass
-                    wd = sg.get_weekday(ds) if ds else ""
-                    out["logs"].append({
-                        "date": ds,
-                        "weekday": wd,
-                        "activity": entry.get("work_type") or "Update",
-                        "techs": entry.get("technicians") or "",
-                        "entry_id": entry.get("entry_id") or "",
-                        "source": entry.get("source") or "",
-                        "source_id": entry.get("source_id") or "",
-                        "trello_comment_id": entry.get("trello_comment_id") or "",
-                    })
-        except Exception:
-            pass
-
-        # Merge run-doc logs from prefill_for so daily-log table also
-        # populates. Trello comments emit "Initial Inspection - slab
-        # leak" on date "5/28/26" while the run-doc emits "Initial
-        # Inspection" on date "05/28/26" — string-equal dedupe missed
-        # them both, dropping a duplicate row in the UI. _log_dedupe_key
-        # normalizes the date (year/month/day tuple) AND the activity
-        # head (split on " - "), so the two collapse to one entry.
-        # When a duplicate IS detected we MERGE techs + keep the
-        # longer activity instead of discarding — the run-doc usually
-        # knows different techs than the Trello card, so dropping it
-        # entirely would lose data.
-        try:
-            run_doc_data = self.prefill_for(out["insured"] or client_fallback or "")
-            existing_by_key = {_log_dedupe_key(l): l for l in out["logs"]}
-            for r in (run_doc_data.get("logs") or []):
-                k = _log_dedupe_key(r)
-                if k in existing_by_key:
-                    _merge_log_row(existing_by_key[k], r)
-                else:
-                    out["logs"].append(r)
-                    existing_by_key[k] = r
-            if not out["folder"]:
-                out["folder"] = run_doc_data.get("folder") or ""
-        except Exception:
-            pass
+            from job_log_records import snapshot_rows
+            out["logs"] = snapshot_rows(out.get("insured") or client_fallback or "", card_id)
+            out["job_log_source"] = "saved"
+        except Exception as ex:
+            out["logs"] = []
+            out["job_log_error"] = f"Saved Job Log unavailable: {type(ex).__name__}"
 
         # Final dedupe sweep against out["logs"] AND out["subs"] —
         # catches duplicates already present in the Trello parsing
@@ -1769,7 +1695,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         # the same event when the tech logged it in two comments).
         # Idempotent: a single-pass list with no dupes survives
         # untouched.
-        for bucket_key in ("logs", "subs"):
+        for bucket_key in ("subs",):
             deduped, seen = [], {}
             for row in (out.get(bucket_key) or []):
                 k = _log_dedupe_key(row)
@@ -1822,38 +1748,13 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             out["folder"] = persistence.get_folder_path(client) or ""
         except Exception:
             pass
-        # Recent run-doc entries → pre-fill the daily log table
         try:
-            import datetime as _dt
-            import run_doc as _rag
-            from state_hub import hub as _sh
-            today = _dt.date.today()
-            for back in range(0, 28):
-                d = today - _dt.timedelta(days=back)
-                doc = _rag._find_run_doc_for_date(d)
-                if not doc:
-                    continue
-                jobs, _ = _sh.parse_run_doc(doc)
-                for j in jobs:
-                    if (j.get("client") or "").strip().lower() == client.strip().lower():
-                        # Activity labels for this row
-                        try:
-                            import audit_logic
-                            info = audit_logic.detect_activity(
-                                j.get("raw") or "",
-                                section=j.get("section"),
-                                new_loss=j.get("new_loss"))
-                            act = ", ".join(info.get("labels") or [])
-                        except Exception:
-                            act = ""
-                        out["logs"].append({
-                            "date":     d.strftime("%m/%d/%y"),
-                            "weekday":  d.strftime("%a"),
-                            "activity": act,
-                            "techs":    "/".join(j.get("techs") or []),
-                        })
-        except Exception:
-            pass
+            from job_log_records import snapshot_rows
+            out["logs"] = snapshot_rows(client, out.get("card_id") or "")
+            out["job_log_source"] = "saved"
+        except Exception as ex:
+            out["logs"] = []
+            out["job_log_error"] = f"Saved Job Log unavailable: {type(ex).__name__}"
         # Keep newest-first
         out["logs"].reverse()
         return out
@@ -2104,7 +2005,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
 def main(argv=None):
     api = Api()
     win = webview.create_window(
-        title="Snapshot — Linguar Hub (web)",
+        title="Snapshot — OneLoss",
         url=INDEX_HTML, js_api=api,
         width=1200, height=820, min_size=(720, 500))
     api.attach(win)

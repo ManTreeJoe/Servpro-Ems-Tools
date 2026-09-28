@@ -48,12 +48,27 @@ def test_contents_xa_uses_contents_assignment(monkeypatch):
     assert job_saved_data.destination('Same customer', 'contents-card', 'xa').endswith('/contents')
 
 
-def test_saved_folder_beats_old_hint_and_name_pin(tmp_path, monkeypatch):
+def test_local_folder_pin_beats_old_hint_without_database(tmp_path, monkeypatch):
     import job_saved_data
-    monkeypatch.setattr(job_saved_data, 'destination', lambda *a: str(tmp_path))
-    monkeypatch.setattr(audit_web.persistence, 'get_folder_path', lambda *a: pytest.fail('exact card used a name pin'))
+    monkeypatch.setattr(job_saved_data, 'destination',
+                        lambda *a: pytest.fail('folder open called the database adapter'))
+    monkeypatch.setattr(audit_web.persistence, 'get_folder_path', lambda *a: str(tmp_path))
     opened = []
     monkeypatch.setattr(audit_web.os, 'startfile', opened.append)
     result = object.__new__(audit_web.Api).open_od_for_client('Customer', 'old-path', 'exact-card')
     assert result['ok']
     assert opened == [str(tmp_path)]
+
+
+def test_exact_job_uses_legacy_local_folder_when_database_link_is_missing(monkeypatch):
+    import job_saved_data
+    monkeypatch.setattr(ems_db, 'find_job_by_link',
+                        lambda *a: pytest.fail('folder lookup touched shared job data'))
+    monkeypatch.setattr(ems_db, 'get_link',
+                        lambda *a: pytest.fail('folder lookup touched shared job links'))
+    monkeypatch.setattr(audit_web.persistence, 'get_folder_path',
+                        lambda client: r'X:\IE_Public\2026 Jobs\De La O Nicholas')
+
+    assert job_saved_data.destination(
+        'De La O, Nicholas - AAA', 'exact-card', 'folder') == (
+            r'X:\IE_Public\2026 Jobs\De La O Nicholas')

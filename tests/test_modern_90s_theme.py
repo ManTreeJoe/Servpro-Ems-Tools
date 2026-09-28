@@ -23,7 +23,9 @@ def test_shell_and_jobs_board_share_the_same_visual_language():
     assert "#1F5A47" in shell
     assert "#EFB762" in shell
     assert "var(--cobalt)" in jobs
-    assert "--bg:#101613" in jobs
+    assert "background: var(--bg)" in jobs
+    assert "--bg:" not in jobs
+    assert "#17191C" in _read("web_shared/theme.css")
     assert "#0e1112" not in jobs
 
 

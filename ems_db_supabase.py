@@ -44,7 +44,7 @@ from ems_db_common import (            # noqa: F401 — re-exported as API
     alias_probe_token, truncation_alias_is_ambiguous, dedupe_child_name,
 )
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 class DepartmentConflict(Exception):
@@ -335,18 +335,39 @@ def _job_log_schema_missing(ex) -> bool:
                  or "crm_job_log_revisions" in body))
 
 
-def _event_job_log_rows(canon_key_value: str) -> list:
+class JobLogRows(list):
+    """Visible rows plus explicit shared deletions; absence is not deletion."""
+    def __init__(self, rows, deleted_ids=()):
+        super().__init__(rows)
+        self.deleted_ids = list(deleted_ids)
+
+
+def _event_job_log_rows(canon_key_value: str, *, include_deleted=False) -> list:
     latest = {}
-    for event in reversed(list_events(canon_key_value,
-                                      "crm_job_log_revision", limit=1000)):
-        payload = event.get("payload") or {}
+    # Page the complete revision stream: an old deletion marker must not fall
+    # out of a latest-1000 window and allow an imported entry to return.
+    events = _rows("job_events", canon_key=f"eq.{canon_key_value}",
+                   event_type="eq.crm_job_log_revision",
+                   select="id,payload_json", order="id.desc")
+    for event in reversed(events):
+        payload = json.loads(event.get("payload_json") or "{}")
         after = payload.get("after") or {}
         entry_id = after.get("entry_id") or payload.get("entry_id")
-        if entry_id:
+        if entry_id and not latest.get(entry_id, {}).get("deleted"):
             latest[entry_id] = after
-    return sorted(latest.values(), key=lambda row: (
+    # Offline/local and cloud imports may have different row IDs for the same
+    # exact interpretation. A dismissal applies to that source, not its UUID.
+    dismissed = {(row.get('placement_card_id') or '', row.get('source_id'))
+                 for row in latest.values() if row.get('dismissed_interpretation')
+                 and row.get('source') == 'trello' and row.get('source_id')}
+    for key, row in latest.items():
+        if row.get('source') == 'trello' and (row.get('placement_card_id') or '', row.get('source_id')) in dismissed:
+            latest[key] = {**row, 'deleted':True, 'dismissed_interpretation':True}
+    return JobLogRows(sorted((row for row in latest.values()
+                   if include_deleted or not row.get("deleted")), key=lambda row: (
         row.get("work_date") or "", row.get("created_at") or "",
-        row.get("entry_id") or ""))
+        row.get("entry_id") or "")),
+        [key for key, row in latest.items() if row.get("deleted")])
 
 
 def _event_job_log_history(entry_id: str) -> list:
@@ -368,17 +389,23 @@ def _event_job_log_history(entry_id: str) -> list:
     return out
 
 
-def list_job_log_entries(canon_key_value: str) -> list:
+def list_job_log_entries(canon_key_value: str, *, include_deleted=False) -> list:
     job = get_job(canon_key_value)
     if not job:
         return []
     try:
-        return _rows("crm_job_log_entries", job_id=f"eq.{job['job_id']}",
+        rows = _rows("crm_job_log_entries", job_id=f"eq.{job['job_id']}",
                      select="*", order="work_date,created_at,entry_id")
+        from job_log_records import visible_rows
+        history = _event_job_log_rows(canon_key_value, include_deleted=True)
+        visible = visible_rows(rows, history)
+        if include_deleted:
+            visible.extend(r for r in history if r.get('deleted'))
+        return visible
     except Exception as ex:
         if not _job_log_schema_missing(ex):
             raise
-        return _event_job_log_rows(canon_key_value)
+        return _event_job_log_rows(canon_key_value, include_deleted=include_deleted)
 
 
 def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
@@ -409,12 +436,24 @@ def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
         if not _job_log_schema_missing(ex):
             raise
         use_events = True
-        existing = _event_job_log_rows(canon_key_value)
+        existing = _event_job_log_rows(canon_key_value, include_deleted=True)
         old = next((row for row in existing if
                     (entry_id and row.get("entry_id") == entry_id) or
                     (source_id and row.get("source") == source and
                      row.get("source_id") == source_id)), None)
-    entry_id = (old or {}).get("entry_id") or entry_id or str(uuid.uuid4())
+        if old and old.get("deleted"):
+            return old  # Re-import or stale editor cannot resurrect a deletion.
+    if not use_events:
+        for deleted in _event_job_log_rows(canon_key_value, include_deleted=True):
+            if deleted.get('deleted') and (
+                    deleted.get('entry_id') == entry_id or (source_id and
+                    deleted.get('source') == source and deleted.get('source_id') == source_id)):
+                return deleted
+    # Two PCs can import the same source before either sees the other's write.
+    # A deterministic source identity collapses those revisions into one row.
+    new_id = str(uuid.uuid5(uuid.NAMESPACE_URL, json.dumps(
+        [job['job_id'], source, source_id]))) if source_id else str(uuid.uuid4())
+    entry_id = (old or {}).get("entry_id") or entry_id or new_id
     now = _now_iso()
     body = {
         "entry_id": entry_id, "job_id": job["job_id"],
@@ -424,6 +463,8 @@ def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
         "equipment": str(entry.get("equipment") or "").strip() or None,
         "source": source, "source_id": source_id or None,
         "trello_comment_id": str(entry.get("trello_comment_id") or "").strip() or None,
+        "placement_card_id": (str(entry.get("placement_card_id") or "").strip()
+                              or (old or {}).get("placement_card_id") or None),
         "created_at": (old or {}).get("created_at") or now,
         "updated_at": now,
         "updated_by": str(entry.get("updated_by") or "").strip() or None,
@@ -463,15 +504,58 @@ def job_log_history(entry_id: str) -> list:
         return _event_job_log_history(entry_id)
 
 
-def delete_job_log_entry(canon_key_value: str, entry_id: str) -> bool:
+def delete_job_log_entries(canon_key_value: str, entry_ids: list) -> bool:
+    """Batch legacy-event deletions without re-reading history per entry."""
+    ids = set(str(value) for value in entry_ids if value)
+    job = get_job(canon_key_value)
+    if not job or not ids:
+        return False
+    try:
+        _rows("crm_job_log_entries", job_id=f"eq.{job['job_id']}", select="entry_id", limit="1")
+    except Exception as ex:
+        if not _job_log_schema_missing(ex):
+            raise
+        rows = {row['entry_id']: row for row in _event_job_log_rows(
+            canon_key_value, include_deleted=True)}
+        if not ids.issubset(rows):
+            return False
+        now = _now_iso()
+        user = _sb.current_user() or {}
+        actor = user.get('display_name') or user.get('email')
+        changes = []
+        for entry_id in sorted(ids):
+            old = rows[entry_id]
+            if old.get('deleted'):
+                continue
+            changes.append({'canon_key': canon_key_value,
+                'event_type': 'crm_job_log_revision', 'event_at': now,
+                'actor': actor, 'payload_json': json.dumps({
+                    'entry_id': entry_id, 'before': old,
+                    'after': {**old, 'deleted': True, 'updated_at': now}})})
+        if changes:
+            _sb.rest('POST', 'job_events', body=changes)
+        return True
+    # Existing native-table behavior remains; event-backed installations use
+    # the single atomic insert above. Never short-circuit away a failed delete.
+    results = [delete_job_log_entry(canon_key_value, entry_id) for entry_id in sorted(ids)]
+    return all(results)
+
+
+def delete_job_log_entry(canon_key_value: str, entry_id: str, *, preserve_source=False) -> bool:
     job = get_job(canon_key_value)
     if not job or not entry_id:
         return False
     try:
         old = _one("crm_job_log_entries", entry_id=f"eq.{entry_id}",
-                   job_id=f"eq.{job['job_id']}", select="entry_id")
+                   job_id=f"eq.{job['job_id']}", select="*")
         if not old:
             return False
+        if preserve_source:
+            log_event(canon_key_value, "crm_job_log_revision", payload={
+                "entry_id": entry_id, "before": old,
+                "after": {**old, "deleted": True, "updated_at": _now_iso(),
+                          "dismissed_interpretation": True}})
+            return True
         _sb.rest("DELETE", "crm_job_log_revisions",
                  params={"entry_id": f"eq.{entry_id}"})
         _sb.rest("DELETE", "crm_job_log_entries", params={
@@ -480,8 +564,18 @@ def delete_job_log_entry(canon_key_value: str, entry_id: str) -> bool:
     except Exception as ex:
         if not _job_log_schema_missing(ex):
             raise
-        # Legacy event-backed rows cannot be physically removed safely.
-        raise RuntimeError("Shared Job Log update is required before entries can be deleted")
+        old = next((row for row in _event_job_log_rows(
+            canon_key_value, include_deleted=True)
+            if row.get("entry_id") == entry_id), None)
+        if not old:
+            return False
+        if old.get("deleted"):
+            return True
+        log_event(canon_key_value, "crm_job_log_revision", payload={
+            "entry_id": entry_id, "before": old,
+            "after": {**old, "deleted": True, "updated_at": _now_iso(),
+                      "dismissed_interpretation": bool(preserve_source)}})
+        return True
 
 
 def relate_jobs(canon_key_value: str, related_canon_key: str,
@@ -680,12 +774,35 @@ def set_link(canon_key_value: str, link_type: str, link_value: str, *,
         link_value = _norm_link(link_type, link_value)
     if not (canon_key_value and link_type and link_value):
         return
-    _sb.rest("POST", "job_links", body={
+    body = {
         "canon_key": canon_key_value, "link_type": link_type,
         "link_value": link_value, "added_at": _now_iso(),
         "added_by": added_by,
         "metadata_json": json.dumps(metadata) if metadata else None,
-    }, prefer="resolution=merge-duplicates")
+    }
+    try:
+        _sb.rest("POST", "job_links", body=body, prefer="resolution=merge-duplicates")
+    except _sb.SupabaseError as error:
+        # An offline alias may not be the shared job's canonical key. Repair
+        # only an existing exact card link whose visible owner agrees with the
+        # saved alias mapping. Never create/reassign ownership on a name guess.
+        if error.status != 403 or link_type != LINK_TRELLO or get_job(canon_key_value):
+            raise
+        # Do not call find_job_by_name: its ambiguity check scans LIKE
+        # *surname*. This repair already has a stronger exact card identity.
+        aliases = {row.get('canon_key') for row in _rows('job_aliases',
+            alias_canon=f'eq.{canon_key(canon_key_value)}', select='canon_key')}
+        if len(aliases) != 1:
+            raise
+        actual = next(iter(aliases))
+        if not actual or actual == canon_key_value:
+            raise
+        owners = {row.get('canon_key') for row in _rows('job_links',
+            link_type=f'eq.{link_type}', link_value=f'eq.{link_value}', select='canon_key')}
+        if owners != {actual}:
+            raise
+        body['canon_key'] = actual
+        _sb.rest('POST', 'job_links', body=body, prefer='resolution=merge-duplicates')
     # A folder pin is what says which franchise owns the job — same rule as
     # the SQLite backend. Fills a NULL only; never reassigns an owner.
     if link_type == LINK_FOLDER:

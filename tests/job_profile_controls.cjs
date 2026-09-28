@@ -1,0 +1,43 @@
+const {chromium}=require('playwright');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:1200,height:1000}});
+  const html=fs.readFileSync('settings_web_assets/index.html','utf8');
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.setContent(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,''));
+  for(const file of ['web_shared/theme.css','settings_web_assets/theme.css'])await page.addStyleTag({path:path.resolve(file)});
+  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))await page.addScriptTag({content:match[1]});
+  await page.evaluate(()=>{
+   SETTINGS_ACCESS.is_admin=true;
+   window.profile={profile_id:'4f3613ae-7c14-4bf1-bf09-3a361a70b35a',name:'Test template',department:'IE',payer_type:'insurance',division:'EMS',required_items:['Signed authorization'],active:false};
+   window.deletions=[];window.fail=false;window.removed=false;
+   window.pywebview={api:{admin_job_profiles:async()=>({ok:true,profiles:removed?[]:[profile],franchises:['IE']}),admin_delete_job_profile:async id=>{deletions.push(id);if(fail)throw Error('network unavailable');removed=true;return {ok:true};},admin_save_job_profile:async()=>{throw Error('network unavailable');}}};
+   showSettingsScope('admin');
+   openJobProfile(profile);
+  });
+  await page.locator('#jp-delete').click({trial:true});
+  page.once('dialog',d=>d.dismiss());await page.locator('#jp-delete').click();
+  assert.deepEqual(await page.evaluate(()=>deletions),[]);
+  await page.evaluate(()=>fail=true);
+  page.once('dialog',d=>d.accept());await page.locator('#jp-delete').click();
+  await page.waitForFunction(()=>document.querySelector('#jp-status').textContent.includes('network unavailable'));
+  assert.equal(await page.locator('#jp-delete').isEnabled(),true);
+  assert.equal(await page.locator('#jp-name').inputValue(),'Test template');
+  await page.locator('#jp-save').click();
+  assert.equal(await page.locator('#jp-save').isEnabled(),true);
+  await page.evaluate(()=>fail=false);
+  page.once('dialog',d=>d.accept());await page.locator('#jp-delete').click();
+  await page.waitForFunction(()=>document.querySelector('#jp-status').textContent.includes('Template deleted'));
+  await page.evaluate(()=>openJobProfile({...profile,active:true}));
+  assert.equal(await page.locator('#jp-delete').count(),0);
+  await page.locator('#jp-duplicate').click();
+  assert.equal(await page.locator('#jp-active').isChecked(),false);
+  assert.equal(await page.locator('#jp-name').inputValue(),'Copy of Test template');
+  assert.equal(await page.locator('#jp-requirements').inputValue(),'Signed authorization');
+  await page.locator('#jp-editor').screenshot({path:path.join(require('os').tmpdir(),'oneloss-profile-controls.png')});
+  assert.deepEqual(errors,[]);
+  console.log('PASS: profile deletion confirmation, failure recovery, active guard, inactive clones and intact requirements.');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});

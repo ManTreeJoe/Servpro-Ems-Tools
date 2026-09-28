@@ -709,7 +709,7 @@ class Api:
 def main(argv=None):
     api = Api()
     win = webview.create_window(
-        title="WC Audit — Linguar Hub (web)",
+        title="WC Audit — OneLoss",
         url=INDEX_HTML, js_api=api,
         width=900, height=720, min_size=(600, 400))
     api.attach(win)

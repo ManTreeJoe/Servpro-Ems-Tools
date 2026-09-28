@@ -53,17 +53,19 @@ class CompanyCamApi:
         is often junk like 'Lastname/POC'). Pins the winner so the next
         lookup is a cache hit."""
         import companycam_api as cc
-        try:
-            pid = cc.find_project_id(client, use_graph=True,
-                                     trello_card=card_id) or ""
-        except Exception:
-            pid = ""
+        # Connection failures are not negative matches. Do not start another
+        # name search (or imply a replacement project is needed) after timeout.
+        pid = cc.find_project_id(client, use_graph=True,
+                                 trello_card=card_id) or ""
         if pid:
             return pid, client
         name, addr = self._cc_card_terms(card_id)
         if name and name.lower() != (client or "").strip().lower():
             try:
                 res = cc.find_project(name, address_hint=addr)
+                if not res.get("ok"):
+                    raise RuntimeError("CompanyCam project lookup failed: " +
+                                       str(res.get("error") or "provider unavailable"))
                 m = res.get("match") if res.get("ok") else None
                 if m:
                     try:
@@ -76,7 +78,7 @@ class CompanyCamApi:
                         pass
                     return m["id"], m["name"]
             except Exception:
-                pass
+                raise
         return "", ""
 
     def companycam_search(self, query: str) -> dict:
@@ -145,7 +147,10 @@ class CompanyCamApi:
             return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
         if not cc.is_configured():
             return {"ok": False, "error": "CompanyCam token not set"}
-        pid, mname = self._cc_resolve(client, card_id)
+        try:
+            pid, mname = self._cc_resolve(client, card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
         if not pid:
             return {"ok": False, "error": f"No CompanyCam project for {client!r}"}
         out = cc.plan_stage_tagging(pid, stage, on_date=on_date, tech=tech)
@@ -247,7 +252,10 @@ class CompanyCamApi:
             return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
         if not cc.is_configured():
             return {"ok": False, "error": "CompanyCam token not set"}
-        pid, mname = self._cc_resolve(client, card_id)
+        try:
+            pid, mname = self._cc_resolve(client, card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
         if not pid:
             return {"ok": True, "matched": False, "count": 0, "uploaders": []}
         try:
@@ -303,7 +311,7 @@ class CompanyCamApi:
         except Exception:
             return []
 
-    def _cc_contents_dir(self, client: str) -> str:
+    def _cc_contents_dir(self, client: str, pics=None) -> str:
         r"""The job's CONTENTS folder — where contents-tagged photos go.
 
         Derived from the resolved PICS path rather than re-resolving the
@@ -316,7 +324,7 @@ class CompanyCamApi:
         a photo tagged Contents left in `EMS\PICS\Contents` sits
         somewhere nothing reads.
         """
-        pics = self._cc_pics_dir(client)
+        pics = self._cc_pics_dir(client) if pics is None else pics
         if not pics:
             return ""
         parts = os.path.normpath(pics).split(os.sep)
@@ -327,7 +335,7 @@ class CompanyCamApi:
         return os.path.join(os.sep.join(parts), "CONTENTS")
 
 
-    def _cc_docs_dir(self, client: str) -> str:
+    def _cc_docs_dir(self, client: str, pics=None) -> str:
         r"""The job's `EMS\DOCS` folder — where Scope-tagged photos go.
 
         A scope is paperwork. Left in PICS it sat among the stage folders,
@@ -338,7 +346,7 @@ class CompanyCamApi:
         different jobs: PICS is `<job>\EMS\PICS`, so its sibling is
         `<job>\EMS\DOCS`.
         """
-        pics = self._cc_pics_dir(client)
+        pics = self._cc_pics_dir(client) if pics is None else pics
         if not pics:
             return ""
         parts = os.path.normpath(pics).split(os.sep)
@@ -438,7 +446,10 @@ class CompanyCamApi:
             return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
         if not cc.is_configured():
             return {"ok": False, "error": "CompanyCam token not set"}
-        pid, mname = self._cc_resolve(client, card_id)
+        try:
+            pid, mname = self._cc_resolve(client, card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
         if not pid:
             return {"ok": True, "matched": False,
                     "error": f"No CompanyCam project matched '{client}'"}
@@ -502,7 +513,10 @@ class CompanyCamApi:
             import companycam_api as cc
         except Exception as ex:
             return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
-        pid, _m = self._cc_resolve(client, card_id)
+        try:
+            pid, _m = self._cc_resolve(client, card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
         if not pid:
             return {"ok": False,
                     "error": f"No CompanyCam project matched '{client}'"}
@@ -530,7 +544,9 @@ class CompanyCamApi:
 
     def companycam_plan_pull(self, client: str, tech: str = "",
                              card_id: str = "",
-                             dest_subfolder: str = "") -> dict:
+                             dest_subfolder: str = "", request_id: str = "",
+                             selected_photo_ids=None, project_id: str = "",
+                             visits_first: bool = False, preview_id: str = "") -> dict:
         """What a pull would bring in, grouped by shoot — day, what was
         done, how many, and where it lands.
 
@@ -545,24 +561,60 @@ class CompanyCamApi:
             import companycam_api as cc
         except Exception as ex:
             return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
-        pid, _m = self._cc_resolve(client, card_id)
+        pid = str(project_id or '').strip() if selected_photo_ids is not None else ''
+        if not pid:
+            try:
+                pid, _m = self._cc_resolve(client, card_id)
+            except Exception as ex:
+                return {"ok": False, "error": str(ex)}
         if not pid:
             return {"ok": False,
                     "error": f"No CompanyCam project matched '{client}'"}
-        pics = self._cc_pics_dir(client)
+        try:
+            pics = self._cc_pics_dir(client)
+        except Exception as ex:
+            return {"ok": False, "recovery": "folder", "error": f'Job folder check failed ({type(ex).__name__}). No photos imported; check the pinned folder and retry.'}
         if not pics:
-            return {"ok": False,
+            return {"ok": False, "recovery": "folder",
                     "error": "No job folder — pin/find the folder first"}
         stage = (dest_subfolder or "").strip()
         if stage.upper() == "AUTO":
             stage = ""
         try:
+            preview_options = {}
+            captured = []
+            if visits_first:
+                from companycam_preview import previews
+                from job_workspace_cache import scope
+                identity = (scope(), client, card_id, pid)
+                if selected_photo_ids is not None and preview_id:
+                    preview_options['photo_snapshot'] = previews.get(preview_id, identity, selected_photo_ids)
+                elif selected_photo_ids is None:
+                    preview_options['snapshot_cb'] = lambda photos: captured.extend(photos)
+            def progress(payload):
+                self._cc_emit("companycam:plan-progress", {
+                    **payload, "request_id": request_id, "client": client})
             r = cc.plan_pull(pid, pics, subfolder=stage, tech=(tech or ""),
-                             contents_dir=self._cc_contents_dir(client),
-                             docs_dir=self._cc_docs_dir(client))
+                             contents_dir=self._cc_contents_dir(client, pics),
+                             docs_dir=self._cc_docs_dir(client, pics),
+                             defer_tags=visits_first and selected_photo_ids is None,
+                             only_ids=selected_photo_ids,
+                             strict_tags=visits_first and selected_photo_ids is not None,
+                             **preview_options,
+                             **({"progress_cb": progress} if request_id else {}))
             if r.get("ok"):
+                if visits_first:
+                    if scope() != identity[0]:
+                        return {'ok':False, 'error':'The account or franchise changed. Reopen the photo preview.'}
+                    if selected_photo_ids is None:
+                        r['preview_id'] = previews.put(identity, captured)
                 r["pics"] = pics
-                self._suggest_stages_from_run_doc(client, r.get("groups"))
+                r["project_id"] = str(pid)
+                # Keep initial visit listing free of historical document reads.
+                # After selection, restore advisory Run stages for only those
+                # shoots without CompanyCam stage tags (one lookup per date).
+                if not visits_first or selected_photo_ids is not None:
+                    self._suggest_stages_from_run_doc(client, r.get("groups"))
             return r
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
@@ -604,7 +656,7 @@ class CompanyCamApi:
 
     def companycam_pull_assigned(self, client: str, assignments: list,
                                  tech: str = "", card_id: str = "",
-                                 progress_cb=None) -> dict:
+                                 progress_cb=None, project_id: str = "", photo_result_cb=None) -> dict:
         """Pull the ticked shoots, each into the stage chosen for IT.
 
         One stage for a whole project is wrong whenever a job has more than
@@ -622,7 +674,14 @@ class CompanyCamApi:
             import companycam_api as cc
         except Exception as ex:
             return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
-        pid, _m = self._cc_resolve(client, card_id)
+        # Keep the exact project the user reviewed. A second name lookup
+        # can fail during DB/network trouble or resolve to another project.
+        pid = str(project_id or "").strip()
+        if not pid:
+            try:
+                pid, _m = self._cc_resolve(client, card_id)
+            except Exception as ex:
+                return {"ok": False, "error": str(ex)}
         if not pid:
             return {"ok": False,
                     "error": f"No CompanyCam project matched '{client}'"}
@@ -633,6 +692,9 @@ class CompanyCamApi:
 
         pulled = skipped = tagged = 0
         errors = []
+        contents = self._cc_contents_dir(client, pics)
+        docs = self._cc_docs_dir(client, pics)
+        operation = {'record_photo': photo_result_cb} if photo_result_cb else {}
         total_photos = sum(len(g.get("photo_ids") or []) for g in groups)
         completed_photos = 0
         for group_index, g in enumerate(groups, 1):
@@ -674,13 +736,20 @@ class CompanyCamApi:
                     pid, pics, since_epoch=None, subfolder=stage,
                     tech=(row_tech or tech or ""), only_ids=ids,
                     force_tech=bool(row_tech),
-                    contents_dir=self._cc_contents_dir(client),
-                    docs_dir=self._cc_docs_dir(client),
+                    contents_dir=contents,
+                    docs_dir=docs,
+                    _operation=operation,
                     # Never advance past shoots deliberately skipped —
                     # they'd fall behind the mark and go unpullable.
                     advance_watermark=False) or {}
                 pulled += r.get("downloaded", 0)
                 skipped += r.get("skipped", 0)
+                if r.get("ok") is False:
+                    errors.append(f"{stage or 'untagged'}: "
+                                  f"{r.get('error') or 'photo request failed'}")
+                    # Failed listing is not a successful empty shoot. Avoid
+                    # repeating the same timed-out request for every group.
+                    break
                 if r.get("failed"):
                     errors.append(f"{stage or 'untagged'}: "
                                   f"{r['failed']} failed to download"
@@ -692,7 +761,7 @@ class CompanyCamApi:
             if progress_cb:
                 progress_cb(group_index, len(groups), stage or "untagged",
                             completed_photos, total_photos)
-        return {"ok": True, "pulled": pulled, "skipped": skipped,
+        return {"ok": not bool(errors), "pulled": pulled, "skipped": skipped,
                 "tagged": tagged,
                 "pics": pics, "error": "; ".join(errors)}
 
@@ -718,7 +787,8 @@ class CompanyCamApi:
             pass
 
     def companycam_pull_assigned_bg(self, client: str, assignments: list,
-                                    tech: str = "", card_id: str = "") -> dict:
+                                    tech: str = "", card_id: str = "",
+                                    project_id: str = "", operation_id: str = "") -> dict:
         """Start the pull on a background thread and return immediately.
 
         A pull is minutes of downloading over someone else's API. Awaiting
@@ -737,6 +807,35 @@ class CompanyCamApi:
         if not groups:
             return {"ok": False, "error": "nothing selected"}
         total = sum(len(g.get("photo_ids") or []) for g in groups)
+        # Jobs supplies an ID before starting its listener. Older Audit/Snapshot
+        # callers retain their existing event contract and worker behavior.
+        if operation_id:
+            tracking_started = False
+            try:
+                import companycam_operations as operations
+                if not operations.start(operation_id, client, card_id, project_id):
+                    return {"ok": True, "existing": True, "operation_id": operation_id,
+                            "total": total}
+                tracking_started = True
+                for group in groups:
+                    for photo_id in group.get('photo_ids') or []:
+                        operations.record_photo(operation_id, {'photo_id': str(photo_id), 'state': 'pending',
+                                                               'stage': group.get('stage') or ''})
+            except Exception as ex:
+                if tracking_started:
+                    try:
+                        operations.save(operation_id, {"ok": False, "error": "Import tracking could not start. No downloads started."}, finished=True)
+                    except Exception:
+                        pass  # Preserve the original tracking error; never start downloads.
+                return {"ok": False, "error": f"Import tracking could not start: {ex}"}
+
+        def _record(payload, finished=False):
+            if operation_id:
+                try:
+                    operations.save(operation_id, payload, finished=finished)
+                except Exception:
+                    # A receipt failure must never repeat a provider write.
+                    payload["receipt_error"] = "Import status could not be saved on this PC. Keep this result before closing."
 
         def _run():
             try:
@@ -745,26 +844,48 @@ class CompanyCamApi:
                 # tight loop before downloading anything, leaving the bar at
                 # an almost-finished value for the entire real wait.
                 def _progress(i, n, stage, done, photo_total):
-                    self._cc_emit("companycam:pull-progress", {
+                    payload = {
                         "client": client, "i": i, "n": n,
                         "stage": stage, "done": done,
                         "total": photo_total,
-                    })
+                        "operation_id": operation_id, "card_id": card_id,
+                    }
+                    _record(payload)
+                    self._cc_emit("companycam:pull-progress", payload)
                 res = self.companycam_pull_assigned(
                     client, groups, tech, card_id,
-                    progress_cb=_progress) or {}
+                    progress_cb=_progress, project_id=project_id,
+                    **({'photo_result_cb': lambda photo: operations.record_photo(operation_id, photo)} if operation_id else {})) or {}
+                if operation_id:
+                    unresolved = [row for row in operations.photo_receipts(operation_id) if row.get('state') in ('pending', 'downloading')]
+                    if unresolved:
+                        res['ok'] = False
+                        res['error'] = (res.get('error') or '') + f' {len(unresolved)} selected photo(s) have no confirmed outcome. Check the import before retrying.'
             except Exception as ex:
                 res = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
             res["client"] = client
+            res["operation_id"] = operation_id
+            res["card_id"] = card_id
+            _record(res, finished=True)
             self._cc_emit("companycam:pull-done", res)
 
         try:
             from web_helpers import run_bg
             run_bg(_run)
         except Exception as ex:
-            return {"ok": False, "error": f"couldn't start: {ex}"}
+            result = {"ok": False, "error": f"couldn't start: {ex}"}
+            _record(result, finished=True)
+            return result
         return {"ok": True, "started": True, "groups": len(groups),
-                "total": total}
+                "total": total, "operation_id": operation_id}
+
+    def companycam_import_status(self, client: str, card_id: str = "",
+                                operation_id: str = "") -> dict:
+        try:
+            import companycam_operations as operations
+            return operations.status(client, card_id, operation_id)
+        except Exception as ex:
+            return {"ok": False, "error": f"Import status unavailable: {type(ex).__name__}"}
 
     def companycam_pull_groups(self, client: str, photo_ids: list,
                                tech: str = "", card_id: str = "",
@@ -781,7 +902,10 @@ class CompanyCamApi:
             import companycam_api as cc
         except Exception as ex:
             return {"ok": False, "error": f"companycam_api unavailable: {ex}"}
-        pid, _m = self._cc_resolve(client, card_id)
+        try:
+            pid, _m = self._cc_resolve(client, card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
         if not pid:
             return {"ok": False,
                     "error": f"No CompanyCam project matched '{client}'"}
@@ -845,7 +969,10 @@ class CompanyCamApi:
             os.makedirs(pics, exist_ok=True)
         except OSError:
             pass
-        pid, _mname = self._cc_resolve(client, card_id)
+        try:
+            pid, _mname = self._cc_resolve(client, card_id)
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
         if not pid:
             return {"ok": False,
                     "error": f"No CompanyCam project matched '{client}'"}

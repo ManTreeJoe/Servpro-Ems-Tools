@@ -320,6 +320,17 @@ def rebase_department_path(department: str, relative: str) -> str | None:
     dept = (department or "").strip()
     if not dept:
         return None
+    # A portable pin already identifies its department. Do not require an
+    # older name-matching cache to contain that root: it may have been warmed
+    # before configuration loaded or before a Settings change.
+    try:
+        import config
+        if dept in {row.get('key') for row in config.list_departments()}:
+            configured = str(config.load_for(dept).get('audit_base') or '').strip()
+            if configured:
+                return os.path.normpath(os.path.join(configured, (relative or '').strip()))
+    except Exception:
+        pass
     for key, root in _department_roots():
         if key == dept:
             rel = (relative or "").strip()

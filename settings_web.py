@@ -59,7 +59,7 @@ FIELDS = [
                             ["board", "stages"]),
     ("job_workspace_default_open", "Open Job Workspace details by default", "bool"),
     ("reduce_motion",       "Reduce interface motion",    "bool"),
-    ("global_hotkey_enabled", "Use a shortcut to show Linguar Hub", "bool"),
+    ("global_hotkey_enabled", "Use a shortcut to show OneLoss", "bool"),
     ("global_hotkey",       "Show-app shortcut",           "choice",
                             ["ctrl+alt+space", "ctrl+shift+space",
                              "alt+shift+space", "ctrl+alt+h"]),
@@ -365,9 +365,17 @@ class Api:
             return {"ok": False, "error": "Administrator access required."}
         try:
             import supabase_client
-            rows = supabase_client.rpc("admin_list_user_access") or []
+            try:
+                rows = supabase_client.rpc("admin_list_user_access_v2") or []
+                capabilities_ready = True
+            except Exception:
+                rows = supabase_client.rpc("admin_list_user_access") or []
+                capabilities_ready = False
             return {"ok": True, "users": rows,
-                    "franchises": [d.get("key") for d in config.list_departments()]}
+                    "franchises": [d.get("key") for d in config.list_departments()],
+                    "capabilities": [{"key": "docusketch",
+                                      "label": "DocuSketch"}],
+                    "capabilities_ready": capabilities_ready}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
@@ -385,6 +393,73 @@ class Api:
             saved = supabase_client.rpc("admin_set_user_departments", {
                 "p_user_id": user_id, "p_departments": selected}) or []
             return {"ok": True, "departments": saved}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def test_user_connection(self, provider: str):
+        """Run an explicit provider test under the signed-in employee."""
+        provider = str(provider or "").strip().lower()
+        if provider != "companycam":
+            return {"ok": False, "error": "No write test is available for that connection."}
+        try:
+            import user_connections
+            return user_connections.test_companycam_project_access()
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def admin_set_user_capabilities(self, user_id, capabilities):
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
+        if not user_id or not isinstance(capabilities, dict):
+            return {"ok": False, "error": "User and capabilities are required."}
+        selected = {"docusketch": bool(capabilities.get("docusketch"))}
+        try:
+            import supabase_client
+            saved = supabase_client.rpc("admin_set_user_capabilities", {
+                "p_user_id": user_id, "p_capabilities": selected}) or {}
+            return {"ok": True, "capabilities": saved}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    # ── Job Profiles ───────────────────────────────────────────────
+    def admin_job_profiles(self, department=""):
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
+        try:
+            import job_profiles
+            return {"ok": True,
+                    "profiles": job_profiles.list_profiles(department),
+                    "franchises": [d.get("key") for d in config.list_departments()],
+                    "payer_types": list(job_profiles.PAYER_TYPES),
+                    "divisions": list(job_profiles.DIVISIONS)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def admin_save_job_profile(self, values):
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
+        try:
+            import job_profiles
+            return {"ok": True, "profile": job_profiles.save(values)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def admin_set_job_profile_active(self, profile_id, active):
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
+        try:
+            import job_profiles
+            return {"ok": True,
+                    "profile": job_profiles.set_active(profile_id, active)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def admin_delete_job_profile(self, profile_id):
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
+        try:
+            import job_profiles
+            return {"ok": True, "profile": job_profiles.delete(profile_id)}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
@@ -885,13 +960,17 @@ class Api:
         try:
             import ems_db_offline
             res = ems_db_offline.flush_queue()
+            if res.get("busy"):
+                return {"ok": True, "message": "Sync is already running; pending changes are retained."}
             if res["error"]:
                 return {"ok": False,
                         "error": f"Sent {res['sent']}, then stopped: "
                                  f"{res['error']}"}
             return {"ok": True,
                     "message": (f"Synced {res['sent']} change(s)."
-                                if res["sent"] else "Nothing waiting.")}
+                                if res["sent"] else "Nothing waiting.")
+                               + (f" {res['pending']} more change(s) remain queued."
+                                  if res.get("pending") else "")}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
@@ -1201,7 +1280,7 @@ class Api:
 def main(argv=None):
     api = Api()
     win = webview.create_window(
-        title="Settings — Linguar Hub (web)",
+        title="Settings — OneLoss",
         url=INDEX_HTML, js_api=api,
         width=820, height=820, min_size=(560, 500))
     api.attach(win)

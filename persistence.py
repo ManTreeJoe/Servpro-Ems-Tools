@@ -1712,17 +1712,18 @@ def set_folder_path(client, path):
     else:
         paths.pop(key, None)
     _save(state)
-    # Teach the shared jobs graph: pinning a folder is the definitive
+    # Teach the LOCAL jobs graph: pinning a folder is the definitive
     # "this spelling ↔ this job" moment. resolve_and_link ties the folder
     # to the job AND — when that folder already belongs to a job filed
     # under a DIFFERENT spelling — records `client` as an alias, so every
     # other tool then resolves this spelling to the same job instead of
-    # re-guessing by name. Best-effort; a DB hiccup never blocks the pin.
+    # re-guessing by name. Machine folder pins remain local until the file
+    # server migration. Never wait on Supabase/Trello after saving a pin.
     if path:
         try:
-            import ems_db
-            ems_db.resolve_and_link(client, folder_path=path,
-                                    create=True, source="folder_pin")
+            import ems_db_sqlite
+            ems_db_sqlite.resolve_and_link(client, folder_path=path,
+                                           create=True, source="folder_pin")
         except Exception:
             pass
 
@@ -1834,7 +1835,7 @@ def get_trello_card_id(client):
     return ids[0] if ids else None
 
 
-def set_trello_card_ids(client, card_ids):
+def set_trello_card_ids(client, card_ids, *, mirror=True):
     """Replace the list of pinned card ids for `client`. Empty list /
     None unpins entirely. Key is canonicalized so the same job pinned
     from APA ('Doe, John - State Farm') and from the audit ('Doe, John')
@@ -1858,6 +1859,8 @@ def set_trello_card_ids(client, card_ids):
     else:
         pins.pop(key, None)
     _save(state)
+    if not mirror:
+        return
     # Mirror into the shared jobs DB so every tool sees the pin without
     # consulting persistence.json directly, AND teach the identity graph:
     # a Trello card is a strong id, so if it already belongs to a job filed
@@ -1880,37 +1883,19 @@ def set_trello_card_ids(client, card_ids):
         for cid in cleaned:
             ems_db.set_link(job_key, "trello_card", cid,
                             added_by="persistence.set_trello_card_ids")
-        # Adopt the Trello card's NAME as the job's identity (the
-        # 2026-07-22 rule: jobs are represented by their card name). Fetch
-        # the primary card once, name a canonical job after it, and fold
-        # the just-pinned spelling into it so all spellings converge on
-        # the one card-named job. Best-effort — a Trello hiccup or a
-        # missing card must never block the pin write.
-        if cleaned:
-            try:
-                import trello_client as _tc
-                _card = _tc.get_card(cleaned[0], actions_limit=0)
-                _nm = (_card or {}).get("name", "") or ""
-                _ck = ems_db.canon_key(_nm) if _nm else ""
-                if _ck:
-                    ems_db.upsert_job(display_name=_nm)
-                    for cid in cleaned:
-                        ems_db.set_link(_ck, "trello_card", cid,
-                                        added_by="pin_card_name")
-                    ems_db.add_alias(_ck, client, source="trello_pin")
-                    if _ck != job_key:
-                        ems_db.merge_jobs(_ck, [job_key])
-            except Exception:
-                pass
+        # The resolved app job owns its identity. A provider title is not
+        # authority to create another job and perform a best-effort merge:
+        # a timeout midway leaves two owners and splits saved log history.
+        # Any reconciliation of existing duplicates is a separate operation.
     except Exception:
         pass
 
 
-def set_trello_card_id(client, card_id):
+def set_trello_card_id(client, card_id, *, mirror=True):
     """Single-card convenience that wraps set_trello_card_ids. Replaces
     any existing pins (use set_trello_card_ids directly to add to a
     multi-card list without dropping the others)."""
-    set_trello_card_ids(client, [card_id] if card_id else [])
+    set_trello_card_ids(client, [card_id] if card_id else [], mirror=mirror)
 
 
 def backfill_job_graph():

@@ -146,7 +146,9 @@ def evaluate(master: dict, audit: dict | None = None,
     log_text = _log_text(logs)
     trello_linked = bool(audit.get("trello_card_id"))
     folder_found = audit.get("found") is not False and bool(audit.get("folder") or audit.get("path"))
-    audit_ran = any(key in audit for key in ("form_issues", "photo_issues", "requirements"))
+    audit_ran = (audit.get("audit_complete") is not False and
+                 any(key in audit for key in
+                     ("form_issues", "photo_issues", "requirements")))
     metadata = master.get("metadata") if isinstance(master.get("metadata"), dict) else {}
     overrides = metadata.get("requirement_overrides") or {}
     if not isinstance(overrides, dict):
@@ -164,6 +166,26 @@ def evaluate(master: dict, audit: dict | None = None,
             continue
         rules.extend(ENVIRONMENT.get(env.get("work_environment"), ()))
     rules.extend(JOB_TYPE.get(master.get("job_type") or "", ()))
+    # Applied Job Profiles are immutable snapshots in job metadata. Reading
+    # the copied requirements here means editing a reusable profile never
+    # changes the work already underway on an existing job.
+    applied_profiles = metadata.get("applied_job_profiles") or []
+    if isinstance(applied_profiles, list):
+        seen_rule_keys = {rule[0] for rule in rules}
+        for profile in applied_profiles:
+            if not isinstance(profile, dict):
+                continue
+            for requirement in profile.get("requirements") or []:
+                if not isinstance(requirement, dict):
+                    continue
+                key = str(requirement.get("key") or "").strip()
+                label = str(requirement.get("label") or "").strip()
+                if not key or not label or key in seen_rule_keys:
+                    continue
+                seen_rule_keys.add(key)
+                rules.append((key, label,
+                              requirement.get("introduced_stage") or "intake",
+                              requirement.get("owner") or "office"))
 
     now = datetime.now().astimezone()
     items = []

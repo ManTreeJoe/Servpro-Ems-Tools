@@ -25,13 +25,59 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(off, "_degraded", False)
     monkeypatch.setattr(off, "_retry_after", 0.0)
     monkeypatch.setattr(off, "_failure_count", 0)
+    monkeypatch.setattr(off, "_queue_retry_after", 0.0)
+    monkeypatch.setattr(off, "_queue_failures", 0)
+    monkeypatch.setattr(off, "_queue_error", "")
+    monkeypatch.setattr(off, "_worker", None)
     monkeypatch.setattr(off, "_schema_fallbacks", set())
     ems_db_sqlite.reset_db_path(str(tmp_path / "jobs.db"))
-    return tmp_path
+    yield tmp_path
+    if off._worker is not None:
+        off._worker.join(timeout=3)
 
 
 def _unreachable(*_a, **_k):
     raise supa_error(0, "unreachable: [Errno 11001] getaddrinfo failed")
+
+
+@pytest.mark.parametrize('committed_before_timeout', [False, True])
+def test_new_log_keeps_one_id_through_timeout_delete_and_replay(sandbox, monkeypatch, committed_before_timeout):
+    import uuid
+    import paths, job_workspace_cache as cache, job_log_projection as projection
+    monkeypatch.setattr(paths, 'DATA_DIR', str(sandbox))
+    monkeypatch.setattr(cache, 'scope', lambda: 'fixture')
+    monkeypatch.setattr(projection, 'request_dismissal_sync', lambda: None)
+    key = ems_db_sqlite.upsert_job(display_name='Replay fixture')
+    remote_rows = {}
+    unavailable = True
+    def remote_save(job, entry):
+        row = {**entry, 'entry_id': entry.get('entry_id') or str(uuid.uuid4())}
+        if not unavailable or committed_before_timeout:
+            remote_rows[row['entry_id']] = row
+        if unavailable:
+            raise supa_error(0, 'unreachable')
+        return row
+    monkeypatch.setattr(ems_db_supabase, 'save_job_log_entry', remote_save)
+    monkeypatch.setattr(off, 'request_queue_sync', lambda: None)
+    original = {'work_date':'2026-09-24','work_type':'Monitor','source':'pc_only','placement_card_id':'card'}
+    saved = off._call('save_job_log_entry', key, original)
+    queued_entry = off.queued()[0]['args'][1]
+    assert queued_entry.get('entry_id') == saved['entry_id']
+    assert 'entry_id' not in original
+    cache.save('card','EMS','Fixture',{'ok':True,'crm':{'ok':True,'canon_key':key,'job_log':[saved]}})
+    assert projection.remove('card','EMS',saved['entry_id'],scope_id='fixture')['ok']
+    unavailable = False
+    result = off.flush_queue()
+    assert result['pending'] == 0
+    assert list(remote_rows) == [saved['entry_id']]
+    monkeypatch.setattr('job_workflow.cancel_job_log_delivery', lambda *a: None)
+    def delete_event(job, kind, *, payload):
+        assert payload['after']['deleted']
+        remote_rows.pop(payload['entry_id'], None)
+    monkeypatch.setattr(ems_db_supabase, 'log_event', delete_event)
+    projection.sync_dismissals()
+    assert remote_rows == {}, 'Replay recreated a deleted entry under a different ID'
+    assert projection.load('card','EMS')['job_log'] == []
 
 
 def supa_error(status, body):
@@ -67,6 +113,18 @@ def test_no_queue_is_a_subset_of_writes():
 
 def test_transport_failure_is_unreachable():
     assert off._is_unreachable(supa_error(0, "unreachable: DNS"))
+
+
+def test_queue_permission_denial_clears_stale_offline_state(sandbox, monkeypatch):
+    off._mark(True, 'old timeout')
+    off._queue_append('set_link', ['job','trello_card','card'], {})
+    def denied(*a, **kw):
+        raise supa_error(403, '{"code":"42501"}')
+    monkeypatch.setattr(ems_db_supabase, 'set_link', denied)
+    result = off.flush_queue()
+    assert result['pending'] == 1 and result['sent'] == 0
+    assert not off.status()['degraded']
+    assert '403' in off.status()['last_error']
     assert off._is_unreachable(TimeoutError("timed out"))
     assert off._is_unreachable(ConnectionResetError("reset"))
 
@@ -233,6 +291,8 @@ def test_successful_call_clears_degraded_and_drains(sandbox, monkeypatch):
     monkeypatch.setattr(off, "_retry_after", 0.0)
 
     off.get_job("anything")            # first call that reaches the server
+    if off._worker is not None:
+        off._worker.join(timeout=3)
     assert off.status()["degraded"] is False
     assert sent == ["Pending One"]
     assert off.queued() == []
@@ -244,3 +304,83 @@ def test_torn_queue_line_is_skipped_not_fatal(sandbox):
                 + "\n")
         f.write('{"fn": "upsert_job", "args": [], "kwa')   # power loss
     assert len(off.queued()) == 1
+
+
+def test_successful_read_retries_existing_queue_without_degraded_flag(sandbox, monkeypatch):
+    off._queue_append("upsert_job", [], {"display_name": "Pending"})
+    sent = []
+    monkeypatch.setattr(ems_db_supabase, "upsert_job", lambda **kw: sent.append(kw))
+    monkeypatch.setattr(ems_db_supabase, "get_job", lambda key: {})
+    off.get_job("test")
+    import time
+    deadline = time.monotonic() + 2
+    while off.queued() and time.monotonic() < deadline:
+        time.sleep(.01)
+    assert len(sent) == 1
+    assert off.queued() == []
+
+
+def test_append_during_flush_is_not_lost(sandbox, monkeypatch):
+    off._queue_append("upsert_job", [], {"display_name": "First"})
+    def send(**kw):
+        off._queue_append("upsert_job", [], {"display_name": "Added during sync"})
+    monkeypatch.setattr(ems_db_supabase, "upsert_job", send)
+    assert off.flush_queue()["sent"] == 1
+    assert [e["kwargs"]["display_name"] for e in off.queued()] == ["Added during sync"]
+
+
+def test_partial_failure_retries_after_cooldown_without_replaying_success(sandbox, monkeypatch):
+    for name in ("A", "B"):
+        off._queue_append("upsert_job", [], {"display_name": name})
+    seen = []
+    def first_attempt(**kw):
+        seen.append(kw["display_name"])
+        if kw["display_name"] == "B":
+            raise supa_error(503, "temporarily unavailable")
+    monkeypatch.setattr(ems_db_supabase, "upsert_job", first_attempt)
+    off.request_queue_sync()
+    off._worker.join(3)
+    assert seen == ["A", "B"]
+    assert len(off.queued()) == 1
+    previous = off._worker
+    off.request_queue_sync()
+    assert off._worker is previous  # No immediate retry storm.
+    monkeypatch.setattr(off, "_queue_retry_after", 0)
+    monkeypatch.setattr(ems_db_supabase, "upsert_job", lambda **kw: seen.append(kw["display_name"]))
+    off.request_queue_sync()
+    off._worker.join(3)
+    assert seen == ["A", "B", "B"]
+    assert off.queued() == []
+    assert off.status()["last_error"] == ""
+
+
+def test_slow_replay_does_not_block_read_or_allow_second_sender(sandbox, monkeypatch):
+    import threading
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+    off._queue_append("upsert_job", [], {"display_name": "Pending"})
+    def slow(**kw):
+        calls.append(kw)
+        entered.set()
+        assert release.wait(3)
+    monkeypatch.setattr(ems_db_supabase, "upsert_job", slow)
+    monkeypatch.setattr(ems_db_supabase, "get_job", lambda key: {"key": key})
+    try:
+        assert off.get_job("test") == {"key": "test"}
+        assert entered.wait(1)
+        assert off.flush_queue()["busy"]
+        assert len(calls) == 1
+    finally:
+        release.set()
+        off._worker.join(3)
+    assert off.queued() == []
+
+
+def test_external_replay_lock_prevents_another_sender(sandbox, monkeypatch):
+    off._queue_append("upsert_job", [], {"display_name": "Pending"})
+    sent = []
+    monkeypatch.setattr(ems_db_supabase, "upsert_job", lambda **kw: sent.append(kw))
+    with off._file_guard(".replay.lock"):
+        assert off.flush_queue()["busy"]
+    assert sent == []
+    assert off.flush_queue()["sent"] == 1

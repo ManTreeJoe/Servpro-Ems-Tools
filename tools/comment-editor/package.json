@@ -1,0 +1,7 @@
+{
+  "name": "oneloss-comment-editor-build",
+  "private": true,
+  "scripts": {"build": "esbuild editor.js --bundle --minify --format=iife --target=es2020 --outfile=../../web_shared/vendor/comment-editor.js --legal-comments=eof && node licenses.cjs"},
+  "dependencies": {"@tiptap/core": "3.31.3", "@tiptap/starter-kit": "3.31.3", "turndown": "7.2.4"},
+  "devDependencies": {"esbuild": "0.28.2"}
+}

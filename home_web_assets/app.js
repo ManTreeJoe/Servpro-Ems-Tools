@@ -445,7 +445,7 @@ async function maybeCheckUpdate() {
     catch (e) { res = { ok: false, error: String(e) }; }
     if (res && res.ok && res.launched) {
       dl.textContent = "Installer opened ✓";
-      if (msg) msg.innerHTML = "⬇️ Installer downloaded — follow the setup prompts. Linguar Hub will close and reopen on the new version.";
+      if (msg) msg.innerHTML = "⬇️ Installer downloaded — follow the setup prompts. OneLoss will close and reopen on the new version.";
     } else if (res && res.opened_page) {
       dl.textContent = "Opened page";
       if (msg) msg.innerHTML = "🌐 Opened the download page in your browser — run the setup from there.";

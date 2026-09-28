@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#1A1A1A" />
   <script src="../web_shared/usage_track.js?v=20260825a"></script>
 <meta charset="UTF-8" />
-<title>Settings — Linguar Hub</title>
+<title>Settings — OneLoss</title>
 <script src="../web_shared/appearance.js?v=20260901a"></script>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260910a" />
 <link rel="stylesheet" href="theme.css?v=20260903a" />
@@ -55,6 +55,11 @@
     font-weight:700; color:var(--text-muted); }
   .pm-fields input, .pm-fields textarea { width:100%; }
   .pm-span { grid-column:1 / -1; }
+  .jp-row { display:grid;grid-template-columns:minmax(170px,1.2fr) minmax(190px,1fr) auto;
+    gap:9px;align-items:center;padding:10px 0;border-top:1px solid var(--border); }
+  .jp-row:first-child { border-top:0; }
+  .jp-inactive { opacity:.58; }
+  .jp-selector { color:var(--text-muted);font-size:10.5px;line-height:1.45; }
   .settings-tabs { position:sticky; top:0; z-index:5; display:flex; gap:6px;
     margin:-8px 0 18px; padding:8px 0; background:var(--bg); }
   .settings-tab { flex:1; padding:9px 12px; border:1px solid var(--border);
@@ -132,6 +137,8 @@
     .pm-grid { grid-template-columns:1fr auto; }
     .pm-template { grid-column:1 / -1; }
     .pm-fields { grid-template-columns:1fr; }
+    .jp-row { grid-template-columns:1fr auto; }
+    .jp-selector { grid-column:1 / -1; }
     .pm-span { grid-column:auto; }
     .appearance-readout { grid-template-columns:auto 1fr; }
     .connections-grid { grid-template-columns:1fr; }
@@ -145,7 +152,7 @@
 <body class="responsive-ui">
 <header class="topbar">
   <div class="brand"><span class="brand-mark"></span>
-    <span class="brand-name">Linguar Hub · Settings</span>
+    <span class="brand-name">OneLoss · Settings</span>
   </div>
 </header>
 <main class="wrap" id="wrap">
@@ -176,7 +183,7 @@
          style="display:none;margin-top:10px;padding:8px 10px;border-left:3px solid var(--border);background:var(--surface-2);border-radius:0 6px 6px 0;font-size:11.5px;"></div>
     <div id="fr-ready" style="display:none;margin-top:12px;padding:10px 12px;
          border-radius:7px;background:rgba(84,180,120,.13);border:1px solid var(--green);
-         font-size:12px;font-weight:700;color:var(--green);">✓ You’re ready to use Linguar Hub.</div>
+         font-size:12px;font-weight:700;color:var(--green);">✓ You’re ready to use OneLoss.</div>
   </section>
 
   <section id="my-connections" data-settings-scope="personal" class="settings-card">
@@ -339,6 +346,24 @@
                   background: var(--surface); border: 1px solid var(--border);
                   border-radius: 8px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div style="font-size:13px;font-weight:700;">Job Profiles</div>
+      <button class="btn" id="jp-refresh" style="margin-left:auto;">Refresh library</button>
+      <button class="btn" id="jp-add">＋ New profile</button>
+    </div>
+    <div class="muted" style="font-size:11px;line-height:1.5;margin-bottom:10px;">
+      Default requirements for Commercial, Self-pay, carriers such as Mercury
+      or Farmers, loss types, and divisions. Only administrators can change
+      this library. Duplicate a close match, then adjust it.
+    </div>
+    <div id="jp-status" class="muted" style="font-size:11px;margin-bottom:6px;"></div>
+    <div id="jp-list"></div>
+    <div id="jp-editor" class="pm-edit" style="display:none;"></div>
+  </section>
+
+  <section data-settings-scope="admin" style="margin-bottom: 22px; padding: 14px 18px;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
       <div style="font-size:13px;font-weight:600;">Property managers</div>
       <button class="btn" id="pm-add" style="margin-left:auto;">＋ Add company</button>
     </div>
@@ -367,7 +392,7 @@
       <div style="font-size:13px;font-weight:700;">My franchise folders</div>
     </div>
     <div class="muted" style="font-size:11px;line-height:1.5;margin-bottom:13px;">
-      Tell Linguar where this computer reaches each franchise. Choose a mapped
+      Tell OneLoss where this computer reaches each franchise. Choose a mapped
       drive, server share, or synced OneDrive/SharePoint folder. This does not
       change anyone else's computer.
     </div>
@@ -605,7 +630,7 @@ window.addEventListener("pywebviewready", async () => {
   await renderFirstRunWizard();
   await renderMyFranchiseFolders();
   await loadBrowsers();
-  if (SETTINGS_ACCESS.is_admin) await loadUserAccess();
+  if (SETTINGS_ACCESS.is_admin) await Promise.all([loadUserAccess(), loadJobProfiles()]);
   document.getElementById("pf-run").addEventListener("click", runPreflight);
   document.getElementById("save").addEventListener("click", save);
   document.getElementById("connections-refresh")?.addEventListener("click", renderConnections);
@@ -715,6 +740,8 @@ async function showOriginHelp(origin) {
   // Shared job database (Supabase) was initialized first above.
   await renderPropertyManagers();
   document.getElementById("pm-add").addEventListener("click", () => openPropertyManager({active:true}));
+  document.getElementById("jp-add")?.addEventListener("click", () => openJobProfile({active:false}));
+  document.getElementById("jp-refresh")?.addEventListener("click", loadJobProfiles);
 
   // Sidebar visibility grid — one checkbox per panel.
   await renderPanelVisibility();
@@ -738,6 +765,150 @@ async function showOriginHelp(origin) {
 // ── Property-management directory ─────────────────────────────────
 let PM_ROWS = [];
 let PM_DEFAULT_NAMING = "";
+
+// ── Admin Job Profiles ────────────────────────────────────────────
+let JP_ROWS = [];
+let JP_FRANCHISES = [];
+const JP_PAYERS = ["any", "insurance", "self_pay", "commercial", "management"];
+const JP_DIVISIONS = ["Any", "EMS", "Contents", "Recon"];
+
+function jpPayerLabel(value) {
+  return ({any:"Any payer", insurance:"Insurance", self_pay:"Self-pay",
+           commercial:"Commercial", management:"Property management"})[value] || value;
+}
+
+async function loadJobProfiles() {
+  const list = document.getElementById("jp-list");
+  const status = document.getElementById("jp-status");
+  if (!list || !SETTINGS_ACCESS.is_admin || document.getElementById('jp-editor')?.dataset.busy === 'true') return false;
+  status.textContent = "Loading…";
+  let result;
+  try { result = await pywebview.api.admin_job_profiles(""); }
+  catch (error) { result = {ok:false, error:String(error)}; }
+  if (!result?.ok) {
+    status.textContent = `Could not load profiles: ${result?.error || "unknown error"}`;
+    return false;
+  }
+  JP_ROWS = result.profiles || [];
+  JP_FRANCHISES = (result.franchises || []).filter(Boolean);
+  status.textContent = JP_ROWS.length
+    ? `${JP_ROWS.filter((row) => row.active !== false).length} active profiles`
+    : "No profiles yet. Start with one profile, then duplicate it for similar work.";
+  list.innerHTML = JP_ROWS.map((row) => {
+    const selectors = [row.department, jpPayerLabel(row.payer_type),
+      row.carrier_or_client, row.loss_type, row.division !== "Any" ? row.division : "All divisions"]
+      .filter(Boolean).join(" · ");
+    const count = Array.isArray(row.required_items) ? row.required_items.length : 0;
+    return `<div class="jp-row ${row.active === false ? "jp-inactive" : ""}">
+      <div><b>${esc(row.name || "Unnamed profile")}</b>
+        <div class="muted" style="font-size:10.5px;">${count} required item${count === 1 ? "" : "s"}${row.active === false ? " · Disabled" : ""}</div></div>
+      <div class="jp-selector">${esc(selectors)}</div>
+      <button class="btn jp-edit" data-id="${esc(row.profile_id || "")}">Edit</button>
+    </div>`;
+  }).join("");
+  list.querySelectorAll(".jp-edit").forEach((button) => button.addEventListener("click", () =>
+    openJobProfile(JP_ROWS.find((row) => row.profile_id === button.dataset.id) || {})));
+  return true;
+}
+
+function jpSelect(id, label, choices, selected, labels={}) {
+  return `<label>${label}<select id="${id}">${choices.map((value) =>
+    `<option value="${esc(value)}" ${value === selected ? "selected" : ""}>${esc(labels[value] || value)}</option>`
+  ).join("")}</select></label>`;
+}
+
+function openJobProfile(row={}, duplicate=false) {
+  const box = document.getElementById("jp-editor");
+  if (box.dataset.busy === 'true') return;
+  const clone = {...row};
+  if (duplicate) {
+    clone.profile_id = "";
+    clone.name = `Copy of ${row.name || "profile"}`;
+    clone.active = false;
+  }
+  const franchises = JP_FRANCHISES.length ? JP_FRANCHISES : [VALUES.active_department || "IE"];
+  box.style.display = "block";
+  box.dataset.id = clone.profile_id || "";
+  box.dataset.active = String(clone.active === true);
+  box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <b style="font-size:12px;">${clone.profile_id ? "Edit Job Profile" : (duplicate ? "Duplicate Job Profile" : "New Job Profile")}</b>
+      ${row.profile_id && !duplicate ? '<button class="btn" id="jp-duplicate" style="margin-left:auto;">Duplicate &amp; tweak</button>' : ''}
+    </div>
+    <div class="pm-fields">
+      ${pmInput("jp-name", "Profile name", clone.name)}
+      ${jpSelect("jp-department", "Franchise", franchises, clone.department || franchises[0])}
+      ${jpSelect("jp-payer", "Payer type", JP_PAYERS, clone.payer_type || "any",
+        {any:"Any payer",insurance:"Insurance",self_pay:"Self-pay",commercial:"Commercial",management:"Property management"})}
+      ${pmInput("jp-carrier", "Carrier or client (optional)", clone.carrier_or_client)}
+      ${pmInput("jp-loss-type", "Loss type (optional)", clone.loss_type)}
+      ${jpSelect("jp-division", "Division", JP_DIVISIONS, clone.division || "Any")}
+      <label class="pm-span">Required items — one per line
+        <textarea id="jp-requirements" rows="8" placeholder="Authorization to Perform&#10;Customer Information Form">${esc((clone.required_items || []).join("\n"))}</textarea>
+      </label>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-top:12px;">
+      <label style="font-size:11px;"><input id="jp-active" type="checkbox" ${clone.active === true ? "checked" : ""}/> Active — available for new job requirements</label>
+      <span style="flex:1"></span>
+      ${clone.profile_id ? '<button class="btn" id="jp-disable">' + (clone.active === false ? 'Enable' : 'Disable') + '</button>' : ''}
+      ${clone.profile_id && clone.active === false ? '<button class="btn" id="jp-delete">Delete template…</button>' : ''}
+      <button class="btn" id="jp-cancel">Cancel</button>
+      <button class="btn btn-primary" id="jp-save">Save profile</button>
+    </div><p class="muted" style="font-size:11px;">New and cloned templates start inactive for review. Edits or deletion never change requirements already copied onto jobs. Disable an active template before deleting it.</p>`;
+  document.getElementById("jp-cancel").addEventListener("click", () => { box.style.display = "none"; });
+  document.getElementById("jp-save").addEventListener("click", saveJobProfile);
+  document.getElementById("jp-duplicate")?.addEventListener("click", () => openJobProfile(row, true));
+  document.getElementById("jp-disable")?.addEventListener("click", async () => {
+    if (clone.active === false && !confirm(`Enable “${clone.name}” for new job requirements? Confirm its required items have been reviewed.`)) return;
+    const result = await jobProfileMutation(() => pywebview.api.admin_set_job_profile_active(clone.profile_id, clone.active === false));
+    if (!result?.ok) return;
+    box.style.display = "none"; await loadJobProfiles();
+  });
+  document.getElementById("jp-delete")?.addEventListener("click", async () => {
+    if (!confirm(`Permanently delete the template “${clone.name}”? Existing jobs keep their applied requirements. This cannot be undone.`)) return;
+    const result = await jobProfileMutation(() => pywebview.api.admin_delete_job_profile(clone.profile_id));
+    if (!result?.ok) return;
+    box.style.display = "none";
+    if (await loadJobProfiles()) document.getElementById("jp-status").textContent = "Template deleted. Existing jobs were not changed.";
+  });
+  document.getElementById("jp-name")?.focus();
+  box.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+async function jobProfileMutation(action) {
+  const box = document.getElementById("jp-editor"), status = document.getElementById("jp-status");
+  if (box.dataset.busy === 'true') return null;
+  box.dataset.busy = 'true'; box.setAttribute('aria-busy', 'true');
+  const controls = [...box.querySelectorAll('button,input,select,textarea'), ...document.querySelectorAll('.jp-edit,#jp-add,#jp-refresh')];
+  const disabled = controls.map(control => control.disabled);
+  controls.forEach(control => { control.disabled = true; });
+  status.textContent = 'Saving change…';
+  try {
+    const result = await action();
+    if (!result?.ok) throw new Error(result?.error || 'The change was not confirmed.');
+    return result;
+  } catch (error) {
+    status.textContent = `Change not confirmed: ${error?.message || error}. Your editor is still open; refresh the library to check before retrying.`;
+    return {ok:false};
+  } finally {
+    box.dataset.busy = 'false'; box.removeAttribute('aria-busy');
+    controls.forEach((control,index) => { control.disabled = disabled[index]; });
+  }
+}
+
+async function saveJobProfile() {
+  const box = document.getElementById("jp-editor");
+  const value = (id) => document.getElementById(id)?.value || "";
+  const profile = {profile_id:box.dataset.id || "", name:value("jp-name"),
+    department:value("jp-department"), payer_type:value("jp-payer"),
+    carrier_or_client:value("jp-carrier"), loss_type:value("jp-loss-type"),
+    division:value("jp-division"), required_items:value("jp-requirements").split(/\r?\n/),
+    active:document.getElementById("jp-active").checked};
+  if (profile.active && box.dataset.active !== 'true' && !confirm('Activate this template for new job requirements? Confirm its required items have been reviewed.')) return;
+  const result = await jobProfileMutation(() => pywebview.api.admin_save_job_profile(profile));
+  if (!result?.ok) return;
+  box.style.display = "none";
+  if (await loadJobProfiles()) document.getElementById("jp-status").textContent = "Saved ✓";
+}
 
 async function renderPropertyManagers() {
   const list = document.getElementById("pm-list");
@@ -770,6 +941,7 @@ async function loadUserAccess() {
     return;
   }
   const franchises = result.franchises || [];
+  const capabilities = result.capabilities || [];
   const users = result.users || [];
   if (!users.length) {
     host.textContent = "No Supabase users are available yet.";
@@ -777,6 +949,7 @@ async function loadUserAccess() {
   }
   host.innerHTML = users.map((user) => {
     const selected = new Set((user.departments || []).map((d) => String(d).toUpperCase()));
+    const enabledTools = user.capabilities || {};
     return `<div class="access-user" data-user="${esc(user.user_id || "")}" style="padding:10px 0;border-top:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
         <b>${esc(user.email || "Unknown user")}</b>
@@ -787,6 +960,10 @@ async function loadUserAccess() {
           <input type="checkbox" value="${esc(franchise)}" ${selected.has(String(franchise).toUpperCase()) ? "checked" : ""}/>
           ${esc(franchise)}
         </label>`).join("")}
+        ${capabilities.map((capability) => `<label style="display:flex;gap:5px;align-items:center;padding-left:10px;border-left:1px solid var(--border);">
+          <input type="checkbox" data-capability="${esc(capability.key)}" ${enabledTools[capability.key] ? "checked" : ""} ${result.capabilities_ready ? "" : "disabled"}/>
+          ${esc(capability.label)}
+        </label>`).join("")}
         <button class="btn access-save" type="button">Save access</button>
         <span class="access-status muted"></span>
       </div>
@@ -796,15 +973,23 @@ async function loadUserAccess() {
     button.addEventListener("click", async () => {
       const row = button.closest(".access-user");
       const departments = [...row.querySelectorAll('input[type="checkbox"]:checked')]
+        .filter((input) => !input.dataset.capability)
         .map((input) => input.value);
       const status = row.querySelector(".access-status");
       button.disabled = true;
       if (status) status.textContent = "Saving…";
       const saved = await pywebview.api.admin_set_user_franchises(row.dataset.user, departments);
+      let toolSaved = {ok:true};
+      if (result.capabilities_ready) {
+        const tools = Object.fromEntries([...row.querySelectorAll('[data-capability]')]
+          .map((input) => [input.dataset.capability, input.checked]));
+        toolSaved = await pywebview.api.admin_set_user_capabilities(row.dataset.user, tools);
+      }
       button.disabled = false;
       if (status) {
-        status.textContent = saved?.ok ? "Saved ✓" : `Failed: ${saved?.error || "unknown error"}`;
-        status.style.color = saved?.ok ? "var(--green)" : "var(--red,#ef6461)";
+        const ok = saved?.ok && toolSaved?.ok;
+        status.textContent = ok ? "Saved ✓" : `Failed: ${saved?.error || toolSaved?.error || "unknown error"}`;
+        status.style.color = ok ? "var(--green)" : "var(--red,#ef6461)";
       }
     }));
 }
@@ -1046,10 +1231,14 @@ async function renderConnections() {
         ${card.action ? `<div class="connection-action"><button class="btn ${card.state === "connected" ? "" : "btn-primary"}"
           type="button" data-connection-action="${esc(card.action)}"
           data-provider="${esc(card.provider)}">${esc(card.action_label)}</button></div>` : ""}
+        ${card.provider === "companycam" && card.state === "connected" ? `<div class="connection-action"><button class="btn"
+          type="button" data-connection-test="companycam">Test project creation</button></div>` : ""}
       </div>
     </article>`).join("");
   grid.querySelectorAll("[data-connection-action]").forEach((button) =>
     button.addEventListener("click", () => runConnectionAction(button)));
+  grid.querySelectorAll("[data-connection-test]").forEach((button) =>
+    button.addEventListener("click", () => runConnectionTest(button)));
   if (msg) { msg.textContent = ""; msg.style.color = ""; }
 }
 
@@ -1097,6 +1286,29 @@ async function runConnectionAction(button) {
   if (result?.ok) {
     await renderConnections();
     if (action === "connect_companycam") void waitForCompanyCamConnection(msg);
+  }
+}
+
+async function runConnectionTest(button) {
+  const provider = button.dataset.connectionTest;
+  const msg = document.getElementById("connections-msg");
+  if (provider !== "companycam") return;
+  if (!window.confirm("This creates one reusable test project in CompanyCam for your account. It will not create another test project on later checks. Continue?")) return;
+  button.disabled = true;
+  const label = button.textContent;
+  button.textContent = "Testing creation…";
+  if (msg) { msg.textContent = "Creating or verifying your CompanyCam test project…"; msg.style.color = ""; }
+  let result;
+  try { result = await pywebview.api.test_user_connection(provider); }
+  catch (error) { result = {ok:false, error:String(error)}; }
+  button.disabled = false;
+  button.textContent = label;
+  if (msg) {
+    const suffix = result?.url ? ` ${result.url}` : "";
+    msg.textContent = result?.ok
+      ? `${result.message || "CompanyCam project creation works."}${suffix}`
+      : `CompanyCam project creation failed: ${result?.error || "unknown provider error"}`;
+    msg.style.color = result?.ok ? "var(--green)" : "var(--red)";
   }
 }
 
@@ -1363,7 +1575,7 @@ function renderDeptFields() {
                  style="flex:1;min-width:0;" />
           ${browse}
         </div>
-        ${f.key === "companycam_api_token" ? `<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:5px;">Admin only. Use the franchise Application Key; employees connect by signing into Linguar Hub and never paste personal CompanyCam tokens.</div>` : ""}
+        ${f.key === "companycam_api_token" ? `<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:5px;">Admin only. Use the franchise Application Key; employees connect by signing into OneLoss and never paste personal CompanyCam tokens.</div>` : ""}
       </div>`;
     }).join("")}
   `).join("");
@@ -1471,7 +1683,7 @@ function render() {
           ${(f.choices || []).map((c) => `<option value="${esc(c)}" ${c === String(v||"") ? "selected" : ""}>${esc(choiceLabels[c] || c)}</option>`).join("")}
         </select>
         ${f.key === "appearance" ? '<div class="appearance-readout" id="appearance-readout"><span>Checking Windows theme…</span></div>' : ''}
-        ${f.key === "global_hotkey" ? '<div class="muted" style="font-size:11px;margin-top:5px;">Works while Linguar Hub is open, even when another program is in front.</div>' : ''}
+        ${f.key === "global_hotkey" ? '<div class="muted" style="font-size:11px;margin-top:5px;">Works while OneLoss is open, even when another program is in front.</div>' : ''}
       </div>`;
     }
     if (f.kind === "list") {
@@ -1500,7 +1712,7 @@ function render() {
                style="flex:1;min-width:0;" />
         ${browse}
       </div>
-      ${f.key === "companycam_api_token" ? `<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:5px;">Admin only. One CompanyCam Application Key for this franchise; employee actions are attributed from their Linguar Hub sign-in.</div>` : ""}
+      ${f.key === "companycam_api_token" ? `<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:5px;">Admin only. One CompanyCam Application Key for this franchise; employee actions are attributed from their OneLoss sign-in.</div>` : ""}
     </div>`;
   }
   const grouped = {};
@@ -1596,7 +1808,7 @@ async function renderFirstRunWizard() {
       : `<button class="btn" type="button" data-setup="refresh">Check again</button>`,
     trello: `<button class="btn btn-primary" type="button" data-setup="trello-auto">Connect Trello</button>
       <div class="setup-token">
-        <div class="muted" style="font-size:12px;margin-bottom:6px;">Trello could not return to Linguar Hub. Click Allow in the Trello tab, then paste the token it shows here.</div>
+        <div class="muted" style="font-size:12px;margin-bottom:6px;">Trello could not return to OneLoss. Click Allow in the Trello tab, then paste the token it shows here.</div>
         <div style="display:flex;gap:6px;">
           <input type="password" class="setup-token-input" placeholder="Paste Trello token" style="flex:1;min-width:0;"/>
           <button class="btn btn-primary" type="button" data-setup="trello-save">Save token</button>
@@ -1764,7 +1976,7 @@ async function save() {
     setTimeout(async () => {
       let h = null;
       try { h = await pywebview.api.hotkey_status(); } catch (_) {}
-      if (h && h.registered) setStatus(`💾 Saved — ${h.label} now shows Linguar Hub`, "ok");
+      if (h && h.registered) setStatus(`💾 Saved — ${h.label} now shows OneLoss`, "ok");
       else if (h && h.error) setStatus(`Saved, but shortcut is unavailable: ${h.error}`, "error");
     }, 1800);
   }

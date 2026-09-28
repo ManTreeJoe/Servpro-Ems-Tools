@@ -37,6 +37,7 @@ if _HERE not in sys.path:
 import ems_db
 import pipeline_stages as ps
 import pipeline_store
+import card_placements
 from job_settings_api import JobSettingsApi
 from web_helpers import run_bg as _wh_run_bg
 
@@ -225,20 +226,18 @@ def _days_since_iso(iso):
         return 0
 
 
-def _job_info_sections(job: dict | None = None, trello_desc: str = "") -> list:
-    """Build display sections from Hub values plus missing Trello fields.
+def _job_info_sections(job: dict | None = None) -> list:
+    """Build the shared Job facts shown by every Board Placement.
 
-    Hub-edited values remain authoritative.  The exact opened Trello card is
-    only a display fallback for fields the shared/local job projection has not
-    hydrated yet.  This keeps a populated card from looking empty without
-    letting a stale card overwrite newer Hub edits.
+    A Trello card description is an inbound synchronization source, not a
+    per-card display override. Reading only the committed Job here guarantees
+    two placements cannot show different customer, property, or claim facts.
     """
     import job_settings
 
     local = job_settings.stored_values(job or {})
-    card = job_settings.from_card(trello_desc) if trello_desc else {}
     values = {
-        fid: str(local.get(fid) or card.get(fid) or "").strip()
+        fid: str(local.get(fid) or "").strip()
         for fid in job_settings.BY_ID
     }
     grouped, order = {}, []
@@ -254,6 +253,27 @@ def _job_info_sections(job: dict | None = None, trello_desc: str = "") -> list:
         })
     return [{"name": section.title(), "fields": grouped[section]}
             for section in order]
+
+
+def _job_log_for_placement(entries: list[dict], card_id: str,
+                           primary_card_id: str = "") -> list[dict]:
+    """Return Job Log rows owned by the exact opened Board Placement.
+
+    Rows written before placement ownership existed have no card id. Keep
+    that history on the primary placement (or the only known card) rather
+    than copying it into every temporary WIP/Estimating placement.
+    """
+    opened = str(card_id or "").strip().casefold()
+    primary = str(primary_card_id or "").strip().casefold()
+    show_legacy = not primary or not opened or opened == primary
+    visible = []
+    for entry in entries or []:
+        owner = str(entry.get("placement_card_id") or "").strip().casefold()
+        if owner == opened and opened:
+            visible.append(entry)
+        elif not owner and show_legacy:
+            visible.append(entry)
+    return visible
 
 
 _CARD_FIELDS = ("name,desc,shortUrl,idBoard,idList,labels,due,"
@@ -272,8 +292,8 @@ def _build_board(tc, ps, key, bname, board_obj):
     try:
         lists = tc._call(f"/boards/{bid}/lists",
                          params={"fields": "name,pos", "filter": "open"}) or []
-    except Exception:
-        lists = []
+    except Exception as ex:
+        raise RuntimeError(f"Could not refresh {bname} lanes: {ex}") from ex
     # One board-level card request replaces one request per lane. Large WIP
     # boards previously needed dozens of serial round trips before the first
     # paint. Trello can inline every checklist in the same response.
@@ -305,8 +325,8 @@ def _build_board(tc, ps, key, bname, board_obj):
             try:
                 cards = tc.cards_in_list_with_checklists(
                     l.get("id"), fields=_CARD_FIELDS)
-            except Exception:
-                cards = []
+            except Exception as ex:
+                raise RuntimeError(f"Could not refresh {bname} / {lname}: {ex}") from ex
         shaped = []
         for c in cards:
             try:
@@ -358,6 +378,7 @@ def _card_to_board_dict(card, lane_name):
             overdue = False
     return {
         "card_id":      card.get("id") or "",
+        "pos":          card.get("pos") or 65536,
         "name":         name,
         "client":       name,
         "url":          card.get("shortUrl") or "",
@@ -389,8 +410,49 @@ def _trello_board_payload():
                                _resolve_board(available_boards, bname,
                                               BOARD_SHORTLINKS.get(key, "")))
                    for key, bname in BOARD_SPECS]
-        out = [future.result() for future in futures]
+        try:
+            out = [future.result() for future in futures]
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "boards": []}
     return {"ok": True, "boards": out, "source": "trello"}
+
+
+def _server_board_payload(specs=None):
+    """Shape authorized server snapshots through the same card formatter."""
+    import trello_mirror_reader
+    rows = trello_mirror_reader.boards()
+    if not rows:
+        return None
+    specs = BOARD_SPECS if specs is None else specs
+    by_id = {row['board']['id']: row for row in rows}
+    available = [row['board'] for row in rows]
+    boards = []
+    for key, name in specs:
+        board = _resolve_board(available, name, BOARD_SHORTLINKS.get(key, ''))
+        if not board:
+            return None  # Never replace a complete board view with a partial mirror.
+        row = by_id[board['id']]
+        lanes = []
+        for lane in sorted(row['lists'], key=lambda value: value.get('pos') or 0):
+            lane_name = lane.get('name') or ''
+            if lane.get('closed') or _is_noise_lane(lane_name):
+                continue
+            cards = []
+            for card in sorted(row['cards'], key=lambda value: value.get('pos') or 0):
+                if card.get('idList') != lane['id'] or card.get('closed'):
+                    continue
+                if ps.is_pipeline_skip(card.get('name') or '', lane_name):
+                    continue
+                shaped = _card_to_board_dict(card, lane_name)
+                badges = card.get('badges') or {}
+                shaped['checklist'] = {'done': badges.get('checkItemsChecked', 0),
+                                       'total': badges.get('checkItems', 0)}
+                cards.append(shaped)
+            lanes.append({'list_id': lane['id'], 'name': lane_name, 'pos': lane.get('pos', 0),
+                          'count': len(cards), 'cards': cards})
+        boards.append({'key': key, 'name': board['name'], 'board_id': board['id'], 'lanes': lanes})
+    return {'ok': True, 'boards': boards, 'source': 'server_mirror',
+            'saved_at': min(row['saved_at'] for row in rows)}
 
 
 class Api(JobSettingsApi):
@@ -528,6 +590,7 @@ class Api(JobSettingsApi):
         only when requested.  Missing migration 011 fails soft to the legacy
         live-Trello behaviour so an employee is never locked out by rollout.
         """
+        self._workspace_cache_key('', '', '')  # Discard memory on user/workspace changes.
         if not force_trello and self._board_view_cache:
             cached_at, cached_payload = self._board_view_cache
             if time.monotonic() - cached_at < 30:
@@ -541,16 +604,23 @@ class Api(JobSettingsApi):
             if shared_safe:
                 shared = pipeline_store.load_boards(BOARD_SPECS)
                 if _complete_board_payload(shared):
+                    shared = card_placements.decorate(shared)
                     self._board_view_cache = (time.monotonic(), shared)
                     return shared
-        live = _trello_board_payload()
+        live = _server_board_payload() or _trello_board_payload()
         if not live.get("ok"):
             if shared_safe:
                 shared = pipeline_store.load_boards(BOARD_SPECS)
                 if shared.get("ok"):
+                    shared = card_placements.decorate(shared)
                     shared["warning"] = "Trello unavailable; showing shared Pipeline"
+                    shared["trello_refresh_ok"] = False
+                    shared["sync_error"] = live.get("error") or "Trello refresh failed"
                     self._board_view_cache = (time.monotonic(), shared)
                     return shared
+            return live
+        live = card_placements.decorate(live)
+        if not live.get('ok'):
             return live
         live.setdefault("source", "trello")
         if shared_safe:
@@ -561,14 +631,23 @@ class Api(JobSettingsApi):
             live["mirrored"] = False
             live["shared_scope_deferred"] = True
         pipeline_store.save_board_cache(live)
+        card_placements.start_sync()
         self._board_view_cache = (time.monotonic(), live)
         return live
 
     def board_view_shared_refresh(self) -> dict:
         """Refresh the saved projection after the UI has already painted."""
+        server = _server_board_payload()
+        if server:
+            server = card_placements.decorate(server)
+            card_placements.start_sync()
+            pipeline_store.save_board_cache(server)
+            self._board_view_cache = (time.monotonic(), server)
+            return server
         if pipeline_store.shared_scope_safe():
             shared = pipeline_store.load_boards(BOARD_SPECS)
             if _complete_board_payload(shared):
+                shared = card_placements.decorate(shared)
                 self._board_view_cache = (time.monotonic(), shared)
                 return shared
         # Until the shared Pipeline migration is installed, keep the instant
@@ -583,6 +662,13 @@ class Api(JobSettingsApi):
                      if s[0] == key), None)
         if not spec:
             return {"ok": False, "error": f"unknown board '{key}'"}
+        server = _server_board_payload([spec])
+        if server:
+            server = card_placements.decorate(server)
+            if not server.get('ok'):
+                return server
+            return {"ok": True, "board": server['boards'][0], "source": 'server_mirror',
+                    "historical": key == ARCHIVE_BOARD_SPEC[0], "mirrored": True}
         import trello_client as tc
         import pipeline_stages as ps
         try:
@@ -592,6 +678,10 @@ class Api(JobSettingsApi):
         bname = spec[1]
         board = _build_board(tc, ps, key, bname,
                              _resolve_board(available_boards, bname))
+        decorated = card_placements.decorate({'ok': True, 'boards': [board]})
+        if not decorated.get('ok'):
+            return decorated
+        board = decorated['boards'][0]
         if key == ARCHIVE_BOARD_SPEC[0]:
             # Read-only historical adapter for now. Do not mirror thousands
             # of legacy cards into the active shared Pipeline projection.
@@ -603,7 +693,7 @@ class Api(JobSettingsApi):
         return {"ok": True, "board": board, "source": "trello",
                 "mirrored": bool(mirrored.get("ok"))}
 
-    def global_card_search(self, query: str, limit: int = 24) -> dict:
+    def global_card_search(self, query: str, limit: int = 24, division: str = '') -> dict:
         """Search beyond the three board projections shown on Jobs.
 
         The local lifecycle mirror supplies closed/archive history instantly;
@@ -625,6 +715,11 @@ class Api(JobSettingsApi):
             except Exception:
                 remote = []
             merged = card_search.merge(local, remote, query)
+            if division:
+                from division_cards import board_division
+                from ems_db_common import normalize_division
+                wanted = normalize_division(division)
+                merged = [row for row in merged if board_division(row.get('board')) == wanted]
             merged.sort(key=lambda row: (-float(row.get("_score") or 0),
                                          str(row.get("name") or "").casefold()))
             cards = []
@@ -645,37 +740,35 @@ class Api(JobSettingsApi):
             return {"ok": False, "cards": [],
                     "error": f"{type(ex).__name__}: {ex}"}
 
-    def move_card(self, card_id: str, list_id: str) -> dict:
-        """Move a Hub card immediately; Trello mirrors in the background."""
-        if not card_id or not list_id:
-            return {"ok": False, "error": "card_id + list_id required"}
-        shared = pipeline_store.move_card(card_id, list_id)
-        self._board_view_cache = None
-        self._invalidate_workspace(card_id=card_id)
-        if shared.get("ok"):
-            return {"ok": True, "saved_local": True, "pending_sync": True,
-                    "synced": False}
-        # Older installs without the shared Pipeline keep their existing
-        # Trello-first fallback until the migration is installed.
-        try:
-            import trello_client as tc
-            ok = tc.move_card(card_id, list_id)
-            pipeline_store.mark_card_sync(
-                card_id, ok=bool(ok),
-                error="Trello rejected the move" if not ok else "")
-            if ok:
-                return {"ok": True, "synced": True,
-                        "stored": bool(shared.get("ok"))}
-            if shared.get("ok"):
-                return {"ok": True, "synced": False,
-                        "warning": "Saved in Linguar Hub; Trello needs review"}
-            return {"ok": False, "error": "Trello rejected the move"}
-        except Exception as ex:
-            pipeline_store.mark_card_sync(card_id, ok=False, error=str(ex))
-            if shared.get("ok"):
-                return {"ok": True, "synced": False,
-                        "warning": "Saved in Linguar Hub; Trello is unavailable"}
-            return {"ok": False, "error": str(ex)}
+    def card_placement_context(self, card_id: str = '') -> dict:
+        return card_placements.context(card_id)
+
+    def card_placement_change(self, card_id: str, action: str, version: int,
+                              board_id: str = None, list_id: str = None, position=None) -> dict:
+        result = card_placements.change(card_id, action, version, board_id, list_id,
+                                        **({'position': position} if position is not None else {}))
+        if result.get('ok'):
+            self._board_view_cache = None
+            self._invalidate_workspace(card_id=card_id)
+        return result
+
+    def retry_card_placement_sync(self) -> dict:
+        card_placements.start_sync(force=True)
+        return {'ok': True}
+
+    def move_card(self, card_id: str, list_id: str, version: int = None, position=None) -> dict:
+        """Drag/drop and menu moves share the app-owned transaction."""
+        data = card_placements.context(card_id)
+        if not data.get('ok'):
+            return data
+        board = next((b for b in data['boards'] if any(
+            lane.get('id') == list_id for lane in b.get('lists', []))), None)
+        if not board:
+            return {'ok': False, 'error': 'Destination is not in your saved board sections'}
+        row = data.get('placement') or {}
+        return self.card_placement_change(card_id, 'move',
+            int(version if version is not None else row.get('version', 0)), board['board_id'], list_id,
+            **({'position': position} if position is not None else {}))
 
     def create_lane(self, board_key: str, name: str) -> dict:
         name = (name or "").strip()
@@ -774,6 +867,26 @@ class Api(JobSettingsApi):
         return self._audit_api().plan_new_loss_folder(
             fields, child, second_claim, parent)
 
+    def job_card_placement(self, card_id: str) -> dict:
+        """Read only the app's scoped saved board; never query Trello."""
+        cached = pipeline_store.load_board_cache()
+        saved = cached.get('placement_snapshot') or {}
+        row = next((r for r in saved.get('placements', []) if r.get('card_id') == card_id), None)
+        if row:
+            board = next((b for b in saved.get('boards', []) if b['board_id'] == row['board_id']), {})
+            lane = next((l for l in board.get('lists', []) if l['id'] == row['list_id']), {})
+            return {'board': board.get('name', ''), 'lane': lane.get('name', ''),
+                    'state': row['state'], 'source': 'app_saved_board'}
+        for board in cached.get('boards', []):
+            for lane in board.get('lanes', []):
+                if any(str(card.get('card_id') or '') == card_id for card in lane.get('cards', [])):
+                    return {'board': board.get('name') or '', 'lane': lane.get('name') or '', 'source': 'app_saved_board'}
+        return {}
+
+    def preview_intake_names(self, fields: dict) -> dict:
+        from intake_names import names
+        return names(fields)
+
     def create_new_loss(self, fields: dict, child: str = "",
                         second_claim: bool = False,
                         promote_first: bool = False,
@@ -826,6 +939,9 @@ class Api(JobSettingsApi):
             "misplaced_forms": list(row.get("misplaced_forms") or []),
             "misplaced_photos": list(row.get("misplaced_photos") or []),
             "trello_card_id": row.get("trello_card_id") or "",
+            "audit_complete": True,
+            "is_commercial": bool(row.get("is_commercial")),
+            "is_self_pay": bool(row.get("is_self_pay")),
         }
         self._audit_card_cache[cache_key] = (time.monotonic(), shaped)
         return shaped
@@ -889,7 +1005,8 @@ class Api(JobSettingsApi):
         # crm_job_workspace already fetched these pins. Re-reading them here
         # used to add another shared-database round trip to every open.
         division_trello_cards = {
-            "ok": True, "cards": list(crm.get("division_trello_cards") or [])}
+            "ok": True, "cards": list(crm.get("division_trello_cards") or []),
+            "placements": list(crm.get("division_trello_placements") or [])}
         newly_linked = any(
             item.get("state") == "auto_pinned"
             for item in (division_reconciliation.get("divisions") or [])
@@ -898,6 +1015,7 @@ class Api(JobSettingsApi):
         if newly_linked or not division_trello_cards["cards"]:
             division_trello_cards = audit_api.crm_division_trello_cards(client)
         division_cards = division_trello_cards.get("cards", [])
+        division_placements = division_trello_cards.get("placements", [])
         info_sections, checklists, comments, attachments, members = [], [], [], [], []
         current_user_id = ""
         try:
@@ -911,6 +1029,8 @@ class Api(JobSettingsApi):
             import job_saved_data
             job = job_saved_data.resolve(client, card_id)[0]
             info_sections = _job_info_sections(job)
+            if not summary.get('path'):
+                summary['path'] = job_saved_data.destination(client, card_id, 'folder')
         except Exception:
             pass
         from ems_db_common import normalize_division
@@ -933,6 +1053,14 @@ class Api(JobSettingsApi):
         if not cid and selected_division == "EMS":
             cid = (summary.get("trello_card_id") or "").strip()
         crm = dict(crm)
+        primary_card_id = str(selected_card.get("card_id") or "").strip()
+        crm["job_log"] = _job_log_for_placement(
+            list(crm.get("job_log") or []), cid, primary_card_id)
+        crm["job_log_scope"] = {
+            "placement_card_id": cid,
+            "include_legacy": (not primary_card_id or not cid or
+                               cid.casefold() == primary_card_id.casefold()),
+        }
         crm["work_environments"] = _detected_work_environments(
             crm, summary, division_cards, selected_division)
         # Linguar Hub is the durable source. Trello below is now an import/
@@ -951,7 +1079,8 @@ class Api(JobSettingsApi):
                     'provider': 'DocuSign', 'request': {}, 'files': [], 'connected': False}))
             if cid:
                 import trello_client as tc
-                trello_future = pool.submit(tc.get_card, cid)
+                import trello_mirror_reader
+                trello_future = pool.submit(trello_mirror_reader.get_card, cid)
                 trello_me_future = pool.submit(tc.get_member_me)
             else:
                 trello_future = pool.submit(lambda: {})
@@ -967,14 +1096,6 @@ class Api(JobSettingsApi):
                 trello_me = trello_me_future.result() or {}
             except Exception:
                 trello_me = {}
-        # The board card's description may be ahead of the shared/local job
-        # projection. Fill only missing Hub fields from the exact card that
-        # was opened so Job info never appears blank while sync catches up.
-        try:
-            info_sections = _job_info_sections(
-                job, str(trello_card.get("desc") or ""))
-        except Exception:
-            pass
         if cid:
             try:
                 imported_checklists = [{
@@ -995,10 +1116,8 @@ class Api(JobSettingsApi):
                                for a in (trello_card.get("attachments") or [])]
                 members = [m.get("fullName") or m.get("username") or ""
                            for m in (trello_card.get("members") or [])]
-                # get_card already includes the latest 50 activity actions.
-                # Re-fetching every historical comment here used as many as
-                # 20 additional network calls each time a card opened. Older
-                # comments remain in the shared activity table once imported.
+                # Mirror or paginated fallback supplies complete comments;
+                # the cached workspace remains visible during this refresh.
                 trello_comments = [action for action in (trello_card.get("actions") or [])
                                    if action.get("type") == "commentCard"]
                 activity_import = []
@@ -1021,6 +1140,8 @@ class Api(JobSettingsApi):
                         "happened_at": comment["at"],
                     })
                 pipeline_store.add_activities(cid, activity_import)
+                # Reading a card must not materialize/re-import structured
+                # logs. Import is an explicit action; shared logs hydrate above.
             except Exception as ex:
                 summary["trello_error"] = str(ex)
         # Preserve Linguar-only comments when Trello was unavailable. Avoid
@@ -1030,6 +1151,8 @@ class Api(JobSettingsApi):
             ext = activity.get("external_id") or ""
             if ext and ext in seen:
                 continue
+            if ext and (trello_card.get('_hub_source') == 'server_mirror' or trello_card.get('_comments_complete')):
+                continue  # Complete history is authoritative for removed provider comments.
             if activity.get("action_type") == "comment":
                 metadata = activity.get("metadata_json") or {}
                 if isinstance(metadata, str):
@@ -1040,7 +1163,7 @@ class Api(JobSettingsApi):
                 owner_id = str(metadata.get("actor_id") or "")
                 comments.append({"id": ext or activity.get("activity_key") or "",
                                  "text": activity.get("body") or "",
-                                 "actor": activity.get("actor_name") or "Linguar Hub",
+                                 "actor": activity.get("actor_name") or "OneLoss",
                                  "at": activity.get("happened_at") or "",
                                  "source": activity.get("source") or "linguar",
                                  "can_manage": bool(current_user_id and
@@ -1073,6 +1196,7 @@ class Api(JobSettingsApi):
                                         if cid else ""),
                 "audit": summary, "crm": crm, "info_sections": info_sections,
                 "division_trello_cards": division_cards,
+                "division_trello_placements": division_placements,
                 "division_card_reconciliation": division_reconciliation,
                 "checklists": checklists, "comments": comments,
                 "attachments": attachments, "members": members,
@@ -1088,10 +1212,22 @@ class Api(JobSettingsApi):
                          key=lambda key: self._workspace_cache[key][0])
             self._workspace_cache.pop(oldest, None)
         self._workspace_cache[workspace_key] = (time.monotonic(), result)
+        # A loaded log is user-controlled. Background card hydration may
+        # refresh facts/comments but must not replace the saved log snapshot.
+        import job_log_projection
+        saved_log = job_log_projection.load(cid, selected_division, scope_id=request_scope)
+        if 'job_log' in saved_log:
+            result['crm'].update(saved_log)
         if not summary.get("trello_error"):
             job_workspace_cache.save(cid, selected_division, client, result,
                                      scope_id=request_scope,
                                      expected_generation=request_generation)
+        # A failed/partial shared read must not blank an already loaded log.
+        import job_log_projection
+        if summary.get('trello_error') and 'job_log' not in saved_log:
+            job_log_projection.refresh(cid, selected_division, crm,
+                                       scope_id=request_scope, expected_generation=request_generation)
+        result['crm'].update(job_log_projection.load(cid, selected_division, scope_id=request_scope))
         return result
 
     def _old_ems_jobs(self, client: str, current_card_id: str = "") -> list:
@@ -1173,42 +1309,65 @@ class Api(JobSettingsApi):
         """
         started = time.monotonic()
         import job_workspace_cache
+        import job_saved_data
+        def restore_saved_folder(payload):
+            result = dict(payload or {})
+            try:
+                import persistence
+                pinned = persistence.get_folder_path(client) or ""
+                if pinned:
+                    result["path"] = pinned
+                    result["audit"] = {**(result.get("audit") or {}), "path": pinned}
+                    result["local_folder_override"] = pinned
+            except Exception:
+                pass
+            return result
         workspace_key = self._workspace_cache_key(client, card_id, division)
         stored = job_workspace_cache.load((card_id or "").strip(), division)
         if stored:
+            stored = restore_saved_folder(stored)
             return {**stored, "load_ms": round((time.monotonic() - started) * 1000)}
         cached_workspace = self._workspace_cache.get(workspace_key)
         if cached_workspace and time.monotonic() - cached_workspace[0] < 45:
-            return {**cached_workspace[1], "cached": True,
+            memory = restore_saved_folder(cached_workspace[1])
+            return {**memory, "cached": True,
                     "load_ms": round((time.monotonic() - started) * 1000)}
         if not (client or "").strip():
             return {"ok": False, "error": "client required"}
         summary = {"ok": True, "client": client, "found": True,
+                   "audit_complete": False, "audit_pending": True,
                    "form_issues": [], "photo_issues": [], "requirements": [],
                    "activity": [], "path": "", "trello_card_id": card_id or ""}
         # Read already-stored facts/activity in parallel, without waiting for
         # provider calls, master-job joins or any filesystem scan.
-        import job_saved_data
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="saved-workspace") as pool:
-            identity = pool.submit(job_saved_data.resolve, client, card_id)
-            saved_activity = pool.submit(pipeline_store.list_activity, card_id) if card_id else None
-            saved_checklists = pool.submit(pipeline_store.list_checklists, card_id) if card_id else None
-            job = identity.result()[0]
-            local_activity = saved_activity.result() if saved_activity else []
-            checklists = saved_checklists.result() if saved_checklists else []
+        import job_log_projection
+        saved_log = job_log_projection.load((card_id or '').strip(), division)
+        if saved_log:
+            # The short-lived whole-card cache can be invalidated independently
+            # of its durable log. Do not hold those entries behind network reads.
+            job, local_activity, checklists = {}, [], []
+        else:
+            with ThreadPoolExecutor(max_workers=3, thread_name_prefix="saved-workspace") as pool:
+                identity = pool.submit(job_saved_data.resolve, client, card_id)
+                saved_activity = pool.submit(pipeline_store.list_activity, card_id) if card_id else None
+                saved_checklists = pool.submit(pipeline_store.list_checklists, card_id) if card_id else None
+                job = identity.result()[0]
+                local_activity = saved_activity.result() if saved_activity else []
+                checklists = saved_checklists.result() if saved_checklists else []
         comments = []
         for activity in local_activity:
             if activity.get("action_type") != "comment":
                 continue
             comments.append({"id": activity.get("external_id") or activity.get("activity_key") or "",
                              "text": activity.get("body") or "",
-                             "actor": activity.get("actor_name") or "Linguar Hub",
+                             "actor": activity.get("actor_name") or "OneLoss",
                              "at": activity.get("happened_at") or "",
                              "source": activity.get("source") or "linguar",
                              "can_manage": False})
         comments.sort(key=lambda row: row.get("at") or "", reverse=True)
         try:
-            summary['path'] = job_saved_data.destination(client, card_id, 'folder')
+            if not saved_log:
+                summary['path'] = job_saved_data.destination(client, card_id, 'folder')
         except Exception:
             pass
         from ems_db_common import normalize_division
@@ -1218,6 +1377,16 @@ class Api(JobSettingsApi):
                            "url": f"https://trello.com/c/{cid}" if cid else "",
                            "pinned": bool(cid)}]
         from job_progress import evaluate as evaluate_job_progress
+        from job_paperwork import build_paperwork
+        try:
+            import account_access
+            access = account_access.cached_access()
+            capabilities = {"items": dict(access.get("capabilities") or {}),
+                            "configured": bool(access.get("capabilities_configured")),
+                            "is_admin": bool(access.get("is_admin"))}
+        except Exception:
+            capabilities = {"items": {}, "configured": False,
+                            "is_admin": False}
         crm = {
             "ok": True,
             "job_id": job.get("job_id") or "",
@@ -1228,7 +1397,10 @@ class Api(JobSettingsApi):
             "work_environments": [], "division_trello_cards": division_cards,
             "relationships": [], "job_log": [], "timeline": [],
             "progress": evaluate_job_progress(job, summary, []),
+            "paperwork": build_paperwork(job, summary),
+            "capabilities": capabilities,
         }
+        crm.update(saved_log)
         crm["work_environments"] = _detected_work_environments(
             crm, summary, division_cards, selected_division)
         crm["progress"]["review_mode"] = True
@@ -1474,6 +1646,10 @@ class Api(JobSettingsApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    def job_docusketch_folder(self, path: str) -> dict:
+        from job_folder_evidence import docusketch_folder
+        return docusketch_folder(path)
+
     def link_job_folder(self, client: str, path: str,
                         confirm: bool = False) -> dict:
         result = self._audit_api().set_folder_path(client, path, confirm)
@@ -1494,6 +1670,16 @@ class Api(JobSettingsApi):
 
     def import_initial_notes(self, client: str, card_id: str = "") -> dict:
         return self._audit_api().import_initial_notes(client, card_id)
+
+    def initial_note_templates(self, division: str = "EMS") -> dict:
+        """Return active Front Ops note templates; never read Trello."""
+        try:
+            import config
+            import initial_note_templates
+            return {"ok": True, "templates": initial_note_templates.list_templates(
+                config.active_department(), division)}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex), "templates": []}
 
     def scan_downloads(self, client: str = "") -> dict:
         return self._audit_api().scan_downloads(client)
@@ -1540,15 +1726,65 @@ class Api(JobSettingsApi):
 
     def companycam_plan_pull(self, client: str, tech: str = "",
                              card_id: str = "",
-                             dest_subfolder: str = "") -> dict:
+                             dest_subfolder: str = "", request_id: str = "",
+                             selected_photo_ids=None, project_id: str = "",
+                             visits_first: bool = False, preview_id: str = "") -> dict:
         return self._audit_api().companycam_plan_pull(
-            client, tech, card_id, dest_subfolder)
+            client, tech, card_id, dest_subfolder, request_id,
+            selected_photo_ids, project_id, visits_first, preview_id)
 
     def companycam_pull_assigned_bg(self, client: str, assignments: list,
                                     tech: str = "",
-                                    card_id: str = "") -> dict:
+                                    card_id: str = "", project_id: str = "",
+                                    operation_id: str = "") -> dict:
         return self._audit_api().companycam_pull_assigned_bg(
-            client, assignments, tech, card_id)
+            client, assignments, tech, card_id, project_id, operation_id)
+
+    def companycam_import_status(self, client: str, card_id: str = "",
+                                operation_id: str = "") -> dict:
+        return self._audit_api().companycam_import_status(client, card_id, operation_id)
+
+    def saved_run_activity(self, client: str, division: str = "EMS") -> dict:
+        # This backfill indexes the EMS run library, never another division.
+        if str(division or 'EMS').upper() != 'EMS':
+            return {"ok": True, "rows": [], "note": "This imported history covers the EMS Daily Run only."}
+        try:
+            import run_activity_index
+            return {"ok": True, "rows": run_activity_index.history(client),
+                    "note": "Saved on this PC · scheduled work from Daily Run, not proof of completion"}
+        except Exception as error:
+            return {"ok": False, "error": str(error)}
+
+    def job_draft(self, card: str, division: str, kind: str, entry_id: str = '',
+                  change=None) -> dict:
+        import job_drafts
+        try:
+            if change is None:
+                return job_drafts.exchange(card, division, kind, entry_id)
+            if not isinstance(change, dict) or 'version' not in change or not change.get('scope'):
+                raise ValueError('Read this draft before changing it.')
+            return job_drafts.exchange(card, division, kind, entry_id, **change)
+        except Exception as error:
+            return {'ok': False, 'error': str(error)}
+
+    def job_files(self, client: str, relative: str = "", refresh: bool = False) -> dict:
+        import persistence
+        import job_file_index
+        return job_file_index.listing(persistence.get_folder_path(client) or "", relative, refresh)
+
+    def job_file_preview(self, client: str, relative: str, thumbnail: bool = False) -> dict:
+        import persistence
+        import job_file_browser
+        return job_file_browser.preview(persistence.get_folder_path(client) or "", relative, thumbnail)
+
+    def job_file_open(self, client: str, relative: str) -> dict:
+        import persistence
+        import job_file_browser
+        try:
+            _, target = job_file_browser._target(persistence.get_folder_path(client) or "", relative)
+            return self.open_document(str(target))
+        except (OSError, ValueError) as error:
+            return {"ok": False, "error": str(error)}
 
     def open_document(self, path: str) -> dict:
         path = os.path.abspath(path or "")
@@ -1560,11 +1796,13 @@ class Api(JobSettingsApi):
         except OSError as ex:
             return {"ok": False, "error": str(ex)}
 
-    def list_pics_stages(self, client: str) -> dict:
-        return self._audit_api().list_pics_stages(client)
+    def list_pics_stages(self, client: str, job_path: str = "") -> dict:
+        return self._audit_api().list_pics_stages(client, job_path)
 
-    def copy_pics_to_clipboard(self, client: str, stage: str = "") -> dict:
-        return self._audit_api().copy_pics_to_clipboard(client, stage)
+    def copy_pics_to_clipboard(self, client: str, stage: str = "",
+                               job_path: str = "") -> dict:
+        return self._audit_api().copy_pics_to_clipboard(
+            client, stage, job_path)
 
     def save_crm_work_environment(self, client: str, work_environment: str,
                                   stage: str, owner: str = "") -> dict:
@@ -1572,15 +1810,51 @@ class Api(JobSettingsApi):
             client, work_environment, stage, owner)
         if result.get("ok"):
             self._invalidate_workspace(client=client)
+            if result.get("division_card", {}).get("pending"):
+                _wh_run_bg(self._sync_contents_interest)
         return result
 
     def crm_division_trello_cards(self, client: str) -> dict:
         return self._audit_api().crm_division_trello_cards(client)
 
+    def _sync_contents_interest(self):
+        import contents_interest
+        for result in contents_interest.drain():
+            if result.get("ok"):
+                audit = self._audit_api()
+                with audit._division_cards_lock:
+                    audit._division_cards_cache.clear()
+                self._board_view_cache = None
+                self._invalidate_workspace(client=result.get("client") or result["job_key"])
+            self._emit_js("window.dispatchEvent(new CustomEvent('pipeline:contents-card', {detail: "
+                          + json.dumps(result) + "}));")
+
     def pin_crm_division_trello(self, client: str, division: str,
                                 card_id_or_url: str) -> dict:
         result = self._audit_api().pin_crm_division_trello(
-            client, division, card_id_or_url)
+            client, division, card_id_or_url, defer_info=True)
+        if result.get("ok"):
+            self._invalidate_workspace(client=client)
+            def refresh_info():
+                try:
+                    import job_settings
+                    info = job_settings.pull_from_card(result["job_key"], result["card_id"])
+                except Exception as ex:
+                    info = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+                self._invalidate_workspace(client=client)
+                self._emit_js("window.dispatchEvent(new CustomEvent('pipeline:pin-info', {detail: "
+                              + json.dumps({"client": client, "division": division,
+                                            "card_id": result["card_id"], "info": info}) + "}));")
+            import threading
+            threading.Thread(target=refresh_info, daemon=True,
+                             name="pin-job-info-refresh").start()
+        return result
+
+    def add_crm_division_trello_placement(
+            self, client: str, division: str, card_id_or_url: str,
+            purpose: str, board: str = "", lane: str = "") -> dict:
+        result = self._audit_api().add_crm_division_trello_placement(
+            client, division, card_id_or_url, purpose, board, lane)
         if result.get("ok"):
             self._invalidate_workspace(client=client)
         return result
@@ -1657,11 +1931,15 @@ class Api(JobSettingsApi):
             self._invalidate_workspace(client=client)
         return result
 
+    def job_comment_members(self, card_id: str) -> dict:
+        from job_comment_mentions import members
+        return members(card_id)
+
     def post_job_comment(self, client: str, card_id: str, text: str) -> dict:
         text = (text or "").strip()
         if not text:
             return {"ok": False, "error": "write a comment first"}
-        actor = "Linguar Hub"
+        actor = "OneLoss"
         actor_id = ""
         try:
             import supabase_client
@@ -1713,6 +1991,39 @@ class Api(JobSettingsApi):
             self._invalidate_workspace(client, card_id)
         return result
 
+    def link_ems_card_copy(self, client: str, source_id: str, copied_id: str) -> dict:
+        try:
+            import ems_card_copies
+            result = ems_card_copies.link_copy(client, source_id, copied_id)
+            audit = self._audit_api()
+            with audit._division_cards_lock:
+                audit._division_cards_cache.pop((client or "").strip().casefold(), None)
+            self._invalidate_workspace(client=client)
+            return result
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
+
+    def post_job_comment_multi(self, client: str, card_ids: list,
+                               text: str) -> dict:
+        """Save one update to explicitly selected linked board placements."""
+        targets = list(dict.fromkeys(
+            str(card_id or "").strip() for card_id in (card_ids or [])
+            if str(card_id or "").strip()))
+        if not targets:
+            return {"ok": False, "error": "choose at least one linked card"}
+        if len(targets) > 8:
+            return {"ok": False, "error": "too many comment destinations"}
+        results = [{"card_id": card_id,
+                    **self.post_job_comment(client, card_id, text)}
+                   for card_id in targets]
+        failed = [row for row in results if not row.get("ok")]
+        return {"ok": not failed, "partial": bool(failed) and
+                len(failed) < len(results), "results": results,
+                "posted": len(results) - len(failed),
+                "failed": failed,
+                "error": ("Some linked cards could not be updated"
+                          if failed else "")}
+
     def edit_job_comment(self, client: str, comment_id: str,
                          source: str, text: str,
                          external_id: str = "") -> dict:
@@ -1739,7 +2050,7 @@ class Api(JobSettingsApi):
             if not synced.get("ok"):
                 self._invalidate_workspace(client=client)
                 return {**result, "text": clean, "warning":
-                        "Saved in Linguar Hub, but Trello did not update"}
+                        "Saved in OneLoss, but Trello did not update"}
         self._invalidate_workspace(client=client)
         return {**result, "text": clean, "synced_trello": bool(trello_id)}
 
@@ -1765,30 +2076,83 @@ class Api(JobSettingsApi):
             if not synced.get("ok"):
                 self._invalidate_workspace(client=client)
                 return {**result, "warning":
-                        "Deleted in Linguar Hub, but Trello did not delete"}
+                        "Deleted in OneLoss, but Trello did not delete"}
         self._invalidate_workspace(client=client)
         return {**result, "synced_trello": bool(trello_id)}
 
     def save_job_log_update(self, client: str, entry: dict,
-                            card_id: str = "") -> dict:
+                            card_id: str = "", division: str = "EMS") -> dict:
+        import job_workspace_cache
+        import job_log_projection
+        request_scope = job_workspace_cache.scope()
         result = self._audit_api().save_crm_job_log(client, entry, card_id)
         if result.get("ok"):
+            job_log_projection.record_change(card_id, result, scope_id=request_scope, division=division)
             self._invalidate_workspace(client=client)
         return result
 
-    def import_job_log_from_trello(self, client: str, card_id: str) -> dict:
+    def import_job_log_from_trello(self, client: str, card_id: str, division: str = "EMS") -> dict:
         """Import recognized work events from the selected division card."""
+        import job_workspace_cache
+        import job_log_projection
+        request_scope = job_workspace_cache.scope()
         result = self._audit_api().import_crm_job_log_from_trello(client, card_id)
         if result.get("ok"):
+            job_log_projection.record_change(card_id, result, scope_id=request_scope, division=division)
             self._invalidate_workspace(client, card_id)
         return result
 
     def delete_job_log_update(self, client: str, entry_id: str,
-                              card_id: str = "") -> dict:
-        result = self._audit_api().delete_crm_job_log(client, entry_id, card_id)
+                              card_id: str = "", division: str = "EMS") -> dict:
+        import job_workspace_cache
+        import job_log_projection
+        request_scope = job_workspace_cache.scope()
+        result = job_log_projection.remove(card_id, division, entry_id, scope_id=request_scope)
+        if result.get("ok"):
+            job_log_projection.record_change(card_id, result, scope_id=request_scope, division=division, deleted_id=entry_id)
+            self._invalidate_workspace(client=client)
+        return result
+
+    def dismiss_job_log_update(self, client: str, entry_id: str,
+                               card_id: str = "", division: str = "EMS") -> dict:
+        import job_workspace_cache
+        import job_log_projection
+        request_scope = job_workspace_cache.scope()
+        result = job_log_projection.dismiss(card_id, division, entry_id, scope_id=request_scope)
         if result.get("ok"):
             self._invalidate_workspace(client=client)
         return result
+
+    def refresh_saved_job_log(self, card_id: str, division: str = 'EMS') -> dict:
+        """Explicit saved-log refresh; never import or parse Trello comments."""
+        import job_log_projection
+        return job_log_projection.refresh_saved(card_id, division)
+
+    def export_job_log_pdf(self, payload: dict) -> dict:
+        """Save a Snapshot-style PDF locally; no scan, sync or Trello writes."""
+        if not isinstance(payload, dict) or not payload.get("client"):
+            return {"ok": False, "error": "Job name is required."}
+        if not payload.get("entries"):
+            return {"ok": False, "error": "No loaded Job Log entries to export."}
+        if self._window is None:
+            return {"ok": False, "error": "The job window is not ready."}
+        try:
+            import re
+            from job_log_pdf import render_job_log
+            name = re.sub(r'[\\/:*?"<>|]', '-', str(payload['client'])).strip(' .')[:100]
+            result = self._window.create_file_dialog(
+                webview.SAVE_DIALOG, save_filename=f"{name} - Job Log.pdf",
+                file_types=("PDF (*.pdf)",))
+            if not result:
+                return {"ok": True, "cancelled": True}
+            path = str(result[0] if isinstance(result, (tuple, list)) else result)
+            if not path.lower().endswith('.pdf'):
+                path += '.pdf'
+            render_job_log(path, payload)
+            opened = self.open_document(path)
+            return {"ok": True, "path": path, "opened": bool(opened.get("ok"))}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def job_log_update_history(self, entry_id: str) -> dict:
         return self._audit_api().crm_job_log_history(entry_id)
@@ -2056,9 +2420,12 @@ class Api(JobSettingsApi):
         if not pending.get("ok"):
             return {"ok": False, "cards": 0, "comments": 0,
                     "error": pending.get("error") or "sync queue unavailable"}
+        if pending.get("mode") == "direct":
+            return {"ok": True, "cards": 0, "comments": 0, "error": "",
+                    "mode": "direct", "queue_reason": pending.get("queue_reason", "")}
         import trello_client as tc
 
-        cards_done = comments_done = 0
+        cards_done = comments_done = job_logs_done = 0
         errors = []
         for card in pending.get("cards") or []:
             card_id = str(card.get("card_id") or "")
@@ -2081,6 +2448,8 @@ class Api(JobSettingsApi):
                     card_id, ok=ok,
                     error="Trello did not accept a pending job change" if not ok else "")
                 cards_done += int(ok)
+                if not ok:
+                    errors.append("Trello did not accept a pending job change")
             except Exception as ex:
                 pipeline_store.mark_card_sync(card_id, ok=False, error=str(ex))
                 errors.append(str(ex))
@@ -2102,8 +2471,47 @@ class Api(JobSettingsApi):
                     errors.append("Trello did not accept a pending comment")
             except Exception as ex:
                 errors.append(str(ex))
+        # Job Log edits/deletes need an exact, coalescing command rather than
+        # an append-only activity. They run in this same quiet adapter cycle.
+        try:
+            import job_workflow
+            for operation in job_workflow.pending():
+                key = str(operation.get("operation_key") or "")
+                kind = str(operation.get("operation_type") or "")
+                if kind in ("contents.ensure_card", "division.ensure_card"):
+                    continue  # Separate scoped card provisioner, not a Job Log operation.
+                try:
+                    external_id = ""
+                    if kind == "comment.create":
+                        if not job_workflow.claim_delivery(key):
+                            continue
+                        posted = tc.post_comment(
+                            str(operation.get("card_id") or ""),
+                            str((operation.get("payload") or {}).get("text") or "")) or {}
+                        external_id = str(posted.get("id") or "") if isinstance(posted, dict) else ""
+                        if not external_id:
+                            raise RuntimeError("Trello did not create the pending Job Log comment")
+                    elif kind == "comment.update":
+                        if not tc.update_comment(
+                                str(operation.get("comment_id") or ""),
+                                str((operation.get("payload") or {}).get("text") or "")):
+                            raise RuntimeError("Trello did not update the pending Job Log comment")
+                    elif kind == "comment.delete":
+                        if not tc.delete_comment(str(operation.get("comment_id") or "")):
+                            raise RuntimeError("Trello did not delete the pending Job Log comment")
+                    else:
+                        raise RuntimeError(f"Unknown Job Log sync operation: {kind}")
+                    job_workflow.acknowledge(key, external_id=external_id)
+                    job_logs_done += 1
+                except Exception as ex:
+                    job_workflow.fail(key, str(ex))
+                    errors.append(str(ex))
+            if job_workflow.status().get('failed'):
+                errors.append('A Job Log comment delivery needs review. Check Trello before retrying; no automatic repost was attempted.')
+        except Exception as ex:
+            errors.append(str(ex))
         return {"ok": not errors, "cards": cards_done,
-                "comments": comments_done,
+                "comments": comments_done, "job_logs": job_logs_done,
                 "error": errors[0] if errors else ""}
 
     def background_trello_sync(self) -> dict:
@@ -2117,24 +2525,30 @@ class Api(JobSettingsApi):
             pushed = {"ok": True, "cards": 0, "comments": 0}
             pulled = {"ok": False, "boards": []}
             try:
+                self._sync_contents_interest()
                 pushed = self._push_pending_trello()
                 pulled = self.board_view(force_trello=True)
                 # A successful pull must not hide an outbound write failure.
                 # Linguar Hub remains usable, but the quiet indicator changes
                 # to attention until the queued write is acknowledged.
-                ok = bool(pulled.get("ok")) and bool(pushed.get("ok"))
+                ok = (bool(pulled.get("ok")) and bool(pushed.get("ok"))
+                      and pulled.get("trello_refresh_ok") is not False)
                 now = _dt.datetime.now(_dt.UTC).isoformat()
                 error = "" if ok else str(
-                    pushed.get("error") or pulled.get("error") or
+                    pushed.get("error") or pulled.get("sync_error") or pulled.get("error") or
                     "Trello background sync needs attention")
                 self._trello_sync_status = {
                     "state": "current" if ok else "attention",
+                    "mode": 'server_mirror' if pulled.get('source') == 'server_mirror' else pushed.get("mode", "shared"),
+                    "queue_reason": pushed.get("queue_reason", ""),
                     "last_success_at": now if ok else
                     self._trello_sync_status.get("last_success_at", ""),
                     "last_error": error,
                 }
                 detail = {
                     "ok": ok,
+                    "mode": self._trello_sync_status['mode'],
+                    "queue_reason": pushed.get("queue_reason", ""),
                     "pushed_cards": pushed.get("cards", 0),
                     "pushed_comments": pushed.get("comments", 0),
                     "push_warning": pushed.get("error", ""),
@@ -2163,13 +2577,23 @@ class Api(JobSettingsApi):
         return dict(self._trello_sync_status)
 
     def refresh_job_comments(self, card_id: str) -> dict:
+        import job_comment_cache
+        return job_comment_cache.refresh(card_id, lambda: self._load_job_comments(card_id))
+
+    def saved_job_comments(self, card_id: str) -> dict:
+        """No network: paint an exact card's saved conversation first."""
+        import job_comment_cache
+        return job_comment_cache.load(str(card_id or '').strip())
+
+    def _load_job_comments(self, card_id: str) -> dict:
         """Pull one open job's comments and return a section-sized update."""
         card_id = str(card_id or "").strip()
         if not card_id:
             return {"ok": True, "comments": []}
         import trello_client as tc
         try:
-            card = tc.get_card(card_id) or {}
+            import trello_mirror_reader
+            card = trello_mirror_reader.get_card(card_id) or {}
             me = tc.get_member_me() or {}
             imported = []
             direct = []
@@ -2206,6 +2630,25 @@ class Api(JobSettingsApi):
                 hub_user_id = str((supabase_client.current_user() or {}).get("id") or "")
             except Exception:
                 hub_user_id = ""
+            if card.get('_hub_source') == 'server_mirror' or card.get('_comments_complete'):
+                # The mirror contains a complete conversation, unlike the old
+                # latest-50 API. Keep only not-yet-published Hub additions.
+                for row in rows:
+                    if row.get('source') != 'linguar' or row.get('external_id'):
+                        continue
+                    metadata = row.get('metadata_json') or {}
+                    if isinstance(metadata, str):
+                        try:
+                            metadata = json.loads(metadata)
+                        except (ValueError, TypeError):
+                            metadata = {}
+                    direct.append({'id': row.get('activity_key') or '',
+                                   'text': row.get('body') or '',
+                                   'actor': row.get('actor_name') or 'OneLoss',
+                                   'at': row.get('happened_at') or '', 'source': 'linguar',
+                                   'can_manage': bool(hub_user_id and metadata.get('actor_id') == hub_user_id)})
+                return {'ok': True, 'comments': sorted(direct, key=lambda item: item.get('at') or '', reverse=True),
+                        'source': card.get('_hub_source') or 'trello', 'synced_at': card.get('_hub_saved_at')}
             comments = []
             # A Hub comment keeps its original activity key after Trello
             # acknowledges it. The subsequent Trello import has the same
@@ -2233,7 +2676,7 @@ class Api(JobSettingsApi):
                            str(row.get("activity_key") or "")),
                     "external_id": external_id,
                     "text": row.get("body") or "",
-                    "actor": row.get("actor_name") or "Linguar Hub",
+                    "actor": row.get("actor_name") or "OneLoss",
                     "at": row.get("happened_at") or "", "source": source,
                     "can_manage": bool(owner_id and (
                         owner_id == (str(me.get("id") or "") if source == "trello"
@@ -2300,7 +2743,7 @@ class Api(JobSettingsApi):
 def main(argv=None):
     api = Api()
     window = webview.create_window(
-        title="Pipeline — Linguar Hub",
+        title="Pipeline — OneLoss",
         url=INDEX_HTML,
         js_api=api,
         width=1280, height=820,

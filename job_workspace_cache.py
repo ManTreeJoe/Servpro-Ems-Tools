@@ -58,6 +58,9 @@ def save(card, division, client, payload, *, scope_id=None, expected_generation=
                 row = conn.execute('SELECT version FROM generations WHERE scope=?', (current_scope,)).fetchone()
                 if expected_generation != (row[0] if row else 0):
                     return  # An edit happened while this background read was running.
+            from job_log_projection import merge
+            payload = {**payload, 'crm': {**(payload.get('crm') or {}),
+                       **merge(conn, current_scope, card, division, payload.get('crm') or {})}}
             conn.execute('INSERT OR REPLACE INTO workspaces VALUES (?,?,?,?,?,?)',
                 (current_scope, card, (division or 'EMS').upper(), client.casefold(),
                  datetime.now(timezone.utc).isoformat(), json.dumps(payload)))
@@ -72,11 +75,18 @@ def load(card, division):
         return None  # Never reuse by a possibly ambiguous customer name.
     try:
         with connect() as conn:
+            current_scope = scope()
+            conn.execute('BEGIN IMMEDIATE')  # Adoption must not race an acknowledged log edit.
             row = conn.execute('SELECT payload,updated FROM workspaces '
                                'WHERE scope=? AND card=? AND division=?',
-                               (scope(), card, (division or 'EMS').upper())).fetchone()
+                               (current_scope, card, (division or 'EMS').upper())).fetchone()
+            if row:
+                from job_log_projection import restore
+                payload = json.loads(row[0])
+                payload['crm'] = {**(payload.get('crm') or {}),
+                    **restore(conn, current_scope, card, division, payload.get('crm') or {})}
         if row:
-            return {**json.loads(row[0]), 'cached': True, 'saved_at': row[1],
+            return {**payload, 'cached': True, 'saved_at': row[1],
                     'source': 'local_db', 'refresh_pending': True}
     except (OSError, sqlite3.Error, ValueError, TypeError):
         pass
@@ -86,6 +96,12 @@ def load(card, division):
 def invalidate(client='', card=''):
     try:
         with connect() as conn:
+            from job_comment_cache import _table
+            _table(conn)
+            if card:
+                conn.execute('DELETE FROM comment_snapshots WHERE scope=? AND card=?', (scope(),card))
+            else:
+                conn.execute('DELETE FROM comment_snapshots WHERE scope=?', (scope(),))
             conn.execute('INSERT INTO generations VALUES (?,1) ON CONFLICT(scope) DO UPDATE SET version=version+1', (scope(),))
             if not client and not card:
                 conn.execute('DELETE FROM workspaces WHERE scope=?', (scope(),))

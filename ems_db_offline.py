@@ -35,6 +35,7 @@ import json
 import os
 import threading
 import time
+from contextlib import contextmanager
 
 import paths as _paths
 import ems_db_sqlite
@@ -48,6 +49,13 @@ FALLBACK_ENABLED = True
 QUEUE_PATH = _paths.data("ems_db_queue.jsonl")
 
 _LOCK = threading.RLock()
+_FLUSH_LOCK = threading.Lock()
+_SCHEDULE_LOCK = threading.Lock()
+_worker = None
+_queue_retry_after = 0.0
+_queue_failures = 0
+_queue_error = ""
+_queue_guard_depth = threading.local()
 _last_error = ""
 _degraded = False
 _schema_fallbacks = set()
@@ -70,7 +78,7 @@ _WRITES = frozenset({
     "remove_child", "remove_link", "reset_db_path", "resolve_and_link",
     "set_child", "set_department", "set_link", "sync_from_trello",
     "set_master_job_state", "set_work_environment_state", "upsert_job",
-    "save_job_log_entry", "delete_job_log_entry",
+    "save_job_log_entry", "delete_job_log_entry", "delete_job_log_entries",
 })
 
 _READS = frozenset({
@@ -96,7 +104,7 @@ _READS = frozenset({
 # (reset_db_path, import_db). Offline, these raise rather than pretend.
 _NO_QUEUE = frozenset({
     "backfill_departments", "backfill_stage_entered_dates", "import_db",
-    "delete_job", "delete_job_log_entry", "lifecycle_purge_where", "merge_jobs", "prune_dead_folder_links",
+    "delete_job", "delete_job_log_entry", "delete_job_log_entries", "lifecycle_purge_where", "merge_jobs", "prune_dead_folder_links",
     "reset_db_path", "sync_from_trello",
 })
 
@@ -134,6 +142,56 @@ def _is_missing_feature_schema(name, ex):
 
 # ── replay queue ───────────────────────────────────────────────────────
 
+@contextmanager
+def _file_guard(suffix, blocking=True):
+    """Coordinate installed/dev processes sharing the same queue file."""
+    os.makedirs(os.path.dirname(QUEUE_PATH), exist_ok=True)
+    with open(QUEUE_PATH + suffix, "a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        acquired = False
+        try:
+            if os.name == "nt":
+                import msvcrt
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK, 1)
+                    acquired = True
+                except OSError:
+                    if blocking:
+                        raise
+            else:
+                import fcntl
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+                    acquired = True
+                except BlockingIOError:
+                    pass
+            yield acquired
+        finally:
+            if acquired:
+                handle.seek(0)
+                if os.name == "nt":
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+@contextmanager
+def _queue_guard():
+    with _LOCK:
+        if getattr(_queue_guard_depth, "active", False):
+            yield
+        else:
+            with _file_guard(".lock"):
+                _queue_guard_depth.active = True
+                try:
+                    yield
+                finally:
+                    _queue_guard_depth.active = False
+
 def _queue_append(fn, args, kwargs):
     """Record a call for replay. Returns False if it can't be serialized,
     which the caller must treat as a failure to queue rather than a
@@ -144,7 +202,7 @@ def _queue_append(fn, args, kwargs):
                             "fn": fn, "args": list(args), "kwargs": kwargs})
     except (TypeError, ValueError):
         return False
-    with _LOCK:
+    with _queue_guard():
         os.makedirs(os.path.dirname(QUEUE_PATH), exist_ok=True)
         with open(QUEUE_PATH, "a", encoding="utf-8") as f:
             f.write(entry + "\n")
@@ -153,9 +211,9 @@ def _queue_append(fn, args, kwargs):
 
 def queued() -> list:
     """Pending calls, oldest first."""
-    with _LOCK:
+    with _queue_guard():
         if not os.path.exists(QUEUE_PATH):
-            return []
+            return ems_db_sqlite._outbox_entries()
         out = []
         with open(QUEUE_PATH, encoding="utf-8") as f:
             for line in f:
@@ -166,11 +224,13 @@ def queued() -> list:
                     out.append(json.loads(line))
                 except ValueError:
                     continue      # a torn final line, not worth failing on
-        return out
+        return out + ems_db_sqlite._outbox_entries()
 
 
 def _write_queue(entries):
-    with _LOCK:
+    if any('_outbox_id' in entry for entry in entries):
+        raise RuntimeError('SQLite pending changes cannot be rewritten as a legacy JSON queue.')
+    with _queue_guard():
         if not entries:
             if os.path.exists(QUEUE_PATH):
                 os.remove(QUEUE_PATH)
@@ -191,35 +251,84 @@ def flush_queue() -> dict:
     landing before the `set_link` it was meant to undo leaves the shared
     database in a state the user never asked for.
     """
-    pending = queued()
-    if not pending:
-        return {"sent": 0, "pending": 0, "error": ""}
+    if not _FLUSH_LOCK.acquire(blocking=False):
+        return {"sent": 0, "pending": len(queued()), "error": "", "busy": True}
+    try:
+        with _file_guard(".replay.lock", blocking=False) as acquired:
+            if not acquired:
+                return {"sent": 0, "pending": len(queued()), "error": "", "busy": True}
+            return _flush_queue_batch()
+    finally:
+        _FLUSH_LOCK.release()
+
+
+def _flush_queue_batch():
+    global _queue_retry_after, _queue_failures, _queue_error
     sent, err = 0, ""
-    for i, entry in enumerate(pending):
-        fn = getattr(ems_db_supabase, entry.get("fn", ""), None)
-        if fn is None:
-            # The function was renamed or removed since it was queued.
-            # Dropping it silently would lose a write, so stop and report.
-            err = f"unknown queued call {entry.get('fn')!r}"
-            pending = pending[i:]
-            break
-        try:
-            fn(*entry.get("args", []), **entry.get("kwargs", {}))
-            sent += 1
-        except Exception as ex:
-            err = f"{type(ex).__name__}: {ex}"
-            pending = pending[i:]
-            break
-    else:
-        pending = []
-    _write_queue(pending)
-    return {"sent": sent, "pending": len(pending), "error": err}
+    try:
+        # Bound this pass to the starting batch. New edits remain for the next
+        # pass, and every acknowledged entry is checkpointed immediately.
+        for entry in queued():
+            try:
+                if entry.get('_scope') and entry['_scope'] != _outbox_scope():
+                    raise RuntimeError('Pending change belongs to another account or franchise. Switch back to sync it.')
+                fn = getattr(ems_db_supabase, entry.get("fn", ""), None)
+                if fn is None:
+                    raise RuntimeError(f"unknown queued call {entry.get('fn')!r}")
+                fn(*entry.get("args", []), **entry.get("kwargs", {}))
+                with _queue_guard():
+                    current = queued()
+                    if not current or current[0] != entry:
+                        raise RuntimeError("Queue changed during replay; retained pending changes")
+                    if '_outbox_id' in entry:
+                        ems_db_sqlite._outbox_ack(entry['_outbox_id'])
+                    else:
+                        _write_queue([row for row in current[1:] if '_outbox_id' not in row])
+                sent += 1
+            except Exception as ex:
+                err = f"{type(ex).__name__}: {ex}"
+                if _is_unreachable(ex):
+                    _mark(True, str(ex))
+                elif getattr(ex, 'status', None) in (400, 401, 403, 404, 409, 422):
+                    # A permission/validation response proves reachability.
+                    # Keep the failed write, but do not call this an outage.
+                    _mark(False)
+                break
+        _queue_error = err
+        if err:
+            delay = _RETRY_DELAYS_S[min(_queue_failures, len(_RETRY_DELAYS_S) - 1)]
+            _queue_failures += 1
+            _queue_retry_after = time.monotonic() + delay
+        else:
+            _queue_failures = 0
+            _queue_retry_after = 0.0
+            if sent:
+                _mark(False)
+        return {"sent": sent, "pending": len(queued()), "error": err}
+    except Exception as ex:
+        _queue_error = f"{type(ex).__name__}: {ex}"
+        _queue_retry_after = time.monotonic() + 30
+        raise
+
+
+def request_queue_sync():
+    """Schedule one paced replay without blocking a card or health refresh."""
+    global _worker
+    if not FALLBACK_ENABLED:
+        return
+    with _SCHEDULE_LOCK:
+        if _worker is not None and _worker.is_alive():
+            return
+        if time.monotonic() < max(_queue_retry_after, _retry_after) or not queued():
+            return
+        _worker = threading.Thread(target=flush_queue, name="hub-queue-sync", daemon=True)
+        _worker.start()
 
 
 def status() -> dict:
     """For Settings: are we degraded, and how much is waiting?"""
     return {"degraded": _degraded, "queued": len(queued()),
-            "last_error": _last_error, "queue_path": QUEUE_PATH,
+            "last_error": _queue_error or _last_error, "queue_path": QUEUE_PATH,
             "schema_fallbacks": sorted(_schema_fallbacks)}
 
 
@@ -249,6 +358,18 @@ def _mark(degraded, error=""):
 
 
 def _call(name, *args, **kwargs):
+    if name == 'save_job_log_entry':
+        entry = args[1] if len(args) > 1 else kwargs.get('entry')
+        if isinstance(entry, dict) and not entry.get('entry_id') and not entry.get('source_id'):
+            # Reserve identity BEFORE the first network attempt. The server
+            # may commit and lose its response; fallback and replay must
+            # address that same entry, including a subsequent local delete.
+            import uuid
+            entry = {**entry, 'entry_id': str(uuid.uuid4())}
+            if len(args) > 1:
+                args = (args[0], entry, *args[2:])
+            else:
+                kwargs = {**kwargs, 'entry': entry}
     remote = getattr(ems_db_supabase, name)
     if (FALLBACK_ENABLED and _degraded
             and time.monotonic() < _retry_after):
@@ -265,14 +386,11 @@ def _call(name, *args, **kwargs):
         _mark(True, str(ex))
         return _fallback(name, ex, *args, **kwargs)
 
-    # Reaching the server clears the degraded flag and is the natural
-    # moment to drain anything queued while it was down.
+    # Also recover a queue left by a previous process or a partial failed
+    # replay. Do not make the current card wait for all queued writes.
     if _degraded:
         _mark(False)
-        try:
-            flush_queue()
-        except Exception:
-            pass
+    request_queue_sync()
     return out
 
 
@@ -285,13 +403,18 @@ def _fallback(name, ex, *args, **kwargs):
     local = getattr(ems_db_sqlite, name)
     if name not in _WRITES:
         return local(*args, **kwargs)
-    if not _queue_append(name, args, kwargs):
-        raise OfflineRefused(
-            f"'{name}' could not be saved for replay (its arguments are not "
-            f"JSON-serializable), so it was not applied locally either — "
-            f"applying it would put this machine out of step with the "
-            f"shared database with no way to catch up.")
-    return local(*args, **kwargs)
+    entry = {'at': time.strftime('%Y-%m-%dT%H:%M:%S'), 'fn': name,
+             'args': list(args), 'kwargs': kwargs, '_scope': _outbox_scope()}
+    try:
+        with _queue_guard():
+            return ems_db_sqlite._with_outbox(entry, lambda: local(*args, **kwargs))
+    except (TypeError, ValueError) as error:
+        raise OfflineRefused(f"'{name}' could not be saved for replay; no local change was committed: {error}") from error
+
+
+def _outbox_scope():
+    import job_workspace_cache
+    return job_workspace_cache.scope()
 
 
 _WRAPPED = {}

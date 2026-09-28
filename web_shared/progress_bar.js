@@ -44,7 +44,7 @@
       "background:var(--accent,#4A9EFF);transition:width .18s ease;}",
       ".ems-prog.err > i{background:var(--red,#F85149);}",
       ".ems-prog.ind > i{width:35%;animation:emsProgSlide 1.1s ease-in-out infinite;}",
-      "@keyframes emsProgSlide{0%{margin-left:-35%;}100%{margin-left:100%;}}",
+      "@keyframes emsProgSlide{0%{transform:translateX(-100%);}100%{transform:translateX(286%);}}",
       // A bar that never stops moving is a distraction on a machine
       // that's already struggling; hold it still and let the width do
       // the talking.

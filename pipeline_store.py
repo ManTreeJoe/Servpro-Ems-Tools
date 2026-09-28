@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import threading
+import time
 import uuid
 
 import supabase_client as _sb
@@ -21,6 +22,8 @@ _TABLES = ("crm_pipeline_boards", "crm_pipeline_lanes",
            "crm_pipeline_cards", "crm_pipeline_activity")
 _BOARD_CACHE_PATH = _paths.data("pipeline_boards_cache.json")
 _BOARD_CACHE_LOCK = threading.RLock()
+_MISSING_TABLES = {}
+_MISSING_TABLE_LOCK = threading.Lock()
 
 
 def _now():
@@ -28,7 +31,17 @@ def _now():
 
 
 def _rows(table, **params):
-    out = _sb.rest("GET", table, params=params)
+    key = (_cache_scope(), table) if table in _TABLES else None
+    with _MISSING_TABLE_LOCK:
+        if key and _MISSING_TABLES.get(key, 0) > time.monotonic():
+            raise RuntimeError('PGRST205: optional table is not installed (cached)')
+    try:
+        out = _sb.rest("GET", table, params=params)
+    except Exception as ex:
+        if key and _missing_schema(ex):
+            with _MISSING_TABLE_LOCK:
+                _MISSING_TABLES[key] = time.monotonic() + 300
+        raise
     return out if isinstance(out, list) else []
 
 
@@ -59,7 +72,11 @@ def _job_identity_index() -> dict:
     """
     try:
         from ems_db_sqlite import canon_key
-        jobs = _rows("jobs", select="job_id,canon_key,client_id,claim_id")
+        # v9 jobs do not have client_id/claim_id. Selecting those names makes
+        # PostgREST reject the entire lookup, losing even valid job identities.
+        # Read the installed row shape; resolve_card_identity treats the newer
+        # relationship fields as optional and retains them when available.
+        jobs = _rows("jobs", select="*")
         aliases = _rows("job_aliases", select="alias_canon,canon_key")
     except Exception:
         return {"canon": lambda value: str(value or "").strip().lower(),
@@ -189,8 +206,11 @@ def mirror_boards(payload: dict) -> dict:
     now = _now()
     counts = {"boards": 0, "lanes": 0, "cards": 0,
               "linked": 0, "conflicts": 0, "unlinked": 0}
-    identity_index = _job_identity_index()
     try:
+        # Confirm optional Pipeline support before newer jobs-column reads
+        # or writes. A cached missing-table error avoids repeated requests.
+        _rows("crm_pipeline_boards", select="board_key", limit="1")
+        identity_index = _job_identity_index()
         for board_pos, board in enumerate(boards):
             key = str(board.get("key") or "").strip()
             if not key or board.get("missing"):
@@ -328,10 +348,10 @@ def load_boards(board_specs) -> dict:
 
 def _cache_scope() -> str:
     try:
-        import config
-        return (config.active_department() or "default").strip().upper()
+        import job_workspace_cache
+        return job_workspace_cache.scope()
     except Exception:
-        return "DEFAULT"
+        return "UNAVAILABLE"
 
 
 def shared_scope_safe() -> bool:
@@ -364,6 +384,11 @@ def save_board_cache(payload: dict) -> None:
                 saved = json.load(handle)
         except (OSError, ValueError):
             pass
+        previous = (saved.get(_cache_scope()) or {}).get('payload') or {}
+        if payload.get('placement_snapshot') is not None or previous.get('placement_snapshot') is not None:
+            import card_placements
+            payload = card_placements.overlay(payload, card_placements.merge_snapshots(
+                payload.get('placement_snapshot'), previous.get('placement_snapshot')))
         saved[_cache_scope()] = {
             "saved_at": _now(),
             "payload": {**payload, "source": "saved"},
@@ -444,11 +469,16 @@ def pending_trello_changes(*, limit: int = 100) -> dict:
     unsent comments in one interface.  Supabase remains optional: an older
     installation simply returns an empty queue and keeps legacy behavior.
     """
+    if not shared_scope_safe():
+        return {"ok": True, "cards": [], "comments": [], "mode": "direct",
+                "queue_reason": "workspace_unscoped"}
+    cards_read = False
     try:
         cards = _rows("crm_pipeline_cards", sync_status="eq.pending",
                       select=("card_key,external_id,lane_key,checklist_json,"
                               "updated_at"), order="updated_at.asc",
                       limit=str(max(1, min(int(limit or 100), 500))))
+        cards_read = True
         lane_keys = {str(card.get("lane_key") or "") for card in cards}
         lanes = _rows("crm_pipeline_lanes", select="lane_key,external_id")
         lane_ids = {str(row.get("lane_key") or ""):
@@ -479,6 +509,24 @@ def pending_trello_changes(*, limit: int = 100) -> dict:
         return {"ok": True, "cards": shaped_cards,
                 "comments": shaped_comments}
     except Exception as ex:
+        # A wholly uninstalled optional queue is the existing direct-Trello
+        # deployment, not a failed queued write. A partial schema or auth /
+        # network failure must still surface: there may be unsent changes.
+        if not cards_read and _missing_schema(ex):
+            for table in _TABLES:
+                if table == "crm_pipeline_cards":
+                    continue
+                try:
+                    _rows(table, select="*", limit="0")
+                except Exception as probe_error:
+                    if _missing_schema(probe_error):
+                        continue
+                    return {"ok": False, "cards": [], "comments": [],
+                            "error": str(probe_error)}
+                break
+            else:
+                return {"ok": True, "cards": [], "comments": [],
+                        "mode": "direct", "queue_reason": "schema_missing"}
         return {"ok": False, "cards": [], "comments": [],
                 "error": str(ex), "schema_missing": _missing_schema(ex)}
 

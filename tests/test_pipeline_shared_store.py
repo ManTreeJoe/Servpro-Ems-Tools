@@ -9,6 +9,13 @@ import pytest
 def isolated_pipeline_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline_store, "_BOARD_CACHE_PATH",
                         str(tmp_path / "pipeline_boards_cache.json"))
+    monkeypatch.setattr(pipeline_web.card_placements, 'snapshot', lambda: {'boards': [], 'placements': []})
+    monkeypatch.setattr(pipeline_web.card_placements, 'start_sync', lambda **kw: None)
+    # Full-history hydration is now a separate provider call. Keep these
+    # workspace identity tests on their explicitly stubbed card's comments.
+    import trello_client
+    monkeypatch.setattr(trello_client, 'get_all_comments', lambda cid: [
+        a for a in (trello_client.get_card(cid) or {}).get('actions', []) if a.get('type') == 'commentCard'])
 
 
 def _payload():
@@ -206,7 +213,7 @@ def test_pipeline_reads_shared_before_trello(monkeypatch):
                         lambda specs: shared)
     monkeypatch.setattr(pipeline_web, "_trello_board_payload",
                         lambda: (_ for _ in ()).throw(AssertionError("Trello should not load")))
-    assert pipeline_web.Api().board_view() is shared
+    assert pipeline_web.Api().board_view()['boards'] == shared['boards']
 
 
 def test_saved_pipeline_projection_gives_instant_cold_paint():
@@ -227,7 +234,8 @@ def test_manual_refresh_reimports_trello(monkeypatch):
     result = pipeline_web.Api().board_view(True)
     assert result["source"] == "trello"
     assert result["mirrored"] is True
-    assert mirrored == [live]
+    assert mirrored == [result]
+    assert result['boards'][0]['lanes'][0]['cards'] == live['boards'][0]['lanes'][0]['cards']
 
 
 def test_document_workspace_indexes_x_folder_files_without_file_contents(tmp_path, monkeypatch):
@@ -288,9 +296,9 @@ def test_pipeline_card_is_the_full_job_workspace():
     assert ".job-card-activity" in css
     for marker in ("edit_job_comment", "delete_job_comment"):
         assert marker in py
-    for marker in ("data-comment-edit", "data-comment-delete",
-                   "This permanently deletes the comment from Trello and Linguar Hub"):
-        assert marker in js
+        for marker in ("data-comment-edit", "data-comment-delete",
+                       "This permanently deletes the comment from Trello and OneLoss"):
+            assert marker in js
 
 
 def test_pipeline_opens_card_before_slow_workspace_lookup():
@@ -298,9 +306,9 @@ def test_pipeline_opens_card_before_slow_workspace_lookup():
     js = (root / "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
     handler = js[js.index("async function onAuditCard"):js.index("async function onFlagCard")]
     assert handler.index("instantWorkspaceData") < handler.index(
-        "await pywebview.api.job_card_workspace_fast")
+        "pywebview.api.job_card_workspace_fast")
     assert handler.index("openAuditModal(instant") < handler.index(
-        "await pywebview.api.job_card_workspace_fast")
+        "pywebview.api.job_card_workspace_fast")
     for marker in ("data-card-summary", "element.isConnected",
                    "Basic card opened"):
         assert marker in js
@@ -316,7 +324,7 @@ def test_pipeline_workspace_progressively_loads_shared_then_live_data():
         assert marker in py
     handler = js[js.index("async function onAuditCard"):js.index(
         "function openAuditLoadingModal")]
-    assert handler.index("await pywebview.api.job_card_workspace_fast") < handler.index(
+    assert handler.index("pywebview.api.job_card_workspace_fast") < handler.index(
         "const fullPromise = Promise.resolve(pywebview.api.job_card_workspace")
     assert handler.index("const fullPromise = Promise.resolve(pywebview.api.job_card_workspace") < handler.index(
         "await fullPromise")
@@ -585,57 +593,71 @@ def test_pcm_workspace_does_not_replace_clicked_card_with_another_pcm_pin(monkey
         "comment from kellogg-card"]
 
 
-def test_full_workspace_uses_job_info_from_the_exact_opened_trello_card(monkeypatch):
-    """A card can contain complete job info before the shared job row is hydrated.
-
-    The full workspace must show those fields from the exact card the user opened,
-    rather than rendering an empty Job info section just because the local/shared
-    projection is still blank.
-    """
+def test_two_placements_share_job_facts_but_keep_card_activity_separate(monkeypatch):
     api = pipeline_web.Api()
     monkeypatch.setattr(api, "audit_card", lambda _client: {
-        "ok": True, "path": "", "trello_card_id": "opened-card",
+        "ok": True, "path": "", "trello_card_id": "wip-card",
         "form_issues": [], "photo_issues": [], "requirements": [],
         "activity": [],
     })
+    monkeypatch.setattr(api, "_old_ems_jobs", lambda *_a: [])
 
     class AuditStub:
         def crm_job_workspace(self, *_a):
-            return {"ok": True, "job_log": [], "division_trello_cards": []}
+            return {"ok": True, "job_log": [
+                {"entry_id": "wip-log", "work_date": "2026-09-20",
+                 "work_type": "Monitor", "placement_card_id": "wip-card"},
+                {"entry_id": "est-log", "work_date": "2026-09-21",
+                 "work_type": "Estimate", "placement_card_id": "estimating-card"},
+            ], "division_trello_cards": [
+                {"division": "EMS", "card_id": "wip-card", "pinned": True},
+            ], "division_trello_placements": [
+                {"division": "EMS", "card_id": "wip-card", "purpose": "wip"},
+                {"division": "EMS", "card_id": "estimating-card", "purpose": "estimating"},
+            ]}
 
         def crm_division_trello_cards(self, *_a):
-            return {"ok": True, "cards": []}
+            return {"ok": True, "cards": [
+                {"division": "EMS", "card_id": "wip-card", "pinned": True},
+            ]}
 
     monkeypatch.setattr(api, "_audit_api", lambda: AuditStub())
-    monkeypatch.setattr(pipeline_web.pipeline_store, "list_checklists", lambda _cid: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store, "list_checklists", lambda cid: [
+        {"id": f"check-{cid}", "name": f"Checklist {cid}", "items": []}])
     monkeypatch.setattr(pipeline_web.pipeline_store, "list_activity", lambda _cid: [])
     monkeypatch.setattr(pipeline_web.pipeline_store, "add_activities", lambda *_a, **_k: {})
     monkeypatch.setattr("trello_client.get_member_me", lambda: {})
-    monkeypatch.setattr("trello_client.get_card", lambda _cid: {
-        "desc": """**CUSTOMER INFORMATION**
-Customer Name: Present On Card
-Phone Number: 555-0101
-
-**INSURANCE INFORMATION**
-Insurance Company: Mercury
-Claim Number: CLAIM-42
+    monkeypatch.setattr("trello_mirror_reader.get_card", lambda cid: {
+        "desc": f"""**CUSTOMER INFORMATION**
+Customer Name: WRONG {cid}
+Phone Number: 555-WRONG
 """,
         "checklists": [], "attachments": [], "members": [], "actions": [],
     })
-    monkeypatch.setattr("ems_db.find_job_by_name", lambda _name: {})
-
-    result = api.job_card_workspace(
-        "Present On Card - Mercury", "opened-card", "EMS")
-    fields = {
-        field["id"]: field["value"]
-        for section in result["info_sections"]
-        for field in section["fields"]
+    shared_job = {
+        "canon_key": "shared customer", "phone": "555-0101",
+        "carrier": "Mercury", "claim_number": "CLAIM-42",
+        "metadata_json": '{"settings":{"customer_name":"Shared Customer"}}',
     }
+    monkeypatch.setattr("job_saved_data.resolve", lambda *_a: (shared_job, "EMS"))
+    monkeypatch.setattr("job_saved_data.destination", lambda *_a: "")
 
-    assert fields["customer_name"] == "Present On Card"
-    assert fields["phone"] == "555-0101"
-    assert fields["carrier"] == "Mercury"
-    assert fields["claim_number"] == "CLAIM-42"
+    wip = api.job_card_workspace("Shared Customer", "wip-card", "EMS")
+    estimating = api.job_card_workspace(
+        "Shared Customer", "estimating-card", "EMS")
+
+    def fields(result):
+        return {field["id"]: field["value"]
+                for section in result["info_sections"]
+                for field in section["fields"]}
+
+    assert fields(wip) == fields(estimating)
+    assert fields(wip)["customer_name"] == "Shared Customer"
+    assert fields(wip)["phone"] == "555-0101"
+    assert [row["entry_id"] for row in wip["crm"]["job_log"]] == ["wip-log"]
+    assert [row["entry_id"] for row in estimating["crm"]["job_log"]] == ["est-log"]
+    assert wip["checklists"][0]["name"] == "Checklist wip-card"
+    assert estimating["checklists"][0]["name"] == "Checklist estimating-card"
 
 
 def test_board_payload_keeps_description_job_info_for_the_instant_card():

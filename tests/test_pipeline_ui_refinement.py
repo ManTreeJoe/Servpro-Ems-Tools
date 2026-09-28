@@ -26,7 +26,8 @@ def test_card_open_is_not_swallowed_by_horizontal_grab_scroll():
     assert 'draggable="false" data-no-drag' in js
     assert "ev.currentTarget.draggable = false" not in js
     assert "beginPointerCardDrag(cardEl, event)" in js
-    assert "event.clientY >= window.innerHeight - 175" in js
+    assert "const inHandZone = inJobShelfDropZone(event)" in js
+    assert "event.clientY >= rect.top && event.clientY <= rect.bottom" in js
     assert "openedOnPointerUp = true" in js
     assert "Open on pointerup" in js
 
@@ -107,6 +108,18 @@ def test_job_log_is_above_requirements_and_checklists():
         'class="aud-section checklist-section"')
 
 
+def test_requirements_always_show_paperwork_and_account_tool_access():
+    js = _asset("app.js")
+    assert 'class="aud-section paperwork-section"' in js
+    assert "Forms &amp; paperwork" in js
+    assert "Showing the standard list · file evidence not checked yet" in js
+    assert "DocuSketch is not assigned to your account" in js
+    assert "needsDocuSketch && !canUseDocuSketch" in js
+    tabs = (ROOT / "pipeline_web_assets" / "job_workspace_tabs.js").read_text(
+        encoding="utf-8")
+    assert ".paperwork-section,.progress-section,.checklist-section" in tabs
+
+
 def test_cross_tool_job_links_target_jobs_not_removed_audit_panel():
     root = ROOT
     apa = (root / "apa_web_assets" / "app.js").read_text(encoding="utf-8")
@@ -151,8 +164,19 @@ def test_pipeline_groups_trello_and_folder_actions_like_other_tools():
     assert ">Open card</button>" in actions
     assert ">Change pinned card</button>" in actions
     assert ">Open folder</button>" in actions
-    assert ">Choose exact folder</button>" in actions
-    assert ">Copy folder path</button>" in actions
+    assert ">Pin / repin folder</button>" in actions
+    assert ">Copy path</button>" in actions
+
+
+def test_folder_dropdown_uses_explicit_everyday_action_names():
+    """Pin/open/copy must remain obvious in the Folder dropdown."""
+    js = _asset("app.js")
+    start = js.index('aria-label="Job folder actions"')
+    end = js.index("</div></div>", start)
+    folder_menu = js[start:end]
+    assert ">Open folder</button>" in folder_menu
+    assert ">Pin / repin folder</button>" in folder_menu
+    assert ">Copy path</button>" in folder_menu
 
 
 def test_missing_links_disable_only_open_and_copy_not_the_tool_menu():
@@ -164,7 +188,7 @@ def test_missing_links_disable_only_open_and_copy_not_the_tool_menu():
     assert "disabled" not in actions[actions.rfind("<button", 0, trello_trigger):trello_trigger]
     assert "disabled" not in actions[actions.rfind("<button", 0, folder_trigger):folder_trigger]
     assert '<button data-repin-trello>Change pinned card</button>' in actions
-    assert '<button data-repin-job-folder>Choose exact folder</button>' in actions
+    assert '<button data-repin-job-folder>Pin / repin folder</button>' in actions
 
 
 def test_job_card_keeps_comment_search_visible_and_filters_loaded_comments():
@@ -226,15 +250,15 @@ def test_tool_menus_stay_inside_card_and_job_info_is_click_to_copy():
     assert 'closest(".tool-quick-menu")' in js
 
 
-def test_tool_menus_open_explicitly_and_do_not_latch_for_mouse_users():
+def test_tool_menus_open_explicitly_until_action_outside_click_or_escape():
     css = _asset("app.css")
     js = _asset("app.js")
     assert ".tool-quick-menu.is-open>.tool-menu-panel" in css
     assert ".tool-quick-menu:hover>.tool-menu-panel" not in css
     assert ".tool-quick-menu:focus-within>.tool-menu-panel" not in css
     assert 'trigger?.addEventListener("click"' in js
-    assert 'menu.addEventListener("pointerleave"' in js
-    assert 'event.pointerType !== "touch"' in js
+    assert 'menu.addEventListener("pointerleave"' not in js
+    assert 'const openMenus = w.querySelectorAll(".tool-quick-menu.is-open")' in js
     assert 'setOpen(false)' in js
 
 
@@ -339,8 +363,24 @@ def test_job_workspace_visibly_separates_work_from_connected_tools():
     assert 'class="quick-primary-actions" aria-label="Work actions"' in header
     assert 'class="quick-destination-actions" aria-label="Connected tools"' in header
     assert header.index("data-add-job-log") < header.index("quick-destination-actions")
-    assert header.index("data-xa-note") < header.index("quick-destination-actions")
     assert header.index("data-initial-notes") < header.index("quick-destination-actions")
+    xa_start = header.index('alt="">XA <small>')
+    xa_end = header.index('</div></div>', xa_start)
+    assert "data-xa-note" in header[xa_start:xa_end]
+
+
+def test_work_on_job_uses_the_short_office_stage_list():
+    js = _asset("app.js")
+    start = js.index("const workTypeStagesFor")
+    end = js.index("const pinnedDivisionCards", start)
+    stages = js[start:end]
+    for value in ("scheduled", "active", "ready_for_billing", "on_hold",
+                  "closeout"):
+        assert value in stages
+    assert 'name === "EMS" ? [] : [["interested", "Interested"]]' in stages
+    for removed in ('["planned",', '["waiting",', '["billing",',
+                    '["closed",'):
+        assert removed not in stages
 
 
 def test_apa_vertical_wheel_stays_in_the_column():

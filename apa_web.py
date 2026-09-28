@@ -2009,7 +2009,7 @@ class Api:
 def main(argv=None):
     api = Api()
     window = webview.create_window(
-        title="APA Monitor — Linguar Hub",
+        title="APA Monitor — OneLoss",
         url=INDEX_HTML,
         js_api=api,
         width=1480, height=860,

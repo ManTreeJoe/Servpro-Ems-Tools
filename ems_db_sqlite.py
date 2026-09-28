@@ -1,9 +1,9 @@
 """Shared local job index — `ems_jobs.db`.
 
-A SQLite cache that every tool reads from and writes to. Trello is the
-source of truth; this DB is just an indexed projection of Trello +
-folder pins + run-doc-derived state, so every tool sees one consistent
-view of every job regardless of which surface first discovered it.
+The application-owned job database that every tool reads from and writes to.
+Trello is a synchronized external workflow surface, while folder pins and
+run-doc-derived facts enrich the same job record. This keeps every tool on one
+consistent view regardless of which surface first discovered the job.
 
 Schema (auto-created on first use):
 
@@ -74,7 +74,7 @@ from persistence import _canon_pin_key as _canon_pin_key_persistence
 # place when they need to back the suite up or migrate machines.
 DB_PATH = _paths.data("ems_jobs.db")
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 CRM_LIFECYCLE_STAGES = (
     "intake", "contacted", "scheduled", "active", "monitoring",
@@ -124,6 +124,56 @@ _TEXT_COLUMNS = (
 # race. The connection itself is opened per-call so threads each get
 # their own (sqlite3 module objects aren't safely shared across threads).
 _LOCK = threading.RLock()
+_ATOMIC_WRITE = threading.local()
+
+
+class _DeferredCommit:
+    """Nested backend calls share the outer transaction; only its owner commits."""
+    def __init__(self, connection):
+        self.connection = connection
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+    def commit(self):
+        pass
+
+
+def _with_outbox(entry, operation):
+    """Commit a local mutation and durable replay intent together."""
+    encoded = json.dumps(entry)  # Reject unreplayable input before changing data.
+    with _LOCK, _connect() as connection:
+        _outbox_table(connection)
+        connection.execute('BEGIN IMMEDIATE')
+        _ATOMIC_WRITE.connection = _DeferredCommit(connection)
+        try:
+            result = operation()
+            connection.execute('INSERT INTO offline_outbox(payload) VALUES (?)', (encoded,))
+            connection.commit()
+            return result
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            del _ATOMIC_WRITE.connection
+
+
+def _outbox_table(connection):
+    connection.execute('CREATE TABLE IF NOT EXISTS offline_outbox '
+                       '(sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)')
+
+
+def _outbox_entries():
+    with _LOCK, _connect() as connection:
+        _outbox_table(connection)
+        return [{**json.loads(row[1]), '_outbox_id': row[0]} for row in connection.execute(
+            'SELECT sequence,payload FROM offline_outbox ORDER BY sequence')]
+
+
+def _outbox_ack(sequence):
+    with _LOCK, _connect() as connection:
+        connection.execute('DELETE FROM offline_outbox WHERE sequence=?', (sequence,))
+        connection.commit()
 
 
 # ── Canonicalization ────────────────────────────────────────────────────
@@ -137,6 +187,10 @@ def _connect():
     """Yield a connection in the current thread. Foreign keys are
     enabled per-connection (SQLite default-off). WAL mode is set once
     at schema-init time so concurrent readers don't block writers."""
+    shared = getattr(_ATOMIC_WRITE, 'connection', None)
+    if shared is not None:
+        yield shared
+        return
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     conn.row_factory = sqlite3.Row
@@ -432,6 +486,7 @@ def _init_schema():
                 source              TEXT NOT NULL,
                 source_id           TEXT,
                 trello_comment_id   TEXT,
+                placement_card_id   TEXT,
                 created_at          TEXT NOT NULL,
                 updated_at          TEXT NOT NULL,
                 updated_by          TEXT,
@@ -458,6 +513,16 @@ def _init_schema():
             "CREATE INDEX IF NOT EXISTS idx_jobs_parent ON jobs(parent_canon)")
         c.execute(
             "CREATE INDEX IF NOT EXISTS idx_jobs_department ON jobs(department)")
+        try:
+            c.execute(
+                "ALTER TABLE crm_job_log_entries ADD COLUMN placement_card_id TEXT")
+        except sqlite3.OperationalError as ex:
+            if "duplicate column" not in str(ex).lower():
+                raise
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_crm_job_log_placement_date
+            ON crm_job_log_entries(placement_card_id, work_date, created_at)
+        """)
         c.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
                    ("schema_version", str(SCHEMA_VERSION)))
         c.commit()
@@ -1433,16 +1498,29 @@ _JOB_LOG_STATUSES = {"scheduled", "completed", "rescheduled", "cancelled",
                      "skipped", "needs_review"}
 
 
-def list_job_log_entries(canon_key_value: str) -> list:
+def _log_tombstones(conn):
+    conn.execute('CREATE TABLE IF NOT EXISTS crm_job_log_tombstones '
+                 '(entry_id TEXT PRIMARY KEY, job_id TEXT, payload TEXT NOT NULL)')
+
+
+def list_job_log_entries(canon_key_value: str, *, include_deleted=False) -> list:
     job = get_job(canon_key_value)
     if not job:
         return []
     with _LOCK, _connect() as c:
+        _log_tombstones(c)
         rows = c.execute("""
-            SELECT * FROM crm_job_log_entries WHERE job_id=?
+            SELECT * FROM crm_job_log_entries WHERE job_id=? AND entry_id NOT IN
+            (SELECT entry_id FROM crm_job_log_tombstones)
             ORDER BY work_date, created_at, entry_id
         """, (job["job_id"],)).fetchall()
-    return [dict(r) for r in rows]
+        tombstones = [json.loads(r[0]) for r in c.execute(
+            'SELECT payload FROM crm_job_log_tombstones WHERE job_id=?', (job['job_id'],))]
+    from job_log_records import visible_rows
+    visible = visible_rows([dict(r) for r in rows], tombstones)
+    if include_deleted:
+        visible.extend(tombstones)
+    return visible
 
 
 def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
@@ -1471,10 +1549,20 @@ def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
         "equipment": str(entry.get("equipment") or "").strip(),
         "source": source, "source_id": source_id,
         "trello_comment_id": str(entry.get("trello_comment_id") or "").strip(),
+        "placement_card_id": str(
+            entry.get("placement_card_id") or "").strip(),
         "updated_at": now,
         "updated_by": str(entry.get("updated_by") or "").strip(),
     }
     with _LOCK, _connect() as c:
+        _log_tombstones(c)
+        tombstones = c.execute('SELECT payload FROM crm_job_log_tombstones WHERE job_id=?',
+                               (job['job_id'],)).fetchall()
+        for tombstone in tombstones:
+            deleted = json.loads(tombstone['payload'])
+            if deleted['entry_id'] == entry_id or (source_id and
+                    deleted.get('source') == source and deleted.get('source_id') == source_id):
+                return deleted
         old = c.execute(
             "SELECT * FROM crm_job_log_entries WHERE entry_id=?",
             (entry_id,)).fetchone()
@@ -1488,19 +1576,23 @@ def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
                 values["entry_id"] = entry_id
         created = old["created_at"] if old else now
         values["created_at"] = created
+        if old is not None and not values["placement_card_id"]:
+            values["placement_card_id"] = str(
+                _row_get(old, "placement_card_id", "") or "").strip()
         c.execute("""
             INSERT INTO crm_job_log_entries
               (entry_id,job_id,work_date,work_type,status,technicians,note,
-               equipment,source,source_id,trello_comment_id,created_at,
+               equipment,source,source_id,trello_comment_id,placement_card_id,created_at,
                updated_at,updated_by)
             VALUES (:entry_id,:job_id,:work_date,:work_type,:status,
                     :technicians,:note,:equipment,:source,:source_id,
-                    :trello_comment_id,:created_at,:updated_at,:updated_by)
+                    :trello_comment_id,:placement_card_id,:created_at,:updated_at,:updated_by)
             ON CONFLICT(entry_id) DO UPDATE SET
               work_date=excluded.work_date, work_type=excluded.work_type,
               status=excluded.status, technicians=excluded.technicians,
               note=excluded.note, equipment=excluded.equipment,
               trello_comment_id=excluded.trello_comment_id,
+              placement_card_id=excluded.placement_card_id,
               updated_at=excluded.updated_at, updated_by=excluded.updated_by
         """, values)
         after = c.execute(
@@ -1528,17 +1620,42 @@ def job_log_history(entry_id: str) -> list:
     return [dict(r) for r in rows]
 
 
-def delete_job_log_entry(canon_key_value: str, entry_id: str) -> bool:
+def delete_job_log_entries(canon_key_value: str, entry_ids: list) -> bool:
+    ids = set(str(value) for value in entry_ids if value)
+    job = get_job(canon_key_value)
+    if not job or not ids:
+        return False
+    with _LOCK, _connect() as c:
+        for entry_id in ids:
+            if not c.execute('SELECT 1 FROM crm_job_log_entries WHERE job_id=? AND entry_id=?',
+                             (job['job_id'], entry_id)).fetchone():
+                return False
+        for entry_id in ids:
+            c.execute('DELETE FROM crm_job_log_revisions WHERE entry_id=?', (entry_id,))
+            c.execute('DELETE FROM crm_job_log_entries WHERE job_id=? AND entry_id=?',
+                      (job['job_id'], entry_id))
+        c.commit()
+    return True
+
+
+def delete_job_log_entry(canon_key_value: str, entry_id: str, *, preserve_source=False) -> bool:
     """Remove one editable CRM job-log entry from the requested job."""
     job = get_job(canon_key_value)
     if not job or not entry_id:
         return False
     with _LOCK, _connect() as c:
+        _log_tombstones(c)
         row = c.execute(
-            "SELECT entry_id FROM crm_job_log_entries WHERE entry_id=? AND job_id=?",
+            "SELECT * FROM crm_job_log_entries WHERE entry_id=? AND job_id=?",
             (entry_id, job["job_id"])).fetchone()
         if not row:
             return False
+        if preserve_source:
+            deleted = {**dict(row), 'deleted': True, 'updated_at': _now_iso()}
+            c.execute('INSERT OR IGNORE INTO crm_job_log_tombstones VALUES (?,?,?)',
+                      (entry_id, job['job_id'], json.dumps(deleted)))
+            c.commit()
+            return True
         c.execute("DELETE FROM crm_job_log_revisions WHERE entry_id=?", (entry_id,))
         c.execute("DELETE FROM crm_job_log_entries WHERE entry_id=? AND job_id=?",
                   (entry_id, job["job_id"]))

@@ -52,6 +52,8 @@ def _offline_state() -> dict:
     not in play (a pure-SQLite install is not 'degraded', it is local)."""
     try:
         import ems_db_offline
+        if _backend_name() != "sqlite":
+            ems_db_offline.request_queue_sync()
         return ems_db_offline.status() or {}
     except Exception:
         return {}
@@ -241,8 +243,10 @@ def state(force: bool = False) -> dict:
         problems.append({
             "code": "queue_pending",
             "title": f"{off['queued']} change(s) still waiting to send",
-            "detail": "The database is reachable again and these send "
-                      "automatically.",
+            "detail": ("Sending is paused after an error; pending changes are retained."
+                       if off.get("last_error") else
+                       "The database is reachable again and these send automatically."),
+            "last_error": off.get("last_error") or "",
             "action": "",
         })
 

@@ -195,7 +195,7 @@ def test_the_new_loss_parser_normalises_the_carrier():
 def test_the_card_name_uses_the_folded_carrier():
     f = nli.parse_assignment_email(
         "From: ACE - Servpro Assignment\nInsured Name: Jane Doe\n")
-    assert nli.suggest_card_name(f) == "Jane Doe - AAA"
+    assert nli.suggest_card_name(f) == "Doe, Jane - AAA"
 
 
 def test_an_unknown_carrier_is_left_alone():

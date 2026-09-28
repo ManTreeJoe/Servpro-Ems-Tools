@@ -25,6 +25,11 @@ def web_url(value):
 
 
 def destination(client, card_id, provider):
+    if provider == 'folder':
+        # A Windows job-folder path is machine-local configuration. It must
+        # remain usable even when the shared database is slow or offline.
+        import persistence
+        return str(persistence.get_folder_path(client) or '')
     import ems_db
     import job_settings
     from ems_db_common import division_link_type
@@ -43,9 +48,4 @@ def destination(client, card_id, provider):
         # A Contents card must never open the EMS assignment by accident.
         field = 'link_packout_xa' if division == 'CONTENTS' else 'link_xa'
         return web_url(values.get(field)) if division in ('EMS', 'CONTENTS') else ''
-    if provider == 'folder':
-        from ems_db_common import resolve_portable_folder_path
-        stored = ems_db.get_link(key, division_link_type(ems_db.LINK_FOLDER, division))
-        stored = stored or ems_db.get_link(key, ems_db.LINK_FOLDER)
-        return resolve_portable_folder_path(stored) if stored else ''
     return ''

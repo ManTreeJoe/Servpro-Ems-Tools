@@ -29,7 +29,7 @@ import webbrowser
 import config
 
 _SCOPE = "read,write,account"
-_APP_NAME = "Linguar Hub"
+_APP_NAME = "OneLoss"
 # People commonly have to choose an account, complete MFA, or ask which
 # workspace to allow.  Two minutes closed the loopback listener while the
 # Trello tab was still open, leaving a correct redirect at a dead localhost
@@ -43,7 +43,7 @@ _TIMEOUT_S = 600
 _DEFAULT_PORT = 8976
 
 _PAGE_HEAD = """<!doctype html><meta charset="utf-8">
-<title>Linguar Hub — Trello</title>
+<title>OneLoss — Trello</title>
 <style>
  body{font:15px/1.5 system-ui,Segoe UI,sans-serif;background:#12141a;color:#e6e8ee;
       display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
@@ -78,7 +78,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             if token:
                 self._send(_PAGE_HEAD + """<div class="card">
                   <div class="ok">✓</div><h1>Trello connected</h1>
-                  <p>You can close this tab and go back to Linguar Hub.</p>
+                  <p>You can close this tab and go back to OneLoss.</p>
                   </div>""")
             else:
                 self._send(_PAGE_HEAD + """<div class="card">
@@ -218,7 +218,7 @@ def authorize(*, timeout=_TIMEOUT_S, open_browser=True) -> dict:
             "manual_url": authorize_url(api_key),
             "error": (
                 f"The Trello sign-in listener ({allowed_origin()}) is in "
-                "use. Use the fallback tab that Linguar Hub opens next."
+                "use. Use the fallback tab that OneLoss opens next."
             ),
         }
     # localhost (not 127.0.0.1): Trello compares origins as strings, and

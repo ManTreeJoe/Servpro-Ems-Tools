@@ -38,8 +38,8 @@ window.JobWorkspaceTabs = (() => {
       // Link conflicts must remain visible on every tab.
       if (section.matches('.division-conflict-banner')) continue;
       const key = section.matches('.job-log-section') ? 'log'
-        : section.matches('.progress-section,.checklist-section') ? 'requirements'
-        : section.matches('.signatures-section,.job-attachments-section') ? 'files'
+        : section.matches('.paperwork-section,.progress-section,.checklist-section') ? 'requirements'
+        : section.matches('.job-files-section,.signatures-section,.job-attachments-section') ? 'files'
         : section.matches('.job-run-section') ? 'run' : 'overview';
       panels.get(key).append(section);
     }
@@ -47,6 +47,7 @@ window.JobWorkspaceTabs = (() => {
     // recreate the composer: it stays available, with its draft, on every tab.
     if (activity) activity.setAttribute('aria-label', 'Job comments');
     layout.classList.add('tabbed-job-layout');
+    root.querySelector('.audit-card')?.classList.add('full-height-comments');
     root.querySelector('.modal-body').before(nav);
     function select(key, focus = false) {
       if (!panels.has(key)) key = 'overview';
@@ -57,6 +58,8 @@ window.JobWorkspaceTabs = (() => {
         button.tabIndex = name === key ? 0 : -1;
       }
       remembered.set(identity, key);
+      if (key === 'files') root.querySelector('.job-files-section')?._jobFiles?.activate();
+      if (key === 'run') root.querySelector('.job-run-section')?._runActivity?.activate();
       if (focus) buttons.get(key).focus();
     }
     for (const [key, button] of buttons) {

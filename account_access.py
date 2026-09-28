@@ -7,6 +7,8 @@ ask for ``current_access()`` and never interpret identity or RPC failures.
 from __future__ import annotations
 
 OWNER_EMAIL = "nathan@servpro10100.com"
+KNOWN_CAPABILITIES = ("docusketch",)
+_LAST_ACCESS = None
 
 
 class SupabaseAccessAdapter:
@@ -29,6 +31,8 @@ def current_access(adapter=None) -> dict:
     Signed-in identity survives a temporary RPC/network failure.  The owner
     fallback is intentionally evaluated here—not independently by screens.
     """
+    global _LAST_ACCESS
+    supplied_adapter = adapter is not None
     adapter = adapter or SupabaseAccessAdapter()
     error = ""
     try:
@@ -50,7 +54,18 @@ def current_access(adapter=None) -> dict:
         key = str(value or "").strip().upper()
         if key and key not in departments:
             departments.append(key)
-    return {
+    raw_capabilities = raw.get("capabilities")
+    capabilities_configured = isinstance(raw_capabilities, (dict, list, tuple))
+    if isinstance(raw_capabilities, dict):
+        capabilities = {key: bool(raw_capabilities.get(key))
+                        for key in KNOWN_CAPABILITIES}
+    else:
+        enabled = {str(value or "").strip().lower()
+                   for value in (raw_capabilities or [])}
+        capabilities = {key: key in enabled for key in KNOWN_CAPABILITIES}
+    if owner or raw.get("is_admin"):
+        capabilities = {key: True for key in KNOWN_CAPABILITIES}
+    result = {
         "ok": True,
         "identity": user,
         "email": email,
@@ -59,5 +74,29 @@ def current_access(adapter=None) -> dict:
         "is_owner": owner,
         "is_admin": bool(owner or raw.get("is_admin")),
         "departments": departments,
+        "capabilities": capabilities,
+        "capabilities_configured": capabilities_configured,
         "error": error,
+    }
+    if not supplied_adapter:
+        _LAST_ACCESS = dict(result)
+    return result
+
+
+def cached_access() -> dict:
+    """Last normalized access result without database or network I/O.
+
+    Cold Job Workspace paint uses this and lets its background refresh call
+    :func:`current_access`. An absent snapshot is represented explicitly so
+    the UI never guesses that a regular employee has a restricted tool.
+    """
+    if _LAST_ACCESS:
+        return {**_LAST_ACCESS,
+                "capabilities": dict(_LAST_ACCESS.get("capabilities") or {})}
+    return {
+        "ok": True, "identity": {}, "email": "", "display_name": "",
+        "signed_in": False, "is_owner": False, "is_admin": False,
+        "departments": [],
+        "capabilities": {key: False for key in KNOWN_CAPABILITIES},
+        "capabilities_configured": False, "error": "",
     }

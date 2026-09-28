@@ -7,7 +7,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   const html=fs.readFileSync('run_doc_editor_web_assets/index.html','utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,'').replace(/<link\b[^>]*>/g,'');
   await page.setContent(html);
   await page.evaluate(()=>document.documentElement.dataset.theme='light');
-  for(const file of ['web_shared/theme.css','run_doc_editor_web_assets/app.css','run_doc_editor_web_assets/schedule_visits.css']) await page.addStyleTag({path:path.resolve(file)});
+  for(const file of ['web_shared/theme.css','run_doc_editor_web_assets/app.css','run_doc_editor_web_assets/schedule_visits.css','run_doc_editor_web_assets/schedule_workspace.css']) await page.addStyleTag({path:path.resolve(file)});
   for(const file of ['schedule_fields.js','visit_controls.js','app.js']) await page.addScriptTag({path:path.resolve('run_doc_editor_web_assets',file)});
   await page.evaluate(()=>{
    window.PanelState={set(){}};

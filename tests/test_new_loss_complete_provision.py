@@ -55,6 +55,43 @@ def test_new_loss_stops_before_creating_anything_without_companycam(monkeypatch)
     assert "CompanyCam" in result["error"]
 
 
+def test_new_loss_reports_failure_when_connected_users_project_is_not_created(
+        monkeypatch):
+    """A Trello/folder success must not hide Sam's CompanyCam write failure."""
+    import companycam_api as cc
+    import ems_db
+    import new_loss_intake as nli
+
+    monkeypatch.setattr(cc, "is_configured", lambda: True)
+    monkeypatch.setattr(cc, "require_personal_connection", lambda: None)
+    monkeypatch.setattr(nli, "create_new_loss", lambda *a, **k: {
+        "ok": True, "card_id": "card-1", "name": "Sam CC Test",
+        "url": "https://trello.example/card-1", "template": "Water",
+        "list": "New Loss",
+    })
+    monkeypatch.setattr(nli, "create_folder", lambda *a, **k: {
+        "ok": True, "path": r"X:\IE_Public\2026 Jobs\Sam CC Test",
+    })
+    monkeypatch.setattr(nli, "create_companycam_project", lambda *a, **k: {
+        "ok": False, "error": "CompanyCam rejected this connected user's create",
+    })
+    monkeypatch.setattr(nli, "publish_companycam_link", lambda *a, **k: {
+        "ok": False, "error": "Missing CompanyCam project ID",
+    })
+    monkeypatch.setattr(ems_db, "resolve_and_link", lambda *a, **k: {
+        "canon_key": "sam cc test",
+    })
+    monkeypatch.setattr(nli, "save_intake_facts", lambda linked, *_a: linked)
+
+    result = _api().create_new_loss({"insured_name": "Sam CC Test"})
+
+    assert result["ok"] is True
+    assert result["partial"] is True
+    assert result["provisioning"]["steps"]["trello"] is True
+    assert result["provisioning"]["steps"]["companycam"] is False
+    assert "CompanyCam rejected" in result["warning"]
+
+
 def test_new_loss_ui_does_not_offer_partial_provisioning():
     source = (audit_web.ASSETS_DIR + "\\app.js")
     with open(source, encoding="utf-8") as handle:
@@ -63,3 +100,10 @@ def test_new_loss_ui_does_not_offer_partial_provisioning():
     assert "nl-make-companycam" not in block
     assert "CompanyCam project" in block
     assert "true,                                   // make_companycam" in block
+
+
+def test_new_loss_ui_closes_partial_success_instead_of_inviting_duplicate_retry():
+    for source in ("audit_web_assets/app.js", "pipeline_web_assets/app.js"):
+        block = open(source, encoding="utf-8").read()
+        assert "result?.partial" in block or "res?.partial" in block
+        assert "Do not create it again" in block

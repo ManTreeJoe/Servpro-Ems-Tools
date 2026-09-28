@@ -57,6 +57,12 @@ class Api:
                                  "run documents."}
             model = editor.read_document(path)
             return {**base, **model, "exists": True, "editable": True}
+        except PermissionError:
+            return {"ok": False, "exists": True, "editable": False, "locked": True,
+                    "date_iso": day.isoformat(), "date_label": day.strftime("%A, %B %d, %Y"),
+                    "error": "The Run document was found, but Windows denied access. "
+                             "Close it in Word and check OneDrive has downloaded it, then reload. "
+                             "If this continues, check your folder permissions."}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
@@ -74,6 +80,26 @@ class Api:
             return {"ok": False, "locked": True,
                     "error": "Word or OneDrive is holding the document open. "
                              "Close the file in Word, then save again."}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def preview_schedule_import(self, day_offset: int = 0,
+                                expected_date: str = "", expected_workspace: str = "") -> dict:
+        """Prepare the selected office Run for review; do not activate/import it."""
+        import schedule_import
+        try:
+            day = self._day(day_offset)
+            workspace = config.active_department()
+            if ((expected_date and expected_date != day.isoformat()) or
+                    (expected_workspace and expected_workspace != workspace)):
+                return {"ok": False, "error": "The selected day or workspace changed. Reload the Schedule and try again."}
+            path = run_doc._find_run_doc_for_date(day)
+            if not path:
+                return {"ok": False, "error": "No run document was found for this day."}
+            result = schedule_import.preview(path, day=day, workspace=workspace)
+            if config.active_department() != workspace:
+                return {"ok": False, "error": "The workspace changed while reading the Run. Reopen the preview in the current workspace."}
+            return result
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 

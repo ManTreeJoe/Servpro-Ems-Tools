@@ -16,7 +16,7 @@
     // inert children.
     return !!el.closest(
       "button, a, input, textarea, select, [contenteditable], " +
-      "[draggable=\"true\"], .item, [data-no-drag]");
+      "[draggable=\"true\"], .item, .kcard, [data-no-drag]");
   }
 
   function attachDragScroll(el) {

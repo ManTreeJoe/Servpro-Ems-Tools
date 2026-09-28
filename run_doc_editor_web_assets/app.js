@@ -1,7 +1,8 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const state = { dayOffset: 0, model: null, dirty: false, saving: false, drag: null, undo: [], activeSection: "work", composing: null };
+const state = { dayOffset: 0, model: null, dirty: false, saving: false, drag: null, undo: [], activeSection: "work", composing: null,
+  view: 'daily', crew: '', query: '', showCompleted: false, loadRequest: 0, loading: false };
 const DATED_SECTIONS = new Set(["upcoming", "tbs_new_loss", "tbs_mitigation", "tbs_contents", "pending_testing", "pending_insurance", "pending_property", "on_hold", "marketing"]);
 
 async function printRun() {
@@ -19,9 +20,21 @@ window.addEventListener("pywebviewready", async () => {
   await PanelState.init("run_doc_editor");
   state.dayOffset = Number(PanelState.get("dayOffset", 0)) || 0;
   state.activeSection = PanelState.get("activeSection", "work") || "work";
+  window.ScheduleImportReview?.init({
+    context: () => ({offset: state.dayOffset, date: state.model?.date_iso,
+      workspace: state.model?.department, version: state.model?.version, dirty: state.dirty}),
+    read: current => pywebview.api.preview_schedule_import(current.offset, current.date, current.workspace),
+  });
   $("#day-prev").addEventListener("click", () => walkDay(-1));
   $("#day-today").addEventListener("click", () => walkDay(0));
   $("#day-next").addEventListener("click", () => walkDay(1));
+  $('#schedule-date').addEventListener('change', () => chooseDate($('#schedule-date').value));
+  $('#schedule-crew').addEventListener('change', event => { state.crew = event.target.value; renderRows(); });
+  $('#schedule-search').addEventListener('input', event => { state.query = event.target.value; renderRows(); });
+  $('#schedule-completed').addEventListener('change', event => { state.showCompleted = event.target.checked; renderRows(); });
+  document.querySelectorAll('[data-schedule-view]').forEach(button => button.addEventListener('click', () => {
+    state.view = button.dataset.scheduleView; renderRows();
+  }));
   $('#print-run').addEventListener('click', printRun);
   $("#open-word").addEventListener("click", async () => {
     if (state.dirty && !window.confirm("Open the last saved Run document? Save changes first to include your edits.")) return;
@@ -32,7 +45,7 @@ window.addEventListener("pywebviewready", async () => {
   $("#composer-close").addEventListener("click", closeComposer);
   $("#composer-cancel").addEventListener("click", closeComposer);
   $("#composer-apply").addEventListener("click", applyComposer);
-  $("#item-composer").addEventListener("click", (event) => { if (event.target.id === "item-composer") closeComposer(); });
+  // Keep drafts open when a mouse selection ends outside the dialog.
   document.querySelectorAll("#item-composer input").forEach((input) => input.addEventListener("input", renderComposerPreview));
   document.addEventListener("keydown", onKeyDown);
   window.addEventListener("beforeunload", (event) => {
@@ -86,24 +99,36 @@ function renderWeekStrip() {
     </button>`;
   }).join("");
   host.querySelectorAll("[data-date]").forEach(button => button.addEventListener("click", async () => {
-    if (!confirmDiscard()) return;
-    const current = new Date().toLocaleDateString("en-CA");
-    state.dayOffset = dayDifference(current, button.dataset.date);
-    PanelState.set({ dayOffset: state.dayOffset });
-    state.dirty = false; state.undo = [];
-    await loadDay();
+    await chooseDate(button.dataset.date);
   }));
 }
 
+async function chooseDate(date) {
+  if (!date || state.saving || !confirmDiscard()) {
+    $('#schedule-date').value = state.model?.date_iso || ''; return;
+  }
+  const difference = dayDifference(new Date().toLocaleDateString('en-CA'), date);
+  if (!Number.isFinite(difference)) return;
+  state.dayOffset = difference;
+  PanelState.set({dayOffset: state.dayOffset});
+  state.dirty = false; state.undo = []; state.crew = '';
+  await loadDay();
+}
+
 async function walkDay(delta) {
-  if (!confirmDiscard()) return;
+  if (state.saving || !confirmDiscard()) return;
   state.dayOffset = delta === 0 ? 0 : state.dayOffset + delta;
   PanelState.set({ dayOffset: state.dayOffset });
-  state.dirty = false; state.undo = [];
+  state.dirty = false; state.undo = []; state.crew = '';
   await loadDay();
 }
 
 async function loadDay() {
+  const request = ++state.loadRequest;
+  state.loading = true;
+  $('#print-run').disabled = true; $('#open-word').disabled = true;
+  $('#save-btn').disabled = true; $('#undo-btn').disabled = true;
+  $("#review-schedule-import").disabled = true;
   $("#day-title").textContent = "Loading schedule…";
   $("#run-board").classList.add("hidden");
   $("#empty").classList.add("hidden");
@@ -111,16 +136,24 @@ async function loadDay() {
   let result;
   try { result = await pywebview.api.load_day(state.dayOffset); }
   catch (error) { result = { ok: false, error: String(error) }; }
+  if (request !== state.loadRequest) return;
+  state.loading = false;
   state.model = result; state.dirty = false; state.saving = false; state.undo = [];
   $("#undo-btn").disabled = true; $("#save-btn").disabled = true;
   $("#department").textContent = result?.department || "Run document";
   $("#day-title").textContent = result?.date_label || "Run document";
   renderWeekStrip();
+  $('#schedule-date').value = result?.date_iso || '';
+  renderCrewFilter();
   $("#open-word").disabled = !result?.exists;
   $('#print-run').disabled = !result?.exists;
+  $("#review-schedule-import").disabled = !(result?.ok && result?.editable && result?.exists);
   if (!result?.ok || !result?.editable) {
+    $('#schedule-results').textContent = '';
+    ['scheduled-count','open-count','completed-count','crew-count'].forEach(id => $(`#${id}`).textContent = '—');
     const empty = $("#empty");
-    empty.innerHTML = `<h2>${result?.exists ? "This run format is not editable yet" : "No run document found"}</h2><p>${escapeHtml(result?.error || "Choose another day or verify the department’s run folder in Settings.")}</p>`;
+    const heading = result?.locked ? "Run document is unavailable" : !result?.ok ? "Could not load the run document" : result?.exists ? "This run format is not editable yet" : "No run document found";
+    empty.innerHTML = `<h2>${heading}</h2><p>${escapeHtml(result?.error || "Choose another day or verify the department’s run folder in Settings.")}</p>`;
     empty.classList.remove("hidden");
     $("#file-meta").textContent = result?.filename || "";
     setSaveState(result?.ok ? "clean" : "error", result?.ok ? "Nothing to edit" : "Load failed");
@@ -136,12 +169,20 @@ async function loadDay() {
 function renderRows() {
   if (!state.model?.sections) return;
   const priorScroll = $("#document-pages")?.scrollTop || 0;
-  const order = state.model.section_order || Object.keys(state.model.sections);
+  const fullOrder = state.model.section_order || Object.keys(state.model.sections);
+  const order = fullOrder.filter(section => state.view === 'all' || (state.view === 'waiting' ? DATED_SECTIONS.has(section) : !DATED_SECTIONS.has(section)));
   if (!order.includes(state.activeSection)) state.activeSection = order[0] || "work";
   const labels = state.model.section_labels || {};
   renderSummary();
+  renderCrewFilter();
+  document.querySelectorAll('[data-schedule-view]').forEach(button => {
+    const active = button.dataset.scheduleView === state.view;
+    button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
+  });
+  const shown = order.reduce((sum, section) => sum + visibleRows(section).length, 0);
+  $('#schedule-results').textContent = `${shown} ${state.view === 'waiting' ? 'waiting / upcoming' : 'visible'} item${shown === 1 ? '' : 's'}`;
   $("#section-rail").innerHTML = order.map((section, i) => {
-    const count = (state.model.sections[section] || []).length;
+    const count = visibleRows(section).length;
     return `<button class="section-nav ${section === state.activeSection ? "active" : ""}" data-section="${escapeHtml(section)}">
       <span class="section-index">${String(i + 1).padStart(2, "0")}</span>
       <span class="section-nav-label">${escapeHtml(labels[section] || section)}</span>
@@ -149,14 +190,15 @@ function renderRows() {
     </button>`;
   }).join("");
   $("#document-pages").innerHTML = order.map((section) => {
-    const rows = state.model.sections[section] || [];
+    const rows = visibleRows(section);
     const kicker = section === "work" ? "Scheduled work" : section === "monitor" ? "Watch list" : "Follow-up queue";
     return `<article class="document-section" id="${sectionDomId(section)}" data-doc-section="${escapeHtml(section)}">
       <header class="section-head"><div><span class="section-kicker">${escapeHtml(kicker)}</span><h2>${escapeHtml(labels[section] || section)}</h2></div><span class="section-count">${rows.length} row${rows.length === 1 ? "" : "s"}</span></header>
-      <div class="rows">${rows.map((row, index) => rowHtml(section, row, index)).join("")}</div>
-      <button class="add-row" data-add-row="${escapeHtml(section)}">＋ Add row to ${escapeHtml(labels[section] || section)}</button>
+      <div class="rows">${rows.map(({row, index}) => rowHtml(section, row, index)).join("")}</div>
+      ${!rows.length ? '<p class="schedule-empty">No matching work in this group. Check the crew, search or completed filter.</p>' : ''}
+      <button class="add-row" data-add-row="${escapeHtml(section)}">＋ Add work to ${escapeHtml(labels[section] || section)}</button>
     </article>`;
-  }).join("");
+  }).join("") || '<p class="schedule-empty">No groups of this type in this Run. Choose All Run items to see the available groups.</p>';
   document.querySelectorAll(".section-nav").forEach(button => button.addEventListener("click", () => {
     state.activeSection = button.dataset.section;
     PanelState.set({ activeSection: state.activeSection });
@@ -171,6 +213,21 @@ function renderRows() {
     if (scroller) scroller.scrollTop = priorScroll;
     setActiveToc(state.activeSection);
   });
+}
+function visibleRows(section) {
+  return (state.model.sections[section] || []).map((row, index) => ({row, index})).filter(({row}) =>
+    (state.showCompleted || !row.struck) &&
+    (!state.crew || scheduleMeta(row.text, section).crew.trim() === state.crew) &&
+    (!state.query.trim() || row.text.toLowerCase().includes(state.query.trim().toLowerCase())));
+}
+function renderCrewFilter() {
+  const crews = [...new Set(Object.entries(state.model?.sections || {}).flatMap(([section, rows]) =>
+    rows.map(row => scheduleMeta(row.text, section).crew.trim()).filter(Boolean)))].sort();
+  // Do not silently clear an active filter after editing its last matching row.
+  if (state.crew && !crews.includes(state.crew)) crews.push(state.crew);
+  $('#schedule-crew').innerHTML = '<option value="">All crews</option>' + crews.map(crew =>
+    `<option value="${escapeHtml(crew)}">${escapeHtml(crew)}</option>`).join('');
+  $('#schedule-crew').value = state.crew;
 }
 function sectionDomId(section) { return `run-section-${String(section).replace(/[^a-z0-9_-]/gi, "-")}`; }
 function setActiveToc(section) {
@@ -196,13 +253,13 @@ function rowHtml(section, row, index) {
     <button class="row-tab" draggable="true" title="Drag this row" aria-label="Drag row ${index + 1}"><span class="grip-lines" aria-hidden="true">☰</span><span>${index + 1}</span></button>
     <div class="row-main">
       <div class="row-schedule-meta">
-        <span class="row-time ${meta.time ? "" : "empty"}">${escapeHtml(meta.time || "No time")}</span>
-        ${meta.crew ? `<span class="row-crew">${escapeHtml(meta.crew)}</span>` : ""}
+        <span class="row-time ${meta.time ? "" : "empty"}">${escapeHtml(meta.time || (DATED_SECTIONS.has(section) ? 'Not scheduled' : 'Time not set'))}</span>
+        <span class="row-crew">${escapeHtml(meta.crew || 'Crew not assigned')}</span>
       </div>
       <button type="button" class="visit-summary" aria-label="Edit ${escapeHtml(meta.job || 'scheduled work')}">${visitSummary(meta)}</button>
       <details class="run-source"><summary>Edit Run line</summary><textarea class="row-text" rows="1" spellcheck="true" aria-label="${section} row ${index + 1}">${escapeHtml(row.text || "")}</textarea></details>
     </div>
-    <div class="row-tools"><button class="row-tool format" title="Format item" aria-label="Format item">▤</button><button class="row-tool done ${row.struck ? "active" : ""}" title="Mark complete" aria-label="Mark complete">✓</button><button class="row-tool delete" title="Remove row" aria-label="Remove row">×</button></div>
+    <div class="row-tools"><button class="row-tool format" title="Edit visit" aria-label="Format item">▤</button><button class="row-tool done ${row.struck ? "active" : ""}" title="${row.struck ? 'Reopen work' : 'Mark complete'}" aria-label="${row.struck ? 'Reopen work' : 'Mark complete'}">✓</button><button class="row-tool delete" title="Remove row" aria-label="Remove row">×</button></div>
   </div>`;
 }
 
@@ -232,6 +289,31 @@ function renderSummary() {
 function bindRows() {
   document.querySelectorAll(".run-row").forEach((element) => {
     const ref = () => ({ section: element.dataset.section, index: Number(element.dataset.index) });
+    const openMenu = (event) => {
+      const at = ref();
+      const row = state.model?.sections?.[at.section]?.[at.index];
+      if (!row) return;
+      // Existing Word rows use "Customer: address..."; structured rows use
+      // pipe-separated fields. Preserve a saved exact link when provided.
+      const client = String(row.client || ScheduleFields.parse(row.text, DATED_SECTIONS.has(at.section)).job.split(':')[0])
+        .replace(/^\s*\d+[.)]\s*/, '').trim();
+      window.showContextMenu(event, [{label: 'Open job', disabled: !client,
+        action: () => {
+          if (window.parent === window) {
+            showNotice('Open Schedule inside OneLoss to view the linked job.', 'error'); return;
+          }
+          window.parent.postMessage({type:'linguar-open-job', focus:client,
+            cardId:row.card_id || row.trello_card_id || '', division:row.division || ''}, '*');
+        }}]);
+    };
+    element.addEventListener('contextmenu', openMenu);
+    element.addEventListener('keydown', event => {
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+        event.preventDefault();
+        const bounds = element.getBoundingClientRect();
+        openMenu({preventDefault(){}, stopPropagation(){}, clientX:bounds.left + 20, clientY:bounds.top + 20});
+      }
+    });
     const textarea = element.querySelector(".row-text");
     autoHeight(textarea);
     textarea.addEventListener("keydown", (event) => {
@@ -360,7 +442,7 @@ function removeRow(ref) {
 }
 
 async function save() {
-  if (!state.model?.editable || !state.dirty || state.saving) return;
+  if (!state.model?.editable || !state.dirty || state.saving || state.loading) return;
   state.saving = true; $("#save-btn").disabled = true;
   setSaveState("saving", "Saving…");
   $("#status-msg").textContent = "Backing up and validating Word document…";

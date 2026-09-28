@@ -61,7 +61,7 @@ def test_regular_user_is_not_asked_for_companycam_api_token(monkeypatch):
 def test_companycam_write_header_uses_signed_in_email():
     headers = user_connections.companycam_actor_headers(
         "POST", access=_access(email="SAM@SERVPRO.TEST"))
-    assert headers == {"X_COMPANYCAM_USER": "sam@servpro.test"}
+    assert headers == {"X-CompanyCam-User": "sam@servpro.test"}
     assert user_connections.companycam_actor_headers(
         "GET", access=_access()) == {}
 
@@ -77,7 +77,7 @@ def test_companycam_http_layer_merges_actor_header(monkeypatch):
     monkeypatch.setattr(companycam_api, "_token", lambda: "office-key")
     monkeypatch.setattr(
         user_connections, "companycam_actor_headers",
-        lambda method: {"X_COMPANYCAM_USER": "sam@servpro.test"})
+        lambda method: {"X-CompanyCam-User": "sam@servpro.test"})
     monkeypatch.setattr(companycam_api.urllib.request, "urlopen",
                         lambda req, timeout=20: captured.setdefault("req", req) or Response())
     # Avoid the truthy Request object returned by setdefault above.
@@ -87,7 +87,14 @@ def test_companycam_http_layer_merges_actor_header(monkeypatch):
     monkeypatch.setattr(companycam_api.urllib.request, "urlopen", open_request)
     companycam_api._call("/projects", method="POST", data={"name": "Test"})
     request_headers = {key.lower(): value for key, value in captured["req"].header_items()}
-    assert request_headers["x_companycam_user"] == "sam@servpro.test"
+    assert request_headers["x-companycam-user"] == "sam@servpro.test"
+
+
+def test_companycam_gateway_uses_documented_creator_header():
+    source = (ROOT / "supabase" / "functions" / "companycam-gateway" /
+              "index.ts").read_text(encoding="utf-8")
+    assert 'headers["X-CompanyCam-User"]' in source
+    assert "X_COMPANYCAM_USER" not in source
 
 
 def test_settings_exposes_normal_connection_cards(monkeypatch):
@@ -117,9 +124,68 @@ def test_companycam_connect_rejects_non_https_callback_result(monkeypatch):
     assert not user_connections.connect_companycam()["ok"]
 
 
+def test_companycam_project_test_creates_one_reusable_project(monkeypatch):
+    monkeypatch.setattr(user_connections, "_franchise", lambda: "IE")
+    monkeypatch.setattr(user_connections, "_access", lambda _value=None: _access())
+    monkeypatch.setattr(companycam_api, "require_personal_connection", lambda: None)
+    monkeypatch.setattr(companycam_api, "find_project", lambda *_a, **_k: {
+        "ok": True, "match": None, "candidates": [],
+    })
+    created = []
+    monkeypatch.setattr(companycam_api, "create_project", lambda name, **kwargs: (
+        created.append((name, kwargs)) or {
+            "ok": True, "project": {"id": "cc-test-1", "name": name,
+                                      "photo_url": "https://app.companycam.com/projects/cc-test-1"},
+        }))
+
+    result = user_connections.test_companycam_project_access()
+
+    assert result["ok"] and result["created"]
+    assert result["project_id"] == "cc-test-1"
+    assert result["url"] == "https://app.companycam.com/projects/cc-test-1"
+    assert len(created) == 1
+    assert "Samantha Test" in created[0][0]
+
+
+def test_companycam_project_test_reuses_prior_test_project(monkeypatch):
+    monkeypatch.setattr(user_connections, "_franchise", lambda: "IE")
+    monkeypatch.setattr(user_connections, "_access", lambda _value=None: _access())
+    monkeypatch.setattr(companycam_api, "require_personal_connection", lambda: None)
+    monkeypatch.setattr(companycam_api, "find_project", lambda *_a, **_k: {
+        "ok": True, "match": {"id": "existing-test", "name": "Existing",
+                                "photo_url": "https://app.companycam.com/projects/existing-test"},
+    })
+    monkeypatch.setattr(companycam_api, "create_project", lambda *_a, **_k: (
+        _ for _ in ()).throw(AssertionError("must not create a duplicate test project")))
+
+    result = user_connections.test_companycam_project_access()
+
+    assert result["ok"] and not result["created"]
+    assert result["project_id"] == "existing-test"
+
+
+def test_companycam_project_test_preserves_provider_failure(monkeypatch):
+    monkeypatch.setattr(user_connections, "_franchise", lambda: "IE")
+    monkeypatch.setattr(user_connections, "_access", lambda _value=None: _access())
+    monkeypatch.setattr(companycam_api, "require_personal_connection", lambda: None)
+    monkeypatch.setattr(companycam_api, "find_project", lambda *_a, **_k: {
+        "ok": True, "match": None, "candidates": [],
+    })
+    monkeypatch.setattr(companycam_api, "create_project", lambda *_a, **_k: {
+        "ok": False, "code": 403, "error": "CompanyCam refused the write",
+    })
+
+    result = user_connections.test_companycam_project_access()
+
+    assert not result["ok"]
+    assert result["code"] == 403
+    assert "refused" in result["error"]
+
+
 def test_settings_page_renders_my_connections():
     html = (ROOT / "settings_web_assets" / "index.html").read_text(encoding="utf-8")
     for marker in ('id="my-connections"', "renderConnections",
-                   "open_user_connection", "connection-state"):
+                   "open_user_connection", "connection-state",
+                   "Test project creation", "test_user_connection"):
         assert marker in html
     assert "!f.managed_connection" in html

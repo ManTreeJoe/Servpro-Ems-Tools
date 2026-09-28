@@ -95,7 +95,8 @@ def test_contact_included_with_a_name(sent):
                       contact_phone="951-555-0000")
     pc = sent["data"]["primary_contact"]
     assert pc["name"] == "David Smith"
-    assert pc["phone_number"] == "951-555-0000"
+    # Match the existing normalized-primary-phone contract, not display formatting.
+    assert pc["phone_number"] == "+19515550000"
 
 
 def test_explicit_parts_beat_the_one_liner(sent):

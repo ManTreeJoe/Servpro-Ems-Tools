@@ -30,6 +30,30 @@
 
   const DEFAULT_ID = "modal-overlay";
   const _openIds = [];
+  // Only a complete primary-pointer click on the same backdrop may dismiss.
+  // Never treat a selection/drag released outside the panel as a close click.
+  function bindBackdropClick(root, close) {
+    let press = null, eligible = false;
+    const isBackdrop = target => target === root ||
+      (target?.classList?.contains('overlay-backdrop') && target.parentElement === root);
+    root.addEventListener('pointerdown', event => {
+      eligible = false;
+      press = event.button === 0 && event.isPrimary && isBackdrop(event.target)
+        ? {target:event.target, id:event.pointerId, x:event.clientX, y:event.clientY} : null;
+    }, true);
+    root.addEventListener('pointerup', event => {
+      eligible = !!press && event.pointerId === press.id && event.target === press.target &&
+        Math.hypot(event.clientX-press.x,event.clientY-press.y) <= 6;
+      press = null;
+    }, true);
+    root.addEventListener('pointercancel', () => {press=null; eligible=false;}, true);
+    root.addEventListener('click', event => {
+      const dismiss = eligible && isBackdrop(event.target);
+      eligible = false;
+      if (dismiss) close();
+    });
+  }
+  window.bindBackdropClick = bindBackdropClick;
   const FOCUSABLE = [
     'button:not([disabled])', '[href]', 'input:not([disabled])',
     'select:not([disabled])', 'textarea:not([disabled])',
@@ -85,8 +109,7 @@
       document.body.style.overflow = "hidden";
     }
     const close = () => closeModal(overlayId);
-    // Backdrop clicks (including a text-selection release outside the panel)
-    // must not discard a working popup. Close/Cancel and Escape are explicit.
+    bindBackdropClick(wrap, close);
     // DELEGATED, not wired per button. Binding each .modal-close at
     // creation only ever reaches the ones present right then — and most
     // of these dialogs replace their body once async content lands, so

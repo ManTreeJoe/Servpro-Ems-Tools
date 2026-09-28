@@ -27,6 +27,7 @@ import os
 import threading
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -241,6 +242,24 @@ def is_signed_in() -> bool:
 
 # ── Low-level HTTP ──────────────────────────────────────────────────────
 
+_INTERACTIVE_DEADLINE = ContextVar('supabase_interactive_deadline', default=None)
+
+
+@contextmanager
+def interactive_requests(seconds=15):
+    """Short, non-retrying requests for user actions, scoped to this thread.
+
+    Socket timeouts are not a hard wall-clock guarantee (DNS/locks can wait).
+    Background synchronization keeps its normal retry policy.
+    """
+    deadline = time.monotonic() + seconds
+    prior = _INTERACTIVE_DEADLINE.get()
+    token = _INTERACTIVE_DEADLINE.set(min(prior, deadline) if prior else deadline)
+    try:
+        yield
+    finally:
+        _INTERACTIVE_DEADLINE.reset(token)
+
 def _raw(method, path, *, params=None, body=None, token=None,
          extra_headers=None, _max_retries=4):
     """One HTTPS call. Retries 429/503 with backoff, honoring Retry-After.
@@ -265,10 +284,18 @@ def _raw(method, path, *, params=None, body=None, token=None,
 
     attempt = 0
     while True:
+        deadline = _INTERACTIVE_DEADLINE.get()
+        timeout = 30
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise SupabaseError(0, 'Database action timed out; completion was not confirmed')
+            timeout = min(5, remaining)
+            _max_retries = 0
         req = urllib.request.Request(full, data=data, method=method,
                                      headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 raw = r.read()
                 break
         except urllib.error.HTTPError as ex:
@@ -466,6 +493,15 @@ def access_token() -> str:
 
 # ── PostgREST ───────────────────────────────────────────────────────────
 
+_OPTIONAL_TABLES = frozenset({
+    'crm_pipeline_boards', 'crm_pipeline_lanes', 'crm_pipeline_cards',
+    'crm_pipeline_activity', 'crm_job_log_entries', 'crm_job_log_revisions',
+})
+_MISSING_OPTIONAL = {}
+_MISSING_OPTIONAL_LOCK = threading.Lock()
+_MISSING_OPTIONAL_TTL = 60.0
+
+
 def rest(method, table, *, params=None, body=None, prefer=None):
     """Call PostgREST as the signed-in user, so RLS applies.
 
@@ -475,8 +511,34 @@ def rest(method, table, *, params=None, body=None, prefer=None):
     headers = {}
     if prefer:
         headers["Prefer"] = prefer
-    return _raw(method, f"/rest/v1/{table}", params=params, body=body,
-                token=access_token(), extra_headers=headers)
+    schema_key = None
+    if table in _OPTIONAL_TABLES:
+        schema_key = (creds()[0], str((current_user() or {}).get('id') or ''),
+                      str(config.active_department() or ''), table)
+        with _MISSING_OPTIONAL_LOCK:
+            now = time.monotonic()
+            for key, (until, _) in list(_MISSING_OPTIONAL.items()):
+                if until <= now:
+                    _MISSING_OPTIONAL.pop(key, None)
+            remembered = _MISSING_OPTIONAL.get(schema_key)
+        if remembered:
+            raise SupabaseError(404, remembered[1])
+    try:
+        return _raw(method, f"/rest/v1/{table}", params=params, body=body,
+                    token=access_token(), extra_headers=headers)
+    except SupabaseError as ex:
+        # Only positively identified missing TABLES qualify. Never cache
+        # auth/permission failures, unknown 404s, timeouts or server errors.
+        if schema_key and ex.status == 404:
+            try:
+                missing = json.loads(ex.body).get('code') == 'PGRST205'
+            except (TypeError, ValueError, AttributeError):
+                missing = False
+            if missing:
+                with _MISSING_OPTIONAL_LOCK:
+                    _MISSING_OPTIONAL[schema_key] = (
+                        time.monotonic() + _MISSING_OPTIONAL_TTL, ex.body)
+        raise
 
 
 def rpc(fn, args=None):

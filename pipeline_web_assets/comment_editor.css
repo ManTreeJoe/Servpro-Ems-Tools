@@ -1,0 +1,40 @@
+.comment-compose .comment-editor { border:1px solid var(--border); border-radius:8px; background:var(--bg); overflow:hidden; }
+.comment-editor:focus-within { border-color:var(--text-dim); box-shadow:0 0 0 1px var(--text-dim); }
+.comment-editor-toolbar { display:flex; flex-wrap:wrap; gap:2px; padding:5px 7px; border-bottom:1px solid var(--border); }
+.comment-editor-toolbar button { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; padding:0; border:0; border-radius:4px; background:transparent; color:var(--text); font:inherit; cursor:pointer; }
+.comment-editor-toolbar button:hover,.comment-editor-toolbar button[aria-pressed="true"] { background:var(--surface-2); }
+.comment-editor-toolbar button[aria-pressed="true"] { box-shadow:inset 0 -2px var(--text-dim); }
+.comment-editor-toolbar button:focus-visible { outline:2px solid var(--text); outline-offset:-2px; }
+.comment-editor-toolbar [data-comment-format="bold"] { font-weight:800; }
+.comment-editor-toolbar [data-comment-format="italic"] { font-style:italic; }
+.comment-editor-toolbar [data-comment-format="strike"] { text-decoration:line-through; }
+.comment-editor-toolbar [data-comment-format="bullet"],.comment-editor-toolbar [data-comment-format="link"] { margin-left:7px; }
+.comment-editor-content { min-height:86px; max-height:180px; overflow-y:auto; padding:10px 12px; outline:none; color:var(--text); font:inherit; font-size:13px; line-height:1.5; overflow-wrap:anywhere; white-space:pre-wrap; }
+.comment-editor-content p { margin:0 0 8px; }
+.comment-editor-content > :last-child { margin-bottom:0; }
+.comment-editor-content ul,.comment-editor-content ol { padding-left:22px; margin:6px 0; }
+.comment-editor-content blockquote { border-left:3px solid var(--text-dim); padding-left:10px; margin:6px 0; }
+.comment-editor-content a { color:var(--text); text-decoration:underline; }
+.comment-editor-content pre { white-space:pre-wrap; }
+.comment-editor.is-empty .comment-editor-content::before { content:attr(data-placeholder); color:var(--text-dim); float:left; height:0; pointer-events:none; }
+.comment-compose .comment-send-row { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-top:9px; }
+.comment-send-row .comment-post-destination { display:flex; align-items:center; gap:8px; margin:0; color:var(--text-dim); font-size:11px; }
+.comment-send-row .comment-post-pills { margin:0; padding:0; gap:3px; }
+.comment-send-row .comment-post-pills button { min-height:28px; padding:4px 7px; font-size:11px; }
+.comment-send-row > [data-post-comment] { margin-left:auto; padding:7px 10px; min-height:32px; }
+.comment-compose [data-comment-state] { display:block; min-height:0; margin-top:5px; }
+.comment-compose [data-comment-state]:empty { display:none; }
+.comment-link-panel { padding:8px 10px; border-top:1px solid var(--border); font-size:12px; }
+.comment-link-panel label { display:block; }
+.comment-link-panel input { width:100%; box-sizing:border-box; margin:4px 0 8px; padding:6px; background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:4px; }
+.comment-link-panel button { margin-right:8px; padding:5px 8px; background:var(--surface-2); border:1px solid var(--border); border-radius:4px; color:var(--text); }
+.comment-link-panel small { display:block; margin-top:5px; }
+.comment-compose .comment-editor { position:relative; overflow:visible; }
+.comment-mention-panel { position:absolute; left:0; right:0; bottom:100%; margin-bottom:5px; z-index:20; background:var(--surface); border:1px solid var(--border); border-radius:7px; box-shadow:0 5px 18px #0005; }
+.comment-mention-status { padding:7px 10px; font-size:11px; color:var(--text-dim); }
+.comment-mention-panel [role="listbox"] { max-height:200px; overflow-y:auto; }
+.comment-mention-panel [role="option"] { display:block; width:100%; text-align:left; padding:7px 10px; border:0; background:transparent; color:var(--text); cursor:pointer; }
+.comment-mention-panel [role="option"][aria-selected="true"],.comment-mention-panel [role="option"]:hover { background:var(--surface-2); }
+.comment-mention-panel strong,.comment-mention-panel small { display:block; }
+.comment-mention-panel strong { font-size:12px; }
+.comment-mention-panel small { margin-top:2px; font-size:11px; color:var(--text-dim); }

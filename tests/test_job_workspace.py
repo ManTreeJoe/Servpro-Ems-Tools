@@ -5,14 +5,33 @@ import pytest
 
 @pytest.fixture()
 def workspace(tmp_path, monkeypatch):
+    # Provider validation is covered separately by test_division_card_boundaries.
+    monkeypatch.setattr('division_cards.validate_pin', lambda card, division: card)
     import audit_web
     import ems_db
     import ems_db_sqlite as db
     monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "workspace.db"))
+    monkeypatch.setattr("job_workflow.DB_PATH", str(tmp_path / "outbox.db"))
     db._init_schema()
     ems_db.use_backend("sqlite")
     yield db, audit_web.Api()
     ems_db.invalidate_backend()
+
+
+def test_new_job_log_can_stay_oneloss_only_including_later_edit(workspace):
+    import job_workflow
+    db, api = workspace
+    key=db.upsert_job(display_name='Manual log fixture')
+    result=api.save_crm_job_log('Manual log fixture', {
+        'work_date':'2026-09-22','work_type':'Monitor','note':'Missed work',
+        'post_to_trello':False}, 'card')
+    assert result['ok'] and not result['pending_sync']
+    assert job_workflow.pending() == []
+    saved=db.list_job_log_entries(key)[0]
+    assert saved['source'] == 'pc_only'
+    result=api.save_crm_job_log('Manual log fixture', {**saved,'source':'pc','note':'Corrected'}, 'card')
+    assert result['ok'] and not result['pending_sync']
+    assert job_workflow.pending() == []
 
 
 def test_workspace_loads_master_and_three_department_states(workspace):
@@ -118,6 +137,28 @@ def test_each_work_type_can_be_changed_for_one_job(workspace):
     assert master["work_environments"][0]["owner"] == "Recon crew"
 
 
+@pytest.mark.parametrize("stage", ["interested", "scheduled", "active",
+                                   "on_hold", "billing", "closed"])
+def test_division_workflow_supports_the_office_stages(workspace, stage):
+    db, api = workspace
+    db.upsert_job(display_name=f"Division {stage}")
+
+    result = api.save_crm_work_environment(
+        f"Division {stage}", "Contents", stage, "Pablo")
+
+    assert result["ok"]
+    assert result["work_environment"]["stage"] == stage
+
+
+def test_interested_is_only_available_for_contents_and_recon(workspace):
+    db, api = workspace
+    db.upsert_job(display_name="EMS Interested")
+    assert not api.save_crm_work_environment(
+        "EMS Interested", "EMS", "interested")["ok"]
+    assert api.save_crm_work_environment(
+        "EMS Interested", "Recon", "interested")["ok"]
+
+
 def test_each_work_type_keeps_its_own_trello_card(workspace, monkeypatch):
     db, api = workspace
     db.upsert_job(display_name="Three Division Job")
@@ -135,6 +176,47 @@ def test_each_work_type_keeps_its_own_trello_card(workspace, monkeypatch):
         "EMS": "ems12345", "CONTENTS": "cont1234", "RECON": "recon123"}
     workspace_data = api.crm_job_workspace("Three Division Job")
     assert len(workspace_data["division_trello_cards"]) == 3
+
+
+def test_one_division_can_have_primary_and_temporary_board_placements(
+        workspace, monkeypatch):
+    """Estimating and WIP are two views of one division, not two jobs."""
+    db, api = workspace
+    db.upsert_job(display_name="Two Placement Job")
+    monkeypatch.setattr("audit_web.persistence.set_trello_card_id",
+                        lambda *_args: None)
+
+    assert api.pin_crm_division_trello(
+        "Two Placement Job", "EMS", "WipCard1")["ok"]
+    added = api.add_crm_division_trello_placement(
+        "Two Placement Job", "EMS", "Esti1234", "estimating",
+        board="Estimating", lane="Zac")
+
+    assert added["ok"], added
+    result = api.crm_division_trello_cards("Two Placement Job")
+    assert {row["card_id"] for row in result["placements"]
+            if row["division"] == "EMS"} == {"wipcard1", "esti1234"}
+    assert next(row for row in result["cards"]
+                if row["division"] == "EMS")["card_id"] == "wipcard1"
+
+    # Changing the main WIP pin must not erase the temporary estimating view.
+    assert api.pin_crm_division_trello(
+        "Two Placement Job", "EMS", "WipCard3")["ok"]
+    result = api.crm_division_trello_cards("Two Placement Job")
+    ems = [row for row in result["placements"] if row["division"] == "EMS"]
+    assert {row["card_id"] for row in ems} == {"wipcard3", "esti1234"}
+    assert next(row for row in ems if row["purpose"] == "estimating")["lane"] == "Zac"
+    workspace_data = api.crm_job_workspace("Two Placement Job")
+    assert {row["card_id"] for row in
+            workspace_data["division_trello_placements"]} == {
+                "wipcard3", "esti1234"}
+
+    assert api.unpin_crm_division_trello("Two Placement Job", "EMS")["ok"]
+    result = api.crm_division_trello_cards("Two Placement Job")
+    assert next(row for row in result["cards"]
+                if row["division"] == "EMS")["card_id"] == ""
+    assert [row["card_id"] for row in result["placements"]
+            if row["division"] == "EMS"] == ["esti1234"]
 
 
 def test_repin_pulls_new_card_info_and_preserves_conflicts(workspace,
@@ -320,6 +402,7 @@ def test_job_log_is_editable_and_keeps_revision_history(workspace):
     })
     assert created["ok"]
     entry = created["entry"]
+    assert entry["placement_card_id"] == ""
     edited = api.save_crm_job_log("Jordan Taylor", {
         **entry, "status": "completed", "note": "Dry; equipment removed",
     })
@@ -330,6 +413,21 @@ def test_job_log_is_editable_and_keeps_revision_history(workspace):
     assert rows[0]["note"] == "Dry; equipment removed"
     history = db.job_log_history(entry["entry_id"])
     assert len(history) == 2
+
+
+def test_job_log_records_exact_board_placement(workspace):
+    db, api = workspace
+    db.upsert_job(display_name="Two Placement Job")
+    first = api.save_crm_job_log("Two Placement Job", {
+        "work_date": "2026-09-20", "work_type": "Monitor",
+        "status": "completed",
+    }, "wip-card")
+    second = api.save_crm_job_log("Two Placement Job", {
+        "work_date": "2026-09-21", "work_type": "Estimate",
+        "status": "completed",
+    }, "estimating-card")
+    assert first["entry"]["placement_card_id"] == "wip-card"
+    assert second["entry"]["placement_card_id"] == "estimating-card"
 
 
 def test_workspace_returns_job_log(workspace):
@@ -352,14 +450,17 @@ def test_job_log_entry_can_be_deleted_without_deleting_job(workspace):
     })
     entry_id = created["entry"]["entry_id"]
     result = api.delete_crm_job_log("Delete Log Test", entry_id)
-    assert result == {"ok": True, "deleted": True,
-                      "deleted_trello": False, "entries": []}
+    assert result["ok"] and result["deleted"]
+    assert not result["deleted_trello"]
+    assert result["entries"] == []
     assert db.get_job(key) is not None
-    assert db.job_log_history(entry_id) == []
+    assert db.job_log_history(entry_id)  # Deletion preserves revision history.
 
 
-def test_job_log_create_edit_and_delete_control_one_trello_comment(workspace, monkeypatch):
+def test_job_log_create_edit_and_delete_queue_one_trello_comment(workspace, monkeypatch, tmp_path):
     db, api = workspace
+    import job_workflow
+    monkeypatch.setattr(job_workflow, "DB_PATH", str(tmp_path / "workflow.db"))
     db.upsert_job(display_name="Mirrored Log Test")
     posted, updated, deleted = [], [], []
     monkeypatch.setattr("trello_client.post_comment", lambda card, text: (
@@ -374,27 +475,35 @@ def test_job_log_create_edit_and_delete_control_one_trello_comment(workspace, mo
         "status": "completed", "technicians": "Marco",
         "note": "Kitchen is dry", "equipment": "2 fans removed",
     }, "card-9")
-    assert created["ok"] and created["synced_trello"]
-    assert created["entry"]["trello_comment_id"] == "comment-42"
-    assert posted[0][0] == "card-9"
-    assert "Job Log · 09/03/26 · Monitor · Completed" in posted[0][1]
+    assert created["ok"] and created["pending_sync"]
+    assert not created["synced_trello"]
+    assert posted == []
+    queued = job_workflow.pending()
+    assert len(queued) == 1
+    assert queued[0]["operation_type"] == "comment.create"
+    assert "Job Log · 09/03/26 · Monitor · Completed" in queued[0]["payload"]["text"]
 
     edited = api.save_crm_job_log("Mirrored Log Test", {
         **created["entry"], "note": "Kitchen and hall are dry",
     }, "card-9")
-    assert edited["ok"] and edited["synced_trello"]
-    assert updated[0][0] == "comment-42"
-    assert "Kitchen and hall are dry" in updated[0][1]
+    assert edited["ok"] and not edited["pending_sync"]
+    assert updated == []
+    queued = job_workflow.pending()
+    assert len(queued) == 1
+    assert "Kitchen is dry" in queued[0]["payload"]["text"]
 
     removed = api.delete_crm_job_log(
         "Mirrored Log Test", created["entry"]["entry_id"], "card-9")
-    assert removed["ok"] and removed["deleted_trello"]
-    assert deleted == ["comment-42"]
+    assert removed["ok"] and not removed["deleted_trello"]
+    assert deleted == []
+    assert job_workflow.pending() == []
     assert db.list_job_log_entries(db.canon_key("Mirrored Log Test")) == []
 
 
-def test_job_log_keeps_local_entry_when_trello_edit_is_rejected(workspace, monkeypatch):
+def test_job_log_keeps_changed_entry_without_calling_trello(workspace, monkeypatch, tmp_path):
     db, api = workspace
+    import job_workflow
+    monkeypatch.setattr(job_workflow, "DB_PATH", str(tmp_path / "workflow.db"))
     key = db.upsert_job(display_name="Protected Log Test")
     entry = db.save_job_log_entry(key, {
         "work_date": "2026-09-03", "work_type": "Monitor",
@@ -405,8 +514,9 @@ def test_job_log_keeps_local_entry_when_trello_edit_is_rejected(workspace, monke
     result = api.save_crm_job_log("Protected Log Test", {
         **entry, "note": "Changed",
     }, "card-9")
-    assert not result["ok"]
-    assert db.list_job_log_entries(key)[0]["note"] == "Original"
+    assert result["ok"] and not result["pending_sync"]
+    assert db.list_job_log_entries(key)[0]["note"] == "Changed"
+    assert job_workflow.pending() == []
 
 
 def test_shared_workspace_ui_has_log_editor_and_trello_import():
@@ -456,3 +566,29 @@ def test_trello_job_log_import_is_idempotent(workspace, monkeypatch):
     rows = db.list_job_log_entries(db.canon_key("Casey Morgan"))
     assert len(rows) == 1
     assert len(db.job_log_history(rows[0]["entry_id"])) == 1
+
+
+def test_job_log_import_prefers_complete_server_conversation(workspace, monkeypatch):
+    db, api = workspace
+    db.upsert_job(display_name="Saved Conversation")
+    saved = {
+        "id": "card-1", "actions": [{
+            "id": "comment-1", "type": "commentCard",
+            "date": "2026-08-27T18:00:00.000Z",
+            "memberCreator": {"fullName": "Field Supervisor"},
+            "data": {"text": "Demo completed today."},
+        }], "checklists": [], "attachments": [],
+    }
+    monkeypatch.setattr("trello_mirror_reader.card", lambda _card: saved)
+    monkeypatch.setattr(
+        "trello_client.get_all_comments",
+        lambda _card: pytest.fail("complete saved history must avoid Trello"))
+
+    result = api.import_crm_job_log_from_trello(
+        "Saved Conversation", "card-1")
+
+    assert result["ok"] and result["imported"] == 1
+    assert result["read_source"] == "server_mirror"
+    assert db.list_job_log_entries(
+        db.canon_key("Saved Conversation"))[0]["source_id"] == \
+        "comment-1:Demo"

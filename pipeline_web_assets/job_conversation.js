@@ -3,6 +3,8 @@ window.JobConversation = (() => {
   const divisions = ['EMS', 'CONTENTS', 'RECON'];
   const label = key => ({EMS:'EMS', CONTENTS:'Contents', RECON:'Recon'})[key] || key;
   const normalize = value => String(value || 'EMS').toUpperCase().replace('RECONSTRUCTION', 'RECON');
+  const esc = value => String(value || '').replace(/[&<>"']/g, char =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[char]);
   function mount(root, options) {
     const current = normalize(options.division);
     const cards = new Map();
@@ -22,6 +24,8 @@ window.JobConversation = (() => {
     const versions = new Map();
     const pending = new Map();
     const errors = new Map();
+    const completed = new Set(options.initialComplete ? [current] : []);
+    if (options.initialError) errors.set(current, String(options.initialError));
     const controls = document.createElement('div');
     controls.className = 'comment-division-controls';
     controls.setAttribute('role', 'group');
@@ -46,20 +50,57 @@ window.JobConversation = (() => {
     const status = document.createElement('small');
     status.className = 'comment-division-status';
     status.setAttribute('role', 'status');
-    controls.after(status);
-    const destination = document.createElement('label');
+    controls.append(status);
+    const errorStatus = document.createElement('small');
+    errorStatus.className = 'comment-division-error';
+    errorStatus.setAttribute('role', 'alert');
+    errorStatus.hidden = true;
+    controls.after(errorStatus);
+    const selectedDestinations = new Set([current]);
+    const destination = document.createElement('div');
     destination.className = 'comment-post-destination';
-    destination.append('Post to ');
-    const select = document.createElement('select');
-    select.setAttribute('aria-label', 'Post comment to division');
-    for (const [division, id] of cards) {
-      const item = document.createElement('option');
-      item.value = division; item.textContent = label(division);
-      select.append(item);
+    destination.append('Send to ');
+    const pills = document.createElement('div');
+    pills.className = 'comment-division-controls comment-post-pills';
+    pills.setAttribute('role', 'group');
+    pills.setAttribute('aria-label', 'Post comment to divisions');
+    const postPills = new Map();
+    for (const division of divisions) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.textContent = label(division);
+      button.dataset.commentDestination = division;
+      button.onclick = () => {
+        if (selectedDestinations.has(division)) selectedDestinations.delete(division);
+        else selectedDestinations.add(division);
+        paintDestinations();
+      };
+      postPills.set(division, button); pills.append(button);
     }
-    select.value = current;
-    destination.append(select);
-    root.querySelector('.comment-compose').prepend(destination);
+    function paintDestinations() {
+      for (const [division, button] of postPills) {
+        button.disabled = !cards.has(division);
+        button.title = button.disabled ? 'No verified linked card' : '';
+        button.setAttribute('aria-pressed', String(selectedDestinations.has(division) && cards.has(division)));
+      }
+    }
+    paintDestinations();
+    destination.append(pills);
+    (root.querySelector('.comment-send-row') || root.querySelector('.comment-compose')).prepend(destination);
+    const primaryIds = new Set([...cards.values()]);
+    const extraPlacements = (options.placements || []).filter(row =>
+      row?.card_id && row.pinned !== false && !row.primary &&
+      !primaryIds.has(String(row.card_id)));
+    let placementPicker = null;
+    if (extraPlacements.length) {
+      placementPicker = document.createElement('details');
+      placementPicker.className = 'comment-extra-destinations';
+      placementPicker.innerHTML = `<summary>Also post to linked boards</summary><div>${extraPlacements.map(row => {
+        const title = row.board || row.purpose || 'Linked board';
+        const location = row.lane ? ` · ${row.lane}` : '';
+        return `<label><input type="checkbox" data-comment-placement="${esc(row.card_id)}"><span>${esc(label(normalize(row.division)))} · ${esc(title)}${esc(location)}</span></label>`;
+      }).join('')}</div>`;
+      root.querySelector('.comment-compose').prepend(placementPicker);
+    }
     const stream = root.querySelector('[data-comment-stream]');
     const post = root.querySelector('[data-post-comment]');
     if (post) post.disabled = !cards.size;
@@ -79,31 +120,56 @@ window.JobConversation = (() => {
         }
       }
       messages.sort((a,b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
-      const nextFingerprint = JSON.stringify(messages);
+      const failed = [...visible].some(key => errors.has(key));
+      const loading = [...visible].some(key => pending.has(key) || !completed.has(key));
+      const emptyText = failed ? 'Comments could not be checked. Try refreshing.'
+        : loading ? '' : 'No comments in this division.';
+      const nextFingerprint = JSON.stringify([messages, messages.length ? '' : emptyText]);
       if (nextFingerprint !== fingerprint) {
         const top = stream.scrollTop;
         stream.innerHTML = messages.map(options.render).join('') ||
-          '<div class="aud-empty activity-empty">No comments in the selected divisions.</div>';
+          `<div class="aud-empty activity-empty" role="status">${emptyText}</div>`;
         stream.scrollTop = top;
         fingerprint = nextFingerprint;
         const count = root.querySelector('[data-comment-count]');
-        if (count) count.textContent = String(messages.length);
+        if (count) count.textContent = !messages.length && (loading || failed) ? '…' : String(messages.length);
         options.onChange?.();
       }
-      status.textContent = [...visible].flatMap(key => errors.has(key)
+      const errorText = [...visible].flatMap(key => errors.has(key)
         ? [`${label(key)}: ${errors.get(key)}`]
-        : pending.has(key) && !records.has(key) ? [`Loading ${label(key)}…`] : []).join(' · ');
+        : []).join(' · ');
+      const busy = loading && !failed;
+      stream.setAttribute('aria-busy', String(busy));
+      status.classList.toggle('is-loading', busy);
+      status.innerHTML = busy ? '<span class="ui-spinner" aria-hidden="true"></span><span class="ui-loading-label">Loading comments…</span>' : '';
+      status.title = busy ? 'Checking comments for updates' : '';
+      errorStatus.textContent = errorText;
+      errorStatus.hidden = !errorText;
     }
     async function refresh(force = true) {
       await Promise.all([...visible].filter(key => cards.has(key)).map(async key => {
         if (pending.has(key)) return pending.get(key);
-        if (!force && records.has(key)) return;
+        if (!force && completed.has(key) && !errors.has(key)) return;
+        errors.delete(key);
         const version = versions.get(key) || 0;
         const requestedCard = cards.get(key);
-        const task = Promise.resolve().then(() => options.fetch(requestedCard)).then(result => {
+        const task = Promise.resolve().then(async () => {
+          if (!records.has(key) && options.fetchSaved) {
+            try {
+              const saved = await options.fetchSaved(requestedCard);
+              if (saved?.ok && saved.cached && cards.get(key) === requestedCard &&
+                  (versions.get(key) || 0) === version) {
+                records.set(key, saved.comments || []);
+                if (root.isConnected) paint();
+              }
+            } catch (_) { /* A local cache miss must not block remote recovery. */ }
+          }
+          return options.fetch(requestedCard, force);
+        }).then(result => {
           if (!result?.ok) throw new Error(result?.error || 'Could not refresh');
           if (cards.get(key) === requestedCard && (versions.get(key) || 0) === version) {
             records.set(key, result.comments || []);
+            completed.add(key);
             versions.set(key, version + 1);
           }
           errors.delete(key);
@@ -133,24 +199,52 @@ window.JobConversation = (() => {
         if (options.cardId) next.set(current, String(options.cardId));
         for (const [division, id] of next) if (division !== current && id === next.get(current)) next.delete(division);
         for (const division of divisions) {
-          if (cards.get(division) !== next.get(division)) { records.delete(division); versions.delete(division); errors.delete(division); }
+          if (cards.get(division) !== next.get(division)) { records.delete(division); versions.delete(division); errors.delete(division); completed.delete(division); }
         }
-        const target = select.value;
         cards.clear(); for (const [division, id] of next) cards.set(division, id);
         for (const [division, button] of buttons) { button.disabled = !cards.has(division); button.title = button.disabled ? 'No verified linked card' : ''; }
-        const available = [...cards.keys()];
-        if (JSON.stringify([...select.options].map(o=>o.value)) !== JSON.stringify(available)) {
-          select.replaceChildren(...available.map(division=>{const item=document.createElement('option');item.value=division;item.textContent=label(division);return item;}));
-          select.value = cards.has(target) ? target : current;
-        }
+        for (const division of selectedDestinations) if (!cards.has(division)) selectedDestinations.delete(division);
+        paintDestinations();
         if (post && (!cards.size || !hadCards)) post.disabled = !cards.size;
         paint();
       },
-      target: () => ({division: select.value, cardId: cards.get(select.value) || ''}),
-      applyInitialRefresh(cardId, comments) {
+      resetTargets() {
+        selectedDestinations.clear(); selectedDestinations.add(current);
+        placementPicker?.querySelectorAll('[data-comment-placement]').forEach(input => {input.checked=false;});
+        paintDestinations();
+      },
+      restoreTargets(ids) {
+        const allowed = new Set(ids || []);
+        selectedDestinations.clear();
+        for (const [division, id] of cards) if (allowed.has(id)) selectedDestinations.add(division);
+        placementPicker?.querySelectorAll('[data-comment-placement]').forEach(input => {input.checked = allowed.has(input.dataset.commentPlacement);});
+        paintDestinations();
+      },
+      retainFailedTargets(ids) {
+        const failed = new Set(ids);
+        for (const division of selectedDestinations) if (!failed.has(cards.get(division))) selectedDestinations.delete(division);
+        placementPicker?.querySelectorAll('[data-comment-placement]').forEach(input => {input.checked=failed.has(input.dataset.commentPlacement);});
+        paintDestinations();
+      },
+      target: () => { const division = [...selectedDestinations][0]; return {division, cardId:cards.get(division) || ''}; },
+      targets: () => {
+        const selected = [...selectedDestinations].map(division => ({division,
+          cardId:cards.get(division) || '', primary:true}));
+        for (const input of placementPicker?.querySelectorAll('[data-comment-placement]:checked') || []) {
+          const row = extraPlacements.find(item => String(item.card_id) === input.dataset.commentPlacement);
+          if (row) selected.push({division: normalize(row.division),
+            cardId: String(row.card_id), purpose: row.purpose || '',
+            board: row.board || '', lane: row.lane || ''});
+        }
+        return selected.filter((row, index, rows) => row.cardId &&
+          rows.findIndex(other => other.cardId === row.cardId) === index);
+      },
+      applyInitialRefresh(cardId, comments, complete = true, error = '') {
         const division = [...cards.keys()].find(key => cards.get(key) === cardId);
         if (division && !versions.get(division) && !pending.has(division)) {
-          records.set(division, comments);
+          if (complete || comments.length) records.set(division, comments);
+          if (error) errors.set(division, String(error));
+          else if (complete) { completed.add(division); errors.delete(division); }
           paint();
         }
       },

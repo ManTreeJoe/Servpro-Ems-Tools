@@ -24,6 +24,22 @@ def test_fast_open_reads_sqlite_before_any_shared_db_or_trello(cached, monkeypat
     assert result['source'] == 'local_db'
 
 
+def test_fast_open_repairs_a_cached_blank_folder_from_saved_local_link(cached, monkeypatch):
+    import persistence
+    import job_saved_data
+    monkeypatch.setattr(persistence, 'get_folder_path',
+                        lambda client: r'X:\Jobs\Exact')
+    monkeypatch.setattr(job_saved_data, 'resolve',
+                        lambda *a: pytest.fail('local folder repair resolved shared job data'))
+
+    result = pipeline_web.Api().job_card_workspace_fast(
+        'Customer', 'card1', 'EMS')
+
+    assert result['path'] == r'X:\Jobs\Exact'
+    assert result['audit']['path'] == r'X:\Jobs\Exact'
+    assert result['local_folder_override'] == r'X:\Jobs\Exact'
+
+
 def test_cache_never_crosses_user_franchise_card_or_division(cached, monkeypatch):
     assert cache.load('card1', 'EMS')
     assert not cache.load('other-card', 'EMS')
@@ -93,6 +109,30 @@ def test_ordinary_workspace_refresh_does_not_scan_folders(monkeypatch):
     assert result['audit']['audit_pending']
 
 
+@pytest.mark.parametrize('saved_rows', [[], [{'entry_id':'kept', 'note':'My cleanup'}]])
+def test_background_hydration_keeps_loaded_log_in_memory_and_on_disk(cached, monkeypatch, saved_rows):
+    import types
+    import trello_client as tc
+    import job_log_projection
+    cache.save('card1', 'EMS', 'Customer', {**cached,
+        'audit': {'ok':True, 'found':True},
+        'crm': {'ok':True, 'canon_key':'customer', 'job_log':saved_rows}})
+    api = pipeline_web.Api()
+    monkeypatch.setattr(api, '_old_ems_jobs', lambda *a: [])
+    monkeypatch.setattr(api, '_audit_api', lambda: types.SimpleNamespace(
+        crm_job_workspace=lambda *a: {'ok':True, 'canon_key':'customer',
+            'job_log':[{'entry_id':'unrequested', 'note':'Do not restore'}]},
+        crm_division_trello_cards=lambda *a: {'ok':True, 'cards':[]}))
+    monkeypatch.setattr(pipeline_web.pipeline_store, 'list_activity', lambda *a: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store, 'list_checklists', lambda *a: [])
+    monkeypatch.setattr(tc, 'get_card', lambda *a: {'name':'Customer', 'desc':''})
+    monkeypatch.setattr(tc, 'get_member_me', lambda: {})
+    result = api.job_card_workspace('Customer', 'card1', 'EMS')
+    assert result['crm']['job_log'] == saved_rows
+    assert job_log_projection.load('card1', 'EMS')['job_log'] == saved_rows
+    assert cache.load('card1', 'EMS')['crm']['job_log'] == saved_rows
+
+
 def test_cold_open_includes_comments_and_checklists_already_in_db(monkeypatch):
     import trello_client as tc
     monkeypatch.setattr(cache, 'scope', lambda: 'cold-stored-activity')
@@ -103,6 +143,17 @@ def test_cold_open_includes_comments_and_checklists_already_in_db(monkeypatch):
     result = pipeline_web.Api().job_card_workspace_fast('Test', 'cold-card', 'EMS')
     assert result['comments'][0]['text'] == 'Already saved'
     assert result['checklists'][0]['id'] == 'check1'
+
+
+def test_cold_open_does_not_wait_for_remote_account_access(monkeypatch):
+    import account_access
+    monkeypatch.setattr(cache, 'scope', lambda: 'cold-access')
+    monkeypatch.setattr(account_access, 'current_access',
+                        lambda: pytest.fail('cold open called remote account access'))
+    monkeypatch.setattr(account_access, '_LAST_ACCESS', None)
+    result = pipeline_web.Api().job_card_workspace_fast(
+        'Access Test', 'access-card', 'EMS')
+    assert result['crm']['capabilities']['configured'] is False
 
 
 def test_provider_failure_preserves_saved_card_material(monkeypatch, cached):
@@ -125,3 +176,23 @@ def test_provider_failure_preserves_saved_card_material(monkeypatch, cached):
     assert result['audit']['trello_error'] == 'Offline'
     for key in ('comments', 'checklists', 'attachments', 'info_sections'):
         assert result[key] == previous[key], key
+
+
+def test_opening_card_does_not_import_job_log_again(monkeypatch, cached):
+    import types, trello_client as tc
+    cache.save('card1','EMS','Customer',{**cached,'audit':{'ok':True,'found':True}})
+    api = pipeline_web.Api()
+    calls = []
+    monkeypatch.setattr(api,'_old_ems_jobs',lambda *a: [])
+    monkeypatch.setattr(api,'_audit_api',lambda: types.SimpleNamespace(
+        crm_job_workspace=lambda *a: {'ok':True,'job_log':[]},
+        crm_division_trello_cards=lambda *a: {'ok':True,'cards':[]},
+        import_crm_job_log_comments=lambda *a,**k: calls.append(a) or {'ok':True,'entries':[]}))
+    monkeypatch.setattr(pipeline_web.pipeline_store,'list_activity',lambda *a: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store,'list_checklists',lambda *a: [])
+    monkeypatch.setattr(pipeline_web.pipeline_store,'add_activities',lambda *a: {})
+    monkeypatch.setattr(tc,'get_member_me',lambda: {})
+    monkeypatch.setattr(tc,'get_card',lambda *a: {'id':'card1','actions':[
+        {'id':'comment','type':'commentCard','data':{'text':'Demo 9/22/26'}}]})
+    api.job_card_workspace('Customer','card1','EMS')
+    assert calls == []

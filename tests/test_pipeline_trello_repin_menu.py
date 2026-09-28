@@ -106,4 +106,4 @@ def test_open_job_card_keeps_visible_trello_and_folder_recovery_actions():
     assert "openJobFolderLinkModal" in modal
     assert "copy_to_clipboard(res.path" in modal
     assert "showContextMenu(event" in modal
-    assert 'label: "Copy folder path"' in modal
+    assert 'label: "Copy path"' in modal

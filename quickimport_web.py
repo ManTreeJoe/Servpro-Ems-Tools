@@ -288,10 +288,10 @@ class Api:
     # Stage-for-XA modal (shared audit_detail.js) backend.
     def list_techs(self):
         return self._aw().list_techs()
-    def list_pics_stages(self, client):
-        return self._aw().list_pics_stages(client)
-    def copy_pics_to_clipboard(self, client, stage=""):
-        return self._aw().copy_pics_to_clipboard(client, stage)
+    def list_pics_stages(self, *a, **k):
+        return self._aw().list_pics_stages(*a, **k)
+    def copy_pics_to_clipboard(self, *a, **k):
+        return self._aw().copy_pics_to_clipboard(*a, **k)
     # Trello-attachments modal (shared) backend.
     def list_card_attachments(self, *a, **k):
         return self._aw().list_card_attachments(*a, **k)

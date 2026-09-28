@@ -33,7 +33,7 @@ def _creds():
     return key, token
 
 
-def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
+def _call(path, *, params=None, method="GET", data=None, _max_retries=5, _timeout=15):
     """GET (or POST/PUT) against Trello API. Auth params appended automatically.
     `data` is form-encoded for write methods. Raises urllib HTTPError on non-2xx.
 
@@ -44,6 +44,11 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
     so closed jobs near the end of the workbook were misrouting to Needs
     Attention on a transient 429 rather than their real sheet."""
     key, token = _creds()
+    if method.upper() not in ('GET', 'HEAD'):
+        # Fail closed for server reads if the durable write barrier cannot be
+        # recorded. Do not let an older projection roll back a just-made edit.
+        import trello_mirror_reader
+        trello_mirror_reader.mark_write()
     qs = dict(params or {})
     qs["key"] = key
     qs["token"] = token
@@ -57,7 +62,7 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
     attempt = 0
     while True:
         try:
-            with urllib.request.urlopen(req, timeout=15) as r:
+            with urllib.request.urlopen(req, timeout=_timeout) as r:
                 raw = r.read()
             break
         except urllib.request.HTTPError as ex:
@@ -703,6 +708,43 @@ def set_check_item_state(card_id, check_item_id, state):
         return False
 
 
+def delete_owned_comment(action_id, card_id):
+    """Interactive Job Log deletion: verified author, exact card, no retries."""
+    if not action_id or not card_id:
+        return {"ok": False, "error": "The original Trello comment/card is not linked. Nothing was deleted."}
+    options = {"_max_retries": 0, "_timeout": 5}
+    try:
+        try:
+            action = _call(f"/actions/{urllib.parse.quote(str(action_id), safe='')}",
+                           params={"memberCreator": "true"}, **options) or {}
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+            # A previous attempt may have deleted the comment before the DB
+            # save failed. Confirm card access before treating 404 as absence.
+            card = _call(f"/cards/{urllib.parse.quote(str(card_id), safe='')}",
+                         params={"fields":"id,shortLink"}, **options) or {}
+            if card_id not in (card.get('id'), card.get('shortLink')):
+                return {"ok":False, "error":"Cannot verify access to the original card. The entry was kept."}
+            return {"ok":True, "deleted_trello":True, "already_deleted":True}
+        card = (action.get("data") or {}).get("card") or {}
+        if action.get("type") != "commentCard" or card_id not in (card.get("id"), card.get("shortLink")):
+            return {"ok": False, "error": "The comment does not match this job card. Nothing was deleted."}
+        me = _call("/members/me", params={"fields": "id"}, **options) or {}
+        author = action.get("memberCreator") or {}
+        owner = action.get("idMemberCreator") or author.get("id")
+        if not owner or not me.get("id"):
+            return {"ok": False, "error": "Could not verify the Trello comment owner. Nothing was deleted."}
+        if owner != me["id"]:
+            name = author.get("fullName") or author.get("username") or "the comment author"
+            return {"ok": False, "error": f"Ask {name} to delete the original Trello comment. The Job Log entry has been kept."}
+        _call(f"/actions/{urllib.parse.quote(str(action_id), safe='')}", method="DELETE", **options)
+        return {"ok": True, "deleted_trello": True}
+    except Exception:
+        # HTTPError URLs contain API credentials; do not return raw exceptions.
+        return {"ok": False, "error": "Trello deletion could not be confirmed. The Job Log entry was kept; check the original comment before trying again."}
+
+
 def delete_comment(action_id):
     """Delete a comment by its ACTION id. True on success.
 
@@ -890,18 +932,21 @@ def get_all_comments(card_id, *, max_pages=20):
         params = {"filter": "commentCard", "limit": "50"}
         if before:
             params["before"] = before
-        try:
-            page = _call(f"/cards/{card_id}/actions", params=params) or []
-        except urllib.request.HTTPError:
-            break
+        page = _call(f"/cards/{card_id}/actions", params=params)
+        if not isinstance(page, list):
+            raise RuntimeError('Trello comment history returned an invalid page')
         if not page:
             break
-        out.extend(page)
+        seen = {item.get('id') for item in out}
+        out.extend(item for item in page if item.get('id') not in seen)
         if len(page) < 50:
             break
-        before = page[-1].get("id")
-        if not before:
-            break
+        next_before = page[-1].get("id")
+        if not next_before or next_before == before:
+            raise RuntimeError('Trello comment history pagination did not advance')
+        before = next_before
+    else:
+        raise RuntimeError('Trello comment history exceeded the page limit; history is incomplete')
     return out
 
 
@@ -1664,6 +1709,8 @@ def attach_file(card_id, file_path, *, name=None, mime=None):
         # Attachment uploads can take a few seconds for large PDFs —
         # generous timeout vs the 15s default on _call (which assumes
         # tiny JSON payloads).
+        import trello_mirror_reader
+        trello_mirror_reader.mark_write()
         with urllib.request.urlopen(req, timeout=60) as r:
             raw = r.read()
     except Exception as ex:

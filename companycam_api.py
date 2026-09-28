@@ -21,6 +21,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import config
 
@@ -452,6 +453,9 @@ def find_project_id(name, address_hint="", *, use_graph=True,
             pass
 
     res = find_project(name, address_hint=address_hint)
+    if not res.get("ok"):
+        raise RuntimeError("CompanyCam project lookup failed: " +
+                           str(res.get("error") or "provider unavailable"))
     m = res.get("match") if res.get("ok") else None
     pid = m["id"] if m else ""
 
@@ -514,6 +518,22 @@ def split_address(one_line):
     return out
 
 
+def _primary_contact_phone(value):
+    """Extract one US contact number; never concatenate numbers or extensions.
+
+    Intake keeps the original free-text field. This only shapes the optional
+    provider field, which rejects multiple numbers and values over 16 chars.
+    Unknown formats are omitted rather than preventing project creation.
+    """
+    text = str(value or '').strip()
+    match = re.search(r'(?<![\d+])(?:\+?1[ .-]*)?\(?([2-9]\d{2})\)?[ .-]*([2-9]\d{2})[ .-]*(\d{4})(?!\d)', text)
+    if match:
+        return '+1' + ''.join(match.groups())
+    if re.fullmatch(r'\+[1-9]\d{7,14}', text):
+        return text
+    return ''
+
+
 def create_project(name, *, address="", contact_name="", contact_email="",
                    contact_phone="", street="", city="", state="",
                    postal_code=""):
@@ -555,8 +575,9 @@ def create_project(name, *, address="", contact_name="", contact_email="",
         contact = {"name": contact_name.strip()}
         if (contact_email or "").strip():
             contact["email"] = contact_email.strip()
-        if (contact_phone or "").strip():
-            contact["phone_number"] = contact_phone.strip()
+        phone = _primary_contact_phone(contact_phone)
+        if phone:
+            contact["phone_number"] = phone
         body["primary_contact"] = contact
 
     try:
@@ -644,6 +665,20 @@ def _shape_photo(photo):
 # same information out of filenames, which CompanyCam photos don't have.
 _TAG_CACHE: dict = {}
 _TAG_FETCH_CAP = 400          # ~2 min of the 240/min GET budget
+_TAG_WORKERS = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cc-tags")
+_TAG_RATE_LOCK = threading.Lock()
+_TAG_CACHE_LOCK = threading.RLock()
+_TAG_NEXT_REQUEST = 0.0
+
+
+def _wait_for_tag_slot():
+    """Pace cache misses across import windows; leave room for other reads."""
+    global _TAG_NEXT_REQUEST
+    with _TAG_RATE_LOCK:
+        delay = _TAG_NEXT_REQUEST - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        _TAG_NEXT_REQUEST = time.monotonic() + 0.3
 
 # Tags survive the process. They come from /photos/{id}/tags — ONE call
 # per photo, with no bulk form: the project photo list carries no tags
@@ -666,6 +701,11 @@ def _tag_disk_path():
 
 
 def _tag_disk_load():
+    with _TAG_CACHE_LOCK:
+        return _tag_disk_load_locked()
+
+
+def _tag_disk_load_locked():
     """Read the sidecar once per process. Any problem starts empty — a
     corrupt cache must cost a re-fetch, never a broken pull."""
     global _TAG_DISK
@@ -686,9 +726,10 @@ def _tag_disk_load():
                 # sidecar isn't thrown away. A legacy entry has no stamp,
                 # so it revalidates once and upgrades itself.
                 if isinstance(v, dict) and isinstance(v.get("t"), list):
-                    if v["t"]:
+                    if v["t"] or (v.get("u") and v.get("expires", 0) > time.time()):
                         out[str(k)] = {"t": [str(t) for t in v["t"]],
-                                       "u": str(v.get("u") or "")}
+                                       "u": str(v.get("u") or ""),
+                                       "expires": v.get("expires", 0)}
                 elif isinstance(v, list) and v:
                     out[str(k)] = {"t": [str(t) for t in v], "u": ""}
             _TAG_DISK = out
@@ -698,6 +739,11 @@ def _tag_disk_load():
 
 
 def flush_tag_cache():
+    with _TAG_CACHE_LOCK:
+        _flush_tag_cache_locked()
+
+
+def _flush_tag_cache_locked():
     """Write newly-learned tags to the sidecar. Best-effort: losing this
     costs time on the next look and nothing else."""
     global _TAG_DISK_DIRTY
@@ -728,7 +774,7 @@ def invalidate_tag_cache():
     _TAG_CACHE.clear()
 
 
-def photo_tags(photo_id, updated_at=""):
+def photo_tags(photo_id, updated_at="", *, strict=False):
     """Tag display names for one photo. [] on any failure — a pull must
     never break because a label lookup did.
 
@@ -755,20 +801,25 @@ def photo_tags(photo_id, updated_at=""):
     # revalidation can't be defeated by an earlier stamp-less call in the
     # same run seeding memory with the stale answer.
     mem = _TAG_CACHE.get(pid)
-    if mem is not None and (not stamp or mem.get("u") == stamp):
+    if mem is not None and (not stamp or mem.get("u") == stamp) and (
+            not mem.get("expires") or mem["expires"] > time.time()):
         return mem["t"]
     disk = _tag_disk_load()
     hit = disk.get(pid)
     if hit is not None:
         # No stamp on either side means "can't tell" — trust it, which is
         # the pre-existing behaviour for callers that pass nothing.
-        if not stamp or hit.get("u") == stamp:
+        if (not stamp or hit.get("u") == stamp) and (
+                not hit.get("expires") or hit["expires"] > time.time()):
             _TAG_CACHE[pid] = hit
             return hit["t"]
     try:
+        _wait_for_tag_slot()
         raw = _call(f"/photos/{pid}/tags") or []
     except Exception:
-        raw = []
+        if strict:
+            raise
+        return []  # A failed lookup is not evidence of an untagged photo.
     names = []
     for t in raw:
         if isinstance(t, dict):
@@ -777,16 +828,17 @@ def photo_tags(photo_id, updated_at=""):
             n = str(t or "").strip()
         if n:
             names.append(n)
-    _TAG_CACHE[pid] = {"t": names, "u": stamp}
-    # Only TAGGED photos are written to disk. A photo with no tags is
-    # usually one nobody has tagged YET — techs tag late, and the
-    # suggest-a-stage feature exists precisely because shoots arrive
-    # untagged. Persisting an empty answer would freeze those photos as
-    # untagged forever. Empties still cache in memory, so a single run
-    # never asks twice.
-    if names:
-        disk[pid] = {"t": names, "u": stamp}
-        _TAG_DISK_DIRTY += 1
+    entry = {"t": names, "u": stamp}
+    # Empty responses are useful too, but techs tag late. Revalidate on
+    # a changed photo stamp and at most five minutes later even if the
+    # provider does not advance the stamp when tags change.
+    if not names:
+        entry["expires"] = time.time() + 300
+    with _TAG_CACHE_LOCK:
+        _TAG_CACHE[pid] = entry
+        if names or stamp:
+            disk[pid] = entry
+            _TAG_DISK_DIRTY += 1
     return names
 
 
@@ -905,22 +957,37 @@ def add_photo_tags(photo_id, tags):
     return {"ok": True, "tags": names}
 
 
-def attach_tags(photos, *, cap=_TAG_FETCH_CAP):
+def attach_tags(photos, *, cap=_TAG_FETCH_CAP, progress_cb=None, strict=False):
     """Populate `tags` on each shaped photo, in place. Returns the list.
 
     Capped so an accidental full-history pull can't spend thousands of
     calls; photos past the cap keep an empty tag list and fall back to
     un-organized behaviour rather than erroring.
     """
+    pending = {}
+    completed = 0
+    if progress_cb:
+        progress_cb({"phase": "tags", "done": 0, "total": len(photos or [])})
     for i, p in enumerate(photos or ()):
         # Already carrying tags — leave them. plan_pull attaches them to
         # build the preview and the download then runs over the SAME
         # photos, so without this every pull re-fetched all of them, and
         # any tags a caller supplied were overwritten.
         if p.get("tags"):
+            completed += 1
             continue
-        p["tags"] = (photo_tags(p.get("id"), p.get("updated_at") or "")
-                     if i < cap else [])
+        if i >= cap:
+            p["tags"] = []
+            completed += 1
+            continue
+        future = _TAG_WORKERS.submit(photo_tags, p.get("id"), p.get("updated_at") or "",
+                                     **({'strict': True} if strict else {}))
+        pending[future] = p
+    for future in as_completed(pending):
+        pending[future]["tags"] = future.result()
+        completed += 1
+        if progress_cb and (completed == 1 or completed % 10 == 0 or completed == len(photos)):
+            progress_cb({"phase": "tags", "done": completed, "total": len(photos)})
     # Save once per batch rather than per photo: this is the only place
     # that fetches tags in bulk, and the whole point is that the next
     # look at this job doesn't pay for them again — including after a
@@ -1446,7 +1513,9 @@ def _base_for(division, dest_dir, contents_dir="", docs_dir=""):
 
 def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
               tech_date_folder=True, organize_by_tags=True,
-              contents_dir="", docs_dir=""):
+              contents_dir="", docs_dir="", progress_cb=None,
+              defer_tags=False, only_ids=None, strict_tags=False,
+              photo_snapshot=None, snapshot_cb=None):
     """What a pull WOULD bring in, grouped by day and by what was done.
 
     Answers the question you actually have in front of a job: which
@@ -1460,12 +1529,19 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
     subset.
     """
     v = verify_project(project_id, dest_dir,
-                       also_dirs=(contents_dir, docs_dir))
+                       also_dirs=(contents_dir, docs_dir),
+                       **({'photo_snapshot': photo_snapshot} if photo_snapshot is not None else {}),
+                       **({"progress_cb": progress_cb} if progress_cb else {}))
     if not v.get("ok"):
         return v
 
     missing = v.get("missing_photos") or []
-    if organize_by_tags:
+    if snapshot_cb:
+        snapshot_cb(missing)
+    if only_ids is not None:
+        selected = {str(i) for i in only_ids}
+        missing = [p for p in missing if str(p.get('id')) in selected]
+    if organize_by_tags and not defer_tags:
         # Tags come from a SEPARATE call per photo, so a photo list alone
         # carries none. Without this the plan showed every shoot as
         # "(no stage tag)" even when CompanyCam had them tagged Initial /
@@ -1474,8 +1550,11 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
         # already filed), and photo_tags caches, so the pull that follows
         # costs nothing extra.
         try:
-            attach_tags(missing)
-        except Exception:
+            attach_tags(missing, **({"progress_cb": progress_cb} if progress_cb else {}),
+                        **({'strict': True, 'cap':len(missing)} if strict_tags else {}))
+        except Exception as ex:
+            if strict_tags:
+                return {'ok':False, 'error':f'Selected photo tags could not be verified ({type(ex).__name__}). No photos imported; retry the review.'}
             pass          # untagged routing is a worse plan, not a broken one
 
     groups = {}
@@ -1485,7 +1564,7 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
         # overrides it per row afterwards if it's wrong.
         r = route_photo(p, subfolder=subfolder, tech=tech,
                         tech_date_folder=tech_date_folder,
-                        organize_by_tags=organize_by_tags,
+                        organize_by_tags=organize_by_tags and not defer_tags,
                         split_contents=bool(contents_dir),
                         split_docs=bool(docs_dir))
         parts, room, stage, box = r["parts"], r["room"], r["stage"], r["box"]
@@ -1508,6 +1587,7 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
         shared = [x for x in (stage, box) if x]
         g = groups.setdefault(key, {
             "stage": label or "(no stage tag)",
+            "tags_pending": bool(defer_tags),
             "box": box,
             "division": division,
             "date": date_label(p),
@@ -1534,13 +1614,14 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
         g["rooms"] = sorted(g["rooms"].items(), key=lambda kv: -kv[1])
         g["current_tags"].sort(key=str.casefold)
     return {"ok": True, "total": v["total"], "present": v["present"],
-            "missing": v["missing"], "groups": rows,
+            "missing": len(missing), "groups": rows,
+            "tags_pending": bool(defer_tags),
             # Carried through so callers can keep showing the "deleted in
             # CompanyCam after being pulled" note.
             "extra_files": v.get("extra_files", 0)}
 
 
-def verify_project(project_id, dest_dir, *, also_dirs=()):
+def verify_project(project_id, dest_dir, *, also_dirs=(), progress_cb=None, photo_snapshot=None):
     """Compare CompanyCam against what's actually in the job folder.
 
     `also_dirs` are additional roots that legitimately hold this
@@ -1560,9 +1641,17 @@ def verify_project(project_id, dest_dir, *, also_dirs=()):
     if not pid:
         return {"ok": False, "error": "no project id"}
     try:
-        photos = list_project_photos(pid)
+        photos = list_project_photos(pid) if photo_snapshot is None else photo_snapshot
     except Exception as ex:
-        return {"ok": False, "error": str(ex)}
+        return {"ok": False, "error": f'CompanyCam photo list could not be loaded ({type(ex).__name__}). No photos imported; retry the preview.'}
+    if progress_cb:
+        shoots = {}
+        for photo in photos:
+            key = (date_label(photo), tech_label(photo))
+            shoot = shoots.setdefault(key, {"date": key[0], "tech": key[1], "count": 0})
+            shoot["count"] += 1
+        progress_cb({"phase": "photos", "total": len(photos),
+                     "shoots": sorted(shoots.values(), key=lambda s: s["date"], reverse=True)})
     roots = [dest_dir] + [d for d in (also_dirs or ()) if d]
     have, stamps = set(), set()
     for root in roots:
@@ -1609,7 +1698,7 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                     subfolder="", advance_watermark=True, tech="",
                     organize_by_tags=True, tech_date_folder=True,
                     only_ids=None, force_tech=False, contents_dir="",
-                    docs_dir=""):
+                    docs_dir="", _operation=None):
     """Download NEW project photos into `dest_dir` and advance the per-
     project high-water mark.
 
@@ -1643,7 +1732,15 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
         since = since_epoch
 
     try:
-        photos = new_photos(pid, since_epoch=since)
+        # Private operation-local snapshot: one provider listing for all
+        # shoots in this import, never reused across users or later imports.
+        snapshot_key = (pid, since)
+        if _operation is not None and snapshot_key in _operation:
+            photos = _operation[snapshot_key]
+        else:
+            photos = new_photos(pid, since_epoch=since)
+            if _operation is not None:
+                _operation[snapshot_key] = photos
     except urllib.request.HTTPError as ex:
         return {"ok": False, "error": f"HTTP {ex.code}", "downloaded": 0,
                 "skipped": 0, "files": [], "latest": None}
@@ -1701,6 +1798,7 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
     # close.
     already = _present_tokens(photos, existing_tokens)
     rooms_used, stages_used, boxes_used, untagged = {}, {}, {}, 0
+    record_photo = (_operation or {}).get('record_photo')
     for p in photos:
         # Room tag → subfolder under the stage, matching the zip import's
         # layout. No room tag means the photo stays at the stage level
@@ -1757,6 +1855,10 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                 or (not is_scope_doc and fname.lower() in existing)
                 or str(p.get("id") or "") in already):
             skipped += 1
+            if record_photo:
+                record_photo({'photo_id': str(p.get('id') or ''), 'state': 'already_present',
+                              'planned_directory': photo_target, 'destination': '',
+                              'note': 'Existing file detected by the importer; exact existing path not resolved.'})
         else:
             os.makedirs(photo_target, exist_ok=True)
             dest = os.path.join(photo_target, fname)
@@ -1767,6 +1869,8 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                     n += 1
                 dest = f"{stem} ({n}){ext}"
             try:
+                if record_photo:
+                    record_photo({'photo_id': str(p.get('id') or ''), 'state': 'downloading', 'destination': dest})
                 _download(p["original_url"], dest)
             except Exception as ex:
                 # Counted, not just skipped. Swallowing this made a failed
@@ -1776,6 +1880,9 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                 failed += 1
                 if not last_error:
                     last_error = f"{type(ex).__name__}: {ex}"
+                if record_photo:
+                    record_photo({'photo_id': str(p.get('id') or ''), 'state': 'failed',
+                                  'destination': dest, 'error_type': type(ex).__name__})
                 continue          # transient — leave for the next run
             # Stamp file time to capture time so Explorer sorts by shoot date.
             try:
@@ -1789,6 +1896,8 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                 existing_tokens.add(tok)
             files.append(dest)
             downloaded += 1
+            if record_photo:
+                record_photo({'photo_id': str(p.get('id') or ''), 'state': 'downloaded', 'destination': dest})
         cap = p["captured_at"]
         if cap is not None and (latest is None or int(cap) > int(latest)):
             latest = int(cap)

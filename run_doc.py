@@ -16,6 +16,7 @@ from datetime import datetime
 import config
 import paths
 import persistence
+from shared_file_read import open_read
 from audit_logic import detect_activity, audit_jobs as _audit_jobs_core
 
 # Run-doc + job-folder roots. Resolved lazily from config on every access
@@ -669,7 +670,8 @@ def parse_run_doc(path):
     _ts_snap = _preserve_mtime(p)
     from docx import Document          # lazy: keeps run_doc off the
     from audit_logic import para_is_struck   # docx/lxml stack at import
-    doc = Document(p)
+    with open_read(p) as stream:
+        doc = Document(stream)
     entries = [(para.text, para_is_struck(para)) for para in doc.paragraphs]
     jobs, run_date = _parse_run_doc_entries(entries)
     if not run_date:

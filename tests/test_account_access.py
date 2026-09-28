@@ -41,3 +41,29 @@ def test_identity_survives_temporary_access_failure():
     assert result["signed_in"] is True
     assert result["is_admin"] is False
     assert "offline" in result["error"]
+
+
+def test_user_capabilities_are_normalized_from_database_access():
+    result = account_access.current_access(Adapter(
+        {"id": "sam", "email": "samantha@servpro10100.com"},
+        {"departments": ["IE"], "capabilities": {"docusketch": True}}))
+    assert result["capabilities"] == {"docusketch": True}
+    assert result["capabilities_configured"] is True
+
+
+def test_admin_capabilities_stay_available_during_schema_transition():
+    result = account_access.current_access(Adapter(
+        {"id": "admin", "email": "admin@example.com"},
+        {"is_admin": True, "departments": ["IE"]}))
+    assert result["capabilities"]["docusketch"] is True
+    assert result["capabilities_configured"] is False
+
+
+def test_cached_access_never_calls_the_database(monkeypatch):
+    monkeypatch.setattr(account_access, "_LAST_ACCESS", None)
+    monkeypatch.setattr(account_access.SupabaseAccessAdapter, "access",
+                        lambda: (_ for _ in ()).throw(
+                            AssertionError("cached access called Supabase")))
+    result = account_access.cached_access()
+    assert result["capabilities"] == {"docusketch": False}
+    assert result["capabilities_configured"] is False

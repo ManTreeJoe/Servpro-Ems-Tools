@@ -77,10 +77,15 @@ def test_pull_downloads_and_advances_watermark(monkeypatch, tmp_path):
         return dest
     monkeypatch.setattr(cc, "_download", _fake_dl)
 
-    res = cc.pull_new_photos("proj", str(tmp_path), since_epoch=None, job="Smith")
+    receipts = []
+    res = cc.pull_new_photos("proj", str(tmp_path), since_epoch=None, job="Smith",
+                             _operation={'record_photo': receipts.append})
     assert res["ok"] and res["downloaded"] == 2 and res["skipped"] == 0
     assert res["latest"] == 250
     assert all(os.path.isfile(f) for f in res["files"])
+    assert [r['state'] for r in receipts] == ['downloading','downloaded','downloading','downloaded']
+    assert {r['photo_id'] for r in receipts} == {'p1','p2'}
+    assert all(os.path.isfile(r['destination']) for r in receipts if r['state'] == 'downloaded')
     # Watermark advanced to newest capture.
     assert persistence.get_companycam_seen("proj")["last_captured_at"] == 250
 

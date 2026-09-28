@@ -79,7 +79,8 @@ def test_real_field_note_structures_are_recognized():
     ]
     acts = _by_activity(sg.extract_job_log(comments))
     assert "Reinspection" in acts
-    assert "Pack Out" in acts
+    assert "Contents Manipulation" in acts
+    assert "Pack Out" not in acts
     assert "Teardown" in acts
     assert "EQ picked up" in acts
     assert "Mold Clearance - Passed" in acts

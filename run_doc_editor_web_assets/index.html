@@ -5,10 +5,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#1A1A1A" />
-  <title>Daily Schedule — Linguar Hub</title>
+  <title>Daily Schedule — OneLoss</title>
   <script src="../web_shared/appearance.js?v=20260901a"></script>
   <link rel="stylesheet" href="../web_shared/theme.css?v=20260910a" />
-  <link rel="stylesheet" href="app.css?v=20260911a" />
+  <link rel="stylesheet" href="app.css?v=20260918compact" />
+  <link rel="stylesheet" href="import_review.css?v=20260918a" />
 <link rel="stylesheet" href="../web_shared/workspace_controls.css?v=20260910a" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
   <script src="../web_shared/health_banner.js?v=20260820a"></script>
@@ -25,9 +26,6 @@
       <span class="mode-chip">Run Doc connected</span>
     </div>
     <div class="topbar-actions">
-      <button class="btn icon-btn" id="day-prev" title="Previous day">←</button>
-      <button class="btn" id="day-today">Today</button>
-      <button class="btn icon-btn" id="day-next" title="Next day">→</button>
       <button class="btn" id="print-run" title="Print the saved Run in its original Word layout">Print</button>
       <button class="btn" id="open-word">Open in Word</button>
       <button class="btn" id="undo-btn" disabled>Undo</button>
@@ -41,8 +39,28 @@
         <h1 id="day-title">Loading schedule…</h1>
         <div class="file-meta" id="file-meta"></div>
       </div>
-      <div class="save-state clean" id="save-state"><span></span>Saved</div>
+      <div class="day-review-actions">
+        <button type="button" class="btn" id="review-schedule-import" disabled>Review digital import</button>
+        <div class="save-state clean" id="save-state"><span></span>Saved</div>
+      </div>
     </section>
+    <section class="schedule-controls" aria-label="Schedule filters">
+      <label>Schedule date<input type="date" id="schedule-date" /></label>
+      <div class="date-actions">
+        <button class="btn icon-btn" id="day-prev" aria-label="Previous day">←</button>
+        <button class="btn" id="day-today">Today</button>
+        <button class="btn icon-btn" id="day-next" aria-label="Next day">→</button>
+      </div>
+      <label>Crew / owner<select id="schedule-crew"><option value="">All crews</option></select></label>
+      <label class="schedule-search">Find scheduled work<input type="search" id="schedule-search" placeholder="Job, address, task or Run text" /></label>
+      <label class="closed-filter"><input type="checkbox" id="schedule-completed" /> Include completed</label>
+    </section>
+    <nav class="schedule-views" aria-label="Schedule view">
+      <button class="btn active" data-schedule-view="daily" aria-pressed="true">Daily schedule</button>
+      <button class="btn" data-schedule-view="waiting" aria-pressed="false">Waiting / upcoming</button>
+      <button class="btn" data-schedule-view="all" aria-pressed="false">All Run items</button>
+      <span id="schedule-results" role="status"></span>
+    </nav>
     <nav class="week-strip" id="week-strip" aria-label="Choose schedule day"></nav>
     <section class="schedule-summary" aria-label="Schedule summary">
       <div><span>Run items</span><strong id="scheduled-count">—</strong></div>
@@ -84,8 +102,11 @@
   </div>
   <footer class="statusbar"><span>Drag any numbered tab to reorder work or move it to another group.</span><span id="status-msg">Ctrl+S saves</span></footer>
   <link rel="stylesheet" href="schedule_visits.css?v=20260911a">
+  <link rel="stylesheet" href="schedule_workspace.css?v=20260918lops">
   <script src="schedule_fields.js?v=20260911a"></script>
   <script src="visit_controls.js?v=20260911a"></script>
-  <script src="app.js?v=20260911print"></script>
+  <script src="import_review.js?v=20260918a"></script>
+  <script src="../web_shared/ctx_menu.js?v=20260923schedule"></script>
+  <script src="app.js?v=20260923openjob"></script>
 </body>
 </html>

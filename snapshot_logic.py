@@ -882,9 +882,12 @@ _JOBLOG_WORK_EVENTS = [
      r'\btear[\s-]?down\s+(?:was\s+)?(?:completed|performed|done)\b|'
      r'\b(?:completed|performed)\s+(?:the\s+)?tear[\s-]?down\b'),
     ("Pack Out",
-     r'\b(?:pack[\s-]?out|content(?:s)?\s+manipulation)\s+'
+     r'\bpack[\s-]?out\s+'
      r'(?:was\s+)?(?:completed|performed|done)\b|'
-     r'\b(?:completed|performed)\s+(?:the\s+)?(?:pack[\s-]?out|content(?:s)?\s+manipulation)\b'),
+     r'\b(?:completed|performed)\s+(?:the\s+)?pack[\s-]?out\b'),
+    ("Contents Manipulation",
+     r'\bcontents?\s+manipulation\s+(?:was\s+)?(?:completed|performed|done)\b|'
+     r'\b(?:completed|performed)\s+(?:the\s+)?contents?\s+manipulation\b'),
     ("Pack Back",
      r'\bpack[\s-]?(?:back|in)\s+(?:was\s+)?(?:completed|performed|done)\b|'
      r'\b(?:completed|performed)\s+(?:the\s+)?pack[\s-]?(?:back|in)\b'),
@@ -1066,6 +1069,9 @@ def extract_job_log(comments):
             # (e.g. "Equipment Placed: No" must not log EQ placed).
             if label == "EQ placed" and _is_no_answer(
                     fresh.lower(), r'equipment\s+placed'):
+                continue
+            if label == "Contents Manipulation" and _is_no_answer(
+                    fresh.lower(), r'contents?\s+manipulation\s+done'):
                 continue
             key = (date_str, label)
             if key in seen:
@@ -1518,7 +1524,8 @@ def _snapshot_office_line() -> str:
 
 
 def render_snapshot(output_path, *, insured, carrier="", dol="",
-                    first_visit="", cause="", subs=None, logs=None):
+                    first_visit="", cause="", subs=None, logs=None,
+                    report_title="EMS Job Snapshot"):
     """Render the EMS job snapshot as a fully rendered PDF (NOT the fillable
     template): a header block + Sub/Vendor Log + Daily Job Log as tables
     whose Activity/Techs cells WRAP and whose rows grow to fit — so nothing
@@ -1558,9 +1565,9 @@ def render_snapshot(output_path, *, insured, carrier="", dol="",
     doc = _Doc(output_path, pagesize=_letter,
                leftMargin=0.6 * _inch, rightMargin=0.6 * _inch,
                topMargin=0.55 * _inch, bottomMargin=0.55 * _inch,
-               title=f"{insured} — EMS Job Snapshot")
+               title=f"{insured} — {report_title}")
     # Title left, office name right-aligned on the same baseline (letterhead).
-    _title_tbl = _T([[_P("EMS Job Snapshot", title_s),
+    _title_tbl = _T([[P(report_title, title_s),
                       _P(_sx.escape(_snapshot_office_line()), office_s)]],
                     colWidths=[4.7 * _inch, 2.6 * _inch])
     _title_tbl.setStyle(_TS([
@@ -1581,7 +1588,7 @@ def render_snapshot(output_path, *, insured, carrier="", dol="",
         [P("Date of Loss", mlbl), P(dol, mval),
          P("First Site Visit", mlbl), P(first_visit, mval)],
         [P("Cause / Category / Class", mlbl), P(cause, mval),
-         P("Subs Used", mlbl), P("Yes" if subs else "No", mval)],
+         P("Subs Used", mlbl), P("Yes" if subs else ("No" if report_title == "EMS Job Snapshot" else "Not recorded"), mval)],
     ]
     mt = _T(meta, colWidths=[1.55 * _inch, 2.25 * _inch,
                              1.45 * _inch, 2.05 * _inch])

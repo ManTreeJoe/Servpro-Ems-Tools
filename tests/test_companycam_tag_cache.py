@@ -26,6 +26,7 @@ def api(tmp_path, monkeypatch):
         return [{"display_value": "Initial"}, {"display_value": "Kitchen"}]
 
     monkeypatch.setattr(cc, "_call", _fake_call)
+    monkeypatch.setattr(cc, "_wait_for_tag_slot", lambda: None)
     monkeypatch.setattr(cc, "_tag_disk_path",
                         lambda: str(tmp_path / "tags.json"))
     cc._TAG_CACHE.clear()
@@ -92,6 +93,43 @@ def test_untagged_still_cached_in_memory_for_this_run(api):
     cc_.photo_tags("untagged")
     cc_.photo_tags("untagged")
     assert len(calls) == 1
+
+
+def test_recent_unchanged_untagged_photos_survive_restart(api):
+    cc_, calls, _ = api
+    cc_.attach_tags([{"id": "untagged", "updated_at": "same"}])
+    cc_._TAG_CACHE.clear()
+    cc_._TAG_DISK = None
+    calls.clear()
+    cc_.attach_tags([{"id": "untagged", "updated_at": "same"}])
+    assert calls == [], "reopening a shoot must not repeat every empty tag request"
+
+
+def test_failed_tag_lookup_is_retried(api, monkeypatch):
+    cc_, calls, _ = api
+    original = cc_._call
+    def fail(*args, **kwargs):
+        raise TimeoutError("temporary")
+    monkeypatch.setattr(cc_, "_call", fail)
+    assert cc_.photo_tags("p1", "same") == []
+    monkeypatch.setattr(cc_, "_call", original)
+    assert cc_.photo_tags("p1", "same") == ["Initial", "Kitchen"]
+
+
+@pytest.mark.parametrize("changed_stamp", [True, False])
+def test_empty_cache_rechecks_on_change_or_expiry(api, monkeypatch, changed_stamp):
+    cc_, calls, _ = api
+    now = cc_.time.time()
+    monkeypatch.setattr(cc_.time, "time", lambda: now)
+    cc_.photo_tags("untagged", "old")
+    cc_.flush_tag_cache()
+    cc_._TAG_CACHE.clear()
+    cc_._TAG_DISK = None
+    calls.clear()
+    if not changed_stamp:
+        monkeypatch.setattr(cc_.time, "time", lambda: now + 301)
+    cc_.photo_tags("untagged", "new" if changed_stamp else "old")
+    assert calls == ["/photos/untagged/tags"]
 
 
 def test_invalidate_keeps_the_sidecar(api):

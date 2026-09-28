@@ -22,6 +22,7 @@ import re
 # (times, coordinates), so we split on the first colon only. We key off a known
 # label set so section headers / map junk lines never become fields.
 _LABELS = {
+    "assignment profile":                  "assignment_profile",
     "type":                                "assignment_type",
     "claim rep":                           "adjuster_name",
     "adjuster":                            "adjuster_name",
@@ -37,6 +38,8 @@ _LABELS = {
     "insured name":                        "insured_name",
     "insured":                             "insured_name",
     "mobile phone":                        "phone",
+    "day phone":                           "phone",
+    "evening phone":                       "phone",
     "home phone":                          "phone",
     "phone":                               "phone",
     "phone number":                        "phone",
@@ -44,6 +47,8 @@ _LABELS = {
     "email":                               "email",
     "type of loss":                        "type_of_loss",
     "cause of loss":                       "type_of_loss",
+    "policy type":                         "policy_type",
+    "years of membership":                 "years_of_membership",
     "xa id":                               "xa_id",
     "deductible":                          "deductible",
     "agent name":                          "agent_name",
@@ -53,6 +58,9 @@ _LABELS = {
     "property address":                    "address",
     "loss address":                        "address",
     "loss details":                        "loss_details",
+    "instructions":                        "instructions",
+    "additional instructions":             "additional_instructions",
+    "xa referral note":                    "xa_referral_note",
     "assignment received by xactanalysis": "date_received_raw",
     "notification sent":                   "notification_sent_raw",
 }
@@ -78,17 +86,46 @@ def parse_assignment_email(text):
         if carrier:
             f["carrier"] = carrier
 
-    for line in text.splitlines():
-        if ":" not in line:
+    # XA's HTML notification renders table cells as alternating lines:
+    #
+    #   Insured Name
+    #   Customer Name
+    #   Claim Number
+    #   12345
+    #
+    # while copied/plain messages commonly use ``Label: value``.  Parse both
+    # forms and retain wrapped value lines until the next known label.
+    blocks = {}
+    current = None
+    for raw_line in text.splitlines():
+        line = re.sub(r"\s+", " ", raw_line).strip()
+        if not line:
             continue
-        label, _, val = line.partition(":")
-        key = _LABELS.get(label.strip().lower())
-        if not key:
+        label_text, separator, inline = line.partition(":")
+        inline_key = _LABELS.get(label_text.strip().lower()) if separator else None
+        standalone_key = _LABELS.get(line.rstrip(":").strip().lower())
+        if inline_key:
+            current = inline_key
+            if inline.strip():
+                blocks.setdefault(current, []).append(inline.strip())
             continue
-        val = val.strip()
-        if not val:
+        if standalone_key:
+            current = standalone_key
+            blocks.setdefault(current, [])
             continue
-        f.setdefault(key, val)
+        if current:
+            # Map links and XA's standard footer are presentation, not data.
+            if line in {"Google Maps", "MapQuest"}:
+                continue
+            if line == "View detailed information for this assignment in XactAnalysis.":
+                current = None
+                continue
+            blocks.setdefault(current, []).append(line)
+
+    for key, values in blocks.items():
+        value = " ".join(values).strip()
+        if value:
+            f.setdefault(key, value)
 
     # An adjuster email sometimes trails the Claim Rep line or sits on its own
     # line right after it — if we caught a name but no email, grab the first
@@ -138,14 +175,9 @@ def loss_type_from(type_of_loss):
 
 
 def suggest_card_name(fields):
-    """Card-name suggestion matching the WIP board convention '<Insured> -
-    <Carrier>'. The insured name is left as-received (the office can reorder
-    in the dialog)."""
-    insured = (fields.get("insured_name") or "").strip()
-    carrier = (fields.get("carrier") or "").strip()
-    if insured and carrier:
-        return f"{insured} - {carrier}"
-    return insured or carrier or ""
+    """Use the shared Last, First - Carrier convention for new cards."""
+    from intake_names import names
+    return names(fields)['trello']
 
 
 # ── Board / template / list resolution (department-aware) ──────────────────
@@ -284,7 +316,8 @@ def _file_under(fields, parent=""):
     chosen = (parent or "").strip()
     if chosen:
         return chosen, True
-    return ((fields or {}).get("insured_name") or "").strip(), False
+    from intake_names import names
+    return names(fields or {})['folder'], False
 
 
 def plan_folder(fields, *, child="", second_claim=False, parent=""):
@@ -378,7 +411,11 @@ def create_companycam_project(fields, *, card_name="", trello_card="",
 
     fields = dict(fields or {})
     insured = (fields.get("insured_name") or "").strip()
-    name = (card_name or insured or suggest_card_name(fields)).strip()
+    from intake_names import names
+    name = names(fields)['companycam']
+    # Identity remains the job/card name even though the provider display name
+    # differs. Never create a second job just to hold a First Last project.
+    identity = (card_name or suggest_card_name(fields) or insured).strip()
     if not name:
         return {"ok": False, "error": "No insured name to name the project."}
     address = (fields.get("address") or "").strip()
@@ -389,7 +426,7 @@ def create_companycam_project(fields, *, card_name="", trello_card="",
     # split across two and neither looks wrong.
     try:
         import ems_db
-        job = ems_db.find_job_by_name(name) or (
+        job = ems_db.find_job_by_name(identity) or (
             ems_db.find_job_by_name(insured) if insured else None)
         if job:
             pinned = ems_db.get_link(job["canon_key"], ems_db.LINK_COMPANYCAM)
@@ -401,11 +438,14 @@ def create_companycam_project(fields, *, card_name="", trello_card="",
         pass
 
     existing = cc.find_project(name, address_hint=address)
+    if not existing.get("ok"):
+        return {"ok": False, "created": False,
+                "error": existing.get("error") or "CompanyCam project lookup failed; nothing was created."}
     if existing.get("ok") and existing.get("match"):
         match = existing["match"]
         return {"ok": True, "created": False,
                 "project": match,
-                "pinned": _pin_companycam(name, match["id"],
+                "pinned": _pin_companycam(identity, match["id"],
                                           trello_card=trello_card,
                                           folder_path=folder_path),
                 "reason": "a CompanyCam project already matches this name"}
@@ -427,7 +467,7 @@ def create_companycam_project(fields, *, card_name="", trello_card="",
         return res
     proj = res["project"]
     return {"ok": True, "created": True, "project": proj,
-            "pinned": _pin_companycam(name, proj["id"],
+            "pinned": _pin_companycam(identity, proj["id"],
                                       trello_card=trello_card,
                                       folder_path=folder_path)}
 

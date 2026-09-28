@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import datetime as _dt
 from concurrent.futures import ThreadPoolExecutor
+import json
 import os
 import sys
 import threading
@@ -1345,24 +1346,15 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         which left IUQ rows (no audit-row cache to fall back on)
         showing a generic "couldn't open folder" error.
         """
-        # Candidate list in preference order. Persistence pin first
-        # (most authoritative — user explicitly pinned), then the
-        # caller's hint, then the resolver's findings.
+        # Candidate list in preference order. The folder pin is deliberately
+        # local-only: opening Explorer must never wait on Supabase.
         candidates: list[tuple[str, str]] = []  # (label, path)
         try:
-            import job_saved_data
-            saved = job_saved_data.destination(client, card_id, 'folder')
-            if saved:
-                candidates.append(('database', saved))
+            pin = persistence.get_folder_path(client) or ""
+            if pin:
+                candidates.append(("persistence", pin))
         except Exception:
             pass
-        if client and not card_id:
-            try:
-                pin = persistence.get_folder_path(client) or ""
-                if pin:
-                    candidates.append(("persistence", pin))
-            except Exception:
-                pass
         if hint_path:
             candidates.append(("hint", hint_path))
         if client and not card_id:
@@ -1795,10 +1787,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
 
             def load_log():
                 try:
-                    return (ems_db.list_job_log_entries(master_key), "")
+                    rows = ems_db.list_job_log_entries(master_key)
+                    return (rows, "", getattr(rows, 'deleted_ids', []))
                 except Exception as ex:
                     return ([], "Shared Job Log needs database setup: "
-                            f"{type(ex).__name__}: {ex}")
+                            f"{type(ex).__name__}: {ex}", [])
 
             def load_timeline():
                 try:
@@ -1823,10 +1816,12 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 history_future = pool.submit(load_audit_history)
                 division_future = pool.submit(
                     self.crm_division_trello_cards, client)
-                log_entries, log_error = log_future.result()
+                log_entries, log_error, log_deleted_ids = log_future.result()
                 timeline = timeline_future.result()
                 audit_history = history_future.result()
-                division_cards = division_future.result().get("cards", [])
+                division_result = division_future.result()
+                division_cards = division_result.get("cards", [])
+                division_placements = division_result.get("placements", [])
             log_notice = ""
             try:
                 import ems_db_offline
@@ -1837,6 +1832,30 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 pass
             from job_progress import evaluate as evaluate_job_progress
             progress = evaluate_job_progress(master, audit_state, log_entries)
+            try:
+                import job_profiles
+                profile_suggestions = job_profiles.suggestions(master)
+                applied_profiles = [
+                    {"profile_id": item.get("profile_id") or "",
+                     "profile_name": item.get("profile_name") or "",
+                     "applied_at": item.get("applied_at") or ""}
+                    for item in ((master.get("metadata") or {}).get(
+                        "applied_job_profiles") or []) if isinstance(item, dict)]
+            except Exception:
+                profile_suggestions, applied_profiles = [], []
+            from job_paperwork import build_paperwork
+            paperwork = build_paperwork(master, audit_state)
+            try:
+                import account_access
+                access = account_access.current_access()
+                capabilities = {
+                    "items": dict(access.get("capabilities") or {}),
+                    "configured": bool(access.get("capabilities_configured")),
+                    "is_admin": bool(access.get("is_admin")),
+                }
+            except Exception:
+                capabilities = {"items": {}, "configured": False,
+                                "is_admin": False}
             progress["review_mode"] = not bool(
                 (_config.load() or {}).get("requirement_enforcement", False))
             for audit_event in audit_history:
@@ -1862,11 +1881,17 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "priority": master.get("priority") or "normal",
                 "work_environments": master.get("work_environments") or [],
                 "division_trello_cards": division_cards,
+                "division_trello_placements": division_placements,
                 "relationships": master.get("relationships") or [],
                 "job_log": log_entries,
+                "job_log_deleted_ids": log_deleted_ids,
                 "job_log_error": log_error,
                 "job_log_notice": log_notice,
                 "progress": progress,
+                "job_profile_suggestions": profile_suggestions,
+                "applied_job_profiles": applied_profiles,
+                "paperwork": paperwork,
+                "capabilities": capabilities,
                 "timeline": timeline,
                 "workspace_default_expanded": bool(
                     (_config.load() or {}).get(
@@ -1875,6 +1900,33 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "migration_required": True,
                     "error": f"CRM setup is not ready: {ex}"}
+
+    def apply_job_profile(self, client: str, profile_id: str) -> dict:
+        """Copy one visible Job Profile onto a Job; never keep a live link."""
+        try:
+            import ems_db
+            import job_profiles
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
+            master = ems_db.get_master_job(job.get("canon_key") or "") or job
+            rows = [row for row in job_profiles.list_profiles(
+                master.get("department") or "", include_inactive=False)
+                    if str(row.get("profile_id") or "") == str(profile_id or "")]
+            if not rows:
+                return {"ok": False, "error": "Job Profile is unavailable."}
+            profile = rows[0]
+            if not any(str(item.get("profile_id") or "") == str(profile_id or "")
+                       for item in job_profiles.suggestions(master, rows)):
+                return {"ok": False,
+                        "error": "This profile does not match the job's current type and details."}
+            metadata = job_profiles.apply_to_job(master, profile)
+            ems_db.upsert_job(display_name=master.get("display_name") or client,
+                              department=master.get("department") or "",
+                              metadata=metadata)
+            return {"ok": True, "profile_name": profile.get("name") or "Job Profile"}
+        except Exception as ex:
+            return {"ok": False, "error": str(ex)}
 
     def set_job_requirement(self, client: str, requirement_key: str,
                             state: str, note: str = "",
@@ -1966,11 +2018,16 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
     def save_crm_work_environment(self, client: str, work_environment: str,
                                   stage: str, owner: str = "") -> dict:
         """Set one job's EMS, Contents or Recon state independently."""
-        allowed = {"not_applicable", "planned", "scheduled", "active",
-                   "waiting", "ready_for_billing", "closeout", "closed"}
+        allowed = {"not_applicable", "interested", "planned", "scheduled",
+                   "active", "waiting", "on_hold", "ready_for_billing",
+                   "billing", "closeout", "closed"}
         stage = (stage or "").strip().lower()
         if stage not in allowed:
             return {"ok": False, "error": "invalid work-type stage"}
+        from ems_db_common import normalize_division
+        if stage == "interested" and normalize_division(work_environment) == "EMS":
+            return {"ok": False,
+                    "error": "Interested is only used for Contents and Recon"}
         try:
             import ems_db
             job = ems_db.find_job_by_name(client)
@@ -1979,16 +2036,27 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             saved = ems_db.set_work_environment_state(
                 job["canon_key"], work_environment, stage=stage,
                 owner=(owner or "").strip())
+            if stage != "not_applicable":
+                import contents_interest
+                delivery = contents_interest.queue(job, work_environment, stage)
+                return {"ok": True, "work_environment": saved,
+                        "division_card": delivery, "job_key": job["canon_key"]}
+            import contents_interest
+            contents_interest.cancel(job, work_environment)
             return {"ok": True, "work_environment": saved}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def crm_division_trello_cards(self, client: str) -> dict:
-        """Return the independently pinned EMS, Contents, and Recon cards.
+        """Return primary cards plus every linked board placement.
 
         The historical unsuffixed ``trello_card`` link is EMS.  Keeping that
         meaning lets every existing job continue to work while Contents and
-        Recon use their own link types.
+        Recon use their own link types.  A division can also have temporary
+        placements on another board (for example WIP and Estimating).  Those
+        are representations of the same division and therefore live in
+        ``placements``; ``cards`` remains the compatibility view containing
+        one primary card per division.
         """
         cache_key = (client or "").strip().casefold()
         with self._division_cards_lock:
@@ -2005,20 +2073,50 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                     result = {"ok": False, "error": "job not found", "cards": []}
                 else:
                     cards = []
+                    placements = []
                     for division in DIVISIONS:
                         link_type = division_link_type(LINK_TRELLO, division)
                         links = ems_db.get_links(job["canon_key"], link_type) or []
-                        card_id = str((links[0] if links else {}).get("link_value") or "")
+                        normalized_links = []
+                        for link in links:
+                            metadata = link.get("metadata")
+                            if not isinstance(metadata, dict):
+                                try:
+                                    metadata = json.loads(
+                                        link.get("metadata_json") or "{}")
+                                except (TypeError, ValueError):
+                                    metadata = {}
+                            purpose = str(metadata.get("purpose") or
+                                          "primary").strip().lower()
+                            item = {
+                                "division": division,
+                                "card_id": str(link.get("link_value") or ""),
+                                "purpose": purpose,
+                                "board": str(metadata.get("board") or ""),
+                                "lane": str(metadata.get("lane") or ""),
+                                "primary": bool(metadata.get("primary",
+                                                    purpose == "primary")),
+                            }
+                            item["url"] = (f"https://trello.com/c/{item['card_id']}"
+                                           if item["card_id"] else "")
+                            item["pinned"] = bool(item["card_id"])
+                            normalized_links.append(item)
+                            placements.append(item)
+                        primary = next((item for item in normalized_links
+                                        if item["primary"]), None)
+                        primary = primary or {}
+                        card_id = str(primary.get("card_id") or "")
                         cards.append({
                             "division": division,
                             "card_id": card_id,
                             "url": f"https://trello.com/c/{card_id}" if card_id else "",
                             "pinned": bool(card_id),
                         })
-                    result = {"ok": True, "cards": cards}
+                    result = {"ok": True, "cards": cards,
+                              "placements": placements}
             except Exception as ex:
                 result = {"ok": False, "error": f"{type(ex).__name__}: {ex}",
-                          "cards": []}
+                          "cards": [], "placements": []}
             self._division_cards_cache[cache_key] = (time.monotonic(), result)
             return result
 
@@ -2035,8 +2133,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return False
 
     def pin_crm_division_trello(self, client: str, division: str,
-                                card_id_or_url: str) -> dict:
-        """Replace one division's Trello pin without touching the others."""
+                                card_id_or_url: str, *, defer_info=False) -> dict:
+        """Replace one division's primary pin, preserving other placements."""
         try:
             import ems_db
             import trello_client as tc
@@ -2047,19 +2145,40 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                 return {"ok": False,
                         "error": "Paste a Trello card link or card ID"}
             normalized = normalize_division(division)
+            from division_cards import validate_pin
+            card_id = validate_pin(card_id, normalized)
             job = ems_db.find_job_by_name(client)
             if not job:
                 key = ems_db.upsert_job(display_name=client,
                                         metadata={"created_from": "division_trello_pin"})
                 job = ems_db.get_job(key)
             link_type = division_link_type(LINK_TRELLO, normalized)
-            ems_db.remove_link(job["canon_key"], link_type)
+            # A division may also be represented temporarily on Estimating,
+            # Logs, or another responsibility board.  Changing the primary
+            # WIP pin must not delete those placements.
+            for link in ems_db.get_links(job["canon_key"], link_type) or []:
+                metadata = link.get("metadata")
+                if not isinstance(metadata, dict):
+                    try:
+                        metadata = json.loads(link.get("metadata_json") or "{}")
+                    except (TypeError, ValueError):
+                        metadata = {}
+                purpose = str(metadata.get("purpose") or "primary").lower()
+                if bool(metadata.get("primary", purpose == "primary")):
+                    ems_db.remove_link(job["canon_key"], link_type,
+                                       str(link.get("link_value") or ""))
             ems_db.set_link(job["canon_key"], link_type, card_id,
                             added_by="crm_division_pin",
-                            metadata={"division": normalized})
+                            metadata={"division": normalized,
+                                      "purpose": "primary", "primary": True})
             # Old tools consume persistence's single card as the EMS card.
             if normalized == DIV_EMS:
-                persistence.set_trello_card_id(client, card_id)
+                if defer_info:
+                    # Links were already written above; do not resolve the
+                    # identity again or replace all sibling EMS placements.
+                    persistence.set_trello_card_id(client, card_id, mirror=False)
+                else:
+                    persistence.set_trello_card_id(client, card_id)
                 for rows in (getattr(self, "_last_rows", []) or [],
                              getattr(self, "_oneoff_rows", []) or []):
                     for row in rows:
@@ -2068,6 +2187,10 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             with self._division_cards_lock:
                 self._division_cards_cache.pop(
                     (client or "").strip().casefold(), None)
+            if defer_info:
+                return {"ok": True, "division": normalized, "card_id": card_id,
+                        "job_key": job["canon_key"], "info_pull_pending": True,
+                        "url": f"https://trello.com/c/{card_id}"}
             try:
                 import job_settings
                 info_pull = job_settings.pull_from_card(
@@ -2085,7 +2208,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def unpin_crm_division_trello(self, client: str, division: str) -> dict:
-        """Remove one division's Trello pin, leaving sibling pins intact."""
+        """Remove the primary pin, leaving sibling and board placements."""
         try:
             import ems_db
             from ems_db_common import (DIV_EMS, LINK_TRELLO,
@@ -2094,8 +2217,18 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             job = ems_db.find_job_by_name(client)
             if not job:
                 return {"ok": False, "error": "job not found"}
-            ems_db.remove_link(job["canon_key"],
-                               division_link_type(LINK_TRELLO, normalized))
+            link_type = division_link_type(LINK_TRELLO, normalized)
+            for link in ems_db.get_links(job["canon_key"], link_type) or []:
+                metadata = link.get("metadata")
+                if not isinstance(metadata, dict):
+                    try:
+                        metadata = json.loads(link.get("metadata_json") or "{}")
+                    except (TypeError, ValueError):
+                        metadata = {}
+                purpose = str(metadata.get("purpose") or "primary").lower()
+                if bool(metadata.get("primary", purpose == "primary")):
+                    ems_db.remove_link(job["canon_key"], link_type,
+                                       str(link.get("link_value") or ""))
             if normalized == DIV_EMS:
                 persistence.set_trello_card_id(client, "")
                 for rows in (getattr(self, "_last_rows", []) or [],
@@ -2163,8 +2296,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                                             opened_division: str = "") -> dict:
         """Auto-link one clear Trello card per work division.
 
-        Contents and Recon are inferred only from explicit board/lane names;
-        all other strong matches remain EMS for backward compatibility.
+        Only explicit board evidence determines division; unknown boards
+        are not eligible for automatic pinning.
         Ambiguous or disagreeing matches are reported, never overwritten.
         """
         name = (client or "").strip()
@@ -2182,13 +2315,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                   and h.get("tier") != "archive"
                   and not _identity_disagreement(name, h.get("name") or "")]
         grouped = {"EMS": [], "CONTENTS": [], "RECON": []}
+        from division_cards import board_division
         for hit in strong:
-            context = " ".join(str(hit.get(key) or "")
-                               for key in ("board", "lane")).casefold()
-            division = ("CONTENTS" if "content" in context else
-                        "RECON" if any(word in context for word in
-                                       ("recon", "reconstruction", "repair"))
-                        else "EMS")
+            division = board_division(hit.get('board'))
+            if not division:
+                continue
             card_id = str(hit.get("card_id") or "").strip()
             if card_id and not any(c["card_id"] == card_id for c in grouped[division]):
                 grouped[division].append({
@@ -2200,10 +2331,12 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         opened_card_id = str(opened_card_id or "").strip()
         from ems_db_common import normalize_division
         clicked_division = normalize_division(opened_division or "EMS")
-        if opened_card_id:
-            # The board click is an explicit choice, stronger than a legacy
-            # name-derived pin. Save it to the specific job before comparing
-            # search candidates so an old PCM collision repairs itself.
+        opened_matches = any(c['card_id'] == opened_card_id
+                             for c in grouped[clicked_division])
+        existing_pin = str(current.get(clicked_division, {}).get('card_id') or '')
+        if opened_card_id and opened_matches and not existing_pin:
+            # Opening a card may fill an empty verified division, never
+            # replace an existing pin or cross division boundaries.
             saved = self.pin_crm_division_trello(
                 name, clicked_division, opened_card_id)
             if saved.get("ok"):
@@ -2216,7 +2349,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             pin = str(current.get(division, {}).get("card_id") or "")
             candidates = grouped[division]
             candidate_ids = {card["card_id"] for card in candidates}
-            if (opened_card_id and pin == opened_card_id and
+            other_ids = {c['card_id'] for other, rows in grouped.items()
+                         if other != division for c in rows}
+            if pin and pin in other_ids:
+                state, reason = "conflict", "saved_pin_wrong_division"
+            elif (opened_matches and opened_card_id and pin == opened_card_id and
                     division == clicked_division):
                 state, reason = "linked", ""
             elif pin and candidate_ids and pin not in candidate_ids:
@@ -2261,50 +2398,92 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
 
     def save_crm_job_log(self, client: str, entry: dict,
                          card_id: str = "") -> dict:
-        """Create/edit the structured log and mirror its controlled comment."""
+        """Commit a structured log, then queue its optional Trello mirror."""
         try:
             import ems_db
             import supabase_client as sb
+            import job_workflow
             job = ems_db.find_job_by_name(client)
             if not job:
                 return {"ok": False, "error": "job not found"}
             entry = dict(entry or {})
-            existing = next((row for row in ems_db.list_job_log_entries(
+            existing = (next((row for row in ems_db.list_job_log_entries(
                 job["canon_key"]) if row.get("entry_id") == entry.get("entry_id")), {})
-            comment_id = str(entry.get("trello_comment_id") or
-                             existing.get("trello_comment_id") or "").strip()
+                if entry.get('entry_id') else {})
+            post_to_trello = entry.pop('post_to_trello', True) is not False
+            if existing.get('source') == 'pc_only' or (not entry.get('entry_id') and not post_to_trello):
+                # Persist the explicit OneLoss-only origin in the existing source
+                # field so later edits, including on another PC, keep this choice.
+                entry['source'] = 'pc_only'
+            entry["trello_comment_id"] = str(
+                entry.get("trello_comment_id") or
+                existing.get("trello_comment_id") or "").strip()
             cid = str(card_id or "").strip()
             if not cid:
                 try:
                     cid = persistence.get_trello_card_id(client) or ""
                 except Exception:
                     cid = ""
-            synced_trello = False
-            if comment_id or cid:
-                import trello_client as tc
-                mirror = self._trello_job_log_text(entry)
-                if comment_id:
-                    if not tc.update_comment(comment_id, mirror):
-                        return {"ok": False, "error":
-                                "Trello would not update this Job Log comment. "
-                                "Only the Trello comment author may be able to edit it."}
-                    synced_trello = True
-                else:
-                    posted = tc.post_comment(cid, mirror)
-                    comment_id = str(posted.get("id") or "") if isinstance(
-                        posted, dict) else ""
-                    if not comment_id:
-                        return {"ok": False, "error":
-                                "Trello did not create the Job Log comment. Nothing was saved."}
-                    synced_trello = True
-                entry["trello_comment_id"] = comment_id
+            entry["placement_card_id"] = (
+                cid or str(existing.get("placement_card_id") or "").strip())
             user = sb.current_user() or {}
             entry["updated_by"] = (user.get("display_name") or user.get("email")
                                    or entry.get("updated_by") or "")
             saved = ems_db.save_job_log_entry(job["canon_key"], entry)
+            if saved.get("deleted"):
+                return {"ok": False, "error": "This entry was deleted. Refresh the Job Log."}
+            queued = ({'queued':False, 'reason':'Saved in OneLoss; no comment change'}
+                      if entry.get('entry_id') or not post_to_trello or saved.get('source') == 'pc_only' else job_workflow.queue_job_log(
+                          job["canon_key"], saved, cid, self._trello_job_log_text(saved)))
             return {"ok": True, "entry": saved,
-                    "synced_trello": synced_trello,
-                    "entries": ems_db.list_job_log_entries(job["canon_key"])}
+                    "synced_trello": False,
+                    "pending_sync": bool(queued.get("queued")),
+                    "sync_operation": queued,
+                    "entries": [saved], "entries_partial": True}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def add_crm_division_trello_placement(
+            self, client: str, division: str, card_id_or_url: str,
+            purpose: str, board: str = "", lane: str = "") -> dict:
+        """Link an additional Trello placement to an existing division.
+
+        This intentionally does not create another OneLoss job or replace the
+        primary card.  It records that the same work is temporarily visible
+        in another responsibility queue.
+        """
+        allowed = {"wip", "estimating", "logs", "billing", "other"}
+        purpose = str(purpose or "").strip().lower()
+        if purpose not in allowed:
+            return {"ok": False, "error": "invalid board placement purpose"}
+        try:
+            import ems_db
+            import trello_client as tc
+            from ems_db_common import (LINK_TRELLO, division_link_type,
+                                       normalize_division)
+            card_id = tc.parse_card_identifier(card_id_or_url)
+            if not card_id:
+                return {"ok": False,
+                        "error": "Paste a Trello card link or card ID"}
+            normalized = normalize_division(division)
+            from division_cards import validate_pin
+            card_id = validate_pin(card_id, normalized)
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
+            ems_db.set_link(
+                job["canon_key"],
+                division_link_type(LINK_TRELLO, normalized), card_id,
+                added_by="crm_board_placement",
+                metadata={"division": normalized, "purpose": purpose,
+                          "primary": False, "board": str(board or "").strip(),
+                          "lane": str(lane or "").strip()})
+            with self._division_cards_lock:
+                self._division_cards_cache.pop(
+                    (client or "").strip().casefold(), None)
+            return {"ok": True, "division": normalized, "card_id": card_id,
+                    "purpose": purpose,
+                    "url": f"https://trello.com/c/{card_id}"}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
@@ -2317,53 +2496,123 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
 
     def delete_crm_job_log(self, client: str, entry_id: str,
                            card_id: str = "") -> dict:
-        """Delete one log entry and its exact mirrored Trello comment."""
+        import supabase_client
+        with supabase_client.interactive_requests():
+            return self._delete_crm_job_log(client, entry_id, card_id)
+
+    def dismiss_crm_job_log(self, client: str, entry_id: str,
+                           card_id: str = "") -> dict:
+        """Suppress one incorrect imported interpretation; preserve its source."""
+        import supabase_client
+        with supabase_client.interactive_requests():
+            return self._delete_crm_job_log(client, entry_id, card_id, dismiss=True)
+
+    def _delete_crm_job_log(self, client: str, entry_id: str,
+                           card_id: str = "", *, dismiss: bool = False) -> dict:
+        """Delete only the selected saved log; provenance is never a command."""
+        remote_deleted = False
         try:
             import ems_db
+            import job_workflow
             job = ems_db.find_job_by_name(client)
             if not job:
                 return {"ok": False, "error": "job not found"}
-            existing = next((row for row in ems_db.list_job_log_entries(
-                job["canon_key"]) if row.get("entry_id") == entry_id), {})
-            comment_id = str(existing.get("trello_comment_id") or "").strip()
-            deleted_trello = False
-            if comment_id:
-                import trello_client as tc
-                if not tc.delete_comment(comment_id):
-                    return {"ok": False, "error":
-                            "Trello would not delete this Job Log comment. "
-                            "Only the Trello comment author may be able to delete it."}
-                deleted_trello = True
-            deleted = ems_db.delete_job_log_entry(job["canon_key"], entry_id)
+            entries = ems_db.list_job_log_entries(job["canon_key"])
+            existing = next((row for row in entries
+                             if row.get("entry_id") == entry_id), {})
+            if not existing:
+                return {"ok": False, "error": "This saved entry could not be found. Nothing was changed."}
+            if dismiss and existing.get("source") != "trello":
+                return {"ok": False, "error": "Only an imported interpretation can be dismissed."}
+            owner = str(existing.get("placement_card_id") or "").strip()
+            if owner and card_id and owner != card_id:
+                return {"ok": False, "error": "This entry belongs to another card."}
+            comment_id = ""
+            deleted_ids = [entry_id]
+            deleted = ems_db.delete_job_log_entry(job["canon_key"], entry_id,
+                                                 preserve_source=True)
+            if not deleted:
+                return {"ok": False, "deleted": False,
+                        "error": ("The Trello comment was deleted, but the Job Log could not be updated."
+                                  if remote_deleted else "The Job Log entry was not deleted. Refresh and try again.")}
+            for removed_id in deleted_ids:
+                job_workflow.cancel_job_log_delivery(job["canon_key"], removed_id)
             return {"ok": True, "deleted": deleted,
-                    "deleted_trello": deleted_trello,
-                    "entries": ems_db.list_job_log_entries(job["canon_key"])}
+                    "dismissed": dismiss,
+                    "deleted_ids": deleted_ids,
+                    "deleted_trello": bool(comment_id),
+                    "deleted_comment_id": comment_id,
+                    "pending_sync": False,
+                    "entries": [row for row in entries if row.get("entry_id") not in deleted_ids]}
         except Exception as ex:
-            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+            return {"ok": False, "error": (
+                "The Trello comment was deleted, but saving the Job Log deletion failed. Refresh before retrying."
+                if remote_deleted else f"{type(ex).__name__}: {ex}")}
 
     def import_crm_job_log_from_trello(self, client: str,
                                        card_id: str = "") -> dict:
-        """Idempotently adopt recognized Trello field events into CRM log."""
+        """Idempotently adopt recognized saved Trello events into CRM log.
+
+        The always-on server mirror is the primary read. A direct provider
+        read remains only as a compatibility fallback for an incomplete
+        initial backfill or an older server installation.
+        """
         try:
-            import ems_db
-            import snapshot_logic as sg
-            import trello_client as tc
-            job = ems_db.find_job_by_name(client)
-            if not job:
-                return {"ok": False, "error": "job not found"}
             cid = (card_id or "").strip() or (
                 persistence.get_trello_card_id(client) or "")
             if not cid:
                 return {"ok": False, "error": "no pinned Trello card"}
-            comments = tc.get_all_comments(cid) or []
+            import trello_mirror_reader
+            saved = trello_mirror_reader.card(cid)
+            if saved is not None:
+                comments = [row for row in (saved.get("actions") or [])
+                            if row.get("type") == "commentCard"]
+                source = "server_mirror"
+            else:
+                import trello_client as tc
+                comments = tc.get_all_comments(cid) or []
+                source = "trello"
+            result = self.import_crm_job_log_comments(
+                client, comments, placement_card_id=cid)
+            return {**result, "read_source": source}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def import_crm_job_log_comments(self, client: str,
+                                    comments: list[dict],
+                                    placement_card_id: str = "") -> dict:
+        """Materialize recognized events from an already-saved conversation."""
+        try:
+            import ems_db
+            import snapshot_logic as sg
+            job = ems_db.find_job_by_name(client)
+            if not job:
+                return {"ok": False, "error": "job not found"}
             imported = 0
+            prior_entries = ems_db.list_job_log_entries(job["canon_key"], include_deleted=True)
+            # A comment is copied once. Editing it or changing parser rules must
+            # never regenerate independent saved logs or dismissed work.
+            copied_comments = {
+                str(row.get('trello_comment_id') or
+                    (str(row.get('source_id') or '').split(':', 1)[0]
+                     if row.get('source') == 'trello' else ''))
+                for row in prior_entries
+                if not row.get('placement_card_id') or row.get('placement_card_id') == placement_card_id
+            }
             existing_sources = {
                 (row.get("source"), row.get("source_id"))
-                for row in ems_db.list_job_log_entries(job["canon_key"])
+                for row in prior_entries
                 if row.get("source_id")
             }
             for comment in comments:
+                # Mirrored EMS comments remain conversation evidence on both
+                # cards, but must not create another placement's structured log.
+                import ems_card_copies
+                if ems_card_copies.is_mirrored_comment(comment):
+                    continue
                 comment_id = str(comment.get("id") or "").strip()
+                if not comment_id or comment_id in copied_comments:
+                    continue
                 fresh = sg._fresh_text(comment)
                 for event in sg.extract_job_log([comment]):
                     source_id = f"{comment_id}:{event['activity']}"
@@ -2375,7 +2624,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                             work_date, "%m/%d/%y").strftime("%Y-%m-%d")
                     except ValueError:
                         pass
-                    ems_db.save_job_log_entry(job["canon_key"], {
+                    saved = ems_db.save_job_log_entry(job["canon_key"], {
                         "work_date": work_date,
                         "work_type": event["activity"],
                         "status": "completed",
@@ -2384,8 +2633,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                         "source": "trello",
                         "source_id": source_id,
                         "trello_comment_id": comment_id,
+                        "placement_card_id": str(
+                            placement_card_id or "").strip(),
                     })
-                    imported += 1
+                    if not saved.get("deleted"):
+                        imported += 1
                     existing_sources.add(("trello", source_id))
             return {"ok": True, "imported": imported,
                     "entries": ems_db.list_job_log_entries(job["canon_key"])}
@@ -3296,6 +3548,58 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def list_xa_assignment_drafts(self, include_completed: bool = False) -> dict:
+        """Review-gated XA assignment drafts stored on this device."""
+        try:
+            import xa_assignment_intake as xai
+            rows = xai.list_drafts(include_completed=bool(include_completed))
+            return {"ok": True, "drafts": rows, "count": len(rows)}
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}",
+                    "drafts": [], "count": 0}
+
+    def pick_xa_assignment_emails(self) -> dict:
+        """Pick saved XA ``.eml`` messages and add them to review.
+
+        Importing only creates drafts.  The existing New Loss approval button
+        remains the sole path that provisions Trello/folders/CompanyCam.
+        """
+        if self._window is None:
+            return {"ok": False, "error": "no window", "drafts": []}
+        downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+        try:
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                directory=downloads if os.path.isdir(downloads) else "",
+                allow_multiple=True,
+                file_types=("Email messages (*.eml)", "All files (*.*)"))
+        except Exception as ex:
+            return {"ok": False, "error": f"file dialog: {ex}", "drafts": []}
+        if not result:
+            return {"ok": True, "cancelled": True, "drafts": []}
+        selected = list(result) if isinstance(result, (list, tuple)) else [result]
+        drafts, errors = [], []
+        try:
+            import xa_assignment_intake as xai
+            for selected_path in selected:
+                try:
+                    item = xai.ingest_eml(selected_path)
+                    if item.get("ok") and item.get("draft"):
+                        drafts.append(item["draft"])
+                    else:
+                        errors.append(os.path.basename(str(selected_path)))
+                except Exception:
+                    # Do not return raw exception text: source paths and email
+                    # fields can contain PII.  The filename is enough to retry.
+                    errors.append(os.path.basename(str(selected_path)))
+        except Exception as ex:
+            return {"ok": False, "error": f"{type(ex).__name__}: {ex}",
+                    "drafts": []}
+        return {"ok": not errors, "drafts": drafts, "count": len(drafts),
+                "failed_files": errors,
+                "error": (f"Could not import {len(errors)} selected message(s)."
+                          if errors else "")}
+
     def new_loss_templates(self) -> dict:
         """Which loss templates (water/fire/property) exist on the active
         department's WIP board — so the dialog can show/grey the options."""
@@ -3357,7 +3661,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                         promote_first: bool = False,
                         make_folder: bool = True,
                         make_companycam: bool = True,
-                        parent: str = "") -> dict:
+                        parent: str = "",
+                        xa_draft_id: str = "") -> dict:
         """Provision a new loss across Trello, job storage and CompanyCam.
 
         Main's New Loss UI always requests all three. The optional flags
@@ -3431,6 +3736,18 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         res["job_links"] = graph
         res["companycam_trello_link"] = nli.publish_companycam_link(
             str(res.get("card_id") or ""), project_id)
+        if xa_draft_id and res.get("card_id"):
+            try:
+                import xa_assignment_intake as xai
+                res["xa_intake"] = xai.mark_approved(
+                    xa_draft_id,
+                    card_id=str(res.get("card_id") or ""),
+                    card_url=str(res.get("url") or ""))
+            except Exception as ex:
+                res["xa_intake"] = {
+                    "ok": False,
+                    "error": f"Draft approval record failed: {type(ex).__name__}: {ex}",
+                }
         steps = {
             "trello": bool(res.get("card_id")),
             "folder": bool((res.get("folder") or {}).get("ok") and folder_path),
@@ -3443,6 +3760,18 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             "steps": steps,
             "failed": [name for name, complete in steps.items() if not complete],
         }
+        if not res["provisioning"]["complete"]:
+            failed = ", ".join(res["provisioning"]["failed"])
+            companycam_error = str(
+                (res.get("companycam") or {}).get("error") or "").strip()
+            detail = companycam_error or str(
+                (res.get("companycam_trello_link") or {}).get("error") or "").strip()
+            res["partial"] = True
+            res["warning"] = (
+                f"The new loss was created, but setup is incomplete ({failed}). "
+                "Do not create the loss again. " +
+                (f"CompanyCam: {detail}" if detail else
+                 "Open the created job and finish the missing setup."))
         return res
 
     # ── P0: XactAnalysis quick link from right-click menu ────────────
@@ -7083,7 +7412,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
     # User stages a Ctrl+V into XactAnalysis or Xactimate. Resolves
     # the client's job folder, then walks EMS/PICS/<stage>/ for image
     # files and places them on the Windows clipboard via CF_HDROP.
-    def list_pics_stages(self, client: str) -> dict:
+    def list_pics_stages(self, client: str, job_path: str = "") -> dict:
         """List every PICS/<subfolder> for the client that has at
         least one image. Used by the frontend to populate a stage
         picker — most jobs have multiple (Initial, Demo, Mold Prep,
@@ -7091,7 +7420,12 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         if not client:
             return {"ok": False, "error": "no client", "stages": []}
         try:
-            job_path = persistence.get_folder_path(client) or ""
+            # The open Job Workspace already knows its exact pinned folder.
+            # Prefer that locator so a display-name mismatch cannot send XA
+            # staging through another fuzzy customer-folder lookup.
+            job_path = (job_path or "").strip()
+            if not job_path or not os.path.isdir(job_path):
+                job_path = persistence.get_folder_path(client) or ""
             if not job_path or not os.path.isdir(job_path):
                 return {"ok": False, "error": "no folder pinned",
                         "stages": []}
@@ -7107,7 +7441,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                         for e in it:
                             if not e.is_dir(follow_symlinks=False):
                                 continue
-                            imgs = _cf.list_image_files(e.path)
+                            imgs = _cf.list_xa_stage_files(e.path)
                             if imgs:
                                 stages.append({
                                     "name":  e.name,
@@ -7118,7 +7452,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                     pass
                 # Also surface PICS root itself when it has direct
                 # images (no subfolder).
-                root_imgs = _cf.list_image_files(pics_root)
+                root_imgs = _cf.list_xa_stage_files(
+                    pics_root, recursive=False)
                 if root_imgs:
                     stages.insert(0, {
                         "name":  "(root)",
@@ -7132,7 +7467,8 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex), "stages": []}
 
-    def copy_pics_to_clipboard(self, client: str, stage: str = "") -> dict:
+    def copy_pics_to_clipboard(self, client: str, stage: str = "",
+                               job_path: str = "") -> dict:
         """Stage every image in `<job>/EMS/PICS/<stage>/` into a
         TEMP folder + open the folder in Explorer so the user can
         drag-and-drop into XactAnalysis / Xactimate.
@@ -7157,7 +7493,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": "no client"}
         try:
             import clipboard_files as _cf
-            stages_info = self.list_pics_stages(client)
+            stages_info = self.list_pics_stages(client, job_path)
             if not stages_info.get("ok"):
                 return stages_info
             wanted = (stage or "(root)").strip().lower()
@@ -7191,7 +7527,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
                                  f"Available: {', '.join(names) or '(none)'}",
                         "available": names}
             # Recursive — handles PICS/Initial/<Tech>/<photos>.jpg layouts
-            paths = _cf.list_image_files(target, recursive=True)
+            paths = _cf.list_xa_stage_files(target, recursive=True)
             if not paths:
                 return {"ok": False,
                         "error": f"no images under {os.path.basename(target)}/ "
@@ -9534,30 +9870,11 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         contentWindow.dispatchEvent. Same-origin (both served via
         the local http_server) so the access is allowed.
         """
-        if self._window is None:
-            return
-        # Rewrite the dispatch target so the same string also fires
-        # on the iframe. Wrapping in a try block keeps a failure in
-        # one context from blocking the other.
-        iframe_js = js.replace(
-            "window.dispatchEvent(",
-            "__ems_iframe_win__.dispatchEvent(")
-        wrapped = (
-            "(function(){"
-            "try{" + js + "}catch(e){}"
-            "try{"
-            "var __f=document.getElementById('content-frame');"
-            "if(__f && __f.contentWindow){"
-            "var __ems_iframe_win__=__f.contentWindow;"
-            + iframe_js +
-            "}"
-            "}catch(e){}"
-            "})();"
-        )
-        try:
-            self._window.evaluate_js(wrapped)
-        except Exception:
-            pass
+        # Daily Run is now a tool-workspace-frame, not content-frame.
+        # Use the same dispatcher as imports so progress and completion reach
+        # every mounted workspace, including hidden panels awaiting results.
+        import web_event
+        web_event.dispatch(self._window, js)
 
     def _emit_done(self, *, ok: bool, error: str = "") -> None:
         import json
@@ -9580,7 +9897,7 @@ def main(argv=None):
     _argv = argv if argv is not None else sys.argv[1:]
     api = Api()
     window = webview.create_window(
-        title="Audit — Linguar Hub",
+        title="Audit — OneLoss",
         url=INDEX_HTML,
         js_api=api,
         width=1480, height=860,

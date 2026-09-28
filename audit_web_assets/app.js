@@ -155,7 +155,7 @@ window.addEventListener("pywebviewready", async () => {
   state.dayOffset = 0;
   state.mode = fixedSurface === "daily" ? "daily" : "search";
   if (fixedSurface === "daily") {
-    document.title = "Daily Run — Linguar Hub";
+    document.title = "Daily Run — OneLoss";
     $(".brand-name").textContent = "SERVPRO · Daily Run";
     $(".brand-tag").textContent = "today’s jobs & file checks";
     $("#search-box").placeholder = "🔎 Find a job on the daily run…";
@@ -165,7 +165,7 @@ window.addEventListener("pywebviewready", async () => {
     $("#mode-search")?.classList.add("hidden");
     $("#mode-starred")?.classList.add("hidden");
   } else if (fixedSurface === "clients") {
-    document.title = "Clients — Linguar Hub";
+    document.title = "Clients — OneLoss";
     $(".brand-tag").textContent = "client directory & claim history";
     $("#run-btn")?.classList.add("hidden");
     for (const id of ["rerun-btn", "push-new-losses-btn", "post-daily-misses-btn",
@@ -5570,8 +5570,12 @@ function openNewLossModal() {
       <textarea id="nl-paste" rows="14" placeholder="From: Mercury - Servpro …" style="${inputStyle}resize:vertical;min-height:240px;line-height:1.4;"></textarea>
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
         <button class="btn" id="nl-parse">✨ Parse email</button>
+        <button class="btn" id="nl-import-eml">Import saved email…</button>
+        <button class="btn" id="nl-show-drafts">Review drafts</button>
         <span id="nl-parse-status" style="font-size:11px;color:var(--text-muted);"></span>
       </div>
+      <div id="nl-draft-queue" style="display:none;margin-top:10px;padding:8px;
+           border:1px solid var(--border);border-radius:7px;background:var(--surface-2);"></div>
 
       <div style="display:flex;gap:10px;margin-top:14px;">
         <div style="flex:1;">
@@ -5615,6 +5619,39 @@ function openNewLossModal() {
   // and lets the child be renamed BEFORE anything is created, because
   // the name is the one thing the parser can't infer.
   let nlPlan = null;
+  let nlDraftId = "";
+
+  function applyXaDraft(draft) {
+    const f = draft?.fields || {};
+    NL_FIELD_GROUPS.forEach((g) => g.items.forEach(([key]) => setVal(key, f[key])));
+    setVal("card_name", f.card_name || [f.insured_name, f.carrier].filter(Boolean).join(" - "));
+    nlDraftId = draft?.id || "";
+    const warningCount = (draft?.warnings || []).length;
+    $$("#nl-parse-status").innerHTML = `<span style="color:var(--green);">Draft loaded for review</span>${warningCount ? ` · <span style="color:var(--amber);">${warningCount} warning${warningCount === 1 ? "" : "s"}</span>` : ""}`;
+    refreshFolderPlan();
+  }
+
+  function renderXaDraftQueue(drafts) {
+    const queue = $$("#nl-draft-queue");
+    if (!queue) return;
+    queue.style.display = "block";
+    if (!drafts?.length) {
+      queue.innerHTML = `<div class="muted">No XA assignment drafts are waiting for review.</div>`;
+      return;
+    }
+    queue.innerHTML = `<div style="font-weight:650;margin-bottom:6px;">XA assignments waiting for review</div>` + drafts.map((draft) => {
+      const fields = draft.fields || {};
+      const label = fields.insured_name || draft.source?.subject || draft.source?.file_name || "Assignment";
+      const detail = [fields.claim_number, fields.address].filter(Boolean).join(" · ");
+      return `<button class="btn nl-draft-pick" data-draft-id="${escapeAttr(draft.id || "")}" style="display:block;width:100%;text-align:left;margin:4px 0;padding:8px;">
+        <b>${escapeHtml(label)}</b>${detail ? `<br><span class="muted">${escapeHtml(detail)}</span>` : ""}
+      </button>`;
+    }).join("");
+    queue.querySelectorAll(".nl-draft-pick").forEach((button) => button.addEventListener("click", () => {
+      const selected = drafts.find((draft) => draft.id === button.dataset.draftId);
+      if (selected) applyXaDraft(selected);
+    }));
+  }
   // The parent the operator picked, if any. A commercial loss titled
   // "Bell Mountain Middle School" carries nothing to say which district
   // owns it — and on the live share the children of "Val Verde Unified
@@ -5793,6 +5830,7 @@ function openNewLossModal() {
     const res = await pywebview.api.parse_new_loss(text);
     if (!res?.ok) { $$("#nl-parse-status").textContent = res?.error || "Parse failed"; return; }
     const f = res.fields || {};
+    nlDraftId = "";
     NL_FIELD_GROUPS.forEach((g) => g.items.forEach(([key]) => setVal(key, f[key])));
     // Parsing an assignment must not replace the default or the user's
     // explicitly chosen template. Loss details and template are separate.
@@ -5800,6 +5838,26 @@ function openNewLossModal() {
     const got = Object.keys(f).filter((k) => f[k] && k !== "loss_type").length;
     $$("#nl-parse-status").innerHTML = `<span style="color:var(--green);">✓ Parsed ${got} field${got === 1 ? "" : "s"} — review below</span>`;
     refreshFolderPlan();
+  });
+
+  $$("#nl-import-eml").addEventListener("click", async () => {
+    $$("#nl-parse-status").textContent = "Importing saved email…";
+    const res = await pywebview.api.pick_xa_assignment_emails();
+    if (res?.cancelled) { $$("#nl-parse-status").textContent = ""; return; }
+    if (!res?.drafts?.length) {
+      $$("#nl-parse-status").textContent = res?.error || "No assignment email imported";
+      return;
+    }
+    renderXaDraftQueue(res.drafts);
+    if (res.drafts.length === 1) applyXaDraft(res.drafts[0]);
+    else $$("#nl-parse-status").textContent = `${res.drafts.length} drafts imported — choose one below`;
+  });
+
+  $$("#nl-show-drafts").addEventListener("click", async () => {
+    $$("#nl-parse-status").textContent = "Loading drafts…";
+    const res = await pywebview.api.list_xa_assignment_drafts(false);
+    renderXaDraftQueue(res?.drafts || []);
+    $$("#nl-parse-status").textContent = res?.ok ? "" : (res?.error || "Could not load drafts");
   });
 
   // The insured name decides everything about the folder, so re-plan
@@ -5835,8 +5893,15 @@ function openNewLossModal() {
       !!$$("#nl-promote")?.checked,
       true,                                   // make_folder
       true,                                   // make_companycam
-      nlParent);                              // chosen umbrella, if any
+      nlParent,                               // chosen umbrella, if any
+      nlDraftId);                             // review-gated XA source, if any
     if (!res?.ok) {
+      if (res?.partial) {
+        closeOverlay();
+        setStatus(res.error || `Created ${res.name}, but setup needs attention. Do not create it again.`, "warn");
+        if (typeof runAudit === "function") { try { runAudit(true); } catch (e) {} }
+        return;
+      }
       btn.disabled = false;
       $$("#nl-status").innerHTML = `<span style="color:var(--red);">${escapeHtml(res?.error || "Create failed")}</span>`;
       return;
@@ -5863,7 +5928,7 @@ function openNewLossModal() {
       ? ` · ⚠ setup incomplete: ${(provisioning.failed || []).join(", ")}` : "";
     const linkNote = res.companycam_trello_link?.error
       ? ` · ${res.companycam_trello_link.error}` : "";
-    setStatus(`🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom)${folderNote}${ccNote}${incompleteNote}${linkNote}. ${res.url || ""}`,
+    setStatus(res.warning || `🆕 Created "${res.name}" from ${res.template} → ${res.list} (bottom)${folderNote}${ccNote}${incompleteNote}${linkNote}. ${res.url || ""}`,
               (f.error || (cc && !cc.ok) || incomplete) ? "warn" : "ok");
     if (typeof runAudit === "function") { try { runAudit(true); } catch (e) {} }
   });
