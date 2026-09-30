@@ -61,7 +61,7 @@ window.addEventListener("pywebviewready", async () => {
   maybeCheckUpdate();
   // Clock tick every minute (cheap)
   setInterval(updateClock, 60_000);
-});
+}, { once: true });
 
 async function loadShell() {
   state.header = await pywebview.api.header();
@@ -263,7 +263,7 @@ window.addEventListener("message", async (ev) => {
   } else if (d.type === "linguar-open-daily-run") {
     openDailyRunWorkspace();
   } else if (d.type === "linguar-open-job") {
-    openJobWorkspace(d.focus || d.client || "", d.cardId || "", d.division || "");
+    openJobWorkspace(d.focus || d.client || "", d.cardId || "", d.division || "", d.commentId || "");
   } else if (d.type === "linguar-close-job-workspace") {
     closeJobWorkspace();
   }
@@ -365,12 +365,13 @@ function openNewLossWorkspace() {
 // One shared job record above whichever tool the user is working in. The
 // iframe runs Pipeline's existing card renderer/API, so Clients, Daily Run,
 // search, and Jobs never grow competing copies of job information.
-function openJobWorkspace(focus, cardId = "", division = "") {
+function openJobWorkspace(focus, cardId = "", division = "", commentId = "") {
   closeJobWorkspace();
   const returnFocus = document.activeElement;
   const params = new URLSearchParams({ job_workspace: "1", focus: focus || "Job" });
   if (cardId) params.set("card_id", cardId);
   if (division) params.set("division", division);
+  if (commentId) params.set("comment_id", commentId);
   const wrap = document.createElement("div");
   wrap.id = "job-workspace";
   wrap.className = "tool-workspace shared-job-workspace";

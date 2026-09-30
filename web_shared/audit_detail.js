@@ -3206,7 +3206,7 @@
       else if (type === "call") openCallNoteModal(row, ctx);
       else if (type === "note") {
         if (window.openAuditNotes) window.openAuditNotes(row.client);
-      } else if (M.openComment) M.openComment(row);
+      } else openCommentsDrawer(row, ctx);
     });
     select.focus();
   }
@@ -4867,6 +4867,8 @@
       '</footer>';
     document.body.appendChild(el);
 
+    el._composer = window.SharedComments?.mount(el, (row, forced) =>
+      loadCommentsInto(row, el._ctx, forced));
     el.querySelector("#cmt-close").addEventListener("click", closeCommentsDrawer);
     el.querySelector("#cmt-tab").addEventListener("click", () => {
       const row = el._row, ctx = el._ctx;
@@ -4881,6 +4883,7 @@
     // than optimistically appended: what Trello stored (mention
     // expansion, its own timestamp) is the truth worth showing.
     async function post(text, btn) {
+      if (el._composer) return el._composer.post();
       const row = el._row, ctx = el._ctx;
       if (!row || !(text || "").trim()) return;
       const label = btn.textContent;
@@ -4918,7 +4921,9 @@
     // The @ picker is an enhancement; the drawer has to work without it.
     // Unguarded, anything wrong in there takes the whole detail render
     // down with a "Failed to load" and you get no comments at all.
-    try { _wireMentions(el); } catch (_) { /* no picker, still a drawer */ }
+    if (!el._composer) {
+      try { _wireMentions(el); } catch (_) { /* no picker, still a drawer */ }
+    }
     el.querySelector("#cmt-refresh").addEventListener("click", async () => {
       const row = el._row, ctx = el._ctx;
       if (!row) return;
@@ -5168,6 +5173,12 @@
     // Build it even when closed: the TAB is part of the drawer, and the
     // tab is the only way in now that the Trello section is gone.
     const el = _ensureCommentsDrawer();
+    el._composer?.select(row || {});
+    if (el._row?.trello_card_id !== row?.trello_card_id) {
+      el._token = (el._token || 0) + 1;
+      el._entries = [];
+      el.querySelector('#cmt-body').replaceChildren();
+    }
     el._row = row;
     el._ctx = ctx;
     // Nothing to read without a card, and a tab that opens an empty
@@ -5202,6 +5213,7 @@
   }
 
   function _avatarColor(seed) {
+    if (window.CommentMarkdown) return window.CommentMarkdown.avatarColor(seed);
     let h = 0;
     const s = String(seed || "?");
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
@@ -5221,6 +5233,9 @@
 
   async function loadCommentsInto(row, ctx, forced) {
     const el = _ensureCommentsDrawer();
+    el._composer?.select(row);
+    const sameCard = el._threadCard === row.trello_card_id;
+    el._threadCard = row.trello_card_id;
     el._row = row;
     el._ctx = ctx;
     const body  = document.getElementById("cmt-body");
@@ -5228,20 +5243,26 @@
     if (!body) return;
     const who = tc(ctx, row.display_name || row.client || "");
     if (title) title.innerHTML = `💬 ${esc(ctx, who)}`;
-    body.innerHTML = '<div class="cmt-empty">Reading the thread…</div>';
+    if (!sameCard) { el._entries = []; body.replaceChildren(); }
+    const refresh = el.querySelector('#cmt-refresh');
+    refresh.innerHTML = '<span class="cmt-refresh-spinner" aria-label="Loading comments"></span>';
+    body.setAttribute('aria-busy', 'true');
     // Stamp the request so a slow reply for a job you already left can't
     // overwrite the one you are looking at now.
     const token = (el._token = (el._token || 0) + 1);
     let res;
     try {
-      res = await pywebview.api.get_card_comments(row.client, 200);
+      res = await pywebview.api.drawer_comments(row.client, row.trello_card_id, !!forced);
     } catch (ex) {
       res = { ok: false, error: String(ex) };
     }
     if (el._token !== token) return;
+    refresh.textContent = '↻';
+    body.setAttribute('aria-busy', 'false');
     if (!res || !res.ok) {
       const msg = (res && res.error) || "Couldn't read the comments";
-      body.innerHTML = `<div class="cmt-empty">${esc(ctx, msg)}</div>`;
+      if (!el._entries?.length) body.innerHTML = `<div class="cmt-empty">${esc(ctx, msg)}</div>`;
+      setStatus(ctx, msg, 'error');
       return;
     }
     const list = res.comments || [];
@@ -5290,7 +5311,7 @@
     body.innerHTML = list.map((c) => {
       const head = `
         <div class="cmt-av" style="background:${_avatarColor(c.author || c.initials)};"
-             title="${escA(ctx, c.author || "")}">${esc(ctx, c.initials || "?")}</div>`;
+             title="${escA(ctx, c.author || "")}">${esc(ctx, window.CommentMarkdown?.initials(c.author || c.initials) || c.initials || "?")}</div>`;
       // Author and timestamp are separate elements, not one muted run:
       // the NAME is what you scan for, so it gets the readable colour
       // and the weight, and the time steps back.
@@ -5330,13 +5351,14 @@
       // card. Runs of text separated only by a hairline all read as one
       // long block, which is what "hard to tell the messages apart" was.
       return `
-        <div class="cmt-item">
+        <div class="cmt-item job-comment" data-comment-source="trello" data-comment-id="${escA(ctx, c.id || '')}" data-comment-card-id="${escA(ctx, el._row?.trello_card_id || '')}">
           ${head}
           <div class="cmt-main">
             ${meta}
             <div class="cmt-bubble">
               <div class="cmt-txt">${_hilite(ctx, c.text || "", q)}</div>
             </div>
+            ${window.CommentReactions?.markup({...c, source:'trello'}) || ''}
           </div>
         </div>`;
     }).join("");
@@ -5362,6 +5384,9 @@
             <button class="action-btn" type="button" data-cancel>Cancel</button>
           </div>`;
         const box = bubble.querySelector("textarea");
+        bubble.classList.add('comment-compose');
+        box._mentionTargets = () => [{cardId:el._row.trello_card_id,division:el._row.division || 'EMS'}];
+        window.CommentMarkdown?.mount(box);
         box.focus();
         box.setSelectionRange(box.value.length, box.value.length);
         bubble.querySelector("[data-cancel]").addEventListener("click", () => renderEntries(el));
@@ -5439,7 +5464,7 @@
   }
 
   function _hilite(ctx, text, q) {
-    const html = _mentions(_linkify(ctx, text));
+    const html = window.CommentMarkdown ? window.CommentMarkdown.display(text) : _mentions(_linkify(ctx, text));
     if (!q) return html;
     const needle = esc(ctx, q).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return _inTextNodes(html, new RegExp(needle, "gi"),
@@ -5459,7 +5484,7 @@
       const row = el._row;
       if (!row) return;
       try {
-        const r = await pywebview.api.comment_image(row.client, img.dataset.att, false);
+        const r = await pywebview.api.drawer_image(row.client, row.trello_card_id, img.dataset.att, false);
         if (r && r.ok && r.data_uri) img.src = r.data_uri;
         else img.replaceWith(Object.assign(document.createElement("div"), {
           className: "cmt-empty", textContent: "(preview unavailable)" }));
@@ -5492,7 +5517,7 @@
     };
     window.addEventListener("keydown", esc2);
     try {
-      const r = await pywebview.api.comment_image(row.client, attId, true);
+      const r = await pywebview.api.drawer_image(row.client, row.trello_card_id, attId, true);
       if (!document.body.contains(over)) return;
       if (r && r.ok && r.data_uri) {
         over.innerHTML = `<img src="${r.data_uri}" alt="${escA(ctx, r.name || "")}"/>`;

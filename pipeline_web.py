@@ -1940,6 +1940,22 @@ class Api(JobSettingsApi):
         from job_comment_mentions import members
         return members(card_id)
 
+    def personal_job_members(self, card_id: str) -> dict:
+        from personal_notifications import call
+        return call('members', card_id=card_id)
+
+    def set_personal_job_member(self, card_id: str, user_id: str, member: bool) -> dict:
+        from personal_notifications import call
+        return call('set_member', card_id=card_id, user_id=user_id, member=bool(member))
+
+    def mute_personal_job(self, card_id: str, muted: bool) -> dict:
+        from personal_notifications import call
+        return call('mute', card_id=card_id, muted=bool(muted))
+
+    def oneloss_comment_members(self, card_id: str) -> dict:
+        from personal_notifications import mention_members
+        return mention_members(card_id)
+
     def job_comment_reactions(self, card_id: str, action_id: str, code=None, active=None) -> dict:
         from job_comment_reactions import reactions
         return reactions(card_id, action_id, code, active)
@@ -1974,6 +1990,8 @@ class Api(JobSettingsApi):
                                 "source": "linguar",
                                 "can_manage": bool(actor_id)}}
             self._invalidate_workspace(client, card_id)
+            from personal_notifications import enqueue
+            result['notification_warning'] = enqueue(card_id, local.get('activity_key'), text)
             return result
         # Compatibility fallback for an installation without shared tables.
         posted_action = None
@@ -1998,7 +2016,29 @@ class Api(JobSettingsApi):
                             "source": "linguar", "can_manage": bool(actor_id)}}
         if result.get("ok"):
             self._invalidate_workspace(client, card_id)
+            from personal_notifications import enqueue
+            result['notification_warning'] = enqueue(card_id, external_id, text)
         return result
+
+    def preview_ems_card_copy(self, client: str, source_id: str) -> dict:
+        try:
+            import ems_copy_creation
+            return ems_copy_creation.preview(client, source_id)
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
+
+    def create_ems_card_copy(self, client: str, source_id: str, list_id: str) -> dict:
+        try:
+            import ems_copy_creation
+            result = ems_copy_creation.create(client, source_id, list_id)
+            if result.get('ok'):
+                audit = self._audit_api()
+                with audit._division_cards_lock:
+                    audit._division_cards_cache.pop((client or '').strip().casefold(), None)
+                self._invalidate_workspace(client=client)
+            return result
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
 
     def link_ems_card_copy(self, client: str, source_id: str, copied_id: str) -> dict:
         try:
@@ -2593,6 +2633,13 @@ class Api(JobSettingsApi):
         """No network: paint an exact card's saved conversation first."""
         import job_comment_cache
         return job_comment_cache.load(str(card_id or '').strip())
+
+    def notification_comment(self, card_id, comment_id):
+        try:
+            from notification_navigation import comment
+            return comment(card_id, comment_id)
+        except Exception:
+            return {'ok': False, 'error': 'The exact comment could not be loaded. It may have been deleted, or the connection is unavailable.'}
 
     def _load_job_comments(self, card_id: str) -> dict:
         """Pull one open job's comments and return a section-sized update."""

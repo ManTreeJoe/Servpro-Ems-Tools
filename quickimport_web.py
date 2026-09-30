@@ -38,7 +38,10 @@ def _canon(s: str) -> str:
     return " ".join((s or "").lower().split())
 
 
-class Api:
+from shared_comment_api import SharedCommentApi
+
+
+class Api(SharedCommentApi):
     def __init__(self):
         self._window = None
         self._aw_singleton = None

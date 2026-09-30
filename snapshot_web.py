@@ -203,7 +203,10 @@ from job_settings_api import JobSettingsApi
 from job_admin_api import JobAdminApi
 
 
-class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
+from shared_comment_api import SharedCommentApi
+
+
+class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
     def __init__(self):
         self._window = None
         self._candidate_cache = None
@@ -762,14 +765,14 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return self._aw().get_inprogress_checklist(client)
     def get_all_checklists(self, client):
         return self._aw().get_all_checklists(client)
-    def get_card_comments(self, client, limit=200):
-        return self._aw().get_card_comments(client, limit)
+    def get_card_comments(self, *a, **k):
+        return self._aw().get_card_comments(*a, **k)
     def update_card_comment(self, client, action_id, text):
         return self._aw().update_card_comment(client, action_id, text)
     def delete_card_comment(self, client, action_id):
         return self._aw().delete_card_comment(client, action_id)
-    def comment_image(self, client, attachment_id, big=False):
-        return self._aw().comment_image(client, attachment_id, big)
+    def comment_image(self, *a, **k):
+        return self._aw().comment_image(*a, **k)
     def invalidate_comments_cache(self, client=""):
         return self._aw().invalidate_comments_cache(client)
     def toggle_checklist_item(self, *a, **k):

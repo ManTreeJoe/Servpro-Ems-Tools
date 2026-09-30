@@ -1,0 +1,6 @@
+/* Read-only conversation styling shared by Jobs, Daily Run and Snapshot. */
+.comment-mention{display:inline;padding:1px 4px;border-radius:4px;background:#303d4b;color:#9ccfff;font-weight:650;box-decoration-break:clone;-webkit-box-decoration-break:clone;overflow-wrap:anywhere}
+:root[data-theme=light] .comment-mention{background:#dceafa;color:#215b91}
+@media(prefers-color-scheme:light){:root:not([data-theme]) .comment-mention{background:#dceafa;color:#215b91}}
+.job-comment header{flex-wrap:wrap}
+.comment-avatar,.cmt-av{user-select:none}

@@ -51,7 +51,7 @@ async function appAccess(auth: string, apiKey: string) {
 }
 
 function allowedPath(path: string): boolean {
-  return /^\/projects(?:\/[A-Za-z0-9_-]+(?:\/photos)?)?$/.test(path) ||
+  return path === "/tags" || /^\/projects(?:\/[A-Za-z0-9_-]+(?:\/photos)?)?$/.test(path) ||
     /^\/photos\/[A-Za-z0-9_-]+\/tags$/.test(path);
 }
 
@@ -142,7 +142,7 @@ Deno.serve(async (request: Request) => {
 
     const path = String(input.path || "");
     const method = String(input.method || "GET").toUpperCase();
-    if (!allowedPath(path) || !["GET", "POST", "PUT", "PATCH"].includes(method)) {
+    if (!allowedPath(path) || !["GET", "POST", "PUT", "PATCH"].includes(method) || (path === "/tags" && method !== "GET")) {
       return json({ error: "CompanyCam operation is not allowed" }, 400);
     }
     const personal = await personalCredential(String(user.id || ""), department);

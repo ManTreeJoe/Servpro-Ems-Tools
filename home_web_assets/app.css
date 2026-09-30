@@ -226,6 +226,10 @@ body { background: var(--bg); }
 .tool-workspace-close:hover { background: var(--border); }
 .tool-workspace-close:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .tool-workspace-frame { width: 100%; height: 100%; border: 0; background: var(--bg); }
+.tool-workspace { animation:workspace-enter 150ms ease-out; }
+@keyframes workspace-enter { from {opacity:.4;transform:translateY(5px)} to {opacity:1;transform:translateY(0)} }
+@media(prefers-reduced-motion:reduce){.tool-workspace{animation:none}}
+.reduce-motion .tool-workspace{animation:none}
 .shared-job-workspace { inset:0; border:0; border-radius:0; grid-template-rows:minmax(0,1fr); background:transparent; }
 
 @media (max-width: 720px) {

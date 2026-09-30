@@ -66,5 +66,28 @@ window.CommentMarkdown = (() => {
       }
     });
   }
-  return {render: text => md.render(String(text || '')), mount};
+  const render = text => md.render(String(text || ''));
+  // Display-only decoration: never modify the Markdown used for editing/posting.
+  function display(text) {
+    const host=document.createElement('div');host.innerHTML=render(text);
+    const walker=document.createTreeWalker(host,NodeFilter.SHOW_TEXT),nodes=[];
+    while(walker.nextNode())if(!walker.currentNode.parentElement.closest('a,code,pre'))nodes.push(walker.currentNode);
+    for(const node of nodes){
+      const pattern=/(^|[\s(\[,;:])(@[A-Za-z0-9_][A-Za-z0-9_.-]*)/g;
+      const value=node.nodeValue,fragment=document.createDocumentFragment();let last=0,match;
+      while((match=pattern.exec(value))){
+        fragment.append(document.createTextNode(value.slice(last,match.index)+match[1]));
+        const chip=document.createElement('span');chip.className='comment-mention';chip.textContent=match[2];fragment.append(chip);
+        last=pattern.lastIndex;
+      }
+      if(last){fragment.append(document.createTextNode(value.slice(last)));node.replaceWith(fragment);}
+    }
+    return host.innerHTML;
+  }
+  function avatarColor(name){
+    let hash=0;for(const char of String(name||'?').trim().toLowerCase())hash=(hash*31+char.charCodeAt(0))>>>0;
+    return ['#316a91','#85428b','#257958','#75651e','#954b46','#60519a'][hash%6];
+  }
+  function initials(name){const parts=String(name||'?').trim().split(/\s+/);return (parts[0].charAt(0)+(parts.length>1?parts.at(-1).charAt(0):'')).toUpperCase();}
+  return {render, display, avatarColor, initials, mount};
 })();

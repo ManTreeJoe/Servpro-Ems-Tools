@@ -34,13 +34,22 @@ export function mentions(editor, source, box) {
     editor.chain().focus().insertContentAt(range,[{type:'text',text:`@${row.username} `}]).run();
   }
   async function load(target){
-    const cached=cache.get(target.cardId);
-    if(cached&&Date.now()-cached.at<300000)return cached.promise;
-    const promise=Promise.resolve().then(()=>window.pywebview.api.job_comment_members(target.cardId)).then(result=>{
-      if(!result?.ok)throw Error(result?.error||'Trello people could not be loaded.');
-      return result.members||[];
+    function sourceCall(method){
+      const key=method+':'+target.cardId,cached=cache.get(key);
+      if(cached&&Date.now()-cached.at<300000)return cached.promise;
+      const promise=Promise.resolve().then(()=>window.pywebview.api[method](target.cardId)).then(result=>{
+        if(!result?.ok)throw Error('People unavailable');return result;
+      }).catch(error=>{cache.delete(key);throw error;});
+      cache.set(key,{at:Date.now(),promise});return promise;
+    }
+    return Promise.allSettled([
+      sourceCall('job_comment_members'),sourceCall('oneloss_comment_members')
+    ]).then(results=>{
+      const rows=[];let missing=false;
+      results.forEach((result,i)=>{if(result.status==='fulfilled'&&result.value?.ok){for(const member of result.value.members||[])rows.push({...member,source:i?'OneLoss':'Trello'});}else missing=true;});
+      if(!rows.length&&results.every(result=>result.status!=='fulfilled'||!result.value?.ok))throw Error('People could not be loaded.');
+      return {rows,missing};
     });
-    cache.set(target.cardId,{at:Date.now(),promise});return promise;
   }
   async function update(){
     const next=token(),signature=key(next);
@@ -55,17 +64,18 @@ export function mentions(editor, source, box) {
       const rows=await Promise.all(targets.map(async target=>({target,rows:await load(target)})));
       if(disposed||request!==serial||signature!==key(token()))return;
       const people=new Map();
-      for(const {target,rows:members}of rows)for(const member of members){
+      for(const {target,rows:result}of rows)for(const member of result.rows){
         if(!/^[A-Za-z0-9_.-]+$/.test(member.username||''))continue;
-        const id=member.username.toLowerCase(),label=target.board||target.division;
+        const id=member.source+':'+member.username.toLowerCase(),label=target.board||target.division;
         if(!people.has(id))people.set(id,{...member,boards:new Set()});people.get(id).boards.add(label);
       }
       hits=[...people.values()].filter(row=>`${row.name} ${row.username}`.toLowerCase().includes(next.term)).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,8);index=0;
       status.textContent=hits.length?'People on selected boards':'No matching people on the selected boards.';
+      if(rows.some(row=>row.rows.missing))status.textContent+=' Some people could not load. Reopen suggestions to retry.';
       for(const [i,row]of hits.entries()){
         const button=document.createElement('button');button.type='button';button.setAttribute('role','option');button.id=`${list.id}-${i}`;button.tabIndex=-1;
         const name=document.createElement('strong');name.textContent=row.name||row.username;
-        const detail=document.createElement('small');detail.textContent=`@${row.username} · ${[...row.boards].join(', ')}`;
+        const detail=document.createElement('small');detail.textContent=`${row.source} · @${row.username} · ${[...row.boards].join(', ')}`;
         button.append(name,detail);button.addEventListener('mousedown',event=>event.preventDefault());button.onclick=()=>insert(row);list.append(button);
       }
       highlight();

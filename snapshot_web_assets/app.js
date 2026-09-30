@@ -260,7 +260,8 @@ function refreshSnapshotCommentsButton() {
 function toggleSnapshotComments() {
   const client = $("#f-insured")?.value.trim() || state.lastClient || "Job";
   if (!state.cardId) { setStatus("Pick or find the Trello card first", "warn"); return; }
-  const row = { client, display_name: client, trello_card_id: state.cardId };
+  const row = { client: state.sourceClient || client, display_name: client,
+    trello_card_id: state.cardId, division: state.division || 'EMS' };
   const ctx = snapshotAuditCtx();
   window.AuditDetail.syncCommentsDrawer(row, ctx);
   window.AuditDetail.toggleCommentsDrawer(row, ctx);
@@ -2243,23 +2244,8 @@ async function openSnapshotFindFolder(row) {
 }
 
 function openSnapshotCommentModal(row) {
-  const wrap = mkSnapModal({
-    title: "💬 Post Trello comment",
-    body: `<textarea id="cmt" rows="6" style="width:100%;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font:inherit;font-size:13px;" placeholder="Comment text…"></textarea>
-      <div class="modal-footer" style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">
-        <button class="btn modal-close">Cancel</button>
-        <button class="btn btn-primary" id="cmt-go">💬 Post</button>
-      </div>`,
-  });
-  wrap.querySelector("#cmt-go").addEventListener("click", async () => {
-    const body = wrap.querySelector("#cmt").value.trim();
-    if (!body) return;
-    const res = await pywebview.api.post_comment(row.client, body);
-    if (!res?.ok) { setStatus(`Post failed: ${res?.error || "?"}`, "error"); return; }
-    wrap.remove();
-    setStatus("💬 Posted to Trello", "ok");
-  });
-  wrap.querySelector("#cmt").focus();
+  if (!row?.trello_card_id) { setStatus('Choose a Trello card first', 'warn'); return; }
+  window.AuditDetail.openCommentsDrawer(row, snapshotAuditCtx());
 }
 
 // ── 📋 CLOSE OUT checklist (mirrors Tk open_close_out_dialog) ───

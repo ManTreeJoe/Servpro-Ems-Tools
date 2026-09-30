@@ -59,6 +59,14 @@ const {chromium}=require('playwright');
   await page.evaluate(()=>{failMembers=false;});await page.getByRole('button',{name:'Retry',exact:true}).click();
   await page.getByRole('option',{name:/Recovered Member/}).waitFor();
   await editor.press('Tab');assert.match(await editor.innerText(),/@recovered/);
+  await page.evaluate(()=>{
+   document.querySelector('[data-comment-input]')._mentionTargets=()=>[{cardId:'native-card',division:'EMS'}];
+   pywebview.api.job_comment_members=async()=>({ok:false,error:'Trello offline'});
+   pywebview.api.oneloss_comment_members=async()=>({ok:true,members:[{id:'native-user',name:'Native Teammate',username:'ol.native.12345678'}]});
+  });
+  await editor.fill('@native');await editor.press('End');
+  const native=page.getByRole('option',{name:/Native Teammate/});await native.waitFor();assert.match(await native.innerText(),/OneLoss/);await native.click();
+  assert.match(await editor.innerText(),/@ol.native.12345678/);
   assert.deepEqual(errors,[]);
   console.log('PASS: @ suggestions, exact usernames in Markdown posting, keyboard/mouse selection, email exclusion, Escape, destination isolation, cached requests.');
  }finally{await browser.close();}

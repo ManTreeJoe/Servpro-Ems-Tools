@@ -73,6 +73,8 @@ def _shape(n):
         "date":      n.get("date") or "",
         "card_name": card.get("name") or "",
         "card_short": short,
+        "card_id": card.get('id') or short,
+        "comment_id": (n.get('idAction') or '') if ntype in ('commentCard','mentionedOnCard') else '',
         "card_url":  f"https://trello.com/c/{short}" if short else "",
         "board":     board.get("name") or "",
         "list":      list_.get("name") or "",
@@ -91,6 +93,34 @@ class Api:
         self._window = window
 
     # ── Feed ─────────────────────────────────────────────────────────
+    def notification_job(self, card_id, comment_id=''):
+        try:
+            from notification_navigation import resolve
+            result = resolve(card_id)
+            import re
+            result['commentId'] = comment_id if re.fullmatch(r'[0-9a-fA-F]{24}', str(comment_id or '')) else ''
+            return result
+        except ValueError as ex:
+            return {'ok': False, 'error': str(ex)}
+        except Exception:
+            return {'ok': False, 'error': 'The job link could not be checked. Retry or open in Trello.'}
+
+    def personal_inbox(self, filter_name='all', unread=False):
+        import personal_notifications as pn
+        import threading
+        threading.Thread(target=pn.flush, daemon=True).start()
+        result = pn.call('inbox', filter=filter_name, unread=bool(unread))
+        result['pending_delivery'] = pn.pending_count()
+        return result
+
+    def personal_read(self, notification_id, read=True):
+        from personal_notifications import call
+        return call('read', id=notification_id, read=bool(read))
+
+    def personal_mute(self, card_id, muted):
+        from personal_notifications import call
+        return call('mute', card_id=card_id, muted=bool(muted))
+
     def list_notifications(self, only_unread: bool = False,
                            limit: int = 60) -> dict:
         """Return notifications grouped BY BOARD, unread groups first.

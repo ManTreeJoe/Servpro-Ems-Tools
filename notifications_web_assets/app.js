@@ -52,12 +52,13 @@ function render() {
           data-id="${esc(it.id)}" data-url="${esc(it.card_url)}">
         <span class="notif-icon" title="${esc(it.type_label)}">${it.icon}</span>
         <div class="notif-body">
-          <div class="notif-card">${esc(it.card_name || it.type_label)}</div>
+          <div class="notif-card"><button type="button" data-open-notification>${esc(it.card_name || it.type_label)}</button></div>
           <div class="notif-meta">${esc(it.type_label)}${it.by ? " · " + esc(it.by) : ""}${it.list ? " · " + esc(it.list) : ""}</div>
-          ${it.snippet ? `<div class="notif-snippet">${esc(it.snippet)}</div>` : ""}
+          ${it.snippet ? `<div class="notif-snippet">${window.NotificationReader?.markdown(it.snippet)||esc(it.snippet)}</div>` : ""}
         </div>
         <div class="notif-side">
           <span class="notif-date">${esc(fmtDate(it.date))}</span>
+          <button class="notif-preview" type="button" data-preview>Read message</button>
           ${it.unread ? `<button class="mark-btn" data-mark="${esc(it.id)}">✓ Mark read</button>` : ""}
         </div>
       </li>`).join("");
@@ -87,12 +88,22 @@ function wire() {
       el.closest(".board-group").classList.toggle("collapsed");
     });
   });
-  // Click a notification → open the Trello card.
+  // Exact card/action routing. No customer-name match and no silent fallback.
   document.querySelectorAll(".notif").forEach((row) => {
+    const item=state.groups.flatMap(g=>g.items).find(it=>it.id===row.dataset.id);
+    async function openJob(){
+      if(row.dataset.opening)return false;row.dataset.opening='1';row.setAttribute('aria-busy','true');setStatus('Opening the linked job…');
+      try{const result=await pywebview.api.notification_job(item.card_id,item.comment_id||'');
+        if(!result?.ok)throw Error(result?.error||'The job link is unavailable.');
+        window.parent.postMessage({type:'linguar-open-job',...result},'*');setStatus('');return true;
+      }catch(e){setStatus(e.message,'error');window.NotificationReader?.open(item,openJob,e.message);return false;}
+      finally{delete row.dataset.opening;row.removeAttribute('aria-busy');}
+    }
+    row.querySelector('[data-preview]').onclick=()=>window.NotificationReader?.open(item,openJob);
     row.addEventListener("click", (e) => {
-      if (e.target.closest("[data-mark]")) return;   // mark button handled below
-      const url = row.dataset.url;
-      if (url) pywebview.api.open_url(url);
+      if (e.target.closest("[data-mark],[data-preview]")) return;
+      if(e.target.closest('a')){e.preventDefault();return;}
+      void openJob();
     });
   });
   // Mark one read.
@@ -114,14 +125,19 @@ function wire() {
   });
 }
 
+let notificationLoad=0;
 async function load() {
-  setStatus("Loading…");
+  const request=++notificationLoad;
+  setStatus("Checking notifications…");
+  try{
   const res = await pywebview.api.list_notifications(state.unreadOnly, 80);
+  if(request!==notificationLoad)return;
   if (!res?.ok) { setStatus(`Load failed: ${res?.error || "?"}`, "error"); return; }
   state.groups = res.groups || [];
   render();
   setStatus(`${res.total} notification${res.total !== 1 ? "s" : ""} · ${res.unread} unread`,
             res.unread ? "" : "ok");
+  }catch(e){if(request===notificationLoad)setStatus('Notifications could not refresh. Your previous list is still shown.','error');}
 }
 
 window.addEventListener("pywebviewready", async () => {
@@ -146,5 +162,5 @@ window.addEventListener("pywebviewready", async () => {
     setStatus("All marked read", "ok");
     load();
   });
-  load();
+  window.addEventListener('trello-notifications-open', load);
 });

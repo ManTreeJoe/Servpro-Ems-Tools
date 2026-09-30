@@ -17,6 +17,7 @@ This file replaces the Tk launcher as the default entry point.
 """
 from __future__ import annotations
 import datetime as _dt
+import json
 import os, sys, time, threading
 from pathlib import Path as _Path
 import webview
@@ -29,7 +30,7 @@ if _HERE not in sys.path: sys.path.insert(0, _HERE)
 
 ASSETS_DIR = os.path.join(_HERE, "home_web_assets")
 INDEX_HTML = os.path.join(ASSETS_DIR, "index.html")
-# Tiny root-level shim that redirects to the real home page. The
+# Root-level shell copy with an explicit asset base (no redirect). The
 # whole point: pywebview's http_server serves files relative to the
 # URL passed in. By rooting the URL at scripts/, the server treats
 # every `<tool>_web_assets/` directory as a sibling reachable without
@@ -147,18 +148,17 @@ def _show_already_running():
 
 
 def _ensure_root_index():
-    """Write the root-level redirect once at startup. Idempotent."""
-    body = (
-        '<!DOCTYPE html><html><head>'
-        '<meta http-equiv="refresh" '
-        'content="0; url=home_web_assets/index.html">'
-        '<title>OneLoss</title>'
-        '</head><body></body></html>\n')
-    try:
-        with open(ROOT_INDEX_HTML, "w", encoding="utf-8") as fh:
-            fh.write(body)
-    except OSError:
-        pass
+    """Serve the shell directly while keeping sibling tools on one origin.
+
+    A meta redirect races WebView2 bridge injection and can erase pending
+    callbacks. Keep one document load; resolve assets as on the original page.
+    Fail on write errors rather than silently launching an old redirect.
+    """
+    body = _Path(INDEX_HTML).read_text(encoding="utf-8")
+    if '<head>' not in body:
+        raise ValueError("Shell template is missing its head element")
+    body = body.replace('<head>', '<head>\n<base href="home_web_assets/">', 1)
+    _Path(ROOT_INDEX_HTML).write_text(body, encoding="utf-8")
 
 
 # Sidebar catalog — groups + per-tool metadata. Keep mapping from
@@ -259,7 +259,9 @@ class HomeApi:
     calls so each tool's JS stays unchanged.
     """
 
-    def __init__(self):
+    def __init__(self, tool_keys=None):
+        from tool_windows import ToolWindows
+        self._popouts = ToolWindows(self)
         self._window = None
         self._subs = {}
         self._sidebar_active = None
@@ -272,6 +274,8 @@ class HomeApi:
         # back to Audit).
         self._failed_subs = {}   # key → error string, for the sidebar badge
         for key, mod_name in SUB_MODULES.items():
+            if tool_keys is not None and key not in tool_keys:
+                continue
             try:
                 mod = __import__(mod_name)
                 api = mod.Api()
@@ -292,6 +296,28 @@ class HomeApi:
                                   exc_info=True)
                 except Exception:
                     pass
+
+    def open_popout(self, tool, context=None):
+        from tool_windows import ToolWindows
+        # Root and child windows share one registry, never one panel API.
+        try:
+            return self._popouts.open(tool, context)
+        except Exception:
+            return {'ok': False, 'error': 'The window could not open. Please try again.'}
+
+    def popout_source(self, tool):
+        if tool not in SUB_MODULES and tool != 'daily_run':
+            return {'ok': False}
+        return {'ok': True, 'src': _asset_folder_for(tool)}
+
+    def popout_navigate_main(self, message):
+        if not isinstance(message, dict) or message.get('type') not in (
+                'ems-open-tool-modal', 'linguar-open-daily-run', 'ems-navigate'):
+            return {'ok': False}
+        owner = self._popouts.owner
+        owner._window.evaluate_js('window.postMessage('+json.dumps(message)+',location.origin)')
+        owner.focus_window()
+        return {'ok': True}
 
     def _bind_methods(self, key: str, api):
         """Bind every public method on `api` to self with a
@@ -1060,6 +1086,8 @@ class HomeApi:
         so we persist the choice, drop the few workspace-scoped in-memory
         caches, and tell the web layer to reload — no relaunch needed.
         Returns {reload: True} so the JS shell does location.reload()."""
+        if getattr(getattr(self, '_popouts', None), 'windows', {}):
+            return {'ok': False, 'error': 'Close pop-out windows before switching workspaces, so they cannot show the previous workspace.'}
         try:
             import config
             key = (key or "").strip()

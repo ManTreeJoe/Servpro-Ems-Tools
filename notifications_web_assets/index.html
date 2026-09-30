@@ -75,6 +75,13 @@
 <script src="../web_shared/text_context_menu.js?v=20260903a"></script>
 </head>
 <body class="responsive-ui">
+<nav class="inbox-sources" aria-label="Notification source"><button id="personal-source" aria-pressed="true">My OneLoss inbox</button><button id="trello-source" aria-pressed="false">Connected Trello account</button></nav>
+<section id="personal-panel">
+  <header class="topbar"><div class="brand"><span class="brand-name">My notifications</span></div><div class="topbar-actions"><label>Show <select id="personal-filter"><option value="all">All activity</option><option value="mentions">@mentions</option><option value="my_jobs">My jobs</option></select></label><label class="toggle"><input type="checkbox" id="personal-unread"> Unread only</label><button class="btn" id="personal-refresh">Refresh</button></div></header>
+  <p class="personal-status" id="personal-status" role="status">Loading your inbox…</p>
+  <main id="personal-feed" class="content"></main>
+</section>
+<section id="trello-panel" hidden>
 <header class="topbar">
   <div class="brand">
     <span class="brand-mark"></span>
@@ -93,6 +100,14 @@
 <main class="content" id="feed">
   <div class="empty"><span class="big">🔔</span>Loading notifications…</div>
 </main>
-<script src="app.js?v=20260811a"></script>
+</section>
+<script src="../web_shared/vendor/markdown-it/markdown-it.min.js"></script>
+<script src="../pipeline_web_assets/comment_markdown.js"></script>
+<link rel="stylesheet" href="../web_shared/comment_display.css">
+<script src="reader.js?v=20260929"></script>
+<script src="app.js?v=20260929"></script>
+<link rel="stylesheet" href="personal.css?v=20260929">
+<script src="personal.js?v=20260929"></script>
+<link rel="stylesheet" href="inbox.css?v=20260929-scroll">
 </body>
 </html>

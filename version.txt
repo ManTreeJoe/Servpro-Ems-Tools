@@ -1,6 +1,6 @@
 {
-  "version": "1.8.24",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.24",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.24/Linguar-Hub-Setup-1.8.24.exe",
-  "notes": "Simpler Photos/Documents gallery, stage albums and folder opening; searchable Trello reaction picker; clearer division tabs and Job Log toolbar; corrected comment placeholder and spinner. Create Snapshot from Jobs with report-only edits and exact card/division tracking."
+  "version": "1.8.25",
+  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.25",
+  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.25/Linguar-Hub-Setup-1.8.25.exe",
+  "notes": "Personal notifications and job membership; compact Trello inbox with exact-comment links; right-click tool and job pop-outs; shared comment editing and mentions; EMS board copies; CompanyCam stage tags restricted to existing defaults; scrolling, popup sizing and startup fixes."
 }

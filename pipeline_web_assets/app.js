@@ -50,6 +50,14 @@ let quietBoardSyncTimer = null;
 let quietCommentSyncTimer = null;
 let placementMutationGeneration = 0;
 
+window.addEventListener('message',event=>{
+  if(event.source!==window.parent||event.origin!==location.origin)return;
+  const {cardId,commentId}=event.data||{};
+  if(!cardId||!commentId)return;
+  if(state.openWorkspace?.cardId===cardId)void window.focusNotificationComment?.(state.openWorkspace,cardId,commentId);
+  else setStatus('A notification targets another card. Finish your open draft, then reopen that card to view the comment.','warn');
+});
+
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
@@ -118,6 +126,7 @@ async function bootPipeline() {
     const cardId = pipelineQuery.get("card_id") || "";
     const division = pipelineQuery.get("division") || "EMS";
     await onAuditCard(requestedFocus || "Job", cardId, "", division);
+    if(pipelineQuery.get('comment_id'))await window.focusNotificationComment?.(state.openWorkspace,cardId,pipelineQuery.get('comment_id'));
     startQuietSyncTimers();
     return;
   }
@@ -1543,6 +1552,7 @@ function openCardMenu(ev, cardEl) {
   if (!window.emsOpenInMenu) return;
   window.emsOpenInMenu(ev, client, {
     extra: [
+      { label: "Open in new window", action: () => window.OneLossPopout?.open('pipeline', {cardId,client,division:cardEl.dataset.division || 'EMS'}) },
       { label: "Move to board / section…", action: () => openPlacementAction(cardId, "move") },
       { label: "Archive card…", action: () => openPlacementAction(cardId, "archive") },
       { label: "🔎 Run audit on this job", action: () => onAuditCard(cardEl) },
@@ -2082,7 +2092,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
           ${data.card_id && data.card_id !== trello.card_id ? `<button class="text-btn" data-division-trello-use="${name}">Use open card</button>` : ""}
           <button class="text-btn" data-division-trello-pin="${name}">${trello.pinned ? "Change" : "Pin"}</button>
           ${trello.pinned ? `<button class="text-btn danger" data-division-trello-remove="${name}">Remove</button>` : ""}</div>
-          ${name === "EMS" && trello.pinned ? `<button class="text-btn" data-link-ems-copy>Link WIP / Estimating copy</button>` : ""}
+          ${name === "EMS" && trello.pinned ? `<button class="text-btn" data-create-ems-copy>Copy to board…</button><button class="text-btn" data-link-ems-copy>Link WIP / Estimating copy</button>` : ""}
           ${extraPlacements.length ? `<div class="division-placement-list">${extraPlacements.map((item) => `<button class="division-placement" data-placement-open="${escapeAttr(item.url || `https://trello.com/c/${item.card_id}`)}"><span>Also on ${escapeHtml(item.board || item.purpose || "linked board")}</span><small>${escapeHtml(item.lane || "Open card")}</small></button>`).join("")}</div>` : ""}
         </div>
       </div>`;
@@ -2162,7 +2172,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   const body = `<div class="job-card-layout">
     <div class="job-card-main">
       ${divisionConflictBanner}
-      <section class="aud-section job-info-section"><div class="section-title-row"><div><h3>Job info</h3><small>Click location to move · other fields to copy</small></div><button type="button" class="btn compact" data-edit-job-info>Edit</button></div>
+      <section class="aud-section job-info-section"><div class="section-title-row"><div><h3>Job info</h3><small>Click location to move · other fields to copy</small></div><div class="job-info-actions"><button type="button" class="btn compact" data-job-members>Members</button><button type="button" class="btn compact" data-edit-job-info>Edit</button></div></div>
         ${facts || `<div class="aud-empty">${emptyWorkspaceText('Job information', 'No saved job information yet.')}</div>`}</section>
       <section class="aud-section job-log-section"><div class="section-title-row"><div><h3>Job Log</h3><small>Structured updates used to build the Snapshot</small></div>
         <button class="btn btn-primary compact" data-add-job-log>+ Add update</button></div>
@@ -2511,6 +2521,9 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       }
     });
   }));
+  w.querySelector('[data-job-members]')?.addEventListener('click', () => openJobMembers(data.card_id || ''));
+  w.querySelector('.modal-title')?.addEventListener('contextmenu', event => window.OneLossPopout?.menu(event,'pipeline',{
+    cardId:data.card_id||'',client:data.client||res.client||'',division:selectedDivision}));
   w.querySelector("[data-edit-job-info]")?.addEventListener("click", () => openJobInfoEditor(data, res, async () => {
     close(true);
     await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS");
@@ -2787,6 +2800,13 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     openEmsCopyLinkModal(data.client || res.client || "", source, async () => {
       close();
       await onAuditCard(data.client || res.client || "", data.card_id || "", "", "EMS");
+    });
+  });
+  w.querySelector('[data-create-ems-copy]')?.addEventListener('click', () => {
+    const source = selectedDivision === 'EMS' ? data.card_id : divisionCards.ems?.card_id;
+    openEmsCopyCreateModal(data.client || res.client || '', source || '', async () => {
+      close();
+      await onAuditCard(data.client || res.client || '', data.card_id || '', '', 'EMS');
     });
   });
   w.querySelectorAll("[data-division-trello-use]").forEach((button) =>
@@ -3098,6 +3118,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     stateEl.textContent = targets.length > 1
       ? `Saved to ${result.posted || targets.length} linked cards · Trello sync pending`
       : result.warning || (result.pending_sync ? `Saved to ${target.division} · Trello sync pending` : `Saved to ${target.division}`);
+    const notificationWarnings=(result.results||[result]).map(row=>row.notification_warning).filter(Boolean);
+    if(notificationWarnings.length)stateEl.textContent=notificationWarnings.join(' ');
   });
   w.querySelector("[data-comment-stream]")?.addEventListener("click", async (event) => {
     const link = event.target.closest('.comment-markdown a');
@@ -3704,11 +3726,12 @@ async function openXaStageModal(client, jobPath = "") {
 
 function renderJobComment(comment) {
   const actor = comment?.actor || "OneLoss";
-  const initial = actor.trim().charAt(0).toUpperCase() || "L";
+  const initial = window.CommentMarkdown?.initials(actor) || actor.trim().charAt(0).toUpperCase() || "L";
+  const avatarColor = window.CommentMarkdown?.avatarColor(actor) || '#315A40';
   const source = comment?.source === "trello" ? "trello" : "linguar";
-  return `<article class="job-comment" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-card-id="${escapeAttr(comment?.card_id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar">${escapeHtml(initial)}</div>
+  return `<article class="job-comment" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-card-id="${escapeAttr(comment?.card_id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar" style="background:${avatarColor};color:#fff" title="${escapeAttr(actor)}">${escapeHtml(initial)}</div>
     <div><header><strong>${escapeHtml(actor)}</strong><time>${escapeHtml(formatCommentDate(comment?.at || ""))}</time></header>
-    <div class="comment-markdown" data-comment-raw="${escapeAttr(comment?.text || '')}">${window.CommentMarkdown ? window.CommentMarkdown.render(comment?.text) : `<p>${escapeHtml(comment?.text || '')}</p>`}</div><footer><small>${escapeHtml(comment?.division ? comment.division + ' · ' : '')}${source === "trello" ? "Trello" : "OneLoss"}</small>
+    <div class="comment-markdown" data-comment-raw="${escapeAttr(comment?.text || '')}">${window.CommentMarkdown ? window.CommentMarkdown.display(comment?.text) : `<p>${escapeHtml(comment?.text || '')}</p>`}</div><footer><small>${escapeHtml(comment?.division ? comment.division + ' · ' : '')}${source === "trello" ? "Trello" : "OneLoss"}</small>
     ${comment?.id && comment?.can_manage ? `<span><button class="text-btn" data-comment-edit>Edit</button><button class="text-btn danger" data-comment-delete>Delete</button></span>` : ""}</footer>${window.CommentReactions?.markup(comment) || ''}</div></article>`;
 }
 
@@ -4246,7 +4269,7 @@ async function openCompanyCamPullModal(data, audit, reviewedPlan = null, skipRec
           ? `<strong>${escapeHtml(group.stage)}</strong>`
           : `<select data-cc-stage="${index}"><option value="">Choose stage…</option>${stages.map((stage) => `<option value="${escapeAttr(stage)}" ${stage === suggested ? "selected" : ""}>${escapeHtml(stage)}</option>`).join("")}</select>`}</label>
         <label><span>Tech</span><input data-cc-tech="${index}" value="${escapeAttr(group.tech || "")}" placeholder="Technician"></label>
-        <label class="cc-pull-tags"><span>Add CompanyCam tags</span><input data-cc-tags="${index}" placeholder="Mold, Kitchen"><small>${currentTags.length ? `Current: ${escapeHtml(currentTags.join(", "))}` : "No current tags"}</small></label>
+        <div class="cc-pull-tags"><span>CompanyCam stage tag</span><small data-cc-auto-tag="${index}"></small><small>${currentTags.length ? `Current: ${escapeHtml(currentTags.join(", "))}` : "No current tags"}</small></div>
         <div class="cc-pull-target"><span>Files to</span><strong>${escapeHtml(group.target || "Job photos")}</strong></div>
       </article>`;
     }).join("")}</div>
@@ -4258,11 +4281,15 @@ async function openCompanyCamPullModal(data, audit, reviewedPlan = null, skipRec
     const group = groups[index] || {};
     return {photo_ids: group.photo_ids || [],
       stage: body.querySelector(`[data-cc-stage="${index}"]`)?.value || "",
-      tech: body.querySelector(`[data-cc-tech="${index}"]`)?.value.trim() || "",
-      tags: (body.querySelector(`[data-cc-tags="${index}"]`)?.value || "")
-        .split(",").map((tag) => tag.trim()).filter(Boolean)};
+      tech: body.querySelector(`[data-cc-tech="${index}"]`)?.value.trim() || ""};
   });
   const refresh = () => {
+    body.querySelectorAll('[data-cc-auto-tag]').forEach((label) => {
+      const index = label.dataset.ccAutoTag;
+      const stage = body.querySelector(`[data-cc-stage="${index}"]`)?.value || '';
+      const tag = plan.stage_tags?.[stage];
+      label.textContent = tag ? `Auto-add on pull: ${tag}` : '';
+    });
     const assignments = selectedAssignments();
     const missingStage = Array.from(body.querySelectorAll("[data-cc-group]:checked")).some((box) => {
       const select = body.querySelector(`[data-cc-stage="${box.dataset.ccGroup}"]`);
@@ -4511,6 +4538,7 @@ async function onCtxAction(action) {
   const row = state.rows.find((r) => r.card_id === state.selected_card_id);
   if (!row) return;
   if (action === "open-trello") await pywebview.api.open_url(row.card_url);
+  else if (action === "popout") await window.OneLossPopout?.open('pipeline',{cardId:row.card_id,client:row.client,division:row.division||'EMS'});
   else if (action === "timeline") openTimelineModal(row);
   else if (action === "copy-client") { await pywebview.api.copy_to_clipboard(row.client); setStatus(`Copied: ${row.client}`, "ok"); }
   else if (action === "copy-id") { await pywebview.api.copy_to_clipboard(row.card_id); setStatus(`Copied card ID`, "ok"); }

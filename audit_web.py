@@ -809,7 +809,10 @@ def _folder_of_job(job):
     return ""
 
 
-class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
+from shared_comment_api import SharedCommentApi
+
+
+class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
     """Methods exposed to JS via `pywebview.api`."""
 
     def __init__(self):
@@ -4963,7 +4966,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
-    def get_card_comments(self, client: str, limit: int = 200) -> dict:
+    def get_card_comments(self, client: str, limit: int = 200, card_id: str = '') -> dict:
         """The card's thread, newest first: comments AND attachments.
 
         The Trello info section already shows five comments, truncated to
@@ -4993,7 +4996,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         if not client:
             return {"ok": False, "error": "no client"}
         try:
-            card_id = persistence.get_trello_card_id(client) or ""
+            card_id = card_id or persistence.get_trello_card_id(client) or ""
         except Exception:
             card_id = ""
         if not card_id:
@@ -5101,7 +5104,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         return out
 
     def comment_image(self, client: str, attachment_id: str,
-                       big: bool = False) -> dict:
+                       big: bool = False, card_id: str = '') -> dict:
         """One attachment image as a data: URI.
 
         Trello's uploaded-attachment URLs need an OAuth Authorization
@@ -5117,7 +5120,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         if not attachment_id:
             return {"ok": False, "error": "no attachment"}
         try:
-            card_id = persistence.get_trello_card_id(client) or ""
+            card_id = card_id or persistence.get_trello_card_id(client) or ""
         except Exception:
             card_id = ""
         if not card_id:
@@ -9612,7 +9615,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
 
     # ── Phase 2: Comment posting ─────────────────────────────────────
     def post_comment(self, client: str, text: str,
-                      include_item: str = "") -> dict:
+                      include_item: str = "", card_id: str = '') -> dict:
         """Post `text` as a Trello comment on the client's pinned
         card. When `include_item` is set, prefixes the comment with
         the missing-item label for traceability — mirrors the Tk
@@ -9620,7 +9623,7 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
         if not client or not text:
             return {"ok": False, "error": "missing client or text"}
         try:
-            card_id = persistence.get_trello_card_id(client) or ""
+            card_id = card_id or persistence.get_trello_card_id(client) or ""
         except Exception:
             card_id = ""
         if not card_id:
@@ -9631,12 +9634,16 @@ class Api(JobAdminApi, JobSettingsApi, CompanyCamApi):
             body = f"**Re: {include_item}**\n\n{body}"
         try:
             import trello_client as tc
-            tc.post_comment(card_id, body)
+            posted = tc.post_comment(card_id, body)
+            if not posted or not posted.get('id'):
+                return {'ok': False, 'error': 'Trello did not confirm the comment. Check the thread before retrying.'}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
         # No cache-busting here: trello_client.post_comment flags the card
         # for every caller at once, so one mechanism covers all of them.
-        return {"ok": True, "card_id": card_id}
+        from personal_notifications import enqueue
+        warning = enqueue(card_id, posted['id'], body)
+        return {"ok": True, "card_id": card_id, 'notification_warning': warning}
 
     def xa_note_members(self, client: str) -> dict:
         """Board members of the client's pinned card, for the XA-note

@@ -1,0 +1,7 @@
+.job-members-dialog{box-sizing:border-box;width:min(500px,calc(100vw - 32px));max-height:85vh;overflow:auto;background:var(--surface,#202429);color:var(--text,#f0f0ee);border:1px solid var(--border,#46505a);border-radius:10px;padding:20px;font:14px/1.5 system-ui}
+.job-members-dialog::backdrop{background:#0009}
+.job-members-dialog header{display:flex;align-items:center;justify-content:space-between;gap:16px}.job-members-dialog h2{margin:0;font-size:18px}
+.job-members-dialog button,.job-members-dialog input[type=search]{background:var(--surface-2,#292e35);color:inherit;border:1px solid var(--border,#66717c);border-radius:6px;padding:8px}
+.job-members-dialog button{cursor:pointer;min-width:36px}.job-members-dialog input[type=search]{display:block;box-sizing:border-box;width:100%;margin-top:4px}
+.job-members-dialog [data-people]{max-height:36vh;overflow:auto;margin:12px 0}.member-person{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--border,#46505a)}.member-person small{display:block;color:var(--text-muted,#b9c2cc);overflow-wrap:anywhere}
+.member-mute{display:flex;gap:10px;align-items:center}.job-members-dialog [role=status]{min-height:42px;color:var(--text-muted,#b9c2cc)}.job-info-actions{display:flex;gap:8px}

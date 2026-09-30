@@ -603,6 +603,8 @@ class CompanyCamApi:
                              **preview_options,
                              **({"progress_cb": progress} if request_id else {}))
             if r.get("ok"):
+                from companycam_stage_tags import STAGE_TAGS
+                r['stage_tags'] = dict(STAGE_TAGS)
                 if visits_first:
                     if scope() != identity[0]:
                         return {'ok':False, 'error':'The account or franchise changed. Reopen the photo preview.'}
@@ -690,6 +692,20 @@ class CompanyCamApi:
             return {"ok": False,
                     "error": "No job folder — pin/find the folder first"}
 
+        # Old clients must not bypass the fixed-stage-only tag controls.
+        if any(g.get('tags') for g in groups):
+            return {'ok': False, 'error': 'Custom CompanyCam tags are disabled. Reopen the photo preview and select a stage.'}
+        from companycam_stage_tags import approved_stage_tags, stage_tag
+        approved_tags = {}
+        if any(stage_tag(g.get('stage')) for g in groups):
+            try:
+                approved_tags = approved_stage_tags()
+            except Exception:
+                return {'ok': False, 'error': 'CompanyCam default tags could not be verified. No tags or photos were changed. The tag-list connection must be available before importing a selected stage.'}
+            for group in groups:
+                selected = str(group.get('stage') or '').strip()
+                if stage_tag(selected) and selected not in approved_tags:
+                    return {'ok': False, 'error': f'No existing CompanyCam default tag matches {selected}. No tags or photos were changed.'}
         pulled = skipped = tagged = 0
         errors = []
         contents = self._cc_contents_dir(client, pics)
@@ -714,8 +730,9 @@ class CompanyCamApi:
             # CompanyCam's API only supports additive photo tagging.  The
             # pull dialog labels this honestly and sends only new tags; a
             # failed tag must not prevent the requested photo download.
+            automatic_tag = approved_tags.get(stage, '')
             requested_tags = []
-            for value in (g.get("tags") or []):
+            for value in ([automatic_tag] if automatic_tag else []):
                 value = str(value or "").strip()
                 if (value and len(value) <= 80
                         and value.casefold() not in {

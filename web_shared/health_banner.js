@@ -42,7 +42,7 @@
     if (window.pywebview && window.pywebview.api) { cb(window.pywebview.api); return; }
     window.addEventListener("pywebviewready", function () {
       cb(window.pywebview && window.pywebview.api);
-    });
+    }, { once: true });
   }
 
   // ── error reporting ─────────────────────────────────────────────────
