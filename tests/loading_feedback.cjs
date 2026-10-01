@@ -1,0 +1,76 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict'), path=require('node:path'), fs=require('node:fs');
+(async()=>{
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:900,height:600}});
+  await page.setContent('<button id="save">Save</button><main>Existing job content and drafts stay visible</main>');
+  await page.addStyleTag({path:path.resolve('web_shared/theme.css')});
+  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';window.requests=[];window.pywebview={api:{save_job:()=>new Promise((resolve,reject)=>requests.push({resolve,reject})),health_state:()=>new Promise(()=>{})}};});
+  await page.addScriptTag({path:path.resolve('web_shared/loading_feedback.js')});
+  await page.evaluate(()=>{
+    dispatchEvent(new Event('pywebviewready'));
+    document.querySelector('#save').onclick=()=>{window.result=pywebview.api.save_job();result.catch(()=>{});};
+  });
+  await page.locator('#save').click();await page.waitForTimeout(300);
+  assert.equal(await page.locator('#oneloss-loading-feedback').isVisible(),true);
+  assert.equal(await page.locator('#save').getAttribute('aria-busy'),'true');
+  await page.locator('#save').click();await page.waitForTimeout(300);
+  await page.evaluate(()=>requests[0].resolve('ok'));
+  assert.equal(await page.locator('#save').getAttribute('aria-busy'),'true');
+  await page.evaluate(()=>requests[1].reject(Error('failed')));
+  assert.equal(await page.locator('#oneloss-loading-feedback').isVisible(),false);
+  assert.equal(await page.locator('#save').getAttribute('aria-busy'),null);
+  assert.equal(await page.locator('#save').textContent(),'Save');
+  await page.evaluate(()=>{const p=Promise.resolve(42);window.same=LoadingFeedback.track('search',p,{force:true})===p;pywebview.api.health_state();});
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(()=>same),true);
+  assert.equal(await page.locator('#oneloss-loading-feedback').isVisible(),false);
+  await page.waitForTimeout(1600);
+  await page.evaluate(()=>{LoadingFeedback.track('list_notifications',new Promise(()=>{}));LoadingFeedback.track('background_trello_sync',new Promise(()=>{}));});
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#oneloss-loading-feedback').isVisible(),false,'Idle polling stays quiet');
+  await page.locator('#save').click();await page.waitForTimeout(300);
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await page.locator('.olf-fill').evaluate(el=>getComputedStyle(el).animationName),'none');
+  await page.screenshot({path:require('os').tmpdir()+'/oneloss-loading-feedback.png'});
+  await page.evaluate(()=>requests[2].resolve('ok'));
+  // Exercise the actual iframe proxy, not only the standalone wrapper.
+  await page.evaluate(()=>{window.pywebview={api:{pipeline_search:()=>new Promise(resolve=>window.finishIframe=resolve)}};});
+  const frame=await page.evaluateHandle(()=>{const f=document.createElement('iframe');document.body.append(f);return f;});
+  const child=await frame.asElement().contentFrame();
+  await child.evaluate(()=>history.replaceState(null,'','/pipeline_web_assets/index.html')).catch(()=>{});
+  // The about:blank fixture has an empty namespace; provide that exact bridge alias.
+  await page.evaluate(()=>pywebview.api._search=pywebview.api.pipeline_search);
+  await child.addScriptTag({content:fs.readFileSync('web_shared/loading_feedback.js','utf8')});
+  await child.addScriptTag({content:fs.readFileSync('web_shared/iframe_shim.js','utf8')});
+  await child.waitForTimeout(50);
+  await child.evaluate(()=>{dispatchEvent(new Event('pywebviewready'));pywebview.api.search();});
+  await child.waitForTimeout(300);
+  assert.equal(await child.locator('#oneloss-loading-feedback').isVisible(),true);
+  await page.evaluate(()=>finishIframe({ok:true}));
+  await child.waitForTimeout(25);
+  assert.equal(await child.locator('#oneloss-loading-feedback').isVisible(),false);
+  const shell=await browser.newPage();
+  await shell.setContent('<main>Tool shell</main>');
+  await shell.addScriptTag({path:path.resolve('web_shared/loading_feedback.js')});
+  await shell.addScriptTag({path:path.resolve('home_web_assets/frame_loading.js')});
+  let release;
+  await shell.route('https://loading.test/**',async route=>{await new Promise(resolve=>release=resolve);await route.fulfill({body:'<p>Tool ready</p>',contentType:'text/html'}).catch(()=>{});});
+  await shell.evaluate(()=>{const f=document.createElement('iframe');f.src='https://loading.test/tool';document.body.append(f);});
+  await shell.waitForTimeout(350);
+  assert.equal(await shell.locator('#oneloss-loading-feedback').isVisible(),true,'Tool navigation shows loading before its bridge is ready');
+  release();
+  await shell.waitForTimeout(200);
+  assert.equal(await shell.locator('#oneloss-loading-feedback').isVisible(),false);
+  await shell.evaluate(()=>document.querySelector('iframe').src='https://loading.test/next');
+  await shell.waitForTimeout(350);
+  assert.equal(await shell.locator('#oneloss-loading-feedback').isVisible(),true);
+  await shell.evaluate(()=>document.querySelector('iframe').remove());
+  await shell.waitForTimeout(25);
+  assert.equal(await shell.locator('#oneloss-loading-feedback').isVisible(),false,'Removed tools do not leave a stuck loader');
+  release();
+  await shell.close();
+  console.log('PASS loading feedback: native + iframe, concurrency, errors, polling, fast completion, reduced motion');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});

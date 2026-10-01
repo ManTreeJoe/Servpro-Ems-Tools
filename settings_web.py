@@ -427,7 +427,9 @@ class Api:
             return {"ok": False, "error": "Administrator access required."}
         try:
             import job_profiles
+            from job_profile_starters import starters
             return {"ok": True,
+                    "starters": starters(),
                     "profiles": job_profiles.list_profiles(department),
                     "franchises": [d.get("key") for d in config.list_departments()],
                     "payer_types": list(job_profiles.PAYER_TYPES),

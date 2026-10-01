@@ -1837,7 +1837,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             progress = evaluate_job_progress(master, audit_state, log_entries)
             try:
                 import job_profiles
-                profile_suggestions = job_profiles.suggestions(master)
+                profile_suggestions = job_profiles.available(master)
                 applied_profiles = [
                     {"profile_id": item.get("profile_id") or "",
                      "profile_name": item.get("profile_name") or "",
@@ -1920,9 +1920,9 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 return {"ok": False, "error": "Job Profile is unavailable."}
             profile = rows[0]
             if not any(str(item.get("profile_id") or "") == str(profile_id or "")
-                       for item in job_profiles.suggestions(master, rows)):
+                       for item in job_profiles.available(master, rows)):
                 return {"ok": False,
-                        "error": "This profile does not match the job's current type and details."}
+                        "error": "This profile is unavailable or already applied."}
             metadata = job_profiles.apply_to_job(master, profile)
             ems_db.upsert_job(display_name=master.get("display_name") or client,
                               department=master.get("department") or "",
@@ -2391,6 +2391,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         activity = str(entry.get("work_type") or "Job update").strip()
         status = str(entry.get("status") or "completed").replace("_", " ").title()
         lines = [f"🗒 Job Log · {shown_date} · {activity} · {status}"]
+        if entry.get('work_party') == 'subcontractor':
+            lines.append(f"Subcontractor: {entry.get('subcontractor') or ''}")
         if str(entry.get("technicians") or "").strip():
             lines.append(f"Crew: {str(entry['technicians']).strip()}")
         if str(entry.get("note") or "").strip():

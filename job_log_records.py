@@ -26,7 +26,7 @@ def visible_rows(rows, tombstones):
     return JobLogRows(visible, sorted(deleted))
 
 
-def snapshot_rows(client, card_id='', division='EMS'):
+def snapshot_rows(client, card_id='', division='EMS', *, refresh=False):
     """Snapshot reads saved records, never reconstructs them from comments."""
     import datetime
     import ems_db
@@ -34,6 +34,11 @@ def snapshot_rows(client, card_id='', division='EMS'):
     import persistence
     card_id = card_id or persistence.get_trello_card_id(client) or ''
     cached = job_log_projection.load(card_id, division) if card_id else {}
+    if refresh and 'job_log' in cached:
+        latest = job_log_projection.refresh_saved(card_id, division)
+        if not latest.get('ok'):
+            raise RuntimeError(latest.get('error') or 'Saved Job Log refresh failed')
+        cached = latest['crm']
     if 'job_log' in cached:
         rows = cached['job_log']
     else:
@@ -52,7 +57,18 @@ def snapshot_rows(client, card_id='', division='EMS'):
             date, weekday = parsed.strftime('%m/%d/%y'), parsed.strftime('%a')
         except ValueError:
             weekday = ''
+        from job_log_participants import label
         result.append({**row, 'date':date, 'weekday':weekday,
                        'activity':row.get('work_type') or 'Update',
-                       'techs':row.get('technicians') or ''})
+                       'techs':label(row)})
     return result
+
+
+def snapshot_sections(client, card_id='', division='EMS'):
+    """Use the same completed records for both report sections."""
+    rows = snapshot_rows(client, card_id, division, refresh=True)
+    return {
+        'logs': [r for r in rows if r.get('work_party') != 'subcontractor'],
+        'subs': [r for r in rows if r.get('work_party') == 'subcontractor'],
+        'job_log_source': 'saved',
+    }

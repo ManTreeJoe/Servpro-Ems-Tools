@@ -93,8 +93,8 @@ def test_add_update_reveals_and_focuses_the_job_log_editor():
     start = js.index("const openJobLogEditor")
     end = js.index('w.querySelectorAll("[data-add-job-log]")', start)
     editor = js[start:end]
-    assert 'host.scrollIntoView({ behavior: "smooth", block: "start" })' in editor
-    assert 'host.querySelector(\'[data-log-field="work_type"]\')?.focus()' in editor
+    assert "host.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: \"nearest\" })" in editor
+    assert 'activityPicker.focus()' in editor
 
 
 def test_job_log_is_above_requirements_and_checklists():
@@ -301,8 +301,9 @@ def test_overview_omits_saved_audit_and_retains_requirement_states():
     assert 'Saved audit' not in js
     assert 'audit-missing-count' not in js
     for marker in ('item.status === "blocked" ? "Blocked"',
-                   ': "Missing"', "req-status", 'data-run-folder-audit>Check files'):
+                   ': "Missing"', "req-status", 'data-file-check-state role="status" hidden'):
         assert marker in js
+    assert 'data-run-folder-audit>Check files' not in js
     assert ".aud-tag.aud-missing" in css
     assert ".req-status.status-completed" in css
 

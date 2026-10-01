@@ -1,0 +1,6 @@
+.desktop-alert-settings{margin:10px 18px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;flex-shrink:0;background:var(--surface-2)}
+.desktop-alert-settings summary{cursor:pointer;font-weight:600}
+.desktop-alert-controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:12px}
+.desktop-alert-controls label{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.desktop-alert-controls select{max-width:100%;padding:7px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px}
+.desktop-alert-settings p,.desktop-alert-controls [role=status]{font-size:12px;color:var(--text-muted);margin-bottom:0}

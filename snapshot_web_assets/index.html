@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script src="../web_shared/job_activities.js?v=20261001popover"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#1A1A1A" />
 <script src="../web_shared/health_banner.js?v=20260820a"></script>
-<script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+<script src="../web_shared/loading_feedback.js?v=20261001dedup"></script>
+<script src="../web_shared/iframe_shim.js?v=20261001loading"></script>
 <script src="../web_shared/panel_state.js?v=20260811a"></script>
 <script src="../web_shared/util.js?v=20260731j"></script>
 <script src="../web_shared/progress_bar.js?v=20260817a"></script>
@@ -388,8 +390,8 @@
                   border-radius:6px;max-height:380px;overflow-y:auto;
                   z-index:60;display:none;box-shadow:0 6px 20px rgba(0,0,0,.4);"></div>
     </div>
-    <button id="view-list-btn" class="btn">📸 Closeout Queue</button>
-    <button id="view-gen-btn" class="btn">＋ New Snapshot</button>
+    <button id="view-list-btn" class="btn">Needs snapshot</button>
+    <button id="view-gen-btn" class="btn">＋ Create snapshot</button>
     <details class="toolbar-overflow"><summary class="btn">More ▾</summary><div>
       <button id="refresh-btn" class="btn">↻ Refresh</button>
       <button id="open-folder-btn" class="btn">📁 Snapshot folder</button>
@@ -402,7 +404,7 @@
      • Tracked (Snapshots <YY>.xlsx as a clean dispute-style table) -->
 <nav class="snapshot-tabs" id="snap-tabs">
   <button class="tab-btn active" data-tab="today">
-    📸 Close-out queue
+    Needs snapshot
   </button>
   <button class="tab-btn" data-tab="tracked">
     📋 Tracked <span class="muted" style="font-size:11px;font-weight:500;" id="tab-tracked-count"></span>
@@ -413,12 +415,12 @@
   <!-- Today tab — Estimating SNAPSHOT lane + recent PDFs -->
   <div id="tab-today">
     <section class="col">
-      <h2>📸 Final close-out audits</h2>
+      <h2>Needs snapshot</h2>
       <div class="queue-gate">
         <span class="queue-gate-mark">◆</span>
         <div>
           <div class="queue-gate-title">Close-out queue</div>
-          <div class="queue-gate-sub">Cards in Trello's Snapshot lane appear here. Open one, create and post its PDF, then choose the next Estimating lane.</div>
+          <div class="queue-gate-sub">Cards in Trello's Snapshot lane appear here. Review the Job Log, then create and post its PDF. When ready, choose the next Estimating lane yourself—generating a snapshot does not close the job.</div>
         </div>
       </div>
       <div class="queue-filters">
@@ -440,10 +442,11 @@
       </div>
       <div id="candidates"></div>
     </section>
-    <section class="col">
-      <h2>📄 Recent snapshot PDFs</h2>
+    <details class="col" id="recent-exports">
+      <summary>Recent exports on this PC</summary>
+      <p class="muted">A convenience list of the last 5 available exports. Downloads are temporary; deleting a PDF does not delete its saved snapshot history. Earlier exports remain in each job’s Snapshot history.</p>
       <div id="pdfs"></div>
-    </section>
+    </details>
   </div>
   <!-- Tracked tab — Snapshots <YY>.xlsx (Tk's "snapshot tracker") -->
   <div id="tab-tracked" class="hidden">
@@ -665,8 +668,8 @@
 <link rel="stylesheet" href="../pipeline_web_assets/comment_reactions.css?v=20260929">
 <script src="../web_shared/comments_composer.js?v=20260929"></script>
 <link rel="stylesheet" href="../web_shared/comments_composer.css?v=20260929">
-<script src="../web_shared/audit_detail.js?v=20260929comments"></script>
-<script src="app.js?v=20260918cardretention"></script>
+<script src="../web_shared/audit_detail.js?v=20261001activities"></script>
+<script src="app.js?v=20261001snapshotqueue"></script>
 <link rel="stylesheet" href="../web_shared/comment_display.css?v=20260929">
 </body>
 </html>

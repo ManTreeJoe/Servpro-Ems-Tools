@@ -62,7 +62,7 @@ datas.append((os.path.join(base, 'linguar_hub.png'), '.'))
 datas.append((os.path.join(base, 'version.txt'), '.'))
 
 # Static read-only resources used by various panels.
-for f in ('wrench.ico', 'trello.png', 'EMS_Admin_Cheat_Sheet.md',
+for f in ('wrench.ico', 'trello.png', 'EMS_Admin_Cheat_Sheet.md', 'job_profile_sources.json',
           'Sort Files.bat', 'sort_files.ps1'):
     p = os.path.join(base, f)
     if os.path.exists(p):
@@ -115,6 +115,7 @@ hiddenimports = web_modules + [
     'companycam_web_api',
 ]
 hiddenimports += collect_submodules('openpyxl')
+hiddenimports += collect_submodules('windows_toasts') + collect_submodules('winrt')
 # pywebview Windows backend + its http-server deps. pywebview 6.x ships a
 # __pyinstaller hook that also covers these; listed for belt-and-suspenders.
 hiddenimports += ['bottle', 'proxy_tools',

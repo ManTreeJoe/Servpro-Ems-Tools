@@ -1,0 +1,20 @@
+const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+(async()=>{
+ const context={window:{},Date,Map,JSON,Promise}; vm.createContext(context);
+ vm.runInContext(fs.readFileSync('pipeline_web_assets/automatic_file_check.js','utf8'),context);
+ const {run}=context.window.AutomaticFileCheck;
+ let calls=0,resolve,applied=0,alive=true,status='';
+ const api={refresh_job_card_workspace:()=>{calls++;return new Promise(r=>resolve=r);}};
+ const args=[api,'Job','card','EMS',()=>alive,()=>applied++,s=>status=s];
+ const first=run(...args),second=run(...args);
+ await Promise.resolve();assert.equal(calls,1);assert.equal(status,'Checking files…');
+ resolve({ok:true});await Promise.all([first,second]);assert.equal(applied,2);
+ assert.equal(status,'','Successful background check stays quiet');
+ await run(...args);assert.equal(calls,1);assert.equal(status,'');
+ const closed=run(api,'Other','other','EMS',()=>alive,()=>applied++,s=>status=s);
+ await Promise.resolve();alive=false;resolve({ok:true});await closed;assert.equal(applied,2);
+ alive=true;
+ await run({refresh_job_card_workspace:async()=>{throw Error('offline');}},'Offline','c','EMS',()=>alive,()=>assert.fail('Must retain saved data'),s=>status=s);
+ assert.match(status,/unavailable/);
+ console.log('Automatic file checks: PASS (coalescing, cooldown, stale result, error)');
+})().catch(e=>{console.error(e);process.exit(1);});

@@ -25,6 +25,7 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
    dispatchEvent(new Event('pywebviewready'));
   });
   await page.locator('.run-row').first().waitFor();
+  assert.ok(await page.locator('#run-board').evaluate(el=>el.getBoundingClientRect().top<280),'Desktop header must leave room for scheduled jobs');
   assert.equal(await page.locator('.run-row').count(),3);
   await page.locator('#schedule-crew').selectOption('Pablo');
   assert.equal(await page.locator('.run-row').count(),1);

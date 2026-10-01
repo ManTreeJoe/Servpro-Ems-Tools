@@ -93,6 +93,14 @@ class Api:
         self._window = window
 
     # ── Feed ─────────────────────────────────────────────────────────
+    def desktop_settings(self, mode=None):
+        import desktop_notifications
+        return desktop_notifications.settings(mode)
+
+    def desktop_test(self):
+        import desktop_notifications
+        return desktop_notifications.test_notification()
+
     def notification_job(self, card_id, comment_id=''):
         try:
             from notification_navigation import resolve
@@ -186,7 +194,18 @@ class Api:
             ok = tc.mark_all_notifications_read()
             return {"ok": bool(ok)}
         except Exception as ex:
-            return {"ok": False, "error": str(ex)}
+            # Never expose raw provider exceptions: their URLs may hold tokens.
+            from urllib.error import HTTPError, URLError
+            if isinstance(ex, HTTPError):
+                guidance = {
+                    401: 'Reconnect your Trello account, then retry.',
+                    403: 'Your Trello connection does not have permission to mark notifications read. Reconnect with write access.',
+                    429: 'Trello is rate-limiting requests. Wait a moment, then retry.',
+                }.get(ex.code, 'Refresh notifications to check their state before retrying.')
+                return {'ok': False, 'error': f'Trello returned HTTP {ex.code}. {guidance}'}
+            if isinstance(ex, (URLError, TimeoutError)):
+                return {'ok': False, 'error': 'Trello could not confirm the change. Check your connection and refresh notifications before retrying.'}
+            return {'ok': False, 'error': 'The app could not confirm the read-status change. Check your Trello connection and refresh before retrying.'}
 
     def open_url(self, url: str) -> bool:
         if not url:

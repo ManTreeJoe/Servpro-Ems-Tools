@@ -538,10 +538,13 @@ class Api(JobSettingsApi):
         """Safe presentation-only choices for this Windows user."""
         import config
         cfg = config.load() or {}
+        import job_workspace_cache
         return {
             "density": (cfg.get("ui_density") or "comfortable"),
             "default_view": (cfg.get("pipeline_default_view") or "board"),
             "reduce_motion": bool(cfg.get("reduce_motion", False)),
+            "job_views_trial": not getattr(sys, "frozen", False) and os.environ.get("LINGUAR_DEV_MODE", "").lower() in {"1", "true", "yes", "on"},
+            "views_scope": job_workspace_cache.scope(),
         }
 
     def choose_board_background(self) -> dict:
@@ -1724,6 +1727,15 @@ class Api(JobSettingsApi):
     def open_companycam_link(self, client: str, card_id: str = "") -> bool:
         return self._audit_api().open_companycam_link(client, card_id)
 
+    def companycam_search(self, query: str) -> dict:
+        return self._audit_api().companycam_search(query)
+
+    def companycam_pin(self, client: str, project_id: str, card_id: str = "") -> dict:
+        result = self._audit_api().companycam_pin(client, project_id, card_id)
+        # Even a partially failed replacement may have changed saved links.
+        self._invalidate_workspace(client=client, card_id=card_id)
+        return result
+
     def companycam_plan_pull(self, client: str, tech: str = "",
                              card_id: str = "",
                              dest_subfolder: str = "", request_id: str = "",
@@ -1925,6 +1937,12 @@ class Api(JobSettingsApi):
         if result.get("ok"):
             self._invalidate_workspace(card_id=card_id)
             self._board_view_cache = None
+        return result
+
+    def apply_job_profile(self, client: str, profile_id: str) -> dict:
+        result = self._audit_api().apply_job_profile(client, profile_id)
+        if result.get("ok"):
+            self._invalidate_workspace(client=client)
         return result
 
     def set_job_requirement(self, client: str, requirement_key: str,

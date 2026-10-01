@@ -1,6 +1,52 @@
 /* Explicit Trello reactions; floating picker with no background polling. */
 window.CommentReactions = (() => {
   const states = new WeakMap();
+  const snapshots = new Map(), mounted = new WeakSet(), pending = new Set();
+  let reading = 0;
+  function stateFor(box) {
+    if(states.has(box))return states.get(box);
+    const article=box.closest('.job-comment');
+    if(!article)return {};
+    const card=article.dataset.commentCardId,id=article.dataset.commentSource==='trello'?article.dataset.commentId:article.dataset.commentExternalId;
+    const key=JSON.stringify([card,id]);
+    if(!snapshots.has(key))snapshots.set(key,{card,id});
+    const state=snapshots.get(key);states.set(box,state);
+    // Retain only a bounded page-session cache. Never persist account reaction state.
+    if(snapshots.size>300)for(const [old,value] of snapshots){if(!value.busy&&old!==key){snapshots.delete(old);break;}}
+    return state;
+  }
+  function repaint(state) {
+    document.querySelectorAll('.comment-reactions').forEach(box=>{if(stateFor(box)===state)paint(box);});
+  }
+  function drain() {
+    while(reading<2&&pending.size){
+      const box=pending.values().next().value;pending.delete(box);
+      if(!box.isConnected)continue;
+      const state=stateFor(box);
+      if(state.busy||Date.now()-(state.checkedAt||0)<30000)continue;
+      reading++;load(box).finally(()=>{reading--;drain();});
+    }
+  }
+  const visible = new IntersectionObserver(entries=>{
+    for(const entry of entries)if(entry.isIntersecting){visible.unobserve(entry.target);pending.add(entry.target);}
+    drain();
+  });
+  function mount(box) {
+    if(mounted.has(box))return;mounted.add(box);stateFor(box);paint(box);visible.observe(box);
+  }
+  const hydration = new MutationObserver(records=>{
+    for(const record of records)for(const node of record.addedNodes){
+      if(node.nodeType!==1)continue;
+      if(node.matches('.comment-reactions'))mount(node);
+      node.querySelectorAll('.comment-reactions').forEach(mount);
+    }
+    for(const record of records)for(const node of record.removedNodes){
+      if(node.nodeType!==1)continue;
+      if(node.matches('.comment-reactions'))visible.unobserve(node);
+      node.querySelectorAll('.comment-reactions').forEach(box=>visible.unobserve(box));
+    }
+  });
+  hydration.observe(document.documentElement,{childList:true,subtree:true});
   let popup=null, owner=null, observer=null, recent=[];
   try {recent=JSON.parse(localStorage.getItem('oneloss.recentEmoji')||'[]');if(!Array.isArray(recent))recent=[];}catch(_){}
   function markup(comment) {
@@ -22,19 +68,18 @@ window.CommentReactions = (() => {
     if(owner===box)draw();
   }
   async function load(box,code){
-    const s=states.get(box)||{};if(s.busy||code&&(!s.rows||s.error))return;
+    const s=stateFor(box);if(s.busy||code&&(!s.rows||s.error))return;
     const article=box.closest('.job-comment'),active=!s.rows?.find(r=>r.code===code)?.mine;
     s.busy=true;s.writing=!!code;s.error='';states.set(box,s);if(code&&owner===box)close(true);paint(box);
     try{
       const card=article.dataset.commentCardId,id=article.dataset.commentSource==='trello'?article.dataset.commentId:article.dataset.commentExternalId;
       if(!card)throw Error();
       const result=await window.pywebview.api.job_comment_reactions(card,id,code||null,code?active:null);
-      if(!box.isConnected)return;
       if(!result?.ok)throw Error(result?.error||'Trello could not confirm reactions. Reopen React to check.');
       s.rows=result.reactions||[];s.choices=result.choices||[];s.account=result.account;
       if(code&&active){recent=[code,...recent.filter(c=>c!==code)].slice(0,16);try{localStorage.setItem('oneloss.recentEmoji',JSON.stringify(recent));}catch(_){}}
     }catch(e){s.error=e.message||'Trello is unavailable. Reopen React to check before trying again.';}
-    finally{s.busy=false;if(box.isConnected)paint(box);}
+    finally{s.busy=false;s.checkedAt=Date.now();repaint(s);}
   }
   function draw(){
     if(!popup||!owner)return;
@@ -68,5 +113,6 @@ window.CommentReactions = (() => {
   },true);
   window.addEventListener('resize',position);
   document.addEventListener('scroll',e=>{if(popup&&!popup.contains(e.target))close();},true);
+  document.querySelectorAll('.comment-reactions').forEach(mount);
   return {markup};
 })();

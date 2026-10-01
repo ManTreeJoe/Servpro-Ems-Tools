@@ -15,8 +15,17 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    window.deletions=[];window.fail=false;window.removed=false;
    window.pywebview={api:{admin_job_profiles:async()=>({ok:true,profiles:removed?[]:[profile],franchises:['IE']}),admin_delete_job_profile:async id=>{deletions.push(id);if(fail)throw Error('network unavailable');removed=true;return {ok:true};},admin_save_job_profile:async()=>{throw Error('network unavailable');}}};
    showSettingsScope('admin');
-   openJobProfile(profile);
+   JP_STARTERS=[{starter_id:'trello-test',name:'Greystar starter',payer_type:'any',division:'Any',active:false,required_items:['INITIAL · Paperwork'],source_name:'Trello template'}];
+   openJobProfile({active:false});
   });
+  page.once('dialog',d=>d.accept());
+  await page.locator('#jp-starter').selectOption('trello-test');
+  assert.equal(await page.locator('#jp-name').inputValue(),'Greystar starter');
+  assert.equal(await page.locator('#jp-payer').inputValue(),'any');
+  assert.equal(await page.locator('#jp-division').inputValue(),'Any');
+  assert.equal(await page.locator('#jp-requirements').inputValue(),'INITIAL · Paperwork');
+  await page.locator('#jp-editor').screenshot({path:path.join(require('os').tmpdir(),'oneloss-profile-starter.png')});
+  await page.evaluate(()=>openJobProfile(profile));
   await page.locator('#jp-delete').click({trial:true});
   page.once('dialog',d=>d.dismiss());await page.locator('#jp-delete').click();
   assert.deepEqual(await page.evaluate(()=>deletions),[]);

@@ -519,6 +519,12 @@ def _init_schema():
         except sqlite3.OperationalError as ex:
             if "duplicate column" not in str(ex).lower():
                 raise
+        for column in ('work_party', 'subcontractor'):
+            try:
+                c.execute(f"ALTER TABLE crm_job_log_entries ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError as ex:
+                if "duplicate column" not in str(ex).lower():
+                    raise
         c.execute("""
             CREATE INDEX IF NOT EXISTS idx_crm_job_log_placement_date
             ON crm_job_log_entries(placement_card_id, work_date, created_at)
@@ -1574,6 +1580,8 @@ def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
             if old is not None:
                 entry_id = old["entry_id"]
                 values["entry_id"] = entry_id
+        from job_log_participants import fields as participant_fields
+        values.update(participant_fields(entry, dict(old) if old else {}))
         created = old["created_at"] if old else now
         values["created_at"] = created
         if old is not None and not values["placement_card_id"]:
@@ -1583,13 +1591,14 @@ def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
             INSERT INTO crm_job_log_entries
               (entry_id,job_id,work_date,work_type,status,technicians,note,
                equipment,source,source_id,trello_comment_id,placement_card_id,created_at,
-               updated_at,updated_by)
+               updated_at,updated_by,work_party,subcontractor)
             VALUES (:entry_id,:job_id,:work_date,:work_type,:status,
                     :technicians,:note,:equipment,:source,:source_id,
-                    :trello_comment_id,:placement_card_id,:created_at,:updated_at,:updated_by)
+                    :trello_comment_id,:placement_card_id,:created_at,:updated_at,:updated_by,:work_party,:subcontractor)
             ON CONFLICT(entry_id) DO UPDATE SET
               work_date=excluded.work_date, work_type=excluded.work_type,
               status=excluded.status, technicians=excluded.technicians,
+              work_party=excluded.work_party, subcontractor=excluded.subcontractor,
               note=excluded.note, equipment=excluded.equipment,
               trello_comment_id=excluded.trello_comment_id,
               placement_card_id=excluded.placement_card_id,

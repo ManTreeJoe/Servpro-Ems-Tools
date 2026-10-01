@@ -29,7 +29,8 @@ def test_snapshot_ui_uses_explicit_post_snapshot_transition():
     queue = js[js.index("function renderCandidateQueue"):
                js.index("function pickSnapshotDestination")]
     assert "data-snapshot-toggle" not in queue
-    assert "Close-out queue" in queue
+    assert "Needs snapshot" in queue
+    assert "Already generated" in queue
     assert "snapshot_return_destinations" in js
     assert "pickSnapshotDestination" in js
     assert "move_snapshot_to_lane" in js
@@ -41,8 +42,9 @@ def test_snapshot_queue_control_explains_itself_and_does_not_gate_opening():
     js = (root / "snapshot_web_assets" / "app.js").read_text(encoding="utf-8")
     queue = js[js.index("function renderCandidateQueue"):
                js.index("function pickSnapshotDestination")]
-    assert "Close-out queue" in queue
-    assert '>Open</button>' in queue
+    assert "Needs snapshot" in queue
+    assert 'data-new="${esc(r.client)}" data-card="${esc(r.card_id || "")}"' in queue
+    assert "startNew(b.dataset.new, b.dataset.card || \"\")" in queue
     assert '${r.snapshot ? "" : "disabled"}' not in queue
     assert "state.cardId" in js[js.index("async function postToTrello"):]
 

@@ -279,7 +279,7 @@ async function loadRecentSnapshots() {
   const pdfs = $("#pdfs");
   if (pdfs && !pdfs.children.length) pdfs.innerHTML = skeletonRows(3, "pdf");
   let data;
-  try { data = await pywebview.api.recent_snapshots(50); }
+  try { data = await pywebview.api.recent_snapshots(5); }
   catch (ex) {
     if (pdfs) pdfs.innerHTML = `<div class="empty-inline">Recent PDFs unavailable: ${esc(ex)}</div>`;
     return;
@@ -292,11 +292,14 @@ async function loadRecentSnapshots() {
           <div class="pdf-meta">${esc(p.mtime)}</div>
           <div class="pdf-meta">${p.size_kb} KB</div>
         </div>`).join("")
-    : `<div class="empty-inline">No PDFs in <code>${esc(data.dir || "(unset)")}</code></div>`;
+    : `<div class="empty-inline">No recent exports available on this PC. Saved snapshot history is still available inside each job.</div>`;
   document.querySelectorAll(".pdf-row").forEach((row) =>
-    row.addEventListener("click", () => pywebview.api.open_pdf(row.dataset.path)));
-  const queued = state.candidates.filter((r) => r.snapshot).length;
-  $("#status-counts").textContent = `${queued} in Snapshot · ${data.rows.length} recent PDFs`;
+    row.addEventListener("click", async () => {
+      try { if (!await pywebview.api.open_pdf(row.dataset.path)) setStatus('This exported PDF is no longer available. The saved snapshot record is in job history.', 'warn'); }
+      catch (_) { setStatus('Could not open this PDF. Saved snapshot history is separate.', 'error'); }
+    }));
+  const queued = state.candidates.filter((r) => r.snapshot && !r.snapshot_generated).length;
+  $("#status-counts").textContent = `${queued} need a snapshot`;
 }
 
 async function syncSnapshotQueue(force = false) {
@@ -311,10 +314,9 @@ async function syncSnapshotQueue(force = false) {
       state.queueLoaded = true;
       refreshQueueFilterOptions();
       renderCandidateQueue();
-      const queued = state.candidates.filter((r) => r.snapshot).length;
+      const queued = state.candidates.filter((r) => r.snapshot && !r.snapshot_generated).length;
       if (synced) synced.textContent = `Trello live · ${new Date().toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}`;
-      const recent = $("#status-counts")?.textContent.match(/·\s*(\d+) recent PDFs/);
-      if (recent) $("#status-counts").textContent = `${queued} in Snapshot · ${recent[1]} recent PDFs`;
+      $("#status-counts").textContent = `${queued} need a snapshot`;
     } catch (ex) {
       if (synced) synced.textContent = "Trello unavailable · press ↻";
       if (!state.queueLoaded) $("#candidates").innerHTML = `<div class="empty-inline">Could not load the Snapshot lane. Recent PDFs and manual snapshots are still available.</div>`;
@@ -332,7 +334,7 @@ function skeletonRows(count, kind="card") {
 }
 function renderQueueSkeleton() {
   const el = $("#candidates");
-  if (el) el.innerHTML = skeletonRows(6);
+  if (el) el.innerHTML = skeletonRows(2);
 }
 
 function refreshQueueFilterOptions() {
@@ -360,15 +362,14 @@ function renderCandidateQueue() {
     if (!q) return true;
     return [r.client, r.board, r.lane].join(" ").toLowerCase().includes(q);
   });
-  const queued = state.candidates.filter(r => r.snapshot).length;
-  $("#queue-count").textContent = `${queued} in close-out queue · ${filtered.length} shown`;
+  const queued = state.candidates.filter(r => r.snapshot && !r.snapshot_generated).length;
+  $("#queue-count").textContent = `${queued} need a snapshot`;
   // One-click flow: clicking ANYWHERE on the row opens the form with
   // the Trello card already parsed in (carrier/claim/DOL/cause/
   // first-visit/subs/logs/scope). User was complaining about having
   // to click 3 different buttons — Snapshot, then Find Trello, then
   // a result — to get the form filled. Now the row click does it all.
-  candsEl.innerHTML = filtered.length
-    ? filtered.map((r) => `
+  const renderRows = rows => rows.map((r) => `
         <div class="closeout-row snap-cand" data-client="${esc(r.client)}" data-card="${esc(r.card_id || "")}" style="cursor:pointer;">
           <div>
             <div class="name">${esc(titleCase(r.client))}</div>
@@ -379,16 +380,21 @@ function renderCandidateQueue() {
             </div>
           </div>
           <span class="snapshot-toggle ${r.snapshot ? "on" : ""}" title="This is the card's current Trello workflow lane">
-            <span>${r.snapshot ? "Close-out queue" : esc(r.lane || "Estimating")}</span>
+            <span>${r.snapshot_generated ? `Revision ${Number(r.snapshot_revision || 0)} saved` : r.snapshot_record_unavailable ? 'History unavailable · verify before generating' : r.snapshot ? "Needs snapshot" : esc(r.lane || "Estimating")}</span>
           </span>
           ${r.card_id ? `<button class="btn snap-trello-btn" data-url="https://trello.com/c/${esc(r.card_id)}" style="font-size:11px;">🔗</button>` : "<span></span>"}
-          <button class="btn btn-primary" data-new="${esc(r.client)}" data-card="${esc(r.card_id || "")}">Open</button>
-        </div>`).join("")
-    : state.queue.focusedFromJobs && q
+          <button class="btn btn-primary" data-new="${esc(r.client)}" data-card="${esc(r.card_id || "")}">${r.snapshot_generated ? 'Review / recreate' : 'Create snapshot'}</button>
+        </div>`).join("");
+  const pending = filtered.filter(r => !r.snapshot_generated);
+  const generated = filtered.filter(r => r.snapshot_generated);
+  candsEl.innerHTML = pending.length ? renderRows(pending) : state.queue.focusedFromJobs && q && !generated.length
       ? `<div class="empty-inline"><strong>${esc(state.queue.search)}</strong> is not currently in a SNAPSHOT lane on an Estimating board. Move its Trello card into that lane when it is ready for the final close-out audit.</div>`
+      : !q && !state.queue.showAll && state.queue.board === 'all' && state.queue.lane === 'all'
+      ? `<div class="empty-inline">No pending snapshots in the loaded queue. Use Create snapshot for another job.</div>`
       : state.candidates.length
       ? `<div class="empty-inline">No eligible close-out cards match these filters.</div>`
       : `<div class="empty-inline">No open cards were found on an Estimating board with a Snapshot lane.</div>`;
+  if (generated.length) candsEl.innerHTML += `<details class="generated-snapshots"><summary>Already generated · ${generated.length}</summary><p class="muted">These jobs are still in the queue, but have a saved snapshot. Review or recreate one if needed. Moving or closing a job is a separate action.</p>${renderRows(generated)}</details>`;
   // Whole-row click → open form with Trello prefill (when card_id present)
   candsEl.querySelectorAll(".snap-cand").forEach((row) => {
     row.addEventListener("click", (e) => {
@@ -917,7 +923,7 @@ async function startNew(client = "", cardId = "", division = "EMS") {
         : "";
       setStatus(
         fill.job_log_error ? fill.job_log_error : cardId && bits.length
-          ? `📋 Parsed from Trello: ${bits.join(" · ")}${pinNote}`
+          ? `Loaded from saved Job Log: ${fill.logs.length} activities · ${fill.subs.length} subcontractor entries. Job details from Trello.`
           : `Pre-filled ${fill.logs.length} saved Job Log rows`,
         fill.job_log_error ? "warn" : "ok");
     } catch (ex) {
@@ -1419,7 +1425,7 @@ async function openSnapshotHistory() {
     <details class="snapshot-history-row">
       <summary><b>Revision ${Number(r.revision || 0)}</b><span>${esc(r.created_at || "")}</span></summary>
       <pre>${esc(r.rendered_text || "No rendered summary")}</pre>
-      ${r.pdf_path ? `<div class="muted">PDF: ${esc(r.pdf_path)}</div>` : ""}
+      ${r.pdf_path ? `<div class="muted">${r.pdf_available ? 'Export location' : 'Export no longer available on this PC; saved record retained'}: ${esc(r.pdf_path)}</div>` : ""}
     </details>`).join("");
 }
 

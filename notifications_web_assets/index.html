@@ -3,7 +3,8 @@
 <head>
   <script src="../web_shared/usage_track.js?v=20260825a"></script>
 <script src="../web_shared/health_banner.js?v=20260820a"></script>
-<script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+<script src="../web_shared/loading_feedback.js?v=20261001dedup"></script>
+<script src="../web_shared/iframe_shim.js?v=20261001loading"></script>
 <script src="../web_shared/panel_state.js?v=20260811a"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -75,6 +76,17 @@
 <script src="../web_shared/text_context_menu.js?v=20260903a"></script>
 </head>
 <body class="responsive-ui">
+<details class="desktop-alert-settings">
+  <summary>Windows notifications</summary>
+  <div class="desktop-alert-controls">
+    <label>Desktop alerts <select id="desktop-alert-mode" disabled><option value="off">Off</option><option value="mentions">Mentions only</option><option value="jobs">Mentions and my job comments</option></select></label>
+    <button class="btn" id="desktop-alert-test" disabled>Send test notification</button>
+    <span id="desktop-alert-status" role="status"></span>
+  </div>
+  <p>From your personal OneLoss inbox, on this PC. Keep the app running or minimized. Windows Do not disturb may silence banners. Comments posted only in Trello are not included.</p>
+</details>
+<link rel="stylesheet" href="desktop.css?v=20261001">
+<script src="desktop.js?v=20261001"></script>
 <nav class="inbox-sources" aria-label="Notification source"><button id="personal-source" aria-pressed="true">My OneLoss inbox</button><button id="trello-source" aria-pressed="false">Connected Trello account</button></nav>
 <section id="personal-panel">
   <header class="topbar"><div class="brand"><span class="brand-name">My notifications</span></div><div class="topbar-actions"><label>Show <select id="personal-filter"><option value="all">All activity</option><option value="mentions">@mentions</option><option value="my_jobs">My jobs</option></select></label><label class="toggle"><input type="checkbox" id="personal-unread"> Unread only</label><button class="btn" id="personal-refresh">Refresh</button></div></header>
@@ -105,9 +117,9 @@
 <script src="../pipeline_web_assets/comment_markdown.js"></script>
 <link rel="stylesheet" href="../web_shared/comment_display.css">
 <script src="reader.js?v=20260929"></script>
-<script src="app.js?v=20260929"></script>
+<script src="app.js?v=20260930board-tabs"></script>
 <link rel="stylesheet" href="personal.css?v=20260929">
 <script src="personal.js?v=20260929"></script>
-<link rel="stylesheet" href="inbox.css?v=20260929-scroll">
+<link rel="stylesheet" href="inbox.css?v=20260930board-tabs">
 </body>
 </html>

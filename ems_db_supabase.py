@@ -469,6 +469,11 @@ def save_job_log_entry(canon_key_value: str, entry: dict) -> dict:
         "updated_at": now,
         "updated_by": str(entry.get("updated_by") or "").strip() or None,
     }
+    from job_log_participants import fields as participant_fields
+    participant = participant_fields(entry, old)
+    # Leave legacy writes compatible until the additive migration is deployed.
+    if participant['work_party'] or (old or {}).get('work_party'):
+        body.update(participant)
     if use_events:
         saved = body
         log_event(canon_key_value, "crm_job_log_revision", payload={

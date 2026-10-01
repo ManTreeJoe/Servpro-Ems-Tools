@@ -1,0 +1,37 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict'),path=require('node:path');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage();
+ await page.setContent('<nav id="sb-nav" style="width:198px"><div class="sb-item active" data-key="notifications"><span class="sb-icon">🔔</span><span class="sb-name">Notifications</span></div></nav>');
+ await page.addStyleTag({path:path.resolve('web_shared/theme.css')});
+ await page.addStyleTag({path:path.resolve('home_web_assets/app.css')});
+ await page.evaluate(()=>{window.polls=[];window.reads=0;window.setInterval=(fn,ms)=>{polls.push({fn,ms});return 1;};window.result={ok:true,count:42};window.pywebview={api:{notifications_unread_count:async()=>{reads++;return result;}}}});
+ await page.addScriptTag({path:path.resolve('home_web_assets/notification_badge.js')});
+ await page.evaluate(()=>dispatchEvent(new Event('pywebviewready')));
+ await page.waitForFunction(()=>document.querySelector('.notification-badge').textContent==='42');
+ assert.equal(await page.evaluate(()=>polls[0].ms),30000);
+ await page.evaluate(()=>{result={ok:true,count:2};polls[0].fn();});
+ await page.waitForFunction(()=>document.querySelector('.notification-badge').textContent==='2');
+ const readsBefore=await page.evaluate(()=>reads);
+ await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});polls[0].fn();});
+ assert.equal(await page.evaluate(()=>reads),readsBefore,'Hidden app does not poll');
+ await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});
+ await page.evaluate(()=>{result={ok:true,count:0};dispatchEvent(new Event('focus'))});
+ await page.waitForFunction(()=>document.querySelector('.notification-badge').textContent==='0');
+ await page.evaluate(()=>{result={ok:true,count:140};dispatchEvent(new Event('focus'))});
+ await page.waitForFunction(()=>document.querySelector('.notification-badge').textContent==='99+');
+ assert.match(await page.locator('.notification-badge').getAttribute('aria-label'),/140/);
+ await page.evaluate(()=>document.querySelector('#sb-nav').innerHTML='<div class="sb-item active" data-key="notifications"><span class="sb-icon">🔔</span><span class="sb-name">Notifications</span></div>');
+ await page.waitForFunction(()=>document.querySelector('.notification-badge')?.textContent==='99+');
+ const aligned=await page.locator('.sb-item').evaluate(el=>{
+  const row=el.getBoundingClientRect(),text=el.querySelector('.sb-name').getBoundingClientRect(),badge=el.querySelector('.notification-badge').getBoundingClientRect();
+  return badge.left>=text.right && badge.right<=row.right && Math.abs((badge.top+badge.bottom-text.top-text.bottom)/2)<2;
+ });
+ assert.ok(aligned,'Badge stays beside text within a 198px sidebar');
+ await page.locator('#sb-nav').screenshot({path:path.join(process.env.TEMP,'notification-badge.png')});
+ await page.setViewportSize({width:800,height:700});
+ assert.ok(await page.locator('.sb-item').evaluate(el=>el.querySelector('.notification-badge').getBoundingClientRect().right<=el.getBoundingClientRect().right),'Collapsed badge stays inside icon button');
+ await page.evaluate(()=>{result={ok:false,count:0};dispatchEvent(new Event('focus'))});
+ await page.waitForFunction(()=>document.querySelector('.notification-badge').textContent==='—');
+ console.log('PASS: count, zero, overflow label, sidebar rebuild and unavailable state');
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exit(1)});

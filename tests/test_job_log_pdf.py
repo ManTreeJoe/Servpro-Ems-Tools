@@ -14,7 +14,9 @@ def test_export_uses_snapshot_layout_and_keeps_details(monkeypatch, tmp_path):
     row = result['logs'][0]
     assert row['weekday'] == 'Tuesday'
     assert row['techs'] == 'Pablo'
-    assert 'All rooms' in row['activity'] and '2 pods' in row['activity']
+    assert 'All rooms' not in row['activity']
+    assert 'Packout' in row['activity'] and '2 pods' in row['activity']
+    assert 'completed' not in row['activity']
 
 
 def test_render_multiple_pages(tmp_path):

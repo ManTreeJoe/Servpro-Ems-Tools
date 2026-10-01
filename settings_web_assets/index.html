@@ -11,7 +11,8 @@
 <link rel="stylesheet" href="theme.css?v=20260903a" />
 <script src="../web_shared/health_banner.js?v=20260820a"></script>
 <script src="../web_shared/progress_bar.js?v=20260818a"></script>
-<script src="../web_shared/iframe_shim.js?v=20260818b"></script>
+<script src="../web_shared/loading_feedback.js?v=20261001dedup"></script>
+<script src="../web_shared/iframe_shim.js?v=20261001loading"></script>
 <script src="../web_shared/util.js?v=20260731j"></script>
 <style>
   .wrap { flex: 1; overflow-y: auto; padding: 22px 24px 96px; max-width: 760px; margin: 0 auto; width: 100%; }
@@ -351,9 +352,9 @@
       <button class="btn" id="jp-add">＋ New profile</button>
     </div>
     <div class="muted" style="font-size:11px;line-height:1.5;margin-bottom:10px;">
-      Default requirements for Commercial, Self-pay, carriers such as Mercury
-      or Farmers, loss types, and divisions. Only administrators can change
-      this library. Duplicate a close match, then adjust it.
+      Reusable requirements for any job. Payer, client and loss-type hints suggest
+      profiles; they never restrict which job can use them within your franchise.
+      Administrators can start from a Trello template, create a blank profile, or duplicate and adjust one.
     </div>
     <div id="jp-status" class="muted" style="font-size:11px;margin-bottom:6px;"></div>
     <div id="jp-list"></div>
@@ -768,6 +769,7 @@ let PM_DEFAULT_NAMING = "";
 
 // ── Admin Job Profiles ────────────────────────────────────────────
 let JP_ROWS = [];
+let JP_STARTERS = [];
 let JP_FRANCHISES = [];
 const JP_PAYERS = ["any", "insurance", "self_pay", "commercial", "management"];
 const JP_DIVISIONS = ["Any", "EMS", "Contents", "Recon"];
@@ -790,6 +792,7 @@ async function loadJobProfiles() {
     return false;
   }
   JP_ROWS = result.profiles || [];
+  JP_STARTERS = result.starters || [];
   JP_FRANCHISES = (result.franchises || []).filter(Boolean);
   status.textContent = JP_ROWS.length
     ? `${JP_ROWS.filter((row) => row.active !== false).length} active profiles`
@@ -834,13 +837,16 @@ function openJobProfile(row={}, duplicate=false) {
       <b style="font-size:12px;">${clone.profile_id ? "Edit Job Profile" : (duplicate ? "Duplicate Job Profile" : "New Job Profile")}</b>
       ${row.profile_id && !duplicate ? '<button class="btn" id="jp-duplicate" style="margin-left:auto;">Duplicate &amp; tweak</button>' : ''}
     </div>
+    ${!clone.profile_id && !duplicate ? `<label>Start from a Trello template
+      <select id="jp-starter"><option value="">Blank / custom profile</option>${JP_STARTERS.map((s) => `<option value="${esc(s.starter_id)}" ${s.starter_id === clone.starter_id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>` : ''}
+    ${clone.source_name ? `<p class="muted">Copied from ${esc(clone.source_name)} · September 30, 2026. Review conditional items before saving. Trello is not changed.</p>` : ''}
     <div class="pm-fields">
       ${pmInput("jp-name", "Profile name", clone.name)}
       ${jpSelect("jp-department", "Franchise", franchises, clone.department || franchises[0])}
-      ${jpSelect("jp-payer", "Payer type", JP_PAYERS, clone.payer_type || "any",
+      ${jpSelect("jp-payer", "Suggest for payer (optional)", JP_PAYERS, clone.payer_type || "any",
         {any:"Any payer",insurance:"Insurance",self_pay:"Self-pay",commercial:"Commercial",management:"Property management"})}
-      ${pmInput("jp-carrier", "Carrier or client (optional)", clone.carrier_or_client)}
-      ${pmInput("jp-loss-type", "Loss type (optional)", clone.loss_type)}
+      ${pmInput("jp-carrier", "Suggest for carrier or client (optional)", clone.carrier_or_client)}
+      ${pmInput("jp-loss-type", "Suggest for loss type (optional)", clone.loss_type)}
       ${jpSelect("jp-division", "Division", JP_DIVISIONS, clone.division || "Any")}
       <label class="pm-span">Required items — one per line
         <textarea id="jp-requirements" rows="8" placeholder="Authorization to Perform&#10;Customer Information Form">${esc((clone.required_items || []).join("\n"))}</textarea>
@@ -854,6 +860,11 @@ function openJobProfile(row={}, duplicate=false) {
       <button class="btn" id="jp-cancel">Cancel</button>
       <button class="btn btn-primary" id="jp-save">Save profile</button>
     </div><p class="muted" style="font-size:11px;">New and cloned templates start inactive for review. Edits or deletion never change requirements already copied onto jobs. Disable an active template before deleting it.</p>`;
+  document.getElementById("jp-starter")?.addEventListener("change", (event) => {
+    if (!confirm('Replace this unsaved draft with the selected starter?')) { event.target.value = clone.starter_id || ''; return; }
+    const starter = JP_STARTERS.find((s) => s.starter_id === event.target.value) || {active:false};
+    openJobProfile({...starter, department:document.getElementById('jp-department').value});
+  });
   document.getElementById("jp-cancel").addEventListener("click", () => { box.style.display = "none"; });
   document.getElementById("jp-save").addEventListener("click", saveJobProfile);
   document.getElementById("jp-duplicate")?.addEventListener("click", () => openJobProfile(row, true));

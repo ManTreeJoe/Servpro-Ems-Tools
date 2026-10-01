@@ -187,7 +187,7 @@ def snapshot(profile: dict, *, applied_at: str = "") -> dict:
         slug = re.sub(r"[^a-z0-9]+", "-", label.casefold()).strip("-")[:48] or str(index)
         requirements.append({"key": f"profile:{pid}:{slug}:{index}", "label": label,
                              "division": clean["division"], "introduced_stage": "intake",
-                             "owner": "office", "importance": "required"})
+                             "owner": "office", "importance": "recommended" if label.startswith("If applicable · ") else "required"})
     return {"profile_id": pid, "profile_name": clean["name"],
             "applied_at": stamp,
             "selectors": {key: clean[key] for key in
@@ -228,3 +228,20 @@ def apply_to_job(job: dict, profile: dict) -> dict:
     applied.append(snapshot(profile))
     metadata["applied_job_profiles"] = applied
     return metadata
+
+
+def available(job: dict, profiles: list[dict] | None = None) -> list[dict]:
+    """All usable templates in this franchise; selectors only rank suggestions."""
+    if not _text(job.get("department")):
+        return []
+    if profiles is None:
+        profiles = list_profiles(job["department"], include_inactive=False)
+    applied = {str(p.get("profile_id") or "") for p in
+               (job.get("metadata") or {}).get("applied_job_profiles", [])
+               if isinstance(p, dict)}
+    recommended = {p["profile_id"] for p in suggestions(job, profiles)}
+    rows = [dict(deepcopy(p), recommended=p.get("profile_id") in recommended)
+            for p in profiles if p.get("active", True)
+            and _fold(p.get("department")) == _fold(job["department"])
+            and p.get("profile_id") and str(p["profile_id"]) not in applied]
+    return sorted(rows, key=lambda p: (not p["recommended"], _fold(p.get("name"))))

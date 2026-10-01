@@ -98,6 +98,14 @@ async function bootPipeline() {
   await PanelState.init("pipeline");
   let preferences = {};
   try { preferences = await pywebview.api.personal_preferences() || {}; } catch (_) {}
+  if (preferences.job_views_trial && !jobWorkspaceMode && window.JobViews) {
+    await JobViews.init(preferences.views_scope, {
+      redraw: () => renderBoard(),
+      choose: key => { state.activeBoardKey=key; state.search=''; $('#search-box').value=''; state.boardFilter='all'; },
+      search: () => state.search,
+      renderCard, open: (c,b) => onAuditCard(c.client||c.name,c.card_id,c.url,divisionForBoardKey(b.key)),
+    });
+  }
   document.documentElement.classList.toggle("density-compact", preferences.density === "compact");
   document.documentElement.classList.toggle("reduce-motion", !!preferences.reduce_motion);
   window.addEventListener("pipeline:background-sync-done", onBackgroundSyncDone);
@@ -306,11 +314,15 @@ function onBoardZoomShortcut(event) {
   }
 }
 
+let savedBoardRefreshRunning = false;
+let recoveringCardOrder = false;
 async function refreshSavedBoardInBackground(quiet = false) {
+  if (savedBoardRefreshRunning || recoveringCardOrder || state.drag || state.laneDrag || pendingCardDrop || document.visibilityState !== 'visible') return;
+  savedBoardRefreshRunning = true;
   const placementGeneration = placementMutationGeneration;
   try {
     const fresh = await pywebview.api.board_view_shared_refresh();
-    if (placementGeneration !== placementMutationGeneration) return;
+    if (placementGeneration !== placementMutationGeneration || state.drag || state.laneDrag || pendingCardDrop || recoveringCardOrder) return;
     if (!fresh?.ok || !(fresh.boards || []).length) return;
     const changed = boardFingerprint(state.board) !== boardFingerprint(fresh);
     const priorScroll = $(".lanes-row")?.scrollLeft || 0;
@@ -326,7 +338,7 @@ async function refreshSavedBoardInBackground(quiet = false) {
   } catch (_) {
     // The saved board remains fully usable. Explicit Sync Jobs surfaces
     // network errors when the user wants to troubleshoot them.
-  }
+  } finally { savedBoardRefreshRunning = false; }
 }
 
 function withTimeout(promise, milliseconds, message) {
@@ -436,6 +448,7 @@ function paintPendingCardDrop() {
 function renderBoardContent() {
   const root = $("#board-view");
   const boards = state.board.boards || [];
+  if (window.JobViews?.aggregate(root, boards)) return;
   if (!boards.length) {
     root.innerHTML = `<div class="empty-state"><div class="empty-emoji">🛤</div>
       <div>No boards loaded. Click ↻ Refresh.</div></div>`;
@@ -481,6 +494,7 @@ function renderBoardContent() {
   // Board tabs.
   root.querySelectorAll("[data-board-tab]").forEach((b) =>
     b.addEventListener("click", () => {
+      window.JobViews?.clear();
       state.activeBoardKey = b.dataset.boardTab;
       PanelState.set({ activeBoardKey: state.activeBoardKey });
       applyBoardLook(state.activeBoardKey);
@@ -527,15 +541,18 @@ function renderBoardContent() {
       event.stopPropagation(); openLaneMenu(event, button.closest(".lane"));
     }));
   root.querySelector("[data-add-lane]")?.addEventListener("click", openAddLaneComposer);
+  window.JobViews?.mount(root, boards);
 }
 
 function startQuietSyncTimers() {
   if (quietBoardSyncTimer || quietCommentSyncTimer) return;
   quietBoardSyncTimer = window.setInterval(requestBackgroundSync, 120_000);
+  window.setInterval(() => { if (state.view === 'board') void refreshSavedBoardInBackground(true); }, 30_000);
   quietCommentSyncTimer = window.setInterval(refreshOpenWorkspaceComments, 60_000);
   window.setTimeout(requestBackgroundSync, 8_000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
+    if (state.view === 'board') void refreshSavedBoardInBackground(true);
     const elapsed = Date.now() - Number(state.backgroundSync.lastStartedAt || 0);
     if (elapsed >= 120_000) requestBackgroundSync();
     refreshOpenWorkspaceComments();
@@ -720,6 +737,7 @@ async function chooseCustomBackground() {
 
 function laneMatches(lane, q) {
   return (lane.cards || []).filter((c) => {
+    if (window.JobViews && !JobViews.matches(c, lane)) return false;
     // A dragged/held card lives in the shelf until it is placed or returned.
     // A starred card is only a shortcut and remains visible in its lane.
     if (state.jobShelf.some((item) => item.cardId === c.card_id && item.mode === "held")) return false;
@@ -1008,7 +1026,7 @@ function dragDetailsFromCard(el) {
 }
 
 function beginPointerCardDrag(cardEl, event) {
-  if (pendingCardDrop) { setStatus('Finishing the previous move…'); return; }
+  if (pendingCardDrop || recoveringCardOrder) { setStatus('Finishing the previous move…'); return; }
   const ghost = document.createElement("div");
   ghost.className = "card-drag-ghost";
   ghost.innerHTML = `<strong>${escapeHtml(cardEl.dataset.client || "Job")}</strong><span>Drop between cards · shelf to hold</span>`;
@@ -1047,6 +1065,7 @@ function finishPointerCardDrag(event, cancelled = false) {
   const drag = active.drag;
   const inHandZone = inJobShelfDropZone(event);
   const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".lane");
+  if(!cancelled&&!inHandZone&&target)drag.dropOrigin=active.ghost.getBoundingClientRect();
   active.ghost.remove();
   active.cardEl.classList.remove("dragging", "drag-ready");
   pointerCardDrag = null;
@@ -1070,8 +1089,9 @@ function finishPointerCardDrag(event, cancelled = false) {
 }
 
 function onCardDragStart(ev) {
-  if (pendingCardDrop) { ev.preventDefault(); return; }
+  if (pendingCardDrop || recoveringCardOrder) { ev.preventDefault(); return; }
   const el = ev.currentTarget;
+  window.CardDropPreview?.grab(el,ev);
   el.dataset.didDrag = "true";
   state.drag = {
     cardId:   el.dataset.cardId,
@@ -1119,7 +1139,7 @@ function onLaneDragLeave(ev) {
 
 async function onLaneDrop(ev) {
   ev.preventDefault();
-  if (pendingCardDrop) { window.CardDropPreview?.clear(); state.drag=null; setStatus('Finishing the previous move…'); return; }
+  if (pendingCardDrop || recoveringCardOrder) { window.CardDropPreview?.clear(); state.drag=null; setStatus('Finishing the previous move…'); return; }
   const laneEl = ev.currentTarget;
   if (state.laneDrag) {
     const moving = state.laneDrag;
@@ -1143,28 +1163,44 @@ async function onLaneDrop(ev) {
   laneEl.classList.remove("drop-target");
   const drag = state.drag;
   state.drag = null;
+  const dropOrigin=drag?.dropOrigin || window.CardDropPreview?.origin(document.querySelector('.kcard.dragging'),ev);
   const preview = window.CardDropPreview?.selection(laneEl.querySelector('.lane-cards'));
   window.CardDropPreview?.clear();
   if (!drag) return;
   const toListId = laneEl.dataset.listId;
   const toLane = laneEl.dataset.laneName;
   if (!toListId) return;
-  const targetCards = (state.board.boards || []).flatMap(b => b.lanes || [])
+  let targetCards = (state.board.boards || []).flatMap(b => b.lanes || [])
     .find(l => l.list_id === toListId)?.cards?.filter(c => c.card_id !== drag.cardId) || [];
   const before = preview ? preview.before : Array.from(laneEl.querySelectorAll('.kcard[data-card-id]')).find(el => {
     const rect = el.getBoundingClientRect();
     return el.dataset.cardId !== drag.cardId && ev.clientY < rect.top + rect.height/2;
   });
-  const insertIndex = before ? targetCards.findIndex(c => c.card_id === before.dataset.cardId) : targetCards.length;
-  if (insertIndex < 0 || [targetCards[insertIndex-1], targetCards[insertIndex]]
-      .some(card => card && (!Number.isFinite(card.pos) || card.pos <= 0))) {
-    setStatus('Card order is not ready. Refresh Jobs before dropping again.', 'warn'); return;
-  }
-  const previous = targetCards[insertIndex-1]?.pos ?? 0;
-  const next = targetCards[insertIndex]?.pos;
-  const position = next == null ? previous + 65536 : (previous + next)/2;
-  if (!(position > previous) || (next != null && !(position < next))) {
-    setStatus('Card order changed. Refresh Jobs before dropping again.', 'warn'); return;
+  let insertIndex = before ? targetCards.findIndex(c => c.card_id === before.dataset.cardId) : targetCards.length;
+  const positionForSlot = () => {
+    if (insertIndex < 0 || [targetCards[insertIndex-1], targetCards[insertIndex]].some(c => c && (!Number.isFinite(c.pos) || c.pos <= 0))) return null;
+    const previous=targetCards[insertIndex-1]?.pos ?? 0, next=targetCards[insertIndex]?.pos;
+    const value=next == null ? previous+65536 : (previous+next)/2;
+    return value>previous && (next == null || value<next) ? value : null;
+  };
+  let position = positionForSlot();
+  if (position === null) {
+    recoveringCardOrder = true;
+    setStatus('Updating card order…');
+    const generation = placementMutationGeneration;
+    try {
+      const fresh = await pywebview.api.board_view_shared_refresh();
+      if (!fresh?.ok || generation !== placementMutationGeneration) throw Error('Board changes could not be confirmed.');
+      const lane = (fresh.boards || []).flatMap(b => b.lanes || []).find(l => l.list_id === toListId);
+      if (!lane) throw Error('The destination lane is no longer available.');
+      state.board = fresh;
+      targetCards = (lane.cards || []).filter(c => c.card_id !== drag.cardId);
+      insertIndex = before ? targetCards.findIndex(c => c.card_id === before.dataset.cardId) : targetCards.length;
+      position = positionForSlot();
+      if (position === null) throw Error('This lane has conflicting saved positions. Your card was not moved.');
+    } catch (error) {
+      renderBoard(); setStatus(error.message || 'Connection unavailable. Your card was not moved.', 'warn'); return;
+    } finally { recoveringCardOrder = false; }
   }
   // Dropping is the user's move action; only interrupt for a real conflict.
   if (drag.conflict && !confirm(`Trello moved "${drag.name}" to “${drag.actualLane || "another lane"}” while it was held. Move it to “${toLane}” anyway?`))
@@ -1173,7 +1209,7 @@ async function onLaneDrop(ev) {
   const knownPlacement = (state.board.placement_snapshot?.placements || []).find(r => r.card_id === drag.cardId);
   pendingCardDrop={cardId:drag.cardId,toListId,beforeId:before?.dataset.cardId || null};
   paintPendingCardDrop();
-  window.CardDropPreview?.land(document.querySelector(`.kcard[data-card-id="${CSS.escape(drag.cardId)}"]`));
+  window.CardDropPreview?.land(document.querySelector(`.kcard[data-card-id="${CSS.escape(drag.cardId)}"]`),dropOrigin);
   let res;
   try { res = await pywebview.api.move_card(drag.cardId, toListId, knownPlacement?.version || 0, position); }
   catch (error) { res={ok:false,error:`Move could not be confirmed: ${error.message || error}. Check before retrying.`}; }
@@ -1288,6 +1324,10 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
       return;
     }
     modal.applyRefresh(full);
+    window.AutomaticFileCheck?.run(pywebview.api, client, resolvedCardId, resolvedDivision,
+      () => requestId === workspaceRequestId && modal.element.isConnected,
+      result => modal.applyRefresh(result),
+      text => { const label = modal.element.querySelector('[data-file-check-state]'); if (label) { label.textContent = text; label.hidden = !text; } });
     loadSession?.schedule(full, (id, result) => {
       if (modal.element.isConnected) modal.applyLinkedComments(id, result);
     });
@@ -1852,6 +1892,11 @@ function retainWorkspaceSectionView(previous, incoming) {
   incoming.querySelectorAll('details').forEach(node => {
     if (expanded.has(detailKey(node))) node.open = expanded.get(detailKey(node));
   });
+  for (const selector of ['[data-log-party-filter]', '[data-log-company-filter]']) {
+    const old = previous.querySelector(selector), next = incoming.querySelector(selector);
+    if (old && next && [...next.options].some(o => o.value === old.value)) next.value = old.value;
+  }
+  incoming.querySelector('[data-log-party-filter]')?.dispatchEvent(new Event('change'));
   if (previous.tagName === 'DETAILS') incoming.open = previous.open;
 }
 
@@ -1873,6 +1918,10 @@ function patchJobLogSection(previous, incoming) {
   const oldToolbar = previous.querySelector('.job-log-toolbar');
   const nextToolbar = incoming.querySelector('.job-log-toolbar');
   if (oldToolbar && nextToolbar) oldToolbar.replaceWith(nextToolbar);
+  for (const selector of ['[data-log-filters]', '[data-log-filter-empty]']) {
+    const old = previous.querySelector(selector), node = incoming.querySelector(selector);
+    if (old && node) old.replaceWith(node);
+  }
   for (const selector of ['.section-title-row', '[data-job-log-status]']) {
     const old = previous.querySelector(selector), node = incoming.querySelector(selector);
     if (old && node && !old.isEqualNode(node)) old.replaceWith(node);
@@ -2017,6 +2066,12 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     else if (item.importance === "recommended") requirementGroups.recommended.push(item);
     else requirementGroups.attention.push(item);
   });
+  const profileChoices = crm.job_profile_suggestions || [];
+  const profilePicker = `<details class="requirement-history"><summary>Apply a requirements profile</summary>
+    <p>Use any active profile in your franchise. Suggestions are not restrictions. Applying adds a copy; it does not replace existing requirements.</p>
+    ${(crm.applied_job_profiles || []).length ? `<p>Applied: ${(crm.applied_job_profiles || []).map(p => escapeHtml(p.profile_name || '')).join(' · ')}</p>` : ''}
+    ${profileChoices.length ? `<label>Profile <select data-job-profile>${profileChoices.map(p => `<option value="${escapeAttr(p.profile_id)}">${escapeHtml(p.name)}${p.recommended ? ' · Suggested' : ''}</option>`).join('')}</select></label>
+    <button type="button" class="action-btn" data-job-profile-apply>Apply profile</button>` : '<p>No unused active profiles. An administrator can create or enable one in Settings → Admin → Job Profiles.</p>'}</details>`;
   const required = (progress.items || []).length ? `
     ${progress.review_mode ? `<div class="requirement-review-note"><strong>Review mode</strong><span>Requirements are visible for testing but do not enforce stage movement yet.</span></div>` : ""}
     <div class="requirement-group ${progress.counts?.overdue ? "overdue" : ""}"><h4>Needs attention</h4>${requirementRows(requirementGroups.attention) || `<div class="aud-empty">No required work needs attention.</div>`}</div>
@@ -2144,7 +2199,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   const logs = (crm.job_log || []).slice().reverse().map((entry) => `
     <article class="job-log-row snapshot-log-row" data-job-log-id="${escapeAttr(entry.entry_id || "")}">
       <div class="job-log-date"><time>${escapeHtml(formatAppDate(entry.work_date || ""))}</time><span>${escapeHtml((entry.status || "completed").replaceAll("_", " "))}</span></div><div class="job-log-copy">
-      <div class="job-log-title"><strong>${escapeHtml(entry.work_type || "Job update")}</strong>${entry.technicians ? `<span>Crew · ${escapeHtml(entry.technicians)}</span>` : ""}</div>
+      <div class="job-log-title"><strong>${escapeHtml(entry.work_type || "Job update")}</strong>${entry.work_party === 'subcontractor' ? `<span>Sub · ${escapeHtml(entry.subcontractor || '')}</span>` : ''}${entry.technicians ? entry.technicians.split(' | ').map(person => `<span>${escapeHtml(person)}</span>`).join('') : ""}</div>
       ${entry.source !== "trello" && entry.note ? `<div class="job-log-field"><b>Update</b><p>${escapeHtml(entry.note)}</p></div>` : ""}
       ${entry.equipment ? `<div class="job-log-field"><b>Equipment / readings</b><p>${escapeHtml(entry.equipment)}</p></div>` : ""}
       ${entry.source === "trello" && entry.note ? `<details class="job-log-source"><summary>Original Trello comment</summary><div><small>Imported from the ${escapeHtml(selectedDivision)} card${entry.updated_by ? ` · ${escapeHtml(entry.updated_by)}` : ""}</small><p>${escapeHtml(entry.note)}</p></div></details>` : ""}</div>
@@ -2180,13 +2235,18 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
         <button class="btn compact" data-create-snapshot ${data.card_id ? '' : 'disabled'} title="Open the Snapshot editor for this card and its saved completed Job Log entries">Create Snapshot</button>
         <div data-job-log-export><button class="btn compact" data-print-job-log ${(crm.job_log || []).length ? '' : 'disabled'} title="${(crm.job_log || []).length ? 'Save the currently loaded division Job Log as a Snapshot-style PDF' : 'Add or import a Job Log entry before printing'}">Print / PDF</button><small data-job-log-export-status role="status"></small></div></div>
         <small data-job-log-status role="status">${crm.job_log_dismissal_pending ? 'Dismissal saved on this PC · waiting to sync' : crm.job_log_error || crm.ok === false ? 'Showing saved entries — refresh unavailable' : crm.job_log_saved_at ? `Saved on this PC${data.deferred_loading || data.refresh_pending ? ' · Checking for changes…' : ''}` : data.deferred_loading ? 'Checking for saved Job Log entries…' : ''}</small>
-        <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div></section>
-      <section class="aud-section paperwork-section"><div class="section-title-row"><div><h3>Forms &amp; paperwork</h3><small>${escapeHtml(paperworkSummary)}</small></div><button class="btn compact" data-run-folder-audit>Check files</button></div>
+        <div data-log-filters aria-label="Filter Job Log">
+          <label>Show <select data-log-party-filter aria-label="Work performed by"><option value="all">All updates</option><option value="crew">Our crew</option><option value="subcontractor">Subs</option><option value="">Unclassified</option></select></label>
+          <label data-log-company-filter-row hidden>Company <select data-log-company-filter aria-label="Filter subcontractor company"><option value="">All companies</option>${[...new Set((crm.job_log || []).filter(e => e.work_party === 'subcontractor').map(e => e.subcontractor).filter(Boolean))].sort().map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join('')}</select></label>
+          <small data-log-filter-count role="status"></small>
+        </div>
+        <div class="job-log-editor" data-job-log-editor hidden></div><div data-job-log-list>${logs}</div><div class="aud-empty" data-log-filter-empty hidden>No updates match this filter.</div></section>
+        <section class="aud-section paperwork-section"><div class="section-title-row"><div><h3>Forms &amp; paperwork</h3><small>${escapeHtml(paperworkSummary)}</small></div><small data-file-check-state role="status" hidden></small></div>
         <div class="paperwork-list">${paperworkRows || `<div class="aud-empty">The paperwork list is unavailable for this saved job.</div>`}</div>
         <div class="paperwork-access">${docuSketchAccess}</div></section>
       <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
         <span class="progress-label">${progress.counts?.overdue || 0} overdue · ${progress.counts?.blocked || 0} blocked · ${progress.percent_complete || 0}% complete</span></div>
-        <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${required}</section>
+        <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${profilePicker}${required}</section>
       <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div><span class="job-save-mode" data-job-save-state>Changes save automatically</span></div><div class="work-types">${workTypes}</div></section>
       <section class="aud-section checklist-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} requirements</small></div>${checklistDivisionTabs}</div>${checklistGroups}</section>
       ${oldJobsSection}
@@ -2242,6 +2302,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
             </div></div>
             <div class="tool-quick-menu"><button type="button" class="action-btn destination tool-menu-trigger" aria-haspopup="menu" aria-expanded="false"><img src="../web_shared/companycam.png" alt="">CompanyCam <small>⌄</small></button><div class="tool-menu-panel" role="menu">
               <button data-open-companycam ${data.card_id || data.client ? "" : "disabled"}>Open project</button>
+              <button data-change-companycam ${data.client || res.client ? "" : "disabled"}>Change project…</button>
               <button data-pull-companycam ${data.card_id ? "" : "disabled"}>Pull photos</button>
               <button data-companycam-report ${data.card_id ? "" : "disabled"}>Create report</button>
               <button data-quick-photo-report ${data.card_id ? "" : "disabled"}>Build quick PDF</button>
@@ -2472,6 +2533,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     openJobFileImportModal(data, res));
   w.querySelector("[data-pull-companycam]")?.addEventListener("click", () =>
     openCompanyCamPullModal(data, res));
+  w.querySelector('[data-change-companycam]')?.addEventListener('click', () =>
+    window.CompanyCamRelink.open({client:data.client || res.client || '', cardId:data.card_id || '', api:pywebview.api, onSaved:() => setStatus('CompanyCam project link updated. Future pulls use the selected project.', 'ok')}));
   w.querySelector("[data-link-job-folder]")?.addEventListener("click", repinFolder);
   w.querySelector("[data-repin-job-folder]")?.addEventListener("click", repinFolder);
   w.querySelector("[data-copy-folder-path]")?.addEventListener("click", copyFolderPath);
@@ -2684,6 +2747,21 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       await refreshAfterRequirement();
     });
   };
+  w.querySelector('[data-job-profile-apply]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const id = w.querySelector('[data-job-profile]')?.value;
+    const profile = profileChoices.find(p => p.profile_id === id);
+    if (!profile || !confirm(`Add requirements from “${profile.name}”? Existing requirements will stay. Use only one full baseline to avoid duplicates.`)) return;
+    button.disabled = true;
+    try {
+      const result = await pywebview.api.apply_job_profile(data.client || res.client || '', id);
+      if (!result?.ok) throw new Error(result?.error || 'Could not apply profile');
+      setStatus(`${profile.name} applied`, 'ok');
+      document.querySelector('.audit-overlay [data-close]')?.click();
+      await onAuditCard(data.client || res.client || '', data.card_id || '', '', data.selected_division || 'EMS');
+    } catch (error) { setStatus(error.message || 'Could not apply profile', 'error'); }
+    finally { button.disabled = false; }
+  });
   w.querySelectorAll("[data-requirement-key]").forEach((button) =>
     button.addEventListener("click", () => editRequirement(button.dataset.requirementKey || "")));
   w.querySelectorAll("[data-requirement-complete]").forEach((button) =>
@@ -2886,41 +2964,84 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     } catch (error) { status.textContent = `Could not create PDF: ${error.message || error}`; }
     finally { button.disabled = false; }
   });
+  const applyLogFilter = () => {
+    const party = w.querySelector('[data-log-party-filter]').value;
+    const company = w.querySelector('[data-log-company-filter]').value;
+    w.querySelector('[data-log-company-filter-row]').hidden = party !== 'subcontractor';
+    let visible = 0;
+    w.querySelectorAll('[data-job-log-id]').forEach(row => {
+      const entry = (crm.job_log || []).find(e => e.entry_id === row.dataset.jobLogId) || {};
+      row.hidden = !(party === 'all' || (entry.work_party || '') === party) ||
+        (party === 'subcontractor' && company !== '' && entry.subcontractor !== company);
+      if (!row.hidden) visible++;
+    });
+    w.querySelector('[data-log-filter-count]').textContent = `${visible} of ${(crm.job_log || []).length} updates`;
+    w.querySelector('[data-log-filter-empty]').hidden = visible > 0 || !(crm.job_log || []).length;
+  };
+  w.querySelectorAll('[data-log-party-filter], [data-log-company-filter]').forEach(el => el.addEventListener('change', applyLogFilter));
+  applyLogFilter();
   const openJobLogEditor = (entry = {}) => {
     const host = w.querySelector("[data-job-log-editor]");
+    if (!host.hidden) { host.querySelector('input,select,textarea')?.focus(); setStatus('Save or cancel the open update first.', 'warn'); return; }
+    const row = entry.entry_id ? [...w.querySelectorAll('[data-job-log-id]')].find(el => el.dataset.jobLogId === entry.entry_id) : null;
+    const home = document.createComment('Job Log editor home');
+    host.before(home);
+    const rowHeight = row?.getBoundingClientRect().height;
+    const originalChildren = row ? [...row.children].map(el => [el, el.hidden]) : [];
+    if (row) {
+      originalChildren.forEach(([el]) => { el.hidden = true; });
+      row.classList.add('is-editing'); row.append(host);
+    }
+    const filters = [...w.querySelectorAll('[data-log-filters] select')];
+    filters.forEach(el => { el.disabled = true; });
+    const animateHeight = (el, from) => {
+      el?._jobLogMotion?.cancel();
+      if (!el || !from || !el.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const to = el.getBoundingClientRect().height;
+      el._jobLogMotion = el.animate([{height:`${from}px`,overflow:'hidden'}, {height:`${to}px`,overflow:'hidden'}], {duration:200,easing:'cubic-bezier(.2,.7,.2,1)'});
+    };
+    const closeEditor = () => {
+      const height = row?.getBoundingClientRect().height;
+      home.replaceWith(host);
+      host.hidden = true; host.innerHTML = '';
+      originalChildren.forEach(([el, hidden]) => { el.hidden = hidden; });
+      row?.classList.remove('is-editing');
+      filters.forEach(el => { el.disabled = false; });
+      return height;
+    };
     host._draft?.dispose(); recoveredDrafts.delete(host._draft);
     const today = new Date().toISOString().slice(0, 10);
     const activities = ["Initial inspection", "Demo", "Monitor", "Equipment placed", "Equipment pickup", "Contents", "Recon", "Final inspection"];
-    const knownActivity = activities.includes(entry.work_type || "");
     const statuses = ["scheduled", "completed", "rescheduled", "cancelled", "skipped", "needs_review"];
     host.hidden = false;
     host.innerHTML = `<div class="job-log-form">
       <label>Date<input type="date" data-log-field="work_date" value="${escapeAttr(entry.work_date || today)}"></label>
-      <label>Activity<select data-log-field="work_type">${activities.map((x) => `<option ${x === entry.work_type ? "selected" : ""}>${x}</option>`).join("")}<option value="__custom__" ${entry.work_type && !knownActivity ? "selected" : ""}>Custom activity…</option></select></label>
-      <label data-log-custom-row ${entry.work_type && !knownActivity ? "" : "hidden"}>Custom activity<input data-log-custom value="${escapeAttr(entry.work_type && !knownActivity ? entry.work_type : "")}" placeholder="Type the activity name"></label>
+      <label>Activities<select data-log-field="work_type">${activities.map((x) => `<option>${x}</option>`).join("")}</select></label>
       <label>Status<select data-log-field="status">${statuses.map((x) => `<option value="${x}" ${x === (entry.status || "completed") ? "selected" : ""}>${x.replaceAll("_", " ")}</option>`).join("")}</select></label>
+      <label>Work performed by<select data-log-field="work_party"><option value="" ${entry.entry_id && !entry.work_party ? 'selected' : ''}>Unclassified</option><option value="crew" ${entry.work_party === 'crew' || !entry.entry_id ? 'selected' : ''}>Our crew</option><option value="subcontractor" ${entry.work_party === 'subcontractor' ? 'selected' : ''}>Subcontractor</option></select></label>
+      <label data-log-company-row ${entry.work_party === 'subcontractor' ? '' : 'hidden'}>Subcontractor company<input data-log-field="subcontractor" list="job-log-companies" value="${escapeAttr(entry.subcontractor || '')}" placeholder="Select or enter company"><datalist id="job-log-companies">${[...new Set((crm.job_log || []).map(e => e.subcontractor).filter(Boolean))].sort().map(name => `<option value="${escapeAttr(name)}"></option>`).join('')}</datalist></label>
       <label>Technician / crew<input data-log-field="technicians" value="${escapeAttr(entry.technicians || "")}" placeholder="Who completed the work?"></label>
       <label class="wide">Work completed / update<textarea rows="3" data-log-field="note" placeholder="Areas worked, findings, what was completed, and the next step">${escapeHtml(entry.note || "")}</textarea></label>
       <label class="wide">Equipment / readings<input data-log-field="equipment" value="${escapeAttr(entry.equipment || "")}" placeholder="Equipment placed, moved, readings, or pickup"></label>
       ${!entry.entry_id ? `<label class="wide job-log-post-option"><input type="checkbox" data-log-post-trello checked><span>Also post this new entry as a Trello comment<small>Uncheck to save in OneLoss only.</small></span></label>` : entry.source === 'pc_only' ? `<p class="wide">OneLoss-only entry · no Trello comment will be created.</p>` : ''}
       <div class="job-log-form-actions"><button class="btn btn-primary" data-save-job-log>Save update</button><button class="btn" data-cancel-job-log>Cancel</button></div></div>`;
+    const partySelect = host.querySelector('[data-log-field="work_party"]');
+    const companyInput = host.querySelector('[data-log-field="subcontractor"]');
+    const syncParty = () => { host.querySelector('[data-log-company-row]').hidden = partySelect.value !== 'subcontractor'; companyInput.required = partySelect.value === 'subcontractor'; };
+    partySelect.addEventListener('change', syncParty);
+    syncParty();
     host.querySelector('[data-log-post-trello]')?.addEventListener('change', () => markDraftDirty('job-log', true));
     host.querySelectorAll("[data-log-field]").forEach((field) =>
       field.addEventListener("input", () => markDraftDirty("job-log", true)));
     const activitySelect = host.querySelector('[data-log-field="work_type"]');
-    const customRow = host.querySelector("[data-log-custom-row]");
-    const customActivity = host.querySelector("[data-log-custom]");
-    activitySelect.addEventListener("change", () => {
-      customRow.hidden = activitySelect.value !== "__custom__";
-      if (!customRow.hidden) customActivity.focus();
-    });
-    customActivity.addEventListener("input", () => markDraftDirty("job-log", true));
+    const activityPicker = JobActivities.mount(activitySelect, entry.work_type, host.querySelector('[data-log-field="technicians"]'));
     const logDraft = window.JobDrafts?.mount(host, [data.card_id || '', selectedDivision, 'job-log', entry.entry_id || ''], () => {
       const fields = Object.fromEntries([...host.querySelectorAll('[data-log-field]')].map(field => [field.dataset.logField, field.value]));
-      return {...fields, custom: customActivity.value, post_to_trello: host.querySelector('[data-log-post-trello]')?.checked};
+      return {...fields, post_to_trello: host.querySelector('[data-log-post-trello]')?.checked};
     }, saved => {
       host.querySelectorAll('[data-log-field]').forEach(field => { if (saved[field.dataset.logField] !== undefined) field.value = saved[field.dataset.logField]; });
-      customActivity.value = saved.custom || ''; customRow.hidden = activitySelect.value !== '__custom__';
+      activityPicker.set(saved.work_type === '__custom__' ? saved.custom : saved.work_type, saved.technicians || '');
+      syncParty();
       const post = host.querySelector('[data-log-post-trello]'); if (post) post.checked = saved.post_to_trello === true;
       markDraftDirty('job-log', true);
     });
@@ -2928,20 +3049,26 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     if (logDraft) recoveredDrafts.add(logDraft);
     host.querySelector("[data-cancel-job-log]").addEventListener("click", () => {
       logDraft?.clear(); logDraft?.dispose(); recoveredDrafts.delete(logDraft);
-      clearDraftDirty("job-log"); host.hidden = true; host.innerHTML = "";
+      clearDraftDirty("job-log");
+      const height = closeEditor(); animateHeight(row, height);
+      row?.querySelector('[data-edit-job-log]')?.focus({preventScroll:true});
     });
     host.querySelector("[data-save-job-log]").addEventListener("click", async (event) => {
       const payload = {entry_id: entry.entry_id || "", source: entry.source || "pc", source_id: entry.source_id || "", trello_comment_id: entry.trello_comment_id || ""};
       host.querySelectorAll("[data-log-field]").forEach((field) => { payload[field.dataset.logField] = field.value; });
       if (!entry.entry_id) payload.post_to_trello = host.querySelector('[data-log-post-trello]').checked;
-      if (payload.work_type === "__custom__") payload.work_type = customActivity.value.trim();
-      if (!payload.work_type) { customActivity.focus(); return; }
+      if (!payload.work_type) { activityPicker.focus(); setStatus('Select at least one activity.', 'error'); return; }
+      if (payload.work_party === 'subcontractor' && !payload.subcontractor.trim()) { companyInput.setCustomValidity('Enter the subcontractor company.'); companyInput.reportValidity(); companyInput.oninput = () => companyInput.setCustomValidity(''); return; }
+      if (payload.work_party !== 'subcontractor') payload.subcontractor = '';
       const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
+      const controls = [...host.querySelectorAll('input,select,textarea,button')];
+      controls.forEach(el => { el.disabled = true; });
       let result;
       try { result = await pywebview.api.save_job_log_update(
         data.client || "", payload, data.card_id || "", selectedDivision); }
       catch (_) { result = {ok:false,error:'Save could not be confirmed. Your draft is still here; check before retrying.'}; }
       if (!result?.ok || !result.entry?.entry_id) {
+        controls.forEach(el => { el.disabled = false; });
         button.disabled = false; button.textContent = "Save update";
         let notice = host.querySelector('[data-log-save-status]');
         if (!notice) { notice=document.createElement('p'); notice.dataset.logSaveStatus=''; notice.setAttribute('role','alert'); host.append(notice); }
@@ -2950,11 +3077,15 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       }
       clearDraftDirty("job-log");
       logDraft?.clear(); logDraft?.dispose(); recoveredDrafts.delete(logDraft);
-      host.hidden = true; host.innerHTML = '';
+      const height = closeEditor();
       controller.applyJobLogSave(result);
+      const savedRow = [...w.querySelectorAll('[data-job-log-id]')].find(el => el.dataset.jobLogId === result.entry.entry_id);
+      animateHeight(savedRow, height);
+      savedRow?.querySelector('[data-edit-job-log]')?.focus({preventScroll:true});
     });
-    host.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => host.querySelector('[data-log-field="work_type"]')?.focus(), 250);
+    animateHeight(row, rowHeight);
+    if (!row) host.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: "nearest" });
+    activityPicker.focus();
   };
   w.querySelectorAll("[data-add-job-log]").forEach((button) => button.addEventListener("click", () => openJobLogEditor({})));
   w.querySelector('[data-refresh-job-log]')?.addEventListener('click', async (event) => {

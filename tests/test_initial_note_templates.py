@@ -35,6 +35,8 @@ def test_job_log_accepts_a_named_custom_activity():
     js = (Path(__file__).resolve().parents[1] /
           "pipeline_web_assets" / "app.js").read_text(encoding="utf-8")
 
-    assert 'value="__custom__"' in js
-    assert "data-log-custom-row" in js
-    assert 'if (payload.work_type === "__custom__")' in js
+    assert 'JobActivities.mount' in js
+    picker = (Path(__file__).resolve().parents[1] / 'web_shared' / 'job_activities.js').read_text(encoding='utf-8')
+    assert "custom.placeholder = 'Custom activity'" in picker
+    assert 'if (!choices.includes(name)) choices.push(name)' in picker
+    assert "selected.join(' + ')" in picker

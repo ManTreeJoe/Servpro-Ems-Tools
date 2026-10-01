@@ -1518,6 +1518,7 @@ function attachApaItemDrag(el) {
   // Reset after either a drag completes or any mouseup outside a
   // started drag, so subsequent right-clicks always fire ctx menu.
   el.addEventListener("dragstart", (e) => {
+    window.CardDropPreview?.grab(el,e);
     const sectionName = el.dataset.section;
     const idx = parseInt(el.dataset.index, 10);
     const sec = state.doc?.sections?.find((s) => s.name === sectionName);
@@ -1597,6 +1598,7 @@ function attachApaSectionDrop(body) {
       }
     }
     const beforeDrop = JSON.parse(JSON.stringify(state.doc));
+    const dropOrigin=window.CardDropPreview?.origin(document.querySelector('.item.dragging'),e);
     const moved = src.items.splice(sourceIndex, 1)[0];
     if (!moved) return;
     src.count = src.items.length;
@@ -1608,7 +1610,7 @@ function attachApaSectionDrop(body) {
     dst.count = dst.items.length;
     _apaDragRef = null;
     const saving = saveDoc();
-    window.CardDropPreview?.land(document.querySelector(`.item[data-section="${CSS.escape(targetSection)}"][data-index="${insertIdx}"]`));
+    window.CardDropPreview?.land(document.querySelector(`.item[data-section="${CSS.escape(targetSection)}"][data-index="${insertIdx}"]`),dropOrigin);
     if (!await saving) {
       state.doc = beforeDrop;
       renderBoard();

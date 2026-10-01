@@ -499,6 +499,7 @@
         <div class="crm-log-date">${esc(ctx, entry.work_date || "")}</div>
         <div class="crm-log-main"><strong>${esc(ctx, entry.work_type || "Update")}</strong>
           <span class="crm-log-status ${escA(ctx, entry.status || "")}">${esc(ctx, (entry.status || "completed").replaceAll("_", " "))}</span>
+          ${entry.work_party === 'subcontractor' ? `<small>Sub · ${esc(ctx, entry.subcontractor || '')}</small>` : ''}
           ${entry.technicians ? `<small>${esc(ctx, entry.technicians)}</small>` : ""}
           ${entry.note ? `<p>${esc(ctx, entry.note)}</p>` : ""}
           ${entry.equipment ? `<p class="muted">Equipment: ${esc(ctx, entry.equipment)}</p>` : ""}
@@ -530,9 +531,9 @@
       <div class="crm-workspace-body" ${workspaceExpanded ? "" : "hidden"}>
       ${(profileSuggestions.length || appliedProfiles.length) ? `<section class="crm-profile-strip" aria-label="Job Profiles">
         <div><strong>Job Profiles</strong>
-          ${appliedProfiles.length ? `<span class="muted">Applied: ${appliedProfiles.map((profile) => esc(ctx, profile.profile_name || "Profile")).join(" · ")}</span>` : `<span class="muted">Matching defaults are ready to apply.</span>`}
+          ${appliedProfiles.length ? `<span class="muted">Applied: ${appliedProfiles.map((profile) => esc(ctx, profile.profile_name || "Profile")).join(" · ")}</span>` : `<span class="muted">Any active profile in your franchise can be used.</span>`}
         </div>
-        <div>${profileSuggestions.map((profile) => `<button class="action-btn" type="button" data-apply-profile="${escA(ctx, profile.profile_id || "")}">Apply ${esc(ctx, profile.name || "profile")}</button>`).join("")}</div>
+        <details><summary>Choose a profile</summary>${profileSuggestions.map((profile) => `<button class="action-btn" type="button" data-apply-profile="${escA(ctx, profile.profile_id || "")}">Apply ${esc(ctx, profile.name || "profile")}${profile.recommended ? ' · Suggested' : ''}</button>`).join("")}</details>
       </section>` : ""}
       <section class="crm-progress-detail" aria-label="Job requirements">
         ${progressGroups.overdue.length ? `<div class="crm-requirement-group overdue"><h4>Overdue from earlier stages</h4>${requirementRows(progressGroups.overdue, "")}</div>` : ""}
@@ -647,6 +648,8 @@
           <label>Work date<input type="date" data-log-field="work_date" value="${escA(ctx, entry.work_date || today)}"></label>
           <label>Activity<select data-log-field="work_type">${["Initial inspection", "Demo", "Monitor", "Equipment placed", "Equipment pickup", "Contents", "Recon", "Final inspection", "Other"].map((name) => `<option ${name === entry.work_type ? "selected" : ""}>${name}</option>`).join("")}</select></label>
           <label>Status<select data-log-field="status">${statuses.map((s) => `<option value="${s}" ${s === (entry.status || "completed") ? "selected" : ""}>${s.replaceAll("_", " ")}</option>`).join("")}</select></label>
+          <label>Work performed by<select data-log-field="work_party"><option value="" ${entry.entry_id && !entry.work_party ? 'selected' : ''}>Unclassified</option><option value="crew" ${entry.work_party === 'crew' || !entry.entry_id ? 'selected' : ''}>Our crew</option><option value="subcontractor" ${entry.work_party === 'subcontractor' ? 'selected' : ''}>Subcontractor</option></select></label>
+          <label>Subcontractor company (for subs)<input data-log-field="subcontractor" value="${escA(ctx, entry.subcontractor || '')}" placeholder="Company name"></label>
           <label>Technician / crew<input data-log-field="technicians" value="${escA(ctx, entry.technicians || "")}" placeholder="FB, PG, crew…"></label>
           <label class="wide">Work completed / update<textarea data-log-field="note" rows="3" placeholder="Areas worked, findings, what was completed, and the next step">${esc(ctx, entry.note || "")}</textarea></label>
           <label class="wide">Equipment / readings<input data-log-field="equipment" value="${escA(ctx, entry.equipment || "")}" placeholder="Equipment placed, moved, readings, or pickup"></label>
@@ -656,11 +659,13 @@
           ${entry.entry_id ? `<button class="action-btn" type="button" data-log-history>History</button>` : ""}</div>
           <div class="crm-log-history" hidden></div>
         </div>`;
+      const activityPicker = JobActivities.mount(editor.querySelector('[data-log-field="work_type"]'), entry.work_type, editor.querySelector('[data-log-field="technicians"]'));
       editor.querySelector("[data-log-cancel]")?.addEventListener("click", () => { editor.hidden = true; editor.innerHTML = ""; });
       editor.querySelector("[data-log-save]")?.addEventListener("click", async (event) => {
         const payload = { entry_id: entry.entry_id || "", source: entry.source || "pc",
           source_id: entry.source_id || "", trello_comment_id: entry.trello_comment_id || "" };
         editor.querySelectorAll("[data-log-field]").forEach((field) => { payload[field.dataset.logField] = field.value; });
+        if (!payload.work_type) { activityPicker.focus(); setStatus(ctx, 'Select at least one activity.', 'error'); return; }
         if (!entry.entry_id) payload.post_to_trello = editor.querySelector('[data-log-post-trello]').checked;
         const button = event.currentTarget; button.disabled = true; button.textContent = "Saving…";
         let result; try { result = await pywebview.api.save_crm_job_log(r.client, payload); }
@@ -716,6 +721,7 @@
     });
     box.querySelectorAll("[data-apply-profile]").forEach((button) => {
       button.addEventListener("click", async () => {
+        if (!confirm('Add this profile’s requirements? Existing requirements stay. Use only one full baseline to avoid duplicates.')) return;
         button.disabled = true; button.textContent = "Applying…";
         let result;
         try { result = await pywebview.api.apply_job_profile(r.client, button.dataset.applyProfile); }

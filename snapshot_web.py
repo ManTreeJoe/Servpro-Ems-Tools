@@ -164,13 +164,21 @@ def sync_snapshot_logs_to_job_log(client: str, rows: list,
             continue
         entry_id = str(row.get("entry_id") or "").strip()
         prior = dict(existing.get(entry_id) or {})
+        from job_log_participants import label
+        techs = str(row.get('techs') or '').strip()
+        if prior.get('work_party') == 'subcontractor':
+            prefix = label({**prior, 'technicians': ''})
+            if techs == prefix:
+                techs = ''
+            elif techs.startswith(prefix + ' · '):
+                techs = techs[len(prefix + ' · '):]
         payload = prior
         payload.update({
             "entry_id": entry_id,
             "work_date": work_date,
             "work_type": work_type,
             "status": prior.get("status") or "completed",
-            "technicians": str(row.get("techs") or "").strip(),
+            "technicians": techs,
             "source": prior.get("source") or row.get("source") or "snapshot",
             "source_id": prior.get("source_id") or row.get("source_id") or "",
             "trello_comment_id": (prior.get("trello_comment_id")
@@ -214,35 +222,10 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
     def attach(self, w): self._window = w
 
     def recent_snapshots(self, limit=50):
-        """List PDFs in config.snapshot_output newest-mtime first."""
-        try:
-            cfg = config.load()
-            out_dir = cfg.get("snapshot_output") or ""
-        except Exception:
-            out_dir = ""
-        if not out_dir or not os.path.isdir(out_dir):
-            return {"dir": out_dir, "rows": []}
-        rows = []
-        try:
-            with os.scandir(out_dir) as it:
-                for e in it:
-                    if e.is_file() and e.name.lower().endswith(".pdf"):
-                        try:
-                            stat = e.stat()
-                            rows.append({
-                                "name":  e.name,
-                                "path":  e.path,
-                                "mtime": datetime.datetime.fromtimestamp(
-                                    stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                                "mtime_epoch": stat.st_mtime,
-                                "size_kb": int(stat.st_size / 1024),
-                            })
-                        except OSError:
-                            pass
-        except OSError:
-            pass
-        rows.sort(key=lambda r: -r["mtime_epoch"])
-        return {"dir": out_dir, "rows": rows[:limit]}
+        """Only known local exports, not every PDF in a shared Downloads folder."""
+        import snapshot_exports
+        return {"dir": config.load().get("snapshot_output") or "",
+                "rows": snapshot_exports.recent(limit)}
 
     def open_pdf(self, path):
         if not path or not os.path.isfile(path): return False
@@ -1098,6 +1081,13 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                     })
         except Exception:
             pass
+        import snapshot_revisions
+        for row in out:
+            if row.get('snapshot'):
+                try:
+                    row.update(snapshot_revisions.queue_status(row['client'], row['card_id']))
+                except Exception:
+                    row['snapshot_record_unavailable'] = True
         self._candidate_cache = [dict(row) for row in out]
         self._candidate_cache_at = time.monotonic()
         return out
@@ -1647,67 +1637,16 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "comments":    comments_text,
             })
 
-            # Run the same comment parser the Tk panel uses so the
-            # daily-log table AND comment-derived sub rows populate
-            # from the Trello comment stream. Mirrors snapshot_gui's
-            # _parse_and_preview flow: parse_comments → (subs, logs)
-            # → merge Subs checklist as ground-truth, deduped by
-            # vendor.
-            parsed_subs, parsed_logs = [], []
-            try:
-                parsed_subs, parsed_logs = sg.parse_comments(comments_text)
-            except Exception:
-                parsed_subs, parsed_logs = [], []
-
-            # parse_comments returns (date, weekday, activity, vendor)
-            # for subs, (date, weekday, activity, techs) for logs.
-            def _vendor_key(text):
-                head = re.split(r"\s*-\s*|-", str(text or ""), maxsplit=1)[0]
-                return head.strip().lower()
-            already = set()
-            for (d_, w_, a_, v_) in (parsed_subs or []):
-                out["subs"].append({"date": d_ or "", "weekday": w_ or "",
-                                    "activity": a_ or "", "techs": v_ or ""})
-                already.add(_vendor_key(v_ or a_))
-            # Merge Subs checklist (ground truth) on top — dedupe by
-            # vendor against comment-parsed rows. Use the checklist
-            # item's full text as the activity; vendor in techs col.
-            for txt in subs_fallback:
-                v = _vendor_key(txt)
-                if v and v not in already:
-                    out["subs"].append({"date": "", "weekday": "",
-                                        "activity": txt,
-                                        "techs": v.title()})
-                    already.add(v)
-
-            # Work-log suggestions are imported explicitly in Jobs, not here.
+            # Activity rows come exclusively from the saved Job Log below.
         except Exception as ex:
             out["error"] = f"{type(ex).__name__}: {ex}"
 
         try:
-            from job_log_records import snapshot_rows
-            out["logs"] = snapshot_rows(client_fallback or out.get("insured") or "", card_id, division)
-            out["job_log_source"] = "saved"
+            from job_log_records import snapshot_sections
+            out.update(snapshot_sections(client_fallback or out.get("insured") or "", card_id, division))
         except Exception as ex:
-            out["logs"] = []
+            out["logs"], out["subs"] = [], []
             out["job_log_error"] = f"Saved Job Log unavailable: {type(ex).__name__}"
-
-        # Final dedupe sweep against out["logs"] AND out["subs"] —
-        # catches duplicates already present in the Trello parsing
-        # step (parse_comments occasionally yields adjacent rows for
-        # the same event when the tech logged it in two comments).
-        # Idempotent: a single-pass list with no dupes survives
-        # untouched.
-        for bucket_key in ("subs",):
-            deduped, seen = [], {}
-            for row in (out.get(bucket_key) or []):
-                k = _log_dedupe_key(row)
-                if k in seen:
-                    _merge_log_row(seen[k], row)
-                else:
-                    deduped.append(row)
-                    seen[k] = row
-            out[bucket_key] = deduped
 
         try:
             out["folder"] = (out["folder"]
@@ -1737,9 +1676,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception:
             pass
         try:
-            from job_log_records import snapshot_rows
-            out["logs"] = snapshot_rows(client, out.get("card_id") or "")
-            out["job_log_source"] = "saved"
+            from job_log_records import snapshot_sections
+            out.update(snapshot_sections(client, out.get("card_id") or ""))
         except Exception as ex:
             out["logs"] = []
             out["job_log_error"] = f"Saved Job Log unavailable: {type(ex).__name__}"
@@ -1934,12 +1872,18 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             revision_result = {"ok": False,
                                "error": f"{type(ex).__name__}: {ex}"}
+        try:
+            import snapshot_exports
+            snapshot_exports.remember(output_path)
+        except Exception:
+            pass  # Convenience list is independent of the saved revision/PDF.
+        self._candidate_cache = None
         # Auto-mark the Trello card as "snapshot drafted" so the
         # Closeout Hygiene section stops nagging this client.
         # Mirrors snapshot_gui.py:4679 — generating IS the strongest
         # possible "done" signal, no manual click required.
         try:
-            if card_id:
+            if card_id and revision_result.get('ok'):
                 import closeout_watcher as _cw
                 _cw.mark_drafted(card_id)
         except Exception:
@@ -1965,6 +1909,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             if card_id:
                 rows = [row for row in rows if row.get('card_id') == card_id
                         and (not division or (row.get('source_refs') or {}).get('division', 'EMS') == division)]
+            rows = [dict(row, pdf_available=bool(row.get('pdf_path') and os.path.isfile(row['pdf_path']))) for row in rows]
             return {"ok": True, "revisions": rows, "count": len(rows)}
         except Exception as ex:
             return {"ok": False, "revisions": [],

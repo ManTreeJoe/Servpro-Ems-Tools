@@ -1168,6 +1168,9 @@ def main(argv=None):
         min_size=(960, 600),
     )
     api.attach(win)
+    import desktop_notifications
+    desktop_alerts = desktop_notifications.install(api, _runtime_channel())
+    win.events.loaded += desktop_alerts.start
     try:
         import global_hotkey
         api._hotkey = global_hotkey.Manager(api.focus_window)
@@ -1184,6 +1187,7 @@ def main(argv=None):
             else "linguar_hub.ico")
         webview.start(debug=False, http_server=True, icon=taskbar_icon)
     finally:
+        desktop_alerts.stop()
         if api._hotkey:
             api._hotkey.stop()
 

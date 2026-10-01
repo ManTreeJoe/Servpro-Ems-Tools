@@ -1,0 +1,2783 @@
+[
+  {
+    "id": "6aa08161ba44efc08943fa94",
+    "name": "Keystone Pacific Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/RoZHiJPE/9068-keystone-pacific-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a1255c6f609b36a72b4c1f5",
+    "name": "EMS - Residential Template",
+    "url": "https://trello.com/c/0FAuiK6b/8569-ems-residential-template",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "ATP",
+          "CIF",
+          "CER",
+          "STATE FARM ATP",
+          "STATE FARM ATR",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKTECH",
+          "SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "COS",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "EMS - ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa0815dfba187f0cd61f9be",
+    "name": "Advanced Property Services - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/EKKrjEJn/9066-advanced-property-services-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa0815f6ba5d57fc68af043",
+    "name": "JLA - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/P52lSFem/9067-jla-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa0816378e474909dbbc3a1",
+    "name": "Hyder & Company - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/pcS9gogF/9069-hyder-company-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa0815cd22260b2bd10763d",
+    "name": "Next Door Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/x8YQxwB6/9065-next-door-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa08154006105f9ea1fcdaa",
+    "name": "Rainey Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/9AizGh6t/9061-rainey-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa0815ad4696ff37bb7a459",
+    "name": "Prime Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/PpydEKCB/9064-prime-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa08156b17ed82ec2d0634b",
+    "name": "Progressive Association Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/BwmwHxP9/9062-progressive-association-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa081586f32014edbf74ba1",
+    "name": "5 Star Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/8rA5dtUy/9063-5-star-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a8e08c11df6b44b591515cd",
+    "name": "Action Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/y1dSeaer/8993-action-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa08152d3f6d48cc5bbd440",
+    "name": "Coreland Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/TwK9FU4w/9060-coreland-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa08150e95387e24ea36b6c",
+    "name": "Val Verde Unified School District - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/q1kLdBPR/9059-val-verde-unified-school-district-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a889121ca292abb6bde3799",
+    "name": "EMS - Commercial Template",
+    "url": "https://trello.com/c/QD0UzZCp/8977-ems-commercial-template",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6aa0814e774c3665df7b69a1",
+    "name": "Greystar Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/nfMdmfhR/9058-greystar-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a8e08c803435b43c1ee749c",
+    "name": "PCM - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/Agg5HrKe/8997-pcm-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a8e08ca28204670ee968bc8",
+    "name": "Seabreeze Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/Igu70aK6/8998-seabreeze-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a8e08c6ad3e5d23ed607497",
+    "name": "Bates Homes Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/yy8Z3XVi/8996-bates-homes-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a8e08cc8932c664193fe420",
+    "name": "Elite Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/NipP6842/8999-elite-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a8e08c4bb36eb3f6911f216",
+    "name": "Athena Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/OU8nu3Lt/8995-athena-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a8e08c23c5e5a5c82191670",
+    "name": "Aperto Property Management - (Property/Site - Unit or Work Order) - Date Received",
+    "url": "https://trello.com/c/azywrvdp/8994-aperto-property-management-property-site-unit-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "69a1f6616cd343effd79de15",
+    "name": "Fire - Property Management",
+    "url": "https://trello.com/c/2NDfHzfN/8170-fire-property-management",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "SERVICES",
+        "items": [
+          "STRUCTURE CLEANING",
+          "CONTENTS CLEANING",
+          "PACK OUT / PACK BACK",
+          "UPHOLSTRY CLEANING / CARPET CLEANING",
+          "CHIMNEY CLEANING",
+          "INSULATION R&R",
+          "ATTIC CLEANING",
+          "HVAC CLEANING",
+          "GARMENTS",
+          "ONSITE DEBRIS REMOVAL",
+          "PRESSURE WASHING",
+          "TL INVENTORY",
+          "TL DISPOSAL",
+          "STORAGE FEE",
+          "OZONE",
+          "SPECIALTY EQ"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "69c576eabfbc9f2bfcd017ae",
+    "name": "Stater Bros - (Service or Work order #) - Date Received",
+    "url": "https://trello.com/c/2HRh81IP/8330-stater-bros-service-or-work-order-date-received",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6a2c6f891106407b80757ab7",
+    "name": "Menifee Union School District (Name of school) - Date",
+    "url": "https://trello.com/c/UvVN4fzo/8654-menifee-union-school-district-name-of-school-date",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "LABOR/VISITS",
+        "items": []
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "69c571c9e01d340ec687c526",
+    "name": "Avila Apartments (Unit #) - Date Recieved",
+    "url": "https://trello.com/c/9eYjoUDK/8327-avila-apartments-unit-date-recieved",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "697bfa3a884a720dd9721761",
+    "name": "EMS - Property Management",
+    "url": "https://trello.com/c/jzoNWsvQ/8016-ems-property-management",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "66db9cd7422e9220fe14ef3b",
+    "name": "Contents Template",
+    "url": "https://trello.com/c/2sHneuve/292-contents-template",
+    "checklists": [
+      {
+        "name": "Intake",
+        "items": [
+          "Create folder",
+          "Create job in assured pack out / salesforce",
+          "AAA Jobs - Print Labels",
+          "Off site pack out - Print Labels"
+        ]
+      },
+      {
+        "name": "Specialty Items",
+        "items": [
+          "PODS",
+          "Piano",
+          "Pool Table",
+          "Fish Tank",
+          "Safe Mover",
+          "Textile Receipts"
+        ]
+      },
+      {
+        "name": "Office Task",
+        "items": [
+          "Download Overall Photos into One Drive",
+          "Downloaded Photo Inventory Report",
+          "Downloaded Total Loss Report"
+        ]
+      },
+      {
+        "name": "Initial Billing",
+        "items": [
+          "Estimate",
+          "Invoice",
+          "XA Shell - Sent of via Work Center (Complete WC requirements, Push Estimate, Complete Job File Audit)",
+          "No XA Shell - Send Via via XactAnalysis +Uploaded Estimate/Photo Inventory Report/Total Loss Report in DOCUMENTS tab Plus email everything off to adjuster"
+        ]
+      },
+      {
+        "name": "Supplement Billing / Storage Dates",
+        "items": []
+      },
+      {
+        "name": "Final",
+        "items": [
+          "Check all billing is complete and invoiced",
+          "Double Check all Field Docs are in One Drive",
+          "Scan in Field Docs into One Drive"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "689a477fcf4984c01816e28e",
+    "name": "FIRE - Residential Template",
+    "url": "https://trello.com/c/ZMYMVBxR/7333-fire-residential-template",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "SERVICES",
+        "items": [
+          "STRUCTURE CLEANING",
+          "CONTENTS CLEANING",
+          "PACK OUT / PACK BACK",
+          "UPHOLSTRY CLEANING / CARPET CLEANING",
+          "CHIMNEY CLEANING",
+          "INSULATION R&R",
+          "ATTIC CLEANING",
+          "HVAC CLEANING",
+          "GARMENTS",
+          "ONSITE DEBRIS REMOVAL",
+          "PRESSURE WASHING",
+          "TL INVENTORY",
+          "TL DISPOSAL",
+          "STORAGE FEE",
+          "OZONE",
+          "SPECIALTY EQ"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "SPREADSHEET",
+          " INITIAL PAPERWORK",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD",
+          "PHYSICAL SKETCH"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING",
+          "ADDITIONAL SKETCH / SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD ",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  }
+]

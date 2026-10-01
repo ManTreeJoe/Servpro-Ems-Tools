@@ -18,7 +18,7 @@ def _job(client: str) -> dict:
 
 
 def list_revisions(client: str, limit: int = 100) -> list[dict]:
-    row = _job(client)
+    row = ems_db.find_job_by_name(client) or {}
     key = row.get("canon_key") or ""
     if not key:
         return []
@@ -30,6 +30,17 @@ def list_revisions(client: str, limit: int = 100) -> list[dict]:
         payload.setdefault("revision", 0)
         out.append(payload)
     return out
+
+
+def queue_status(client: str, card_id: str) -> dict:
+    """Saved record, never Downloads existence, determines generated status."""
+    rows = [r for r in list_revisions(client, limit=1000)
+            if card_id and r.get('card_id') == card_id and r.get('status') == 'generated']
+    if not rows:
+        return {'snapshot_generated': False}
+    latest = max(rows, key=lambda r: int(r.get('revision') or 0))
+    return {'snapshot_generated': True, 'snapshot_revision': latest.get('revision'),
+            'snapshot_generated_at': latest.get('created_at') or ''}
 
 
 def save_revision(client: str, data: dict, *, pdf_path: str = "",

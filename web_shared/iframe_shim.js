@@ -94,6 +94,7 @@
 
     let _slow = 0;
     function _track(name, p) {
+      if (window.LoadingFeedback) return window.LoadingFeedback.track(name, p);
       const P = window.Progress;
       if (!P || !p || typeof p.then !== "function") return p;
       const pin = isPin(name);

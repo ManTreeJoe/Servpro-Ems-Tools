@@ -33,7 +33,7 @@ def _creds():
     return key, token
 
 
-def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_retries=5, _timeout=15):
+def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_retries=5, _timeout=15, _expect_json=True):
     """GET (or POST/PUT) against Trello API. Auth params appended automatically.
     `data` is form-encoded for write methods. Raises urllib HTTPError on non-2xx.
 
@@ -89,7 +89,7 @@ def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_re
                 attempt += 1
                 continue
             raise
-    if not raw:
+    if not raw or not _expect_json:
         return None
     return json.loads(raw)
 
@@ -522,11 +522,10 @@ def mark_notification_read(notification_id, read=True):
 
 def mark_all_notifications_read():
     """Mark EVERY notification read (POST /notifications/all/read)."""
-    try:
-        _call("/notifications/all/read", method="POST")
-        return True
-    except Exception:
-        return False
+    # This command needs the HTTP acknowledgement, not a response document.
+    # Preserve failures for the API to classify without leaking credential URLs.
+    _call("/notifications/all/read", method="POST", _expect_json=False)
+    return True
 
 
 # Identifier patterns used by parse_card_identifier for the manual-link

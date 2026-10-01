@@ -3,7 +3,7 @@
 "use strict";
 
 const $ = (s) => document.querySelector(s);
-const state = { groups: [], unreadOnly: false, collapsed: new Set() };
+const state = { groups: [], unreadOnly: false, activeBoard: null };
 
 function esc(s) {
   return String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -32,12 +32,42 @@ function fmtDate(iso) {
 }
 
 function render() {
+  window.parent.postMessage({type:'oneloss-notifications-changed'},'*');
   const feed = $("#feed");
-  const groups = state.groups;
+  const groups = state.groups.map(g => {
+    const items = state.unreadOnly ? g.items.filter(it => it.unread) : g.items;
+    return {...g, items, total:items.length, unread:items.filter(it => it.unread).length};
+  });
   const totalUnread = groups.reduce((n, g) => n + g.unread, 0);
   const pill = $("#unread-pill");
   pill.textContent = totalUnread;
   pill.classList.toggle("zero", totalUnread === 0);
+  let tabs = $('#notification-board-tabs');
+  if (!tabs) { tabs = document.createElement('div'); tabs.id='notification-board-tabs'; feed.before(tabs); }
+  tabs.setAttribute('role','tablist'); tabs.setAttribute('aria-label','Notification boards');
+  if (!groups.some(g => g.board === state.activeBoard)) state.activeBoard = groups[0]?.board ?? null;
+  const scrollLeft = tabs.scrollLeft;
+  tabs.innerHTML = groups.map((g,index) => `<button type="button" role="tab" id="notification-board-${index}" aria-controls="feed" aria-selected="${g.board === state.activeBoard}" tabindex="${g.board === state.activeBoard ? '0' : '-1'}" data-notification-board="${esc(g.board)}" title="${esc(g.board)} · ${g.unread} unread · ${g.total} shown">${esc(g.board)}<span aria-label="${g.unread} unread">${g.unread}</span></button>`).join('');
+  tabs.hidden = !groups.length; tabs.scrollLeft = scrollLeft;
+  const selectBoard = button => {
+    state.activeBoard = button.dataset.notificationBoard;
+    window.PanelState?.set({activeBoard:state.activeBoard});
+    render(); feed.scrollTop=0;
+    const selected=tabs.querySelector('[aria-selected="true"]');
+    selected?.focus({preventScroll:true}); selected?.scrollIntoView({block:'nearest',inline:'nearest'});
+  };
+  tabs.querySelectorAll('button').forEach(button => {
+    button.onclick=()=>selectBoard(button);
+    button.onkeydown=event=>{
+      const buttons=[...tabs.querySelectorAll('button')],index=buttons.indexOf(button);
+      const next=event.key==='ArrowRight'?(index+1)%buttons.length:event.key==='ArrowLeft'?(index+buttons.length-1)%buttons.length:event.key==='Home'?0:event.key==='End'?buttons.length-1:null;
+      if(next!==null){event.preventDefault();selectBoard(buttons[next]);}
+    };
+  });
+  feed.setAttribute('role','tabpanel'); feed.tabIndex=0;
+  const selectedIndex=groups.findIndex(g=>g.board===state.activeBoard);
+  if(selectedIndex>=0)feed.setAttribute('aria-labelledby',`notification-board-${selectedIndex}`);
+  else feed.removeAttribute('aria-labelledby');
 
   if (!groups.length) {
     feed.innerHTML = `<div class="empty"><span class="big">✓</span>${
@@ -45,8 +75,7 @@ function render() {
     return;
   }
 
-  feed.innerHTML = groups.map((g) => {
-    const collapsed = state.collapsed.has(g.board);
+  feed.innerHTML = groups.filter(g=>g.board===state.activeBoard).map((g) => {
     const rows = g.items.map((it) => `
       <li class="notif ${it.unread ? "unread" : "read"}"
           data-id="${esc(it.id)}" data-url="${esc(it.card_url)}">
@@ -63,31 +92,36 @@ function render() {
         </div>
       </li>`).join("");
     return `
-      <section class="board-group ${collapsed ? "collapsed" : ""}" data-board="${esc(g.board)}">
-        <div class="board-head" data-toggle="${esc(g.board)}">
-          <span class="caret">▾</span>
-          <span class="board-name">${esc(g.board)}</span>
-          <span class="board-count">${g.unread ? `${g.unread} unread · ` : ""}${g.total} total</span>
-        </div>
-        <ul class="notif-list">${rows}</ul>
+      <section class="board-group" data-board="${esc(g.board)}">
+        ${g.items.length ? `<ul class="notif-list">${rows}</ul>` : '<div class="empty">No unread notifications for this board.</div>'}
       </section>`;
   }).join("");
 
   wire();
 }
 
+const pendingReads = new Map();
+async function readNotification(item) {
+  if (!item?.unread) return true;
+  if (pendingReads.has(item.id)) return pendingReads.get(item.id);
+  const task = (async () => {
+    try {
+      const result = await pywebview.api.mark_read(item.id, true);
+      if (!result?.ok) throw Error(result?.error || 'Opened, but read status could not be saved.');
+      for (const group of state.groups) {
+        group.items.forEach(it => { if (it.id === item.id) it.unread = false; });
+        group.unread = group.items.filter(it => it.unread).length;
+      }
+      item.unread = false;
+      render();
+      return true;
+    } catch (error) { setStatus(error.message || 'Read status could not be saved.', 'error'); return false; }
+  })();
+  pendingReads.set(item.id, task);
+  try { return await task; } finally { pendingReads.delete(item.id); }
+}
+
 function wire() {
-  // Collapse/expand a board group.
-  document.querySelectorAll(".board-head[data-toggle]").forEach((el) => {
-    el.addEventListener("click", () => {
-      const b = el.dataset.toggle;
-      if (state.collapsed.has(b)) state.collapsed.delete(b);
-      else state.collapsed.add(b);
-      // Set isn't JSON-serialisable — store the array.
-      PanelState.set({ collapsed: [...state.collapsed] });
-      el.closest(".board-group").classList.toggle("collapsed");
-    });
-  });
   // Exact card/action routing. No customer-name match and no silent fallback.
   document.querySelectorAll(".notif").forEach((row) => {
     const item=state.groups.flatMap(g=>g.items).find(it=>it.id===row.dataset.id);
@@ -95,11 +129,15 @@ function wire() {
       if(row.dataset.opening)return false;row.dataset.opening='1';row.setAttribute('aria-busy','true');setStatus('Opening the linked job…');
       try{const result=await pywebview.api.notification_job(item.card_id,item.comment_id||'');
         if(!result?.ok)throw Error(result?.error||'The job link is unavailable.');
-        window.parent.postMessage({type:'linguar-open-job',...result},'*');setStatus('');return true;
+        window.parent.postMessage({type:'linguar-open-job',...result},'*');setStatus('');await readNotification(item);return true;
       }catch(e){setStatus(e.message,'error');window.NotificationReader?.open(item,openJob,e.message);return false;}
       finally{delete row.dataset.opening;row.removeAttribute('aria-busy');}
     }
-    row.querySelector('[data-preview]').onclick=()=>window.NotificationReader?.open(item,openJob);
+    row.querySelector('[data-preview]').onclick=()=>{
+      if (!window.NotificationReader) return;
+      window.NotificationReader.open(item,openJob);
+      void readNotification(item);
+    };
     row.addEventListener("click", (e) => {
       if (e.target.closest("[data-mark],[data-preview]")) return;
       if(e.target.closest('a')){e.preventDefault();return;}
@@ -112,15 +150,9 @@ function wire() {
       e.stopPropagation();
       const id = btn.dataset.mark;
       btn.disabled = true; btn.textContent = "…";
-      const res = await pywebview.api.mark_read(id, true);
-      if (!res?.ok) { btn.disabled = false; btn.textContent = "✓ Mark read"; setStatus("Couldn't mark read", "error"); return; }
-      // Update local state without a full refetch.
-      for (const g of state.groups) {
-        const it = g.items.find((x) => x.id === id);
-        if (it) { it.unread = false; g.unread = g.items.filter((x) => x.unread).length; break; }
-      }
-      render();
-      setStatus("Marked read", "ok");
+      const item = state.groups.flatMap(g => g.items).find(it => it.id === id);
+      if (await readNotification(item)) setStatus("Marked read", "ok");
+      else { btn.disabled = false; btn.textContent = "✓ Mark read"; }
     });
   });
 }
@@ -143,8 +175,7 @@ async function load() {
 window.addEventListener("pywebviewready", async () => {
   await PanelState.init("notifications");
   state.unreadOnly = !!PanelState.get("unreadOnly", false);
-  // Stored as an array; the panel works in a Set.
-  state.collapsed = new Set(PanelState.get("collapsed", []) || []);
+  state.activeBoard = PanelState.get('activeBoard', null);
   const _uo = $("#unread-only"); if (_uo) _uo.checked = state.unreadOnly;
 
   $("#refresh-btn").addEventListener("click", load);
@@ -156,11 +187,15 @@ window.addEventListener("pywebviewready", async () => {
   $("#mark-all-btn").addEventListener("click", async () => {
     const btn = $("#mark-all-btn");
     btn.disabled = true; btn.textContent = "Marking…";
-    const res = await pywebview.api.mark_all_read();
-    btn.disabled = false; btn.textContent = "✓ Mark all read";
-    if (!res?.ok) { setStatus("Mark-all failed", "error"); return; }
-    setStatus("All marked read", "ok");
-    load();
+    try {
+      const res = await pywebview.api.mark_all_read();
+      if (!res?.ok) { setStatus(res?.error || "Read status was not confirmed. Refresh before retrying.", "error"); return; }
+      for (const group of state.groups) { group.items.forEach(item => { item.unread = false; }); group.unread = 0; }
+      render();
+      setStatus("All marked read", "ok");
+    } catch (_) {
+      setStatus("The app could not confirm the change. Refresh notifications before retrying.", "error");
+    } finally { btn.disabled = false; btn.textContent = "✓ Mark all read"; }
   });
   window.addEventListener('trello-notifications-open', load);
 });

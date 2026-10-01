@@ -26,9 +26,11 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
    window.addEventListener('message',e=>posts.push(e.data));
    window.pywebview={api:{personal_inbox:async(filter,unread)=>{calls.push(['inbox',filter,unread]);return fail?{ok:false,error:'Connection unavailable'}:{ok:true,items:[{id:'1',kind:'mention',client:'Example restoration job',body:'@ol.sam.abcdef12 Please review the photo report.',actor:'Jo Manager',card_id:'exact-card',division:'Contents',created_at:'2026-09-29T18:00:00Z',muted}],pending_delivery:0};},personal_read:async(...a)=>{calls.push(['read',...a]);return {ok:true};},personal_mute:async(card,value)=>{muted=value;return {ok:true};}}};
   });
+  await page.evaluate(()=>{pywebview.api.notification_job=async card=>({ok:true,client:'Example restoration job',cardId:card,division:'Contents'});});
   await page.addScriptTag({path:path.resolve('notifications_web_assets/personal.js')});await page.evaluate(()=>dispatchEvent(new Event('pywebviewready')));
   await page.getByRole('button',{name:'Open job',exact:true}).click();await page.waitForFunction(()=>posts.length>0);assert.equal(await page.evaluate(()=>posts[0].cardId),'exact-card');
-  await page.getByRole('button',{name:'Mark read',exact:true}).click();await page.getByRole('button',{name:'Mark unread',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Mark unread',exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>calls.filter(c=>c[0]==='read'&&c[2]===true).length),1,'Opening marks personal notification read');
   await page.getByRole('button',{name:'Mute job',exact:true}).click();await page.getByRole('button',{name:'Unmute job',exact:true}).waitFor();
   await page.locator('#personal-filter').selectOption('mentions');await page.waitForFunction(()=>calls.some(c=>c[0]==='inbox'&&c[1]==='mentions'));
   await page.screenshot({path:path.join(process.env.TEMP,'oneloss-personal-inbox.png')});

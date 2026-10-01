@@ -1,0 +1,32 @@
+const {chromium}=require('playwright');
+const path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage();
+ await page.setContent('<div id="feed"></div><span id="unread-pill"></span><div id="status-msg"></div>');
+ await page.evaluate(()=>{
+  window.reads=[];window.badLink=false;window.badSave=false;
+  window.pywebview={api:{notification_job:async()=>badLink?{ok:false,error:'Missing job'}:{ok:true,cardId:'card'},mark_read:async(id,read)=>{reads.push([id,read]);return {ok:!badSave};}}};
+  window.PanelState={set:()=>{}};
+ });
+ await page.addScriptTag({path:path.resolve('notifications_web_assets/reader.js')});
+ await page.addScriptTag({path:path.resolve('notifications_web_assets/app.js')});
+ const reset=()=>page.evaluate(()=>{state.groups=[{board:'WIP',total:2,unread:2,items:[1,2].map(id=>({id:String(id),card_id:'card',card_name:'Job '+id,unread:true,snippet:'Message',icon:'!'}))}];state.unreadOnly=true;render();});
+ await reset();
+ await page.locator('[data-id="1"] [data-open-notification]').click();
+ await page.waitForFunction(()=>document.querySelectorAll('.notif').length===1);
+ assert.deepEqual(await page.evaluate(()=>reads),[['1',true]]);
+ assert.equal(await page.locator('#unread-pill').textContent(),'1');
+ await page.evaluate(()=>badLink=true);await page.locator('[data-id="2"] [data-open-notification]').click();
+ assert.equal(await page.evaluate(()=>reads.length),1,'Failed route stays unread');
+ await page.locator('[data-close]').click();
+ await page.evaluate(()=>{badLink=false;badSave=true;});
+ await page.locator('[data-id="2"] [data-preview]').click();
+ await page.waitForFunction(()=>reads.length===2);
+ assert.equal(await page.locator('.notif.unread').count(),1,'Failed save stays unread');
+ assert.equal(await page.locator('dialog:modal').count(),1,'Message is still readable');
+ await page.locator('[data-close]').click();await page.evaluate(()=>badSave=false);
+ await page.locator('[data-id="2"] [data-preview]').click();
+ await page.waitForFunction(()=>document.querySelectorAll('.notif').length===0);
+ assert.equal(await page.locator('#unread-pill').textContent(),'0');
+ console.log('PASS: open/preview auto-read, exact item, unread filter, failed route and failed save');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

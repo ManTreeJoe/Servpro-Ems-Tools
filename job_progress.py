@@ -170,6 +170,7 @@ def evaluate(master: dict, audit: dict | None = None,
     # the copied requirements here means editing a reusable profile never
     # changes the work already underway on an existing job.
     applied_profiles = metadata.get("applied_job_profiles") or []
+    profile_importance = {}
     if isinstance(applied_profiles, list):
         seen_rule_keys = {rule[0] for rule in rules}
         for profile in applied_profiles:
@@ -183,6 +184,8 @@ def evaluate(master: dict, audit: dict | None = None,
                 if not key or not label or key in seen_rule_keys:
                     continue
                 seen_rule_keys.add(key)
+                if requirement.get("importance") in ("required", "recommended", "mandatory"):
+                    profile_importance[key] = requirement["importance"]
                 rules.append((key, label,
                               requirement.get("introduced_stage") or "intake",
                               requirement.get("owner") or "office"))
@@ -237,7 +240,7 @@ def evaluate(master: dict, audit: dict | None = None,
         overdue = (status not in ("completed", "not_applicable") and
                    (_is_past(deadline, now) or
                     (status == "blocked" and _is_past(follow_up, now))))
-        importance = manual.get("importance") or "required"
+        importance = manual.get("importance") or profile_importance.get(key, "required")
         items.append({"key": key, "label": label, "introduced_stage": introduced,
                       "introduced_stage_label": STAGE_LABELS.get(introduced, introduced),
                       "owner": owner, "assignee": manual.get("assignee") or "",

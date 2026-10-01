@@ -1,0 +1,23 @@
+const {chromium}=require('playwright'),path=require('node:path'),fs=require('node:fs'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1100,height:700}});
+ await page.setContent(fs.readFileSync('notifications_web_assets/index.html','utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace(/<link\b[^>]*>/gi,''));
+ for(const f of ['web_shared/theme.css','notifications_web_assets/inbox.css'])await page.addStyleTag({path:path.resolve(f)});
+ await page.addScriptTag({path:path.resolve('notifications_web_assets/app.js')});
+ await page.evaluate(()=>{document.documentElement.dataset.theme='dark';document.querySelector('#personal-panel').hidden=true;document.querySelector('#trello-panel').hidden=false;window.PanelState={set:()=>{}};window.pywebview={api:{mark_read:async()=>({ok:true})}};state.groups=['WORK IN PROGRESS','THE LOGS - EMS','ESTIMATING','RECON WORK IN PROGRESS','AR BOARD'].map((board,index)=>({board,items:[{id:String(index),card_name:'Example job '+index,unread:true,snippet:'A job update to review.',icon:'●'}]}));render();});
+ assert.equal(await page.locator('[role=tab]').count(),5);
+ assert.equal(await page.locator('.board-group').count(),1);
+ await page.getByRole('tab',{name:/ESTIMATING/}).click();
+ assert.match(await page.locator('#feed').textContent(),/Example job 2/);
+ await page.keyboard.press('ArrowRight');
+ assert.match(await page.locator('#feed').textContent(),/Example job 3/);
+ await page.evaluate(()=>{state.unreadOnly=true;render();});
+ await page.locator('[data-mark]').click();
+ assert.match(await page.locator('#feed').textContent(),/No unread notifications/);
+ assert.match(await page.locator('[aria-selected=true]').textContent(),/RECON/);
+ await page.screenshot({path:path.join(process.env.TEMP,'notification-board-tabs.png')});
+ await page.setViewportSize({width:390,height:700});
+ assert.ok(await page.locator('#notification-board-tabs').evaluate(el=>el.scrollWidth>el.clientWidth));
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ console.log('PASS: board tabs, selection, keyboard, read-state empty tab, mobile overflow');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});
