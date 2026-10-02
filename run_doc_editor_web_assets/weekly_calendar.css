@@ -23,6 +23,30 @@
 .wc-time,.wc-visit small { color:var(--text-muted); font-size:11px; }
 .wc-empty { color:var(--text-muted); font-size:12px; padding:6px; }
 .wc-add { margin:6px; }
+.wc-periods { display:flex; gap:6px; margin-bottom:10px; }
+.wc-periods [aria-pressed="true"] { background:var(--green); color:white; }
+.wc-group-title { font-size:12px; margin:10px 0; text-transform:uppercase; }
+.weekly-schedule[data-period="three"] .wc-week { grid-template-columns:repeat(3,minmax(0,1fr)); min-width:0; }
+.wc-week .wc-day-items { max-height:58vh; min-height:180px; overflow-y:auto; scrollbar-gutter:stable; }
+.wc-waiting { margin-top:24px; }
+.wc-waiting h2 { font-size:17px; }
+.wc-waiting p { color:var(--text-muted); font-size:12px; }
+.wc-waiting-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.wc-waiting-group { min-width:0; border:1px solid var(--border); border-radius:6px; background:var(--surface); }
+.wc-waiting-group h3 { padding:12px; margin:0; font-size:13px; background:var(--surface-2); }
+.wc-waiting-group h3 small { float:right; }
+.wc-queue-scroll { max-height:320px; overflow-y:auto; padding:8px; scrollbar-gutter:stable; }
+.wc-month { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:1px; background:var(--border); border:1px solid var(--border); }
+.wc-month-label { background:var(--surface-2); text-align:center; padding:8px; font-size:12px; }
+.wc-month-day { background:var(--surface); min-height:130px; min-width:0; padding:5px; }
+.wc-month-day .wc-day-heading { width:100%; padding:6px; }
+.wc-month-day .wc-visit { padding:5px; gap:2px; font-size:11px; }
+.wc-other-month { background:var(--bg); }
+@media(max-width:700px) {
+ .weekly-schedule[data-period="three"] .wc-week { min-width:750px; }
+ .wc-waiting-grid { grid-template-columns:1fr; }
+ .wc-month { min-width:700px; }
+}
 .wc-queue,.wc-legacy { max-width:1000px; margin:auto; }
 .wc-legacy header { border-bottom:1px solid var(--border); margin-bottom:12px; }
 .wc-legacy .wc-visit { display:grid; grid-template-columns:140px minmax(180px,1fr) minmax(160px,1fr); align-items:start; }

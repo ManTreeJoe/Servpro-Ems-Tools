@@ -18,13 +18,13 @@ const assert=require('node:assert/strict'), path=require('node:path'), os=requir
     {id:'escaped',title:'<img src=x onerror="window.bad=true">',queue:'tbs',activities:[]}
    ];
    window.calendar=OneLossWeeklyCalendar.mount(document.querySelector('#schedule'),{
-    date:'2026-10-02',today:()=> '2026-10-02',onEdit:id=>events.push(['edit',id]),
+    date:'2026-10-02',period:'week',today:()=> '2026-10-02',onEdit:id=>events.push(['edit',id]),
     onAdd:day=>events.push(['add',day]),onRangeChange:range=>events.push(['range',range]),onRetry:()=>events.push(['retry'])
    });
    calendar.update({records});
   });
   assert.equal(await page.locator('.wc-day').count(),7);
-  assert.equal(await page.locator('.wc-visit').count(),2);
+  assert.equal(await page.locator('.wc-week .wc-visit').count(),2);
   await page.locator('[data-edit="work-1"]').click();
   await page.locator('[data-add="2026-10-04"]').click();
   assert.deepEqual(await page.evaluate(()=>events.slice(0,2)),[['edit','work-1'],['add','2026-10-04']]);
@@ -36,7 +36,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), os=requir
   assert.equal(await page.locator('[data-edit="work-1"] strong').textContent(),'Updated in host');
   await page.getByRole('button',{name:'Next week'}).click();
   assert.equal(await page.locator('[data-day="2026-10-05"]').count(),1);
-  assert.equal(await page.locator('.wc-visit').count(),0);
+  assert.equal(await page.locator('.wc-week .wc-visit').count(),0);
   await page.getByRole('button',{name:'Pending (1)',exact:true}).click();
   assert.match(await page.locator('.wc-queue').textContent(),/Since 2026-09-28/);
   await page.getByRole('button',{name:'To be scheduled (2)',exact:true}).click();
@@ -50,7 +50,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), os=requir
   await page.getByRole('button',{name:'Retry',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>events.at(-1)),['retry']);
   await page.evaluate(()=>calendar.update({error:''}));
-  await page.getByRole('button',{name:'Week',exact:true}).click();
+  await page.locator('button[data-period="week"]').click();
   await page.getByRole('button',{name:'Today',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>OneLossWeeklyCalendar.week('2026-12-31')),['2026-12-28','2026-12-29','2026-12-30','2026-12-31','2027-01-01','2027-01-02','2027-01-03']);
   assert.equal(await page.evaluate(()=>{try{OneLossWeeklyCalendar.week('2026-02-30');return false;}catch{return true;}}),true);

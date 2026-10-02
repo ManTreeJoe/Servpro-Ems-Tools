@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OneLoss — Calendar TEST PREVIEW</title>
+<link rel="stylesheet" href="../web_shared/theme.css">
+<link rel="stylesheet" href="weekly_calendar.css">
+<style>
+html,body{height:auto;min-height:100%;overflow-y:auto}body{padding:16px} .preview-note{padding:12px;background:var(--amber-soft);border:1px solid var(--amber);border-radius:6px;margin-bottom:8px}
+dialog{color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;width:min(520px,calc(100% - 32px));max-height:90vh;overflow:auto}dialog::backdrop{background:#0009}
+form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form select{padding:9px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:5px}form footer{display:flex;justify-content:flex-end;gap:8px}h2{margin:0}
+.example-chooser{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;font:13px var(--font-body)}.example-chooser select{padding:8px;background:var(--surface);color:var(--text);border:1px solid var(--border)}.example-chooser span{color:var(--text-muted)}
+[data-layout="compact"] .wc-visit{padding:7px;gap:3px;font-size:12px;margin-bottom:4px}[data-layout="compact"] .wc-visit small{display:inline;margin-left:4px}
+[data-layout="agenda"] .wc-week{display:block;min-width:0}[data-layout="agenda"] .wc-day{display:grid;grid-template-columns:160px 1fr; border-bottom:1px solid var(--border)}[data-layout="agenda"] .wc-day-items{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}[data-layout="agenda"] .wc-add{grid-column:2}
+[data-layout="focus"] .wc-week{min-height:0}[data-layout="focus"] .wc-day-items,[data-layout="focus"] .wc-add{display:none}.wc-focus-detail{padding-top:16px}.wc-focus-detail .wc-visit{display:grid;grid-template-columns:140px 1fr 1fr;padding:12px}.wc-focus-detail h2{margin-bottom:12px}
+.run-paper{max-width:1060px;margin:16px auto;background:white;color:black;padding:70px 45px;font:15px Arial,sans-serif;box-shadow:0 2px 14px #0004}.run-paper header{text-align:center;margin:20px 0 30px}.paper-brand{color:#ed7019;font:bold 38px Arial,sans-serif}.run-paper header h2{font:700 24px Arial,sans-serif}.run-paper header h3{margin-top:40px}.run-paper h3{font-size:17px}.run-paper h4{margin:36px 0 12px;font-size:15px}.run-paper ol{padding-left:30px}.run-paper li{padding:3px 0 3px 4px;font-weight:bold}.run-paper li button{font:15px Arial,sans-serif;background:none;color:black;border:0;text-align:left;width:100%;padding:2px;line-height:1.35;cursor:pointer}.run-paper li button:hover{background:#fff3bb}.run-paper li button:focus-visible{outline:2px solid #1c5541}
+@media(max-width:700px){[data-layout="agenda"] .wc-day{display:block}[data-layout="agenda"] .wc-day-items{grid-template-columns:1fr}.wc-focus-detail .wc-visit{display:flex}.run-paper{padding:24px 18px}}
+</style>
+<div class="preview-note"><strong>Calendar test preview — sample jobs only.</strong> Edits are temporary and reset when this window closes. No live jobs, Word documents, database or Trello changes. Confirmation, posting and printing are not available yet.</div>
+<main id="calendar"></main>
+<dialog id="editor"><form id="visit-form">
+<h2>Sample scheduled work</h2>
+<label>Job<input id="job" required maxlength="200"></label>
+<label>Section<select id="queue"><option value="scheduled">Scheduled</option><option value="tbs">To be scheduled</option><option value="pending">Pending</option><option value="hold">On hold</option></select></label>
+<label>Date<input id="date" type="date" required></label>
+<label>Arrival window<input id="time" placeholder="9–11 AM"></label>
+<label>Activities (comma separated)<input id="activities" placeholder="Demo, Monitor"></label>
+<label>Crew (applied to each activity in this preview)<input id="crew" placeholder="Sam, Alex"></label>
+<footer><button type="button" class="btn" id="cancel">Cancel</button><button class="btn btn-primary">Apply sample edit</button></footer>
+</form></dialog>
+<script src="weekly_calendar.js"></script>
+<script>
+'use strict';
+const current=new Date(),today=`${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,'0')}-${String(current.getDate()).padStart(2,'0')}`;
+const days=OneLossWeeklyCalendar.week(today);
+const records=[
+ {id:'sample-1',title:'Sample — Oak residence',queue:'scheduled',date:today,time:'9–11 AM',activities:[{label:'Demo',people:['Sam']},{label:'Monitor',people:['Alex']}]},
+ {id:'sample-2',title:'Sample — Pine apartments',queue:'scheduled',date:days[5],time:'10 AM',activities:[{label:'Equipment pickup',people:['Alex']}]},
+ {id:'sample-3',title:'Sample — Cedar residence',queue:'pending',since:OneLossWeeklyCalendar.shift(today,-3),activities:[{label:'Carrier approval',people:[]}]},
+ {id:'sample-4',title:'Sample — Maple office',queue:'tbs',since:OneLossWeeklyCalendar.shift(today,-2),activities:[{label:'Initial inspection',people:[]}]}
+];
+let editing=null;
+const field=id=>document.getElementById(id), split=value=>value.split(',').map(x=>x.trim()).filter(Boolean);
+const names=['Oak residence','Pine apartments','Maple office','Cedar home','Willow residence','Elm plaza','Birch home','Aspen duplex','Juniper office','Cypress home','Laurel residence','Spruce building'];
+records.length=0;
+days.forEach((day,d)=>{
+ for(let i=0;i<12;i++)records.push({id:`full-${d}-${i}`,title:`${names[i]} ${d+1}`,queue:'scheduled',date:day,
+  group:i<4?'Monitor':'Work To Be Performed',address:`${100+i} Sample Lane, Example City`,time:i<4?'':i%2?'9–11 AM':'12–2 PM',
+  activities:[{label:i<4?'Monitor':['Demo','Packout','Equipment pickup','Initial inspection'][i%4],people:[['Sam','Alex','Marco / Jose','Brenda / Priscilla'][i%4]]}]});
+});
+[['tbs','TBS New Loss /Reinspection',3],['tbs','TBS Mitigation',5],['tbs','TBS Contents',4],['pending','Pending Testing/Clearance/Abatement',4],['pending','Pending Approvals – Insurance/Self Pay',9],['pending','Pending Approvals – Property Management',12],['hold','On Hold',5]].forEach(([queue,group,count],g)=>{
+ for(let i=0;i<count;i++)records.push({id:`queue-${g}-${i}`,title:`${names[i%names.length]} — sample ${g+1}.${i+1}`,queue,group,since:OneLossWeeklyCalendar.shift(today,-2-i),address:`${200+i} Example Street`,activities:[{label:queue==='pending'?'Awaiting approval':queue==='hold'?'Customer hold':'Needs scheduling',people:[]}]});
+});
+const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function legacy({selected,records}){
+ const sections=['Monitor','Work To Be Performed','Upcoming','TBS New Loss /Reinspection','TBS Mitigation','TBS Contents','Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management','On Hold'];
+ return `<article class="run-paper"><header><div class="paper-brand">SERVPRO</div><p>Cleaning. Restoration. Construction.</p><h2>SERVPRO® Team Lingurar</h2><h3><u>Servpro Daily Run</u></h3></header><h3><u>Date: ${safe(selected)}</u></h3>${sections.map(group=>{
+ const items=records.filter(r=>group==='Upcoming'?r.queue==='scheduled'&&r.date>selected:r.queue==='scheduled'?r.date===selected&&(r.group||'Work To Be Performed')===group:r.group===group||(!r.group&&({tbs:'TBS Mitigation',pending:'Pending Approvals – Insurance/Self Pay',hold:'On Hold'})[r.queue]===group));
+ return `<section><h4><u>${safe(group)}</u></h4><ol>${items.map(r=>`<li><button type="button" data-edit="${safe(r.id)}">${safe(r.title)}: ${safe(r.address||'')} <b>${r.activities.map(a=>`(${safe(a.label)}) ${safe(a.people.join('/'))}`).join(' ')} ${safe(r.time||'')} ${group==='Upcoming'?safe(r.date):''}</b></button></li>`).join('')}</ol></section>`;
+ }).join('')}</article>`;
+}
+const chooser=document.createElement('div');chooser.className='example-chooser';chooser.innerHTML='<strong>Compare full-week examples:</strong> <select aria-label="Example layout"><option value="compact">A · Compact week columns</option><option value="agenda">B · Day-by-day agenda</option><option value="focus">C · Week overview + selected day</option></select> <span>12 sample visits/day · 12 TBS · 25 pending · 5 holds</span>';
+field('calendar').before(chooser);field('calendar').dataset.layout='compact';
+const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id)});
+chooser.querySelector('select').onchange=event=>{field('calendar').dataset.layout=event.target.value;calendar.update({});};
+calendar.update({records});
+function openEditor(id,day){
+ editing=id; const row=records.find(r=>r.id===id);
+ field('job').value=row?.title||'';field('queue').value=row?.queue||'scheduled';field('date').value=row?.date||day||today;
+ field('time').value=row?.time||'';field('activities').value=(row?.activities||[]).map(a=>a.label).join(', ');
+ field('crew').value=[...new Set((row?.activities||[]).flatMap(a=>a.people||[]))].join(', ');
+ field('editor').showModal();field('job').focus();
+}
+field('cancel').onclick=()=>field('editor').close();
+field('visit-form').onsubmit=event=>{
+ event.preventDefault(); const existing=records.find(r=>r.id===editing),queue=field('queue').value;
+ const row={id:editing||`sample-${Date.now()}`,group:existing?.queue===queue?existing?.group:undefined,address:existing?.address,title:field('job').value.trim(),queue,date:field('date').value,time:field('time').value.trim(),
+ activities:split(field('activities').value).map(label=>({label,people:split(field('crew').value)}))};
+ if(!row.title)return;
+ if(queue!=='scheduled')row.since=existing?.queue===queue?existing.since:today;
+ if(existing)records.splice(records.indexOf(existing),1,row);else records.push(row);
+ calendar.update({records});field('editor').close();
+};
+</script>
+</html>

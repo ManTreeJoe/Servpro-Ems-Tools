@@ -107,6 +107,27 @@ Status: isolated UI implemented/tested; NOT connected to the live Schedule.
 
 ## Prior reference notes — September 14, 2026
 
+### DEV testing handoff — calendar range and Run groups
+
+OneLoss owner, branch `main-lops-style-pivot`: DEV-only Schedule route now opens
+`calendar_preview.html` inside the normal shell. Main route is unchanged. This
+remains sample/in-memory UI, not shared persistence or a deployment.
+
+- Default 3 Days, plus Week and Month; month overflow opens the selected day.
+- Day columns separate Monitor and Work To Be Performed and scroll independently.
+- Page scroll exposes the three TBS groups, three Pending groups, and On Hold,
+  each with its own scrollable list and entry dates. These are undated queues,
+  not duplicate booked visits. They remain visible beneath calendar views.
+- Populated synthetic examples and paper-style Legacy preview are available.
+  Legacy is not yet an exact reproduction of the original Run or print-ready.
+- Verified `tests/weekly_calendar.cjs` and `tests/calendar_preview.cjs`, including
+  month navigation/drilldown, grouped queues and actual page/column scroll.
+- `tools/dev_schedule_check.py` opens the real DEV Schedule and reports loaded
+  theme tokens. The old standalone preview server rooted assets incorrectly;
+  the main DEV shell serves shared CSS from the correct root.
+- L OPS: no schema/API changes to adopt. Shared identity/source-of-truth review
+  above is still required. Reconstruction remains deferred.
+
 Read the [full L OPS agent guide](https://github.com/ManTreeJoe/l-ops-crm/blob/main/docs/agent-guide/README.md) before transferring features. It covers web CRM, Expo phone/iPad app, architecture, shared data, roles, run/visit crew assignments, media, documents, forms/signing, build commands, tests and remaining work.
 
 - [Product decisions](https://github.com/ManTreeJoe/l-ops-crm/blob/main/docs/agent-guide/product.md)
