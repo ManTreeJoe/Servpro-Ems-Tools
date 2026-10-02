@@ -117,6 +117,13 @@ and Work To Be Performed; the right panel contains all seven Run waiting groups
 and scrolls independently. On narrow windows it stacks below the dated work.
 The layout comparison chooser is removed from the sample DEV page.
 
+DEV presentation follow-up: displayed full dates and editor entry use MM/DD/YY;
+stored values remain ISO. Activity pills/strips use blue Monitor, green Initial,
+orange Demo, purple Contents, teal Equipment, with amber Pending, gray Hold and
+red Canceled status strips. Labels remain visible independently of color. These
+are local presentation choices, not schema changes. Browser suites passed and
+the actual DEV shell confirmed three columns and loaded theme after restart.
+
 Validated both calendar browser suites. No shared schema or live-data changes.
 DEV now chooses an available port in 53100–53199: pywebview randomly selected
 4045, which Edge rejected with ERR_UNSAFE_PORT. A socket regression test checks

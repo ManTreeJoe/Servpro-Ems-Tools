@@ -14,7 +14,22 @@
   }
   function shift(value, days) { const result=date(value); result.setDate(result.getDate()+days); return iso(result); }
   function week(value) { const start=shift(value,-((date(value).getDay()+6)%7)); return Array.from({length:7},(_,i)=>shift(start,i)); }
-  const label = value => date(value).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  function displayDate(value) { date(value); return `${value.slice(5,7)}/${value.slice(8,10)}/${value.slice(2,4)}`; }
+  function parseDate(value) {
+    if(!/^\d{2}\/\d{2}\/\d{2}$/.test(value)) throw new Error('Use MM/DD/YY');
+    const result=`20${value.slice(6,8)}-${value.slice(0,2)}-${value.slice(3,5)}`;
+    date(result); return result;
+  }
+  const label = value => `${date(value).toLocaleDateString(undefined,{weekday:'short'})} ${displayDate(value)}`;
+  function activityColor(label) {
+    const text=String(label||'').toLowerCase();
+    if(text.includes('monitor'))return 'monitor';
+    if(text.includes('initial'))return 'initial';
+    if(text.includes('demo'))return 'demo';
+    if(/contents|packout|pack back/.test(text))return 'contents';
+    if(/equipment|pickup/.test(text))return 'equipment';
+    return 'neutral';
+  }
 
   function mount(host, options={}) {
     let selected=options.date || iso(new Date()), records=[], mode='calendar', query='', loading=false, error='';
@@ -52,11 +67,12 @@
       return `<section class="wc-month-day ${day.slice(0,7)!==anchor.slice(0,7)?'wc-other-month':''}"><button class="wc-day-heading" type="button" data-open-day="${day}" aria-label="Open ${escape(label(day))}">${date(day).getDate()} <small>${entries.length} visits</small></button>${entries.slice(0,2).map(card).join('')}${entries.length>2?`<button type="button" class="btn" data-open-day="${day}">+ ${entries.length-2} more</button>`:''}</section>`;
     }
     function card(row) {
-      return `<button type="button" class="wc-visit" data-edit="${escape(row.id)}" ${options.onEdit ? '' : 'disabled'}>
+      const color=row.canceled?'canceled':row.queue==='pending'?'pending':row.queue==='hold'?'hold':activityColor(row.activities?.[0]?.label);
+      return `<button type="button" class="wc-visit" data-color="${color}" data-edit="${escape(row.id)}" ${options.onEdit ? '' : 'disabled'}>
         ${row.time || row.canceled || row.completed ? `<span class="wc-time">${escape([row.time,row.canceled?'Canceled — needs rescheduling':row.completed?'Complete':''].filter(Boolean).join(' · '))}</span>` : ''}
         <strong>${escape(row.title)}</strong>
-        ${(row.activities||[]).map(a=>`<span>${escape(a.label)}${a.people?.length ? `<small>${escape(a.people.join(', '))}</small>` : ''}</span>`).join('')}
-        ${row.since ? `<small>Since ${escape(row.since)}</small>` : ''}
+        ${(row.activities||[]).map(a=>`<span><span class="wc-activity" data-color="${activityColor(a.label)}">${escape(a.label)}</span>${a.people?.length ? `<small>${escape(a.people.join(', '))}</small>` : ''}</span>`).join('')}
+        ${row.since ? `<small>Since ${escape(displayDate(row.since))}</small>` : ''}
       </button>`;
     }
     function dayColumn(day) {
@@ -76,7 +92,7 @@
       host.dataset.mode=mode;
       host.innerHTML=`<header class="wc-toolbar">
         <div class="wc-navigation"><button type="button" class="btn" data-step="-1" aria-label="Previous ${period==='three'?'3 days':period}">←</button><button type="button" class="btn" data-today>Today</button><button type="button" class="btn" data-step="1" aria-label="Next ${period==='three'?'3 days':period}">→</button><h2>${period==='month'?date(anchor).toLocaleDateString(undefined,{month:'long',year:'numeric'}):`${escape(label(days[0]))} – ${escape(label(days.at(-1)))}, ${date(days.at(-1)).getFullYear()}`}</h2></div>
-        <label class="wc-date">Selected day<input type="date" value="${selected}" data-date></label>
+        <label class="wc-date">Selected day<input type="text" inputmode="numeric" placeholder="MM/DD/YY" aria-label="Selected day MM/DD/YY" value="${displayDate(selected)}" data-date></label>
         <button type="button" class="btn" data-mode="${mode==='legacy'?'calendar':'legacy'}">${mode==='legacy'?'Back to calendar':'Legacy view'}</button>
       </header>
       <nav class="wc-periods" aria-label="Calendar range">${[['three','3 Days'],['week','Week'],['month','Month']].map(([key,title])=>`<button class="btn" type="button" data-period="${key}" aria-pressed="${period===key && mode==='calendar'}">${title}</button>`).join('')}</nav>
@@ -124,7 +140,12 @@
       else if (button.dataset.add) options.onAdd?.(button.dataset.add);
       else if (button.hasAttribute('data-retry')) options.onRetry?.();
     }
-    function change(event) { if (event.target.hasAttribute('data-date') && event.target.value) { select(event.target.value); host.querySelector('[data-date]')?.focus(); } }
+    function change(event) {
+      if(event.target.hasAttribute('data-date')) {
+        try { const next=parseDate(event.target.value);event.target.setCustomValidity('');select(next);host.querySelector('[data-date]')?.focus(); }
+        catch { event.target.setCustomValidity('Enter a valid date as MM/DD/YY.');event.target.reportValidity(); }
+      }
+    }
     function input(event) { if (event.target.hasAttribute('data-search')) { query=event.target.value; render('[data-search]'); } }
     host.addEventListener('click',click); host.addEventListener('change',change); host.addEventListener('input',input);
     render();
@@ -147,5 +168,5 @@
       destroy() { disposed=true; host.removeEventListener('click',click); host.removeEventListener('change',change); host.removeEventListener('input',input); host.replaceChildren(); host.classList.remove('weekly-schedule'); }
     };
   }
-  global.OneLossWeeklyCalendar={mount,week,shift};
+  global.OneLossWeeklyCalendar={mount,week,shift,displayDate,parseDate};
 })(globalThis);

@@ -38,7 +38,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), os=requir
   assert.equal(await page.locator('[data-day="2026-10-05"]').count(),1);
   assert.equal(await page.locator('.wc-week .wc-visit').count(),0);
   await page.getByRole('button',{name:'Pending (1)',exact:true}).click();
-  assert.match(await page.locator('.wc-queue').textContent(),/Since 2026-09-28/);
+  assert.match(await page.locator('.wc-queue').textContent(),/Since 09\/28\/26/);
   await page.getByRole('button',{name:'To be scheduled (2)',exact:true}).click();
   assert.equal(await page.locator('.wc-queue img').count(),0);
   await page.getByRole('searchbox').fill('inspection');

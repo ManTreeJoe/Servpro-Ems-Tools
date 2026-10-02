@@ -21,7 +21,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <h2>Sample scheduled work</h2>
 <label>Job<input id="job" required maxlength="200"></label>
 <label>Section<select id="queue"><option value="scheduled">Scheduled</option><option value="tbs">To be scheduled</option><option value="pending">Pending</option><option value="hold">On hold</option></select></label>
-<label>Date<input id="date" type="date" required></label>
+<label>Date (MM/DD/YY)<input id="date" type="text" inputmode="numeric" placeholder="MM/DD/YY" required></label>
 <label>Arrival window<input id="time" placeholder="9–11 AM"></label>
 <label>Activities (comma separated)<input id="activities" placeholder="Demo, Monitor"></label>
 <label>Crew (applied to each activity in this preview)<input id="crew" placeholder="Sam, Alex"></label>
@@ -53,9 +53,9 @@ days.forEach((day,d)=>{
 const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function legacy({selected,records}){
  const sections=['Monitor','Work To Be Performed','Upcoming','TBS New Loss /Reinspection','TBS Mitigation','TBS Contents','Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management','On Hold'];
- return `<article class="run-paper"><header><div class="paper-brand">SERVPRO</div><p>Cleaning. Restoration. Construction.</p><h2>SERVPRO® Team Lingurar</h2><h3><u>Servpro Daily Run</u></h3></header><h3><u>Date: ${safe(selected)}</u></h3>${sections.map(group=>{
+ return `<article class="run-paper"><header><div class="paper-brand">SERVPRO</div><p>Cleaning. Restoration. Construction.</p><h2>SERVPRO® Team Lingurar</h2><h3><u>Servpro Daily Run</u></h3></header><h3><u>Date: ${OneLossWeeklyCalendar.displayDate(selected)}</u></h3>${sections.map(group=>{
  const items=records.filter(r=>group==='Upcoming'?r.queue==='scheduled'&&r.date>selected:r.queue==='scheduled'?r.date===selected&&(r.group||'Work To Be Performed')===group:r.group===group||(!r.group&&({tbs:'TBS Mitigation',pending:'Pending Approvals – Insurance/Self Pay',hold:'On Hold'})[r.queue]===group));
- return `<section><h4><u>${safe(group)}</u></h4><ol>${items.map(r=>`<li><button type="button" data-edit="${safe(r.id)}">${safe(r.title)}: ${safe(r.address||'')} <b>${r.activities.map(a=>`(${safe(a.label)}) ${safe(a.people.join('/'))}`).join(' ')} ${safe(r.time||'')} ${group==='Upcoming'?safe(r.date):''}</b></button></li>`).join('')}</ol></section>`;
+ return `<section><h4><u>${safe(group)}</u></h4><ol>${items.map(r=>`<li><button type="button" data-edit="${safe(r.id)}">${safe(r.title)}: ${safe(r.address||'')} <b>${r.activities.map(a=>`(${safe(a.label)}) ${safe(a.people.join('/'))}`).join(' ')} ${safe(r.time||'')} ${group==='Upcoming'?OneLossWeeklyCalendar.displayDate(r.date):''}</b></button></li>`).join('')}</ol></section>`;
  }).join('')}</article>`;
 }
 field('calendar').dataset.layout='dispatch';
@@ -63,15 +63,17 @@ const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderL
 calendar.update({records});
 function openEditor(id,day){
  editing=id; const row=records.find(r=>r.id===id);
- field('job').value=row?.title||'';field('queue').value=row?.queue||'scheduled';field('date').value=row?.date||day||today;
+ field('job').value=row?.title||'';field('queue').value=row?.queue||'scheduled';field('date').value=OneLossWeeklyCalendar.displayDate(row?.date||day||today);field('date').setCustomValidity('');
  field('time').value=row?.time||'';field('activities').value=(row?.activities||[]).map(a=>a.label).join(', ');
  field('crew').value=[...new Set((row?.activities||[]).flatMap(a=>a.people||[]))].join(', ');
  field('editor').showModal();field('job').focus();
 }
 field('cancel').onclick=()=>field('editor').close();
+field('date').oninput=()=>field('date').setCustomValidity('');
 field('visit-form').onsubmit=event=>{
  event.preventDefault(); const existing=records.find(r=>r.id===editing),queue=field('queue').value;
- const row={id:editing||`sample-${Date.now()}`,group:existing?.queue===queue?existing?.group:undefined,address:existing?.address,title:field('job').value.trim(),queue,date:field('date').value,time:field('time').value.trim(),
+ let visitDate;try{visitDate=OneLossWeeklyCalendar.parseDate(field('date').value);}catch{field('date').setCustomValidity('Enter a valid date as MM/DD/YY.');field('date').reportValidity();return;}
+ const row={id:editing||`sample-${Date.now()}`,group:existing?.queue===queue?existing?.group:undefined,address:existing?.address,title:field('job').value.trim(),queue,date:visitDate,time:field('time').value.trim(),
  activities:split(field('activities').value).map(label=>({label,people:split(field('crew').value)}))};
  if(!row.title)return;
  if(queue!=='scheduled')row.since=existing?.queue===queue?existing.since:today;

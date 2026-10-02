@@ -6,6 +6,11 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   const page=await browser.newPage({viewport:{width:1400,height:950}});
   await page.goto('file:///'+path.resolve('run_doc_editor_web_assets/calendar_preview.html').replaceAll('\\','/'));
   assert.equal(await page.locator('.wc-day').count(),3);
+  assert.match(await page.locator('[data-date]').inputValue(),/^\d{2}\/\d{2}\/\d{2}$/);
+  assert.equal(await page.evaluate(()=>OneLossWeeklyCalendar.parseDate('10/02/26')),'2026-10-02');
+  assert.equal(await page.evaluate(()=>{try{OneLossWeeklyCalendar.parseDate('02/30/26');return false;}catch{return true;}}),true);
+  assert.equal(await page.locator('.wc-week .wc-activity[data-color="monitor"]').count()>0,true);
+  assert.equal(await page.locator('.wc-waiting .wc-visit[data-color="pending"]').count(),25);
   assert.equal(await page.locator('.wc-waiting-group').count(),7);
   assert.match(await page.locator('.wc-waiting').textContent(),/TBS Contents/);
   assert.match(await page.locator('.wc-waiting').textContent(),/Property Management/);
