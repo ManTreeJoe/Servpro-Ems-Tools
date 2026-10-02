@@ -197,6 +197,7 @@
       }
     }
     const dragEvents=['dragstart','dragover','dragleave','drop','dragend'];
+    const pointerDrag=global.bindCalendarDrag?.(host,(id,day)=>{if(!disposed && !loading && !error)options.onSchedule?.(id,day);});
     dragEvents.forEach(type=>host.addEventListener(type,drag));
     function dismiss(event) {
       const menu=host.querySelector('.wc-filter-menu');
@@ -208,6 +209,7 @@
     render();
     return {
       update(next={}) {
+        pointerDrag?.clear();
         if (next.records) {
           const ids=new Set();
           for (const row of next.records) {
@@ -222,7 +224,7 @@
         if ('error' in next) error=String(next.error||'');
         render();
       },
-      destroy() { disposed=true; endDrag();dragEvents.forEach(type=>host.removeEventListener(type,drag));document.removeEventListener('pointerdown',dismiss);host.removeEventListener('keydown',dismiss);host.removeEventListener('click',click); host.removeEventListener('change',change); host.removeEventListener('input',input); host.replaceChildren(); host.classList.remove('weekly-schedule'); }
+      destroy() { disposed=true; pointerDrag?.destroy();endDrag();dragEvents.forEach(type=>host.removeEventListener(type,drag));document.removeEventListener('pointerdown',dismiss);host.removeEventListener('keydown',dismiss);host.removeEventListener('click',click); host.removeEventListener('change',change); host.removeEventListener('input',input); host.replaceChildren(); host.classList.remove('weekly-schedule'); }
     };
   }
   global.OneLossWeeklyCalendar={mount,week,shift,displayDate,parseDate};

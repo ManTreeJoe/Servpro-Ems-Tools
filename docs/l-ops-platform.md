@@ -183,6 +183,10 @@ The user wants useful features to move in both directions. Shared domain contrac
 The legacy DB and new platform DB are not yet one database. Do read-only comparisons, agree stable IDs and source-of-truth/conflict rules, and build a reversible migration before shared writes. Avoid destructive changes to the working legacy app.
 
 ## Publication caveat
+### 2026-10-02 — Visible calendar drag feedback
+
+Branch `main-lops-style-pivot`: DEV sample cards now use pointer-following ghosts, insertion placeholders, destination highlights and a short landing/return animation, referencing the existing job-board interaction. Escape cancels; reduced-motion skips the animation. Apply/Cancel review still owns the actual sample move. Added browser checks for visible ghost/placeholder and Escape cleanup; full preview and calendar regression tests pass. No schema or live-write changes; no L OPS update required. UI-design guidance kept existing controls and click-to-edit access.
+
 ### 2026-10-02 — All calendar cards and job search
 
 Branch: `main-lops-style-pivot`. Extended DEV calendar dragging to scheduled cards as well as waiting cards. Drops review the existing visit on the target day, preserving its identity and details. Added a compact top job-name/address search with existing-visit and not-yet-scheduled sample results. Selecting an existing visit edits it instead of inserting a duplicate. Browser tests cover scheduled moves, new sample additions, repeated selection, empty results, and existing calendar regressions. Render inspected at desktop size.
