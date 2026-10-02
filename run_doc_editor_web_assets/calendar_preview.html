@@ -79,7 +79,7 @@ function legacy({selected,records}){
  }).join('')}</article>`;
 }
 field('calendar').dataset.layout='dispatch';
-const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id)});
+const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id),onSchedule:(id,day)=>openEditor(id,day,true)});
 calendar.update({records});
 const runGroups={scheduled:['Monitor','Work To Be Performed'],tbs:['TBS New Loss /Reinspection','TBS Mitigation','TBS Contents'],pending:['Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management'],hold:['On Hold']};
 const extraFields=['address','contact','phone','insurance','claim','equipment','access','notes'];
@@ -92,9 +92,9 @@ function renderActivities(){
 }
 field('activity-options').onclick=event=>{const button=event.target.closest('[data-activity]');if(!button)return;const label=button.dataset.activity,index=activityDraft.findIndex(a=>a.label===label);if(index>=0)activityDraft.splice(index,1);else activityDraft.push({label,people:[]});renderActivities();field('activity-error').textContent='';};
 field('activity-assignments').oninput=event=>{if(event.target.dataset.assignment!==undefined)activityDraft[Number(event.target.dataset.assignment)].people=split(event.target.value);};
-function openEditor(id,day){
+function openEditor(id,day,schedule=false){
  editing=id; const row=records.find(r=>r.id===id);
- field('job').value=row?.title||'';field('queue').value=row?.queue||'scheduled';field('date').value=OneLossWeeklyCalendar.displayDate(row?.date||day||today);field('date').setCustomValidity('');
+ field('job').value=row?.title||'';field('queue').value=schedule?'scheduled':row?.queue||'scheduled';field('date').value=OneLossWeeklyCalendar.displayDate(schedule?day:row?.date||day||today);field('date').setCustomValidity('');
  field('time').value=row?.time||'';
  extraFields.forEach(key=>field(key).value=row?.[key]||'');
  activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(row?.group);field('activity-picker').open=false;field('activity-error').textContent='';

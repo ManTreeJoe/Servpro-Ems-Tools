@@ -101,3 +101,6 @@
   .wc-search { margin-left:0; width:100%; }
   .wc-search input { width:100%; }
 }
+.weekly-schedule .wc-visit[draggable="true"] { cursor: grab; }
+.weekly-schedule .wc-visit.is-dragging { opacity: .45; cursor: grabbing; }
+.weekly-schedule .is-drop-target { outline: 2px solid var(--accent, #5aa889); outline-offset: -2px; background: rgba(90,168,137,.12); }

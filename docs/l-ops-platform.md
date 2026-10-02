@@ -183,4 +183,10 @@ The user wants useful features to move in both directions. Shared domain contrac
 The legacy DB and new platform DB are not yet one database. Do read-only comparisons, agree stable IDs and source-of-truth/conflict rules, and build a reversible migration before shared writes. Avoid destructive changes to the working legacy app.
 
 ## Publication caveat
+### 2026-10-02 — Waiting work drag-to-schedule DEV handoff
+
+Branch: `main-lops-style-pivot`. The sample calendar now accepts waiting-work drops onto three-day/week columns and month cells. A drop opens the visit editor with Scheduled and the target date selected; Apply replaces the same sample record, while Cancel leaves Waiting unchanged. Job details and activity assignments are retained. Click-to-edit remains available without dragging. Browser tests cover cancel/apply and duplicate prevention; the existing calendar suite also passes.
+
+No database/schema, Trello, Word, or live scheduling writes were added. L OPS does not need a schema update for this UI-only change. Shared persistence remains subject to a coordinated contract before implementation.
+
 This is a documentation snapshot. Some new-platform code is still local/uncommitted; the mobile repo has no remote yet. Verify the actual source revision and migration state before assuming a described feature is available from GitHub or deployed. No production release is implied by these notes.

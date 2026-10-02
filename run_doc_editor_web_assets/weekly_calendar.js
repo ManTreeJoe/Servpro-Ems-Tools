@@ -34,7 +34,7 @@
   function mount(host, options={}) {
     let selected=options.date || iso(new Date()), records=[], mode='calendar', query='', loading=false, error='';
     let period=options.period || 'three', anchor=selected;
-    let disposed=false;
+    let disposed=false, draggedId=null;
     const today=()=>options.today?.() || iso(new Date());
     date(selected);
     function matching(row) {
@@ -68,11 +68,11 @@
     }
     function card(row) {
       const color=row.canceled?'canceled':row.queue==='pending'?'pending':row.queue==='hold'?'hold':activityColor(row.activities?.[0]?.label);
-      return `<button type="button" class="wc-visit" data-color="${color}" data-edit="${escape(row.id)}" ${options.onEdit ? '' : 'disabled'}>
+      return `<button type="button" class="wc-visit" data-color="${color}" data-edit="${escape(row.id)}" draggable="${Boolean(options.onSchedule && row.queue!=='scheduled')}" ${options.onEdit ? '' : 'disabled'}>
         ${row.time || row.canceled || row.completed ? `<span class="wc-time">${escape([row.time,row.canceled?'Canceled — needs rescheduling':row.completed?'Complete':''].filter(Boolean).join(' · '))}</span>` : ''}
         <strong>${escape(row.title)}</strong>
         ${(row.activities||[]).map(a=>`<span><span class="wc-activity" data-color="${activityColor(a.label)}">${escape(a.label)}</span>${a.people?.length ? `<small>${escape(a.people.join(', '))}</small>` : ''}</span>`).join('')}
-        ${row.since ? `<small>Since ${escape(displayDate(row.since))}</small>` : ''}
+        ${row.since && row.queue!=='scheduled' ? `<small>Since ${escape(displayDate(row.since))}</small>` : ''}
       </button>`;
     }
     function dayColumn(day) {
@@ -85,6 +85,7 @@
     }
     function render(focus) {
       if (disposed) return;
+      endDrag();
       const days=range();
       const queueRecords=records.filter(r=>r.queue===mode && matching(r));
       host.classList.add('weekly-schedule');
@@ -128,6 +129,7 @@
           content.scrollLeft=selectedDay.getBoundingClientRect().left-content.getBoundingClientRect().left;
         }
       }
+      host.querySelectorAll('.wc-day, .wc-month-day').forEach(cell=>{const heading=cell.querySelector('[data-day], [data-open-day]');cell.dataset.dropDate=heading.dataset.day || heading.dataset.openDay;});
       if (focus) host.querySelector(focus)?.focus();
     }
     function select(next) {
@@ -162,6 +164,40 @@
       }
     }
     function input(event) { if (event.target.hasAttribute('data-search')) { query=event.target.value; render('[data-search]'); } }
+    function endDrag() {
+      draggedId=null;
+      host.querySelectorAll('.is-drop-target, .is-dragging').forEach(el=>el.classList.remove('is-drop-target','is-dragging'));
+    }
+    function drag(event) {
+      if(event.type==='dragend'){endDrag();return;}
+      if(event.type==='dragstart'){
+        const card=event.target.closest('[draggable="true"]');
+        if(!card || !host.contains(card) || !options.onSchedule || loading || error)return;
+        draggedId=card.dataset.edit;
+        event.dataTransfer.effectAllowed='move';
+        event.dataTransfer.setData('text/plain',draggedId);
+        card.classList.add('is-dragging');return;
+      }
+      if(!draggedId || !options.onSchedule || loading || error)return;
+      const target=event.target.closest('[data-drop-date]');
+      if(event.type==='dragleave'){
+        if(target && !target.contains(event.relatedTarget))target.classList.remove('is-drop-target');
+        return;
+      }
+      if(!target || !host.contains(target))return;
+      event.preventDefault();
+      if(event.type==='dragover'){
+        event.dataTransfer.dropEffect='move';
+        host.querySelectorAll('.is-drop-target').forEach(el=>{if(el!==target)el.classList.remove('is-drop-target');});
+        target.classList.add('is-drop-target');
+      }else if(event.type==='drop'){
+        const id=draggedId,day=target.dataset.dropDate;
+        endDrag();
+        if(records.some(row=>row.id===id && row.queue!=='scheduled'))options.onSchedule(id,day);
+      }
+    }
+    const dragEvents=['dragstart','dragover','dragleave','drop','dragend'];
+    dragEvents.forEach(type=>host.addEventListener(type,drag));
     function dismiss(event) {
       const menu=host.querySelector('.wc-filter-menu');
       if(event.type==='keydown' && event.key==='Escape' && menu?.open){menu.open=false;menu.querySelector('summary').focus();}
@@ -186,7 +222,7 @@
         if ('error' in next) error=String(next.error||'');
         render();
       },
-      destroy() { disposed=true; document.removeEventListener('pointerdown',dismiss);host.removeEventListener('keydown',dismiss);host.removeEventListener('click',click); host.removeEventListener('change',change); host.removeEventListener('input',input); host.replaceChildren(); host.classList.remove('weekly-schedule'); }
+      destroy() { disposed=true; endDrag();dragEvents.forEach(type=>host.removeEventListener(type,drag));document.removeEventListener('pointerdown',dismiss);host.removeEventListener('keydown',dismiss);host.removeEventListener('click',click); host.removeEventListener('change',change); host.removeEventListener('input',input); host.replaceChildren(); host.classList.remove('weekly-schedule'); }
     };
   }
   global.OneLossWeeklyCalendar={mount,week,shift,displayDate,parseDate};

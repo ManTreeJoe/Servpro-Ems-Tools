@@ -6,6 +6,18 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   const page=await browser.newPage({viewport:{width:1400,height:950}});
   await page.goto('file:///'+path.resolve('run_doc_editor_web_assets/calendar_preview.html').replaceAll('\\','/'));
   assert.equal(await page.locator('.wc-day').count(),3);
+  const waiting=page.locator('.wc-waiting [data-edit]').first();
+  const waitingId=await waiting.getAttribute('data-edit');
+  const dropDay=await page.locator('.wc-day').first().getAttribute('data-drop-date');
+  await waiting.dragTo(page.locator('.wc-day-heading').first());
+  assert.equal(await page.locator('#queue').inputValue(),'scheduled');
+  assert.equal(await page.locator('#date').inputValue(),await page.evaluate(d=>OneLossWeeklyCalendar.displayDate(d),dropDay));
+  await page.locator('#cancel').click();
+  assert.equal(await page.locator(`.wc-waiting [data-edit="${waitingId}"]`).count(),1);
+  await waiting.dragTo(page.locator('.wc-day-heading').first());
+  await page.getByRole('button',{name:'Apply sample edit',exact:true}).click();
+  assert.equal(await page.locator(`.wc-waiting [data-edit="${waitingId}"]`).count(),0);
+  assert.equal(await page.locator(`.wc-day[data-drop-date="${dropDay}"] [data-edit="${waitingId}"]`).count(),1);
   const editId=await page.locator('.wc-week [data-edit]').first().getAttribute('data-edit');
   await page.locator('.wc-week [data-edit]').first().click();
   await page.locator('#phone').fill('555-0100');
