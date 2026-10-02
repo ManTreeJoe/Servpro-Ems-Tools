@@ -68,7 +68,7 @@
     }
     function card(row) {
       const color=row.canceled?'canceled':row.queue==='pending'?'pending':row.queue==='hold'?'hold':activityColor(row.activities?.[0]?.label);
-      return `<button type="button" class="wc-visit" data-color="${color}" data-edit="${escape(row.id)}" draggable="${Boolean(options.onSchedule && row.queue!=='scheduled')}" ${options.onEdit ? '' : 'disabled'}>
+      return `<button type="button" class="wc-visit" data-color="${color}" data-edit="${escape(row.id)}" draggable="${Boolean(options.onSchedule)}" ${options.onEdit ? '' : 'disabled'}>
         ${row.time || row.canceled || row.completed ? `<span class="wc-time">${escape([row.time,row.canceled?'Canceled — needs rescheduling':row.completed?'Complete':''].filter(Boolean).join(' · '))}</span>` : ''}
         <strong>${escape(row.title)}</strong>
         ${(row.activities||[]).map(a=>`<span><span class="wc-activity" data-color="${activityColor(a.label)}">${escape(a.label)}</span>${a.people?.length ? `<small>${escape(a.people.join(', '))}</small>` : ''}</span>`).join('')}
@@ -193,7 +193,7 @@
       }else if(event.type==='drop'){
         const id=draggedId,day=target.dataset.dropDate;
         endDrag();
-        if(records.some(row=>row.id===id && row.queue!=='scheduled'))options.onSchedule(id,day);
+        if(records.some(row=>row.id===id))options.onSchedule(id,day);
       }
     }
     const dragEvents=['dragstart','dragover','dragleave','drop','dragend'];

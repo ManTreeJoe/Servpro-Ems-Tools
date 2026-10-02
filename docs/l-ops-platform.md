@@ -183,6 +183,12 @@ The user wants useful features to move in both directions. Shared domain contrac
 The legacy DB and new platform DB are not yet one database. Do read-only comparisons, agree stable IDs and source-of-truth/conflict rules, and build a reversible migration before shared writes. Avoid destructive changes to the working legacy app.
 
 ## Publication caveat
+### 2026-10-02 — All calendar cards and job search
+
+Branch: `main-lops-style-pivot`. Extended DEV calendar dragging to scheduled cards as well as waiting cards. Drops review the existing visit on the target day, preserving its identity and details. Added a compact top job-name/address search with existing-visit and not-yet-scheduled sample results. Selecting an existing visit edits it instead of inserting a duplicate. Browser tests cover scheduled moves, new sample additions, repeated selection, empty results, and existing calendar regressions. Render inspected at desktop size.
+
+UI-design guidance kept the existing compact controls and click-to-edit fallback. This remains in-memory sample functionality only; no shared schema or live writes changed. L OPS has no required database changes from this handoff.
+
 ### 2026-10-02 — Waiting work drag-to-schedule DEV handoff
 
 Branch: `main-lops-style-pivot`. The sample calendar now accepts waiting-work drops onto three-day/week columns and month cells. A drop opens the visit editor with Scheduled and the target date selected; Apply replaces the same sample record, while Cancel leaves Waiting unchanged. Job details and activity assignments are retained. Click-to-edit remains available without dragging. Browser tests cover cancel/apply and duplicate prevention; the existing calendar suite also passes.
