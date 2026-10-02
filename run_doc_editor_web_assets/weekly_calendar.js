@@ -41,7 +41,7 @@
     }
     function queues() {
       const groups=[['tbs','TBS New Loss /Reinspection'],['tbs','TBS Mitigation'],['tbs','TBS Contents'],['pending','Pending Testing/Clearance/Abatement'],['pending','Pending Approvals – Insurance/Self Pay'],['pending','Pending Approvals – Property Management'],['hold','On Hold']];
-      return `<section class="wc-waiting"><h2>Waiting and follow-up — not booked visits</h2><p>These remain separate from the dated work above. Entry dates show how long they have been waiting.</p><div class="wc-waiting-grid">${groups.map(([queue,title])=>{
+      return `<section class="wc-waiting"><h2>Waiting work</h2><p>Not booked on a day · grouped like the Run</p><div class="wc-waiting-grid" tabindex="0" aria-label="Waiting work groups">${groups.map(([queue,title])=>{
         const fallback={tbs:'TBS Mitigation',pending:'Pending Approvals – Insurance/Self Pay',hold:'On Hold'};
         const entries=records.filter(r=>r.queue===queue && (r.group||fallback[queue])===title && matching(r));
         return `<section class="wc-waiting-group"><h3>${escape(title)} <small>${entries.length}</small></h3><div class="wc-queue-scroll" tabindex="0" aria-label="${escape(title)} items">${entries.map(card).join('')||'<p class="wc-empty">No matching items</p>'}</div></section>`;
@@ -53,7 +53,7 @@
     }
     function card(row) {
       return `<button type="button" class="wc-visit" data-edit="${escape(row.id)}" ${options.onEdit ? '' : 'disabled'}>
-        <span class="wc-time">${escape(row.time || 'Time not set')}${row.canceled ? ' · Canceled — needs rescheduling' : row.completed ? ' · Complete' : ''}</span>
+        ${row.time || row.canceled || row.completed ? `<span class="wc-time">${escape([row.time,row.canceled?'Canceled — needs rescheduling':row.completed?'Complete':''].filter(Boolean).join(' · '))}</span>` : ''}
         <strong>${escape(row.title)}</strong>
         ${(row.activities||[]).map(a=>`<span>${escape(a.label)}${a.people?.length ? `<small>${escape(a.people.join(', '))}</small>` : ''}</span>`).join('')}
         ${row.since ? `<small>Since ${escape(row.since)}</small>` : ''}
@@ -73,6 +73,7 @@
       const queueRecords=records.filter(r=>r.queue===mode && matching(r));
       host.classList.add('weekly-schedule');
       host.dataset.period=period;
+      host.dataset.mode=mode;
       host.innerHTML=`<header class="wc-toolbar">
         <div class="wc-navigation"><button type="button" class="btn" data-step="-1" aria-label="Previous ${period==='three'?'3 days':period}">←</button><button type="button" class="btn" data-today>Today</button><button type="button" class="btn" data-step="1" aria-label="Next ${period==='three'?'3 days':period}">→</button><h2>${period==='month'?date(anchor).toLocaleDateString(undefined,{month:'long',year:'numeric'}):`${escape(label(days[0]))} – ${escape(label(days.at(-1)))}, ${date(days.at(-1)).getFullYear()}`}</h2></div>
         <label class="wc-date">Selected day<input type="date" value="${selected}" data-date></label>
@@ -81,6 +82,7 @@
       <nav class="wc-periods" aria-label="Calendar range">${[['three','3 Days'],['week','Week'],['month','Month']].map(([key,title])=>`<button class="btn" type="button" data-period="${key}" aria-pressed="${period===key && mode==='calendar'}">${title}</button>`).join('')}</nav>
       <nav class="wc-filters" aria-label="Schedule views">${[['calendar','Week'],['tbs','To be scheduled'],['pending','Pending'],['hold','On hold']].map(([key,text])=>`<button type="button" class="btn" data-mode="${key}" aria-pressed="${mode===key}">${text}${key==='calendar'?'':` (${records.filter(r=>r.queue===key && matching(r)).length})`}</button>`).join('')}<label class="wc-search"><span class="wc-sr">Search scheduled work</span><input type="search" placeholder="Find job, activity or crew" data-search value="${escape(query)}"></label></nav>
       <div class="wc-content" aria-busy="${loading}">${loading?'<p role="status">Loading schedule…</p>':error?`<p role="alert">${escape(error)}</p>${options.onRetry?'<button type="button" class="btn" data-retry>Retry</button>':''}`:mode==='calendar'?`<div class="wc-week">${days.map(dayColumn).join('')}</div>`:mode==='legacy'?`<section class="wc-legacy"><header><h2>${escape(label(selected))} — Daily Run</h2><p>Same visits as the calendar</p></header>${rows(selected).map(card).join('') || '<p class="wc-empty">No scheduled work for this day.</p>'}${options.onAdd?`<button type="button" class="btn" data-add="${selected}">+ Add work</button>`:''}</section>`:`<section class="wc-queue" aria-label="${mode==='tbs'?'To be scheduled':'Pending'}">${queueRecords.map(card).join('') || '<p class="wc-empty">No matching items.</p>'}</section>`}</div>`;
+      host.querySelector('.wc-filters button[data-mode="calendar"]')?.replaceChildren(document.createTextNode('Scheduled'));
       if (mode==='legacy' && options.renderLegacy && !loading && !error) host.querySelector('.wc-content').innerHTML=options.renderLegacy({selected,records:records.filter(matching)});
       if (mode==='calendar' && !loading && !error && period==='month') host.querySelector('.wc-content').innerHTML=`<div class="wc-month">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<strong class="wc-month-label">${d}</strong>`).join('')}${days.map(monthCell).join('')}</div>`;
       if (mode==='calendar' && period!=='month' && !loading && !error && host.dataset.layout==='focus') {

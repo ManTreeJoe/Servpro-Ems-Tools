@@ -107,6 +107,21 @@ Status: isolated UI implemented/tested; NOT connected to the live Schedule.
 
 ## Prior reference notes — September 14, 2026
 
+### Latest design selection — B without an hourly grid
+
+Nathan selected the three-day schedule with a persistent right-hand waiting
+panel. Most visits have no set time: a date is sufficient to be scheduled.
+Show an arrival-window label only when provided; do not show "Time not set".
+TBS means no scheduled day, not a missing arrival time. Day lists retain Monitor
+and Work To Be Performed; the right panel contains all seven Run waiting groups
+and scrolls independently. On narrow windows it stacks below the dated work.
+The layout comparison chooser is removed from the sample DEV page.
+
+Validated both calendar browser suites. No shared schema or live-data changes.
+DEV now chooses an available port in 53100–53199: pywebview randomly selected
+4045, which Edge rejected with ERR_UNSAFE_PORT. A socket regression test checks
+the safe range and that occupied ports are skipped. Installed Main is unchanged.
+
 ### DEV testing handoff — calendar range and Run groups
 
 OneLoss owner, branch `main-lops-style-pivot`: DEV-only Schedule route now opens

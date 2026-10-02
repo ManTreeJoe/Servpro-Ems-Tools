@@ -1187,7 +1187,11 @@ def main(argv=None):
         taskbar_icon = _paths.resource(
             "linguar_hub_trial.ico" if getattr(_paths, "IS_TRIAL", False)
             else "linguar_hub.ico")
-        webview.start(debug=False, http_server=True, icon=taskbar_icon)
+        start_options = {}
+        if _is_dev_runtime():
+            from dev_http_port import available_port
+            start_options['http_port'] = available_port()
+        webview.start(debug=False, http_server=True, icon=taskbar_icon, **start_options)
     finally:
         desktop_alerts.stop()
         if api._hotkey:

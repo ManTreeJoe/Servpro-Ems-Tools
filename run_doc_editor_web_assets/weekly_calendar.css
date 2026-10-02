@@ -42,6 +42,25 @@
 .wc-month-day .wc-day-heading { width:100%; padding:6px; }
 .wc-month-day .wc-visit { padding:5px; gap:2px; font-size:11px; }
 .wc-other-month { background:var(--bg); }
+[data-layout="dispatch"][data-mode="calendar"] .wc-content { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:14px; align-items:start; overflow:visible; }
+[data-layout="dispatch"] .wc-week { min-height:0; }
+[data-layout="dispatch"] .wc-day-items { max-height:calc(100vh - 330px); min-height:320px; }
+[data-layout="dispatch"] .wc-visit { padding:9px; gap:5px; border-radius:4px; font-size:12px; }
+[data-layout="dispatch"] .wc-time { align-self:start; background:var(--green-soft); border:1px solid var(--border); padding:3px 6px; border-radius:4px; color:var(--text); }
+[data-layout="dispatch"] .wc-waiting { margin:0; border:1px solid var(--border); border-radius:6px; background:var(--surface); min-width:0; }
+[data-layout="dispatch"] .wc-waiting>h2 { margin:12px 12px 5px; }
+[data-layout="dispatch"] .wc-waiting>p { margin:0 12px 12px; }
+[data-layout="dispatch"] .wc-waiting-grid { display:block; max-height:calc(100vh - 280px); min-height:360px; overflow-y:auto; scrollbar-gutter:stable; }
+[data-layout="dispatch"] .wc-waiting-group { border:0; border-radius:0; }
+[data-layout="dispatch"] .wc-waiting-group h3 { position:sticky; top:0; z-index:1; font-size:12px; padding:10px; }
+[data-layout="dispatch"] .wc-queue-scroll { max-height:none; overflow:visible; padding:6px; }
+[data-layout="dispatch"] .wc-queue-scroll .wc-visit { border:0; border-bottom:1px solid var(--border); margin:0; border-radius:0; background:transparent; }
+[data-layout="dispatch"][data-period="week"] .wc-week { min-width:0; }
+@media(max-width:1050px) {
+ [data-layout="dispatch"][data-mode="calendar"] .wc-content { display:block; overflow-x:auto; }
+ [data-layout="dispatch"] .wc-waiting { margin-top:16px; }
+ [data-layout="dispatch"] .wc-waiting-grid { max-height:450px; }
+}
 @media(max-width:700px) {
  .weekly-schedule[data-period="three"] .wc-week { min-width:750px; }
  .wc-waiting-grid { grid-template-columns:1fr; }

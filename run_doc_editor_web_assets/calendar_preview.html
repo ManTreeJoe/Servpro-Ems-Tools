@@ -44,7 +44,7 @@ const names=['Oak residence','Pine apartments','Maple office','Cedar home','Will
 records.length=0;
 days.forEach((day,d)=>{
  for(let i=0;i<12;i++)records.push({id:`full-${d}-${i}`,title:`${names[i]} ${d+1}`,queue:'scheduled',date:day,
-  group:i<4?'Monitor':'Work To Be Performed',address:`${100+i} Sample Lane, Example City`,time:i<4?'':i%2?'9–11 AM':'12–2 PM',
+  group:i<4?'Monitor':'Work To Be Performed',address:`${100+i} Sample Lane, Example City`,time:i===8?'9–11 AM':i===10?'12–2 PM':'',
   activities:[{label:i<4?'Monitor':['Demo','Packout','Equipment pickup','Initial inspection'][i%4],people:[['Sam','Alex','Marco / Jose','Brenda / Priscilla'][i%4]]}]});
 });
 [['tbs','TBS New Loss /Reinspection',3],['tbs','TBS Mitigation',5],['tbs','TBS Contents',4],['pending','Pending Testing/Clearance/Abatement',4],['pending','Pending Approvals – Insurance/Self Pay',9],['pending','Pending Approvals – Property Management',12],['hold','On Hold',5]].forEach(([queue,group,count],g)=>{
@@ -58,10 +58,8 @@ function legacy({selected,records}){
  return `<section><h4><u>${safe(group)}</u></h4><ol>${items.map(r=>`<li><button type="button" data-edit="${safe(r.id)}">${safe(r.title)}: ${safe(r.address||'')} <b>${r.activities.map(a=>`(${safe(a.label)}) ${safe(a.people.join('/'))}`).join(' ')} ${safe(r.time||'')} ${group==='Upcoming'?safe(r.date):''}</b></button></li>`).join('')}</ol></section>`;
  }).join('')}</article>`;
 }
-const chooser=document.createElement('div');chooser.className='example-chooser';chooser.innerHTML='<strong>Compare full-week examples:</strong> <select aria-label="Example layout"><option value="compact">A · Compact week columns</option><option value="agenda">B · Day-by-day agenda</option><option value="focus">C · Week overview + selected day</option></select> <span>12 sample visits/day · 12 TBS · 25 pending · 5 holds</span>';
-field('calendar').before(chooser);field('calendar').dataset.layout='compact';
+field('calendar').dataset.layout='dispatch';
 const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id)});
-chooser.querySelector('select').onchange=event=>{field('calendar').dataset.layout=event.target.value;calendar.update({});};
 calendar.update({records});
 function openEditor(id,day){
  editing=id; const row=records.find(r=>r.id===id);

@@ -11,7 +11,12 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   assert.match(await page.locator('.wc-waiting').textContent(),/Property Management/);
   assert.match(await page.locator('.wc-waiting').textContent(),/On Hold/);
   assert.equal(await page.evaluate(()=>{const el=document.querySelector('.wc-day-items');el.scrollTop=150;return el.scrollTop>0;}),true);
+  assert.equal(await page.getByText('Time not set',{exact:true}).count(),0);
+  assert.equal(await page.evaluate(()=>{const el=document.querySelector('.wc-waiting-grid');el.scrollTop=200;return el.scrollTop>0;}),true);
+  assert.equal(await page.evaluate(()=>document.querySelector('.wc-waiting').getBoundingClientRect().left>document.querySelector('.wc-week').getBoundingClientRect().left),true);
+  await page.setViewportSize({width:1400,height:600});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight),true);
+  await page.setViewportSize({width:1400,height:950});
   const first=await page.locator('[data-day]').first().getAttribute('data-day');
   await page.getByRole('button',{name:'Next 3 days',exact:true}).click();
   assert.notEqual(await page.locator('[data-day]').first().getAttribute('data-day'),first);
