@@ -17,16 +17,35 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 </style>
 <div class="preview-note"><strong>Calendar test preview — sample jobs only.</strong> Edits are temporary and reset when this window closes. No live jobs, Word documents, database or Trello changes. Confirmation, posting and printing are not available yet.</div>
 <main id="calendar"></main>
-<dialog id="editor"><form id="visit-form">
-<h2>Sample scheduled work</h2>
+<dialog id="editor" aria-labelledby="edit-title"><form id="visit-form">
+<header><h2 id="edit-title">Visit & job details</h2><p>Sample data only · changes do not update a live job</p></header>
+<fieldset><legend>Job information</legend><div class="edit-grid">
 <label>Job<input id="job" required maxlength="200"></label>
+<label>Site address<input id="address"></label>
+<label>Contact name<input id="contact"></label><label>Contact phone<input id="phone" type="tel"></label>
+<label>Insurance carrier<input id="insurance"></label><label>Claim number<input id="claim"></label>
+</div></fieldset>
+<fieldset><legend>Schedule</legend><div class="edit-grid">
 <label>Section<select id="queue"><option value="scheduled">Scheduled</option><option value="tbs">To be scheduled</option><option value="pending">Pending</option><option value="hold">On hold</option></select></label>
+<label>Run group<select id="run-group"></select></label>
 <label>Date (MM/DD/YY)<input id="date" type="text" inputmode="numeric" placeholder="MM/DD/YY" required></label>
-<label>Arrival window<input id="time" placeholder="9–11 AM"></label>
-<label>Activities (comma separated)<input id="activities" placeholder="Demo, Monitor"></label>
-<label>Crew (applied to each activity in this preview)<input id="crew" placeholder="Sam, Alex"></label>
+<label>Arrival window (optional)<input id="time" placeholder="Leave blank if not set"></label>
+</div></fieldset>
+<fieldset><legend>Activities & people</legend>
+<details id="activity-picker"><summary class="btn">Choose activities</summary><div id="activity-options"></div></details>
+<div id="activity-assignments"></div>
+<p id="activity-error" role="alert"></p>
+</fieldset>
+<fieldset><legend>Visit details</legend><div class="edit-grid">
+<label>Equipment details<textarea id="equipment" rows="3" placeholder="Units placed or picked up, quantities, locations"></textarea></label>
+<label>Access / contact instructions<textarea id="access" rows="3" placeholder="Gate, lockbox, tenant coordination"></textarea></label>
+<label class="edit-wide">Work notes / next step<textarea id="notes" rows="3" placeholder="What needs to happen on this visit?"></textarea></label>
+</div></fieldset>
 <footer><button type="button" class="btn" id="cancel">Cancel</button><button class="btn btn-primary">Apply sample edit</button></footer>
 </form></dialog>
+<style>
+#editor{width:min(850px,calc(100% - 32px));padding:0;font-family:var(--font-body)}#visit-form{padding:20px;gap:18px}#visit-form header p{font-size:12px;color:var(--text-muted);margin:6px 0 0}#visit-form fieldset{border:1px solid var(--border);border-radius:6px;padding:14px;min-width:0}#visit-form legend{font-weight:600;font-size:13px;padding:0 6px}.edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.edit-wide{grid-column:1/-1}#visit-form label{font-size:12px;min-width:0}#visit-form input,#visit-form select,#visit-form textarea{width:100%;box-sizing:border-box;font:13px var(--font-body)}#visit-form textarea{background:var(--surface-2);color:var(--text);border:1px solid var(--border);padding:9px;border-radius:5px;resize:vertical}#visit-form footer{position:sticky;bottom:0;background:var(--surface);padding:12px 0;border-top:1px solid var(--border)}#activity-picker{position:relative;margin-bottom:12px}#activity-options{position:absolute;z-index:5;top:100%;left:0;width:min(450px,100%);background:var(--surface);padding:12px;border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow-1);display:flex;gap:8px;flex-wrap:wrap}#activity-options button{border-radius:16px}#activity-options [aria-pressed=true]{background:var(--green);color:white;border-color:var(--green-hover)}#activity-assignments{display:grid;grid-template-columns:1fr 1fr;gap:12px}#activity-error{color:var(--red);font-size:12px;margin:8px 0 0}@media(max-width:600px){.edit-grid,#activity-assignments{grid-template-columns:1fr}}
+</style>
 <script src="weekly_calendar.js"></script>
 <script>
 'use strict';
@@ -39,6 +58,7 @@ const records=[
  {id:'sample-4',title:'Sample — Maple office',queue:'tbs',since:OneLossWeeklyCalendar.shift(today,-2),activities:[{label:'Initial inspection',people:[]}]}
 ];
 let editing=null;
+let activityDraft=[];
 const field=id=>document.getElementById(id), split=value=>value.split(',').map(x=>x.trim()).filter(Boolean);
 const names=['Oak residence','Pine apartments','Maple office','Cedar home','Willow residence','Elm plaza','Birch home','Aspen duplex','Juniper office','Cypress home','Laurel residence','Spruce building'];
 records.length=0;
@@ -61,20 +81,33 @@ function legacy({selected,records}){
 field('calendar').dataset.layout='dispatch';
 const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id)});
 calendar.update({records});
+const runGroups={scheduled:['Monitor','Work To Be Performed'],tbs:['TBS New Loss /Reinspection','TBS Mitigation','TBS Contents'],pending:['Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management'],hold:['On Hold']};
+const extraFields=['address','contact','phone','insurance','claim','equipment','access','notes'];
+function renderGroups(chosen){field('run-group').innerHTML=runGroups[field('queue').value].map(g=>`<option>${safe(g)}</option>`).join('');if(runGroups[field('queue').value].includes(chosen))field('run-group').value=chosen;else if(field('queue').value==='scheduled')field('run-group').value='Work To Be Performed';field('date').required=field('queue').value==='scheduled';}
+field('queue').onchange=()=>renderGroups();
+function renderActivities(){
+ const labels=[...new Set(['Initial inspection','Demo','Monitor','Equipment placed','Equipment pickup','Contents','Packout','Final inspection',...activityDraft.map(a=>a.label)])];
+ field('activity-options').innerHTML=labels.map(label=>`<button class="btn" type="button" data-activity="${safe(label)}" aria-pressed="${activityDraft.some(a=>a.label===label)}">${safe(label)}</button>`).join('');
+ field('activity-assignments').innerHTML=activityDraft.map((a,i)=>`<label>${safe(a.label)} — assigned to<input data-assignment="${i}" value="${safe(a.people.join(', '))}" placeholder="Crew names, separated by commas"></label>`).join('');
+}
+field('activity-options').onclick=event=>{const button=event.target.closest('[data-activity]');if(!button)return;const label=button.dataset.activity,index=activityDraft.findIndex(a=>a.label===label);if(index>=0)activityDraft.splice(index,1);else activityDraft.push({label,people:[]});renderActivities();field('activity-error').textContent='';};
+field('activity-assignments').oninput=event=>{if(event.target.dataset.assignment!==undefined)activityDraft[Number(event.target.dataset.assignment)].people=split(event.target.value);};
 function openEditor(id,day){
  editing=id; const row=records.find(r=>r.id===id);
  field('job').value=row?.title||'';field('queue').value=row?.queue||'scheduled';field('date').value=OneLossWeeklyCalendar.displayDate(row?.date||day||today);field('date').setCustomValidity('');
- field('time').value=row?.time||'';field('activities').value=(row?.activities||[]).map(a=>a.label).join(', ');
- field('crew').value=[...new Set((row?.activities||[]).flatMap(a=>a.people||[]))].join(', ');
+ field('time').value=row?.time||'';
+ extraFields.forEach(key=>field(key).value=row?.[key]||'');
+ activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(row?.group);field('activity-picker').open=false;field('activity-error').textContent='';
  field('editor').showModal();field('job').focus();
 }
 field('cancel').onclick=()=>field('editor').close();
 field('date').oninput=()=>field('date').setCustomValidity('');
 field('visit-form').onsubmit=event=>{
  event.preventDefault(); const existing=records.find(r=>r.id===editing),queue=field('queue').value;
- let visitDate;try{visitDate=OneLossWeeklyCalendar.parseDate(field('date').value);}catch{field('date').setCustomValidity('Enter a valid date as MM/DD/YY.');field('date').reportValidity();return;}
- const row={id:editing||`sample-${Date.now()}`,group:existing?.queue===queue?existing?.group:undefined,address:existing?.address,title:field('job').value.trim(),queue,date:visitDate,time:field('time').value.trim(),
- activities:split(field('activities').value).map(label=>({label,people:split(field('crew').value)}))};
+ let visitDate;try{visitDate=queue==='scheduled'?OneLossWeeklyCalendar.parseDate(field('date').value):undefined;}catch{field('date').setCustomValidity('Enter a valid date as MM/DD/YY.');field('date').reportValidity();return;}
+ if(!activityDraft.length){field('activity-error').textContent='Choose at least one activity.';return;}
+ const row={...existing,id:editing||`sample-${Date.now()}`,group:field('run-group').value,title:field('job').value.trim(),queue,date:visitDate,time:field('time').value.trim(),activities:structuredClone(activityDraft)};
+ extraFields.forEach(key=>row[key]=field(key).value.trim());
  if(!row.title)return;
  if(queue!=='scheduled')row.since=existing?.queue===queue?existing.since:today;
  if(existing)records.splice(records.indexOf(existing),1,row);else records.push(row);

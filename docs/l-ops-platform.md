@@ -123,6 +123,14 @@ be cleared. Date arrows, Today, search and Legacy remain visible. Escape and
 outside-click dismiss the dropdown. Both browser suites pass, including filter
 selection, clearing and keyboard dismissal. This remains sample-only DEV UI.
 
+Visit editor follow-up: job/address/contact/phone/carrier/claim, explicit Run
+group, optional arrival, activity multi-select pills with independent crew
+assignments, equipment/access/work notes. Sample edits retain unknown record
+fields and per-activity people; waiting items need no scheduled date. Browser
+test verifies save/reopen retains details and distinct crews. No backend schema
+or shared customer write behavior is implied; live job facts must use the agreed
+canonical job model rather than independently copied visit fields at integration.
+
 DEV presentation follow-up: displayed full dates and editor entry use MM/DD/YY;
 stored values remain ISO. Activity pills/strips use blue Monitor, green Initial,
 orange Demo, purple Contents, teal Equipment, with amber Pending, gray Hold and
