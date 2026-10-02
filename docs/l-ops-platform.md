@@ -117,6 +117,12 @@ and Work To Be Performed; the right panel contains all seven Run waiting groups
 and scrolls independently. On narrow windows it stacks below the dated work.
 The layout comparison chooser is removed from the sample DEV page.
 
+Compact toolbar follow-up: range (3 Days/Week/Month), queue selection and selected
+date moved into a Filters disclosure. Selected range is a pill; queue pills can
+be cleared. Date arrows, Today, search and Legacy remain visible. Escape and
+outside-click dismiss the dropdown. Both browser suites pass, including filter
+selection, clearing and keyboard dismissal. This remains sample-only DEV UI.
+
 DEV presentation follow-up: displayed full dates and editor entry use MM/DD/YY;
 stored values remain ISO. Activity pills/strips use blue Monitor, green Initial,
 orange Demo, purple Contents, teal Equipment, with amber Pending, gray Hold and

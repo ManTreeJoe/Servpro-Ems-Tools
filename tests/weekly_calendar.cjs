@@ -37,8 +37,10 @@ const assert=require('node:assert/strict'), path=require('node:path'), os=requir
   await page.getByRole('button',{name:'Next week'}).click();
   assert.equal(await page.locator('[data-day="2026-10-05"]').count(),1);
   assert.equal(await page.locator('.wc-week .wc-visit').count(),0);
+  await page.locator('.wc-filter-menu summary').click();
   await page.getByRole('button',{name:'Pending (1)',exact:true}).click();
   assert.match(await page.locator('.wc-queue').textContent(),/Since 09\/28\/26/);
+  await page.locator('.wc-filter-menu summary').click();
   await page.getByRole('button',{name:'To be scheduled (2)',exact:true}).click();
   assert.equal(await page.locator('.wc-queue img').count(),0);
   await page.getByRole('searchbox').fill('inspection');
@@ -50,6 +52,7 @@ const assert=require('node:assert/strict'), path=require('node:path'), os=requir
   await page.getByRole('button',{name:'Retry',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>events.at(-1)),['retry']);
   await page.evaluate(()=>calendar.update({error:''}));
+  await page.locator('.wc-filter-menu summary').click();
   await page.locator('button[data-period="week"]').click();
   await page.getByRole('button',{name:'Today',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>OneLossWeeklyCalendar.week('2026-12-31')),['2026-12-28','2026-12-29','2026-12-30','2026-12-31','2027-01-01','2027-01-02','2027-01-03']);

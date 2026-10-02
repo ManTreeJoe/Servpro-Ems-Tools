@@ -99,6 +99,21 @@
       <nav class="wc-filters" aria-label="Schedule views">${[['calendar','Week'],['tbs','To be scheduled'],['pending','Pending'],['hold','On hold']].map(([key,text])=>`<button type="button" class="btn" data-mode="${key}" aria-pressed="${mode===key}">${text}${key==='calendar'?'':` (${records.filter(r=>r.queue===key && matching(r)).length})`}</button>`).join('')}<label class="wc-search"><span class="wc-sr">Search scheduled work</span><input type="search" placeholder="Find job, activity or crew" data-search value="${escape(query)}"></label></nav>
       <div class="wc-content" aria-busy="${loading}">${loading?'<p role="status">Loading schedule…</p>':error?`<p role="alert">${escape(error)}</p>${options.onRetry?'<button type="button" class="btn" data-retry>Retry</button>':''}`:mode==='calendar'?`<div class="wc-week">${days.map(dayColumn).join('')}</div>`:mode==='legacy'?`<section class="wc-legacy"><header><h2>${escape(label(selected))} — Daily Run</h2><p>Same visits as the calendar</p></header>${rows(selected).map(card).join('') || '<p class="wc-empty">No scheduled work for this day.</p>'}${options.onAdd?`<button type="button" class="btn" data-add="${selected}">+ Add work</button>`:''}</section>`:`<section class="wc-queue" aria-label="${mode==='tbs'?'To be scheduled':'Pending'}">${queueRecords.map(card).join('') || '<p class="wc-empty">No matching items.</p>'}</section>`}</div>`;
       host.querySelector('.wc-filters button[data-mode="calendar"]')?.replaceChildren(document.createTextNode('Scheduled'));
+      const toolbar=host.querySelector('.wc-toolbar');
+      const dropdown=document.createElement('details'); dropdown.className='wc-filter-menu';
+      dropdown.innerHTML='<summary class="btn">Filters</summary><div class="wc-filter-popover"><strong>View</strong></div>';
+      const popup=dropdown.querySelector('.wc-filter-popover');
+      popup.append(host.querySelector('.wc-periods'));
+      const heading=document.createElement('strong');heading.textContent='Show';popup.append(heading);
+      const filters=host.querySelector('.wc-filters'),search=filters.querySelector('.wc-search');
+      popup.append(filters);
+      toolbar.insertBefore(dropdown,toolbar.querySelector('.wc-date'));
+      const pills=document.createElement('div');pills.className='wc-selected-filters';pills.setAttribute('aria-label','Selected filters');
+      pills.innerHTML=`<span class="wc-filter-pill">${{three:'3 Days',week:'Week',month:'Month'}[period]}</span>${mode!=='calendar'&&mode!=='legacy'?`<button class="wc-filter-pill" type="button" data-mode="calendar" aria-label="Clear ${escape(mode)} filter">${{tbs:'To be scheduled',pending:'Pending',hold:'On hold'}[mode]} ×</button>`:''}`;
+      toolbar.insertBefore(pills,toolbar.querySelector('.wc-date'));
+      popup.append(host.querySelector('.wc-date'));
+      toolbar.insertBefore(search,toolbar.lastElementChild);
+      if(period!=='month') toolbar.querySelector('h2').textContent=`${label(days[0])} – ${label(days.at(-1))}`;
       if (mode==='legacy' && options.renderLegacy && !loading && !error) host.querySelector('.wc-content').innerHTML=options.renderLegacy({selected,records:records.filter(matching)});
       if (mode==='calendar' && !loading && !error && period==='month') host.querySelector('.wc-content').innerHTML=`<div class="wc-month">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<strong class="wc-month-label">${d}</strong>`).join('')}${days.map(monthCell).join('')}</div>`;
       if (mode==='calendar' && period!=='month' && !loading && !error && host.dataset.layout==='focus') {
@@ -131,11 +146,11 @@
         else select(shift(anchor,step*(period==='three'?3:7)));
         host.querySelector(`[data-step="${step}"]`)?.focus();
       }
-      else if (button.dataset.period) { period=button.dataset.period;mode='calendar';select(selected);host.querySelector(`[data-period="${period}"]`)?.focus(); }
+      else if (button.dataset.period) { period=button.dataset.period;mode='calendar';select(selected);host.querySelector('.wc-filter-menu summary')?.focus(); }
       else if (button.dataset.openDay) { period='three';mode='calendar';select(button.dataset.openDay); }
       else if (button.hasAttribute('data-today')) { select(today()); host.querySelector('[data-today]')?.focus(); }
       else if (button.dataset.day) { selected=button.dataset.day; render(`[data-day="${selected}"]`); }
-      else if (button.dataset.mode) { mode=button.dataset.mode; render('[data-mode]'); }
+      else if (button.dataset.mode) { mode=button.dataset.mode; render('.wc-filter-menu summary'); }
       else if (button.dataset.edit) options.onEdit?.(button.dataset.edit);
       else if (button.dataset.add) options.onAdd?.(button.dataset.add);
       else if (button.hasAttribute('data-retry')) options.onRetry?.();
@@ -147,6 +162,12 @@
       }
     }
     function input(event) { if (event.target.hasAttribute('data-search')) { query=event.target.value; render('[data-search]'); } }
+    function dismiss(event) {
+      const menu=host.querySelector('.wc-filter-menu');
+      if(event.type==='keydown' && event.key==='Escape' && menu?.open){menu.open=false;menu.querySelector('summary').focus();}
+      else if(event.type==='pointerdown' && menu?.open && !menu.contains(event.target)) menu.open=false;
+    }
+    document.addEventListener('pointerdown',dismiss);host.addEventListener('keydown',dismiss);
     host.addEventListener('click',click); host.addEventListener('change',change); host.addEventListener('input',input);
     render();
     return {
@@ -165,7 +186,7 @@
         if ('error' in next) error=String(next.error||'');
         render();
       },
-      destroy() { disposed=true; host.removeEventListener('click',click); host.removeEventListener('change',change); host.removeEventListener('input',input); host.replaceChildren(); host.classList.remove('weekly-schedule'); }
+      destroy() { disposed=true; document.removeEventListener('pointerdown',dismiss);host.removeEventListener('keydown',dismiss);host.removeEventListener('click',click); host.removeEventListener('change',change); host.removeEventListener('input',input); host.replaceChildren(); host.classList.remove('weekly-schedule'); }
     };
   }
   global.OneLossWeeklyCalendar={mount,week,shift,displayDate,parseDate};
