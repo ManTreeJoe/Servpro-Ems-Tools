@@ -81,6 +81,30 @@ Validation: documentation-only diff/whitespace review. No runtime tests or
 deployment are claimed. The older linked L OPS guide below was not present in
 the local checkout during this handoff; L OPS should confirm current guide paths.
 
+### Follow-up: weekly-calendar presentation slice
+
+Owner: OneLoss. Branch: `main-lops-style-pivot`, following `a2195a2`.
+Status: isolated UI implemented/tested; NOT connected to the live Schedule.
+
+- Added `run_doc_editor_web_assets/weekly_calendar.js` and `.css`: seven-day
+  calendar, week/Today navigation, selected day, add/edit callbacks, search,
+  TBS/Pending lists, loading/error/retry states, and a basic Legacy day view.
+- Both views render the same host-provided collection. No Word, network,
+  persistence or schema calls. The module never mutates host records.
+- The input shape is a presentation adapter, NOT an approved shared schema.
+  The host must supply authorized records, resolve pending state for the
+  selected range, fence stale loads, and implement edits/persistence.
+- Remaining: live data adapter, editor, ordering, original Run-style print/PDF,
+  draft/confirm/post flow and shared schedule/job-log persistence. This basic
+  Legacy view is not yet the complete original-document layout.
+- `tests/weekly_calendar.cjs` passes using headless Edge: seven days/weekends,
+  callbacks, same-record updates across views, queues, search, loading/retry,
+  date boundaries, text escaping, narrow layout and teardown. Desktop/narrow
+  screenshots inspected; retains OneLoss theme tokens and compact controls.
+- L OPS: review shared contract questions above; do not build tables from this
+  renderer's input shape. No action required in mobile/web for this isolated UI.
+- No shared schema changes, app cutover, Reconstruction changes or release.
+
 ## Prior reference notes — September 14, 2026
 
 Read the [full L OPS agent guide](https://github.com/ManTreeJoe/l-ops-crm/blob/main/docs/agent-guide/README.md) before transferring features. It covers web CRM, Expo phone/iPad app, architecture, shared data, roles, run/visit crew assignments, media, documents, forms/signing, build commands, tests and remaining work.
