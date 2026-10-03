@@ -21,7 +21,12 @@ Explicit scope exclusions:
 
 The build follows `build.bat`: install `requirements-build.txt`, run
 `pyinstaller --noconfirm Linguar_Hub.spec`, and copy `README.txt` beside the EXE.
-The existing spec is unchanged. The complete application folder is zipped and
+Before tests and packaging, CI generates an unconfigured seed with the existing
+`make_shipped_config.build({})` policy and audits it. It contains only blank
+personal tokens and the system appearance setting; no live settings are read.
+The board approved this smoke-test artifact: shared franchise, Supabase, Trello,
+and paths must be configured in Settings before connected workflows can work.
+It is not a configured franchise release. The existing spec is unchanged. The complete application folder is zipped and
 retained as `Linguar-Hub-<branch>-<short sha>` for 14 days. Branch slashes become
 hyphens. CI uses no repository secrets or live client configuration.
 
