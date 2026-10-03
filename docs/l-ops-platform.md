@@ -1,6 +1,16 @@
 # L OPS platform / EMS Tools coordination
 
-Status: October 2, 2026. This file is the canonical cross-chat handoff.
+Status: October 3, 2026. This file is the canonical cross-chat handoff.
+
+## Start here — Paperclip / new-agent onboarding
+
+Read [paperclip-handoff.md](paperclip-handoff.md) for the mission, latest verified
+DEV status, product decisions, ownership, next-task queue, and unpublished local
+work inventory. Latest feature checkpoint: `3413dd0`, branch `main-lops-style-pivot`.
+The calendar and Legacy drag UI exist as sample-only DEV functionality; digital
+persistence, Confirm/Post and production print/PDF are still unfinished. Earlier
+dated status notes below are historical. No release or schema deployment is
+authorized by this documentation handoff.
 
 ## Active handoff — October 2, 2026
 
