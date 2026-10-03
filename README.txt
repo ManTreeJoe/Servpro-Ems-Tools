@@ -7,7 +7,19 @@ Linguar Hub
 SERVPRO IE Department admin automation suite.
 
 
-GETTING STARTED
+INSTALLING AND UPDATING
+-----------------------
+1. Run the Main or Trial Setup .exe once. It installs for your Windows user
+   without an admin prompt. Trial installs alongside Main.
+
+2. Open the app from its Start menu or desktop shortcut. Both Main and Trial
+   show an "Update available" banner on launch when a newer build is live.
+
+3. Follow the banner to download and run the newer Setup .exe. For Trial,
+   test builds arrive the same way; no separate application zip/unzip needed.
+
+
+GETTING STARTED (FOLDER DOWNLOAD)
 ---------------
 1. Keep this entire folder together. Don't move "Linguar Hub.exe" out of it
    — it needs the "_internal" folder next to it to run.
@@ -63,11 +75,11 @@ TROUBLESHOOTING
 UNINSTALLING
 ------------
 1. Close Linguar Hub.
-2. Delete this folder.
+2. For a Setup installation, uninstall Linguar Hub (or Linguar Hub Trial)
+   from Windows Settings → Apps. For a folder download, delete this folder.
 3. Optionally delete %APPDATA%\Linguar Hub to remove your settings
    and history.
 
-There's no installer, no registry entries, no services — just files.
 
 
 VERSION
