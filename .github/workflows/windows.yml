@@ -30,7 +30,7 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Install Python test dependencies
-        run: python -m pip install -r requirements.txt pytest
+        run: python -m pip install -r requirements.txt pytest openpyxl==3.1.5
       - name: Install Node test dependencies
         id: node-deps
         run: npm ci
@@ -42,26 +42,31 @@ jobs:
           import json
           import os
           import tempfile
+          import sys
           from pathlib import Path
           os.environ["APPDATA"] = tempfile.mkdtemp(prefix="ci-seed-")
           os.environ["LOCALAPPDATA"] = os.environ["APPDATA"]
+          sys.path.insert(0, str(Path.cwd()))
           from _packaging.make_shipped_config import build, audit
           seed, unknown = build({})
           assert not unknown and not audit(seed)
           assert seed == {"trello_token": "", "companycam_api_token": "", "appearance": "system"}
           Path("_packaging/config.json").write_text(json.dumps(seed), encoding="utf-8")
       - name: Run pytest
+        env:
+          LINGUAR_CI: '1'
         run: python -m pytest tests/ -ra --junitxml=pytest-results.xml
       - name: Run top-level Node scripts
         if: ${{ !cancelled() && steps.node-deps.outcome == 'success' }}
         shell: pwsh
         run: |
+          $skipReasons = (Get-Content .github/ci-skips.json -Raw | ConvertFrom-Json -AsHashtable).node_scripts
           $passed = 0
           $skipped = 0
           $failed = @()
           foreach ($test in Get-ChildItem tests/*.cjs | Sort-Object Name) {
-            if ($test.Name -eq 'shell_startup_styles.cjs') {
-              Write-Output "SKIP: $($test.Name); reason=requires DEV_TEST_URL and a live dev server; CI provides neither"
+            if ($skipReasons.ContainsKey($test.Name)) {
+              Write-Output "SKIP: $($test.Name); reason=$($skipReasons[$test.Name])"
               $skipped++
               continue
             }
@@ -104,9 +109,11 @@ jobs:
           import json
           import os
           import tempfile
+          import sys
           from pathlib import Path
           os.environ["APPDATA"] = tempfile.mkdtemp(prefix="ci-seed-")
           os.environ["LOCALAPPDATA"] = os.environ["APPDATA"]
+          sys.path.insert(0, str(Path.cwd()))
           from _packaging.make_shipped_config import build, audit
           seed, unknown = build({})
           assert not unknown and not audit(seed)

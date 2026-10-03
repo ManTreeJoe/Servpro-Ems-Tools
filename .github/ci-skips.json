@@ -1,0 +1,41 @@
+{
+  "python_modules": {
+    "tests/test_multi_unit_routing.py": "unconfigured runner: run_audit_gui imports require live runs_dir configuration (KeyError during collection)",
+    "tests/test_parse_run_doc.py": "unconfigured runner: run_audit_gui imports require live runs_dir configuration (KeyError during collection)",
+    "tests/test_tenant_and_extra_roots.py": "unconfigured runner: run_audit_gui imports require live runs_dir configuration (KeyError during collection)",
+    "tests/test_parse_scope.py": "unconfigured runner: snapshot_gui imports require live snapshot_template configuration (KeyError during collection)",
+    "tests/test_snapshot_email_subs.py": "unconfigured runner: snapshot_gui imports require live snapshot_template configuration (KeyError during collection)",
+    "tests/test_snapshot_no_answer_suppression.py": "unconfigured runner: snapshot_gui imports require live snapshot_template configuration (KeyError during collection)"
+  },
+  "python_tests": {
+    "tests/test_shipped_config.py::test_shared_key_ships[supabase_url]": "board-approved unconfigured CI seed has no shared franchise settings",
+    "tests/test_shipped_config.py::test_shared_key_ships[supabase_anon_key]": "board-approved unconfigured CI seed has no shared franchise settings",
+    "tests/test_shipped_config.py::test_shared_key_ships[trello_api_key]": "board-approved unconfigured CI seed has no shared franchise settings",
+    "tests/test_shipped_config.py::test_shared_key_ships[trello_workspace_id]": "board-approved unconfigured CI seed has no shared franchise settings",
+    "tests/test_shipped_config.py::test_shared_key_ships[audit_base]": "board-approved unconfigured CI seed has no shared franchise settings",
+    "tests/test_shipped_config.py::test_shared_key_ships[active_department]": "board-approved unconfigured CI seed has no shared franchise settings",
+    "tests/test_shipped_config.py::test_shared_key_ships[multi_department_enabled]": "board-approved unconfigured CI seed has no shared franchise settings",
+    "tests/test_shipped_config.py::test_shared_key_ships[franchise_name]": "board-approved unconfigured CI seed has no shared franchise settings",
+    "tests/test_shipped_config.py::test_shared_key_ships[office_phone]": "board-approved unconfigured CI seed has no shared franchise settings",
+    "tests/test_shipped_config.py::test_department_profiles_ship": "board-approved unconfigured CI seed has no department profiles or Supabase publishable key; generator audit still runs",
+    "tests/test_shipped_config.py::test_ie_identity_is_not_a_placeholder": "board-approved unconfigured CI seed has no department profiles or Supabase publishable key; generator audit still runs",
+    "tests/test_shipped_config.py::test_no_service_role_key_anywhere": "board-approved unconfigured CI seed has no department profiles or Supabase publishable key; generator audit still runs"
+  },
+  "node_scripts": {
+    "shell_startup_styles.cjs": "requires DEV_TEST_URL and a live dev server; CI provides neither",
+    "apa_drop_save.cjs": "pre-existing VM fixture failure: window is not defined",
+    "comment_reactions.cjs": "requires hard-coded developer Python at C:/Users/NathanBupte/AppData/Local/Programs/Python/Python312/python.exe",
+    "daily_run_completion.cjs": "requires hard-coded developer Python at C:/Users/NathanBupte/AppData/Local/Programs/Python/Python312/python.exe",
+    "companycam_gateway_reliability.cjs": "pre-existing DB credential fallback assertion: actual 1, expected 0",
+    "intake_embedded.cjs": "pre-existing restored customer assertion: empty string instead of Test customer",
+    "job_conversation.cjs": "pre-existing timeout waiting for [data-log-custom]",
+    "job_division_tabs.cjs": "pre-existing Requirements file-check assertion: actual 0, expected 1",
+    "job_draft_recovery.cjs": "pre-existing timeout waiting for work-note draft with post_to_trello=false",
+    "job_log_save_responsiveness.cjs": "pre-existing save responsiveness assertion: save button remains enabled while save is pending",
+    "job_log_subcontractors.cjs": "pre-existing picker overlay dismissal assertion: actual 1, expected 0",
+    "job_workspace_incremental.cjs": "pre-existing timeout waiting for [data-comment-division=\"CONTENTS\"]",
+    "job_workspace_loading_state.cjs": "pre-existing assertion: Failed log refresh erased saved entries",
+    "jobs_move_prompt.cjs": "pre-existing VM fixture failure: pendingCardDrop is not defined",
+    "popup_click_retention.cjs": "pre-existing outside-click dismissal assertions for shared intake popup and job card"
+  }
+}
