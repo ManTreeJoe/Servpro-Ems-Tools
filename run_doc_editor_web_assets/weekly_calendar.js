@@ -197,7 +197,7 @@
       }
     }
     const dragEvents=['dragstart','dragover','dragleave','drop','dragend'];
-    const pointerDrag=global.bindCalendarDrag?.(host,(id,day)=>{if(!disposed && !loading && !error)options.onSchedule?.(id,day);});
+    const pointerDrag=global.bindCalendarDrag?.(host,(id,day,placement)=>{if(!disposed && !loading && !error)options.onSchedule?.(id,day,placement);});
     dragEvents.forEach(type=>host.addEventListener(type,drag));
     function dismiss(event) {
       const menu=host.querySelector('.wc-filter-menu');

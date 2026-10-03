@@ -106,8 +106,24 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   await page.locator('button[data-period="month"]').click();
   await page.getByRole('button',{name:'Next month',exact:true}).click();
   await page.getByRole('button',{name:'Previous month',exact:true}).click();
+  await page.getByRole('button',{name:'Today',exact:true}).click();
   await page.getByRole('button',{name:'Legacy view',exact:true}).click();
   assert.equal(await page.locator('.run-paper section').count(),10);
+  await page.setViewportSize({width:1400,height:1600});
+  const monitor=page.locator('.run-paper [data-drop-group="Monitor"]');
+  const work=page.locator('.run-paper [data-drop-group="Work To Be Performed"]').first();
+  const legacyId=await monitor.locator('[data-edit]').first().getAttribute('data-edit');
+  await monitor.locator('[data-edit]').first().dragTo(work.locator('h4'));
+  await page.locator('#editor').waitFor({state:'visible'});
+  assert.equal(await page.locator('#run-group').inputValue(),'Work To Be Performed');
+  await page.locator('#cancel').click();
+  assert.equal(await monitor.locator(`[data-edit="${legacyId}"]`).count(),1);
+  await monitor.locator(`[data-edit="${legacyId}"]`).dragTo(work.locator('h4'));
+  await page.locator('#editor').waitFor({state:'visible'});
+  await page.getByRole('button',{name:'Apply sample edit',exact:true}).click();
+  assert.equal(await work.locator('[data-edit]').first().getAttribute('data-edit'),legacyId);
+  assert.equal(await page.locator(`[data-edit="${legacyId}"]`).count(),1);
+  await page.screenshot({path:path.join(os.tmpdir(),'calendar-legacy-drag.png')});
   console.log('PASS: three-day/month navigation, month drilldown, seven visible waiting groups, column and page scrolling, Legacy sections');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

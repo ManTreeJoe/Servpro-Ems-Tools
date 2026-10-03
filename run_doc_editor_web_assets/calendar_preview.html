@@ -63,6 +63,7 @@ const records=[
  {id:'sample-4',title:'Sample — Maple office',queue:'tbs',since:OneLossWeeklyCalendar.shift(today,-2),activities:[{label:'Initial inspection',people:[]}]}
 ];
 let editing=null;
+let dropPlacement=null;
 let activityDraft=[];
 const field=id=>document.getElementById(id), split=value=>value.split(',').map(x=>x.trim()).filter(Boolean);
 const names=['Oak residence','Pine apartments','Maple office','Cedar home','Willow residence','Elm plaza','Birch home','Aspen duplex','Juniper office','Cypress home','Laurel residence','Spruce building'];
@@ -92,11 +93,13 @@ function legacy({selected,records}){
  const sections=['Monitor','Work To Be Performed','Upcoming','TBS New Loss /Reinspection','TBS Mitigation','TBS Contents','Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management','On Hold'];
  return `<article class="run-paper"><header><div class="paper-brand">SERVPRO</div><p>Cleaning. Restoration. Construction.</p><h2>SERVPRO® Team Lingurar</h2><h3><u>Servpro Daily Run</u></h3></header><h3><u>Date: ${OneLossWeeklyCalendar.displayDate(selected)}</u></h3>${sections.map(group=>{
  const items=records.filter(r=>group==='Upcoming'?r.queue==='scheduled'&&r.date>selected:r.queue==='scheduled'?r.date===selected&&(r.group||'Work To Be Performed')===group:r.group===group||(!r.group&&({tbs:'TBS Mitigation',pending:'Pending Approvals – Insurance/Self Pay',hold:'On Hold'})[r.queue]===group));
- return `<section><h4><u>${safe(group)}</u></h4><ol>${items.map(r=>`<li><button type="button" data-edit="${safe(r.id)}">${safe(r.title)}: ${safe(r.address||'')} <b>${r.activities.map(a=>`(${safe(a.label)}) ${safe(a.people.join('/'))}`).join(' ')} ${safe(r.time||'')} ${group==='Upcoming'?OneLossWeeklyCalendar.displayDate(r.date):''}</b></button></li>`).join('')}</ol></section>`;
+ const queue=group.startsWith('TBS')?'tbs':group.startsWith('Pending')?'pending':group==='On Hold'?'hold':'scheduled';
+ const targetDate=group==='Upcoming'?OneLossWeeklyCalendar.shift(selected,1):selected;
+ return `<section data-drop-date="${targetDate}" data-drop-queue="${queue}" data-drop-group="${safe(group==='Upcoming'?'Work To Be Performed':group)}"><h4><u>${safe(group)}</u></h4><ol data-drop-list>${items.map(r=>`<li><button class="wc-legacy-card" draggable="true" type="button" data-edit="${safe(r.id)}">${safe(r.title)}: ${safe(r.address||'')} <b>${r.activities.map(a=>`(${safe(a.label)}) ${safe(a.people.join('/'))}`).join(' ')} ${safe(r.time||'')} ${group==='Upcoming'?OneLossWeeklyCalendar.displayDate(r.date):''}</b></button></li>`).join('')}</ol></section>`;
  }).join('')}</article>`;
 }
 field('calendar').dataset.layout='dispatch';
-const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id),onSchedule:(id,day)=>openEditor(id,day,true)});
+const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id),onSchedule:(id,day,placement)=>openEditor(id,day,true,placement)});
 calendar.update({records});
 const runGroups={scheduled:['Monitor','Work To Be Performed'],tbs:['TBS New Loss /Reinspection','TBS Mitigation','TBS Contents'],pending:['Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management'],hold:['On Hold']};
 const extraFields=['address','contact','phone','insurance','claim','equipment','access','notes'];
@@ -109,12 +112,13 @@ function renderActivities(){
 }
 field('activity-options').onclick=event=>{const button=event.target.closest('[data-activity]');if(!button)return;const label=button.dataset.activity,index=activityDraft.findIndex(a=>a.label===label);if(index>=0)activityDraft.splice(index,1);else activityDraft.push({label,people:[]});renderActivities();field('activity-error').textContent='';};
 field('activity-assignments').oninput=event=>{if(event.target.dataset.assignment!==undefined)activityDraft[Number(event.target.dataset.assignment)].people=split(event.target.value);};
-function openEditor(id,day,schedule=false){
+function openEditor(id,day,schedule=false,placement=null){
+ dropPlacement=placement;
  editing=id; const row=records.find(r=>r.id===id)||availableJobs.find(r=>r.id===id);
- field('job').value=row?.title||'';field('queue').value=schedule?'scheduled':row?.queue||'scheduled';field('date').value=OneLossWeeklyCalendar.displayDate(schedule?day:row?.date||day||today);field('date').setCustomValidity('');
+ field('job').value=row?.title||'';field('queue').value=placement?.queue||(schedule?'scheduled':row?.queue||'scheduled');field('date').value=OneLossWeeklyCalendar.displayDate(schedule?day:row?.date||day||today);field('date').setCustomValidity('');
  field('time').value=row?.time||'';
  extraFields.forEach(key=>field(key).value=row?.[key]||'');
- activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(row?.group);field('activity-picker').open=false;field('activity-error').textContent='';
+ activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(placement?.group||row?.group);field('activity-picker').open=false;field('activity-error').textContent='';
  field('editor').showModal();field('job').focus();
 }
 field('cancel').onclick=()=>field('editor').close();
@@ -128,6 +132,11 @@ field('visit-form').onsubmit=event=>{
  if(!row.title)return;
  if(queue!=='scheduled')row.since=existing?.queue===queue?existing.since:today;
  if(existing)records.splice(records.indexOf(existing),1,row);else records.push(row);
+ if(dropPlacement){
+   records.splice(records.indexOf(row),1);
+   const before=records.findIndex(r=>r.id===dropPlacement.beforeId && r.queue===row.queue && r.group===row.group && r.date===row.date);
+   if(before>=0)records.splice(before,0,row);else records.push(row);
+ }
  calendar.update({records});field('editor').close();
 };
 </script>

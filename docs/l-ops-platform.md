@@ -183,6 +183,10 @@ The user wants useful features to move in both directions. Shared domain contrac
 The legacy DB and new platform DB are not yet one database. Do read-only comparisons, agree stable IDs and source-of-truth/conflict rules, and build a reversible migration before shared writes. Avoid destructive changes to the working legacy app.
 
 ## Publication caveat
+### 2026-10-03 — Legacy Run drag-and-drop
+
+Branch `main-lops-style-pivot`: Legacy sample Run rows now share calendar pointer feedback and support drops within/across Run sections, including empty groups. Destination queue/group/date populate the review editor; Upcoming proposes the following day for review. Apply retains identity/details and inserts at the chosen position; Cancel leaves the original row untouched. Browser tests verify Legacy Monitor-to-Work placement, cancellation and duplicate prevention alongside existing calendar regressions. Render inspected; UI-design guidance preserved the paper-style layout. No live writes, schema changes or L OPS database updates.
+
 ### 2026-10-02 — Visible calendar drag feedback
 
 Branch `main-lops-style-pivot`: DEV sample cards now use pointer-following ghosts, insertion placeholders, destination highlights and a short landing/return animation, referencing the existing job-board interaction. Escape cancels; reduced-motion skips the animation. Apply/Cancel review still owns the actual sample move. Added browser checks for visible ghost/placeholder and Escape cleanup; full preview and calendar regression tests pass. No schema or live-write changes; no L OPS update required. UI-design guidance kept existing controls and click-to-edit access.
