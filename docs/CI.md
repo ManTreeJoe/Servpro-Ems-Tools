@@ -5,7 +5,7 @@ requests targeting `main`, and manual runs. Its independent Windows tests and
 Windows PyInstaller build jobs both must be green before review approval.
 Python 3.12 and Node 22 are used; pip and npm download caches are enabled.
 
-Tests install `python -m pip install -r requirements.txt pytest openpyxl==3.1.5` and `npm ci`,
+Tests install `python -m pip install -r requirements.txt pytest openpyxl==3.1.5 pypdf` and `npm ci`,
 then run `python -m pytest tests/ -ra --junitxml=pytest-results.xml` and
 `node tests/<filename>.cjs` for each top-level script. Each nonzero script exit
 fails the job, while the loop continues to report all failures. Pytest results
@@ -16,8 +16,8 @@ The pytest step sets `LINGUAR_CI=1`. `.github/ci-skips.json` records every
 CI-only Python module/test and Node script skip with its specific reason.
 Pytest reports module skips during collection and individual test skips in
 its summary; the Node loop prints each script skip. Normal local pytest runs
-do not apply this policy. `openpyxl` is installed as an additional test dependency
-because the legacy spreadsheet tests import it.
+do not apply this policy. `openpyxl` and `pypdf` are additional test dependencies for the spreadsheet
+and rendered-PDF contracts.
 
 Explicit scope exclusions:
 

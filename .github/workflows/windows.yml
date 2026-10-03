@@ -30,7 +30,7 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Install Python test dependencies
-        run: python -m pip install -r requirements.txt pytest openpyxl==3.1.5
+        run: python -m pip install -r requirements.txt pytest openpyxl==3.1.5 pypdf
       - name: Install Node test dependencies
         id: node-deps
         run: npm ci
@@ -52,10 +52,20 @@ jobs:
           assert not unknown and not audit(seed)
           assert seed == {"trello_token": "", "companycam_api_token": "", "appearance": "system"}
           Path("_packaging/config.json").write_text(json.dumps(seed), encoding="utf-8")
+      - name: Validate CI skip policy
+        run: python .github/test_ci_policy.py
       - name: Run pytest
         env:
           LINGUAR_CI: '1'
         run: python -m pytest tests/ -ra --junitxml=pytest-results.xml
+      - name: Upload pytest results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: pytest-results.xml
+          if-no-files-found: warn
+          retention-days: 14
       - name: Run top-level Node scripts
         if: ${{ !cancelled() && steps.node-deps.outcome == 'success' }}
         shell: pwsh
@@ -79,14 +89,6 @@ jobs:
           $summary >> $env:GITHUB_STEP_SUMMARY
           if ($failed.Count -gt 0) { throw "Failed scripts: $($failed -join ', ')" }
           exit 0
-      - name: Upload pytest results
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-results-${{ github.run_id }}-${{ github.run_attempt }}
-          path: pytest-results.xml
-          if-no-files-found: warn
-          retention-days: 14
 
   build:
     name: Windows PyInstaller build

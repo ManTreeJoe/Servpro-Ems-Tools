@@ -21,7 +21,7 @@ class SkipPolicyTests(unittest.TestCase):
             filename, name = nodeid.split('::', 1)
             tree = ast.parse((ROOT / filename).read_text(encoding='utf-8'))
             functions = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
-            self.assertIn(name.split('[')[0], functions, nodeid)
+            self.assertIn(name.rsplit('::', 1)[-1].split('[')[0], functions, nodeid)
             self.assertTrue(reason.strip(), nodeid)
 
 
