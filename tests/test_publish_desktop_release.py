@@ -10,7 +10,7 @@ from tools import publish_desktop_release as publisher
 
 
 @pytest.fixture
-def release_api(tmp_path):
+def release_api(tmp_path, monkeypatch):
     installer = tmp_path / "Setup.exe"
     installer.write_bytes(b"fake installer for offline tests")
     release = {"tag_name": "v1.8.26", "draft": True, "prerelease": False,
@@ -21,8 +21,8 @@ def release_api(tmp_path):
                "assets_url": publisher.BASE + "/releases/1/assets"}
     asset = {"name": installer.name, "size": installer.stat().st_size,
              "digest": "sha256:" + hashlib.sha256(installer.read_bytes()).hexdigest(),
-             "browser_download_url": "https://example.org/Setup.exe"}
-    state = {"existing": [], "current": None, "asset": asset, "calls": []}
+             "browser_download_url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/untagged-deadbeef/Setup.exe"}
+    state = {"existing": [], "current": None, "asset": asset, "calls": [], "download_status": 200, "heads": []}
 
     def request(method, url, **kwargs):
         state["calls"].append((method, url, kwargs))
@@ -40,6 +40,23 @@ def release_api(tmp_path):
             release.update(kwargs["body"])
             return release.copy()
         return {}
+
+    def urlopen(request, timeout):
+        assert request.get_method() == "HEAD"
+        assert request.get_header("Authorization") is None
+        assert timeout == 180
+        assert release["draft"] is False
+        assert state["calls"][-1][0] == "PUT"
+        manifest = json.loads(base64.b64decode(state["calls"][-1][2]["body"]["content"]))
+        assert request.full_url == manifest["installer"]
+        state["heads"].append(request.full_url)
+        if state["download_status"] >= 400:
+            raise urllib.error.HTTPError(request.full_url, state["download_status"], "Error", {}, None)
+        response = io.BytesIO()
+        response.status = state["download_status"]
+        return response
+
+    monkeypatch.setattr(publisher.urllib.request, "urlopen", urlopen)
 
     def run(action="trial", channel="trial"):
         return publisher.publish_release(request, action=action, version="1.8.26",
@@ -65,7 +82,9 @@ def test_trial_verifies_before_publishing_and_updates_feed(release_api, current)
     assert body.get("sha") == (current["sha"] if current else None)
     assert json.loads(base64.b64decode(body["content"])) == {
         "version": "1.8.26", "url": release["html_url"],
-        "installer": state["asset"]["browser_download_url"], "notes": "Notes"}
+        "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.26/Setup.exe",
+        "notes": "Notes"}
+    assert len(state["heads"]) == 1
 
 
 @pytest.mark.parametrize("field,value", [("size", 0), ("digest", "sha256:wrong"), ("digest", None)])
@@ -81,10 +100,15 @@ def test_stable_draft_then_publish(release_api):
     state, release, run = release_api
     assert run("draft", "main")["draft"] is True
     assert not any(method in ("PATCH", "PUT") for method, _, _ in state["calls"])
+    assert state["heads"] == []
     state["existing"] = [release.copy()]
     state["calls"].clear()
     assert run("publish", "main")["draft"] is False
     assert release["make_latest"] == "true"
+    manifest = json.loads(base64.b64decode(state["calls"][-1][2]["body"]["content"]))
+    assert manifest["installer"] == (
+        "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.26/Setup.exe")
+    assert state["heads"] == [manifest["installer"]]
     assert state["calls"][-1][1].endswith("/contents/main/version.txt")
     assert not any(method == "POST" for method, _, _ in state["calls"])
 
@@ -136,3 +160,19 @@ def test_token_transport_json_upload_and_404(monkeypatch, tmp_path):
     assert request("GET", "https://example.org/missing", missing_ok=True) is None
     with pytest.raises(RuntimeError, match="HTTP 404"):
         request("GET", "https://example.org/missing")
+
+
+@pytest.mark.parametrize("action,channel", [("trial", "trial"), ("publish", "main")])
+@pytest.mark.parametrize("status", [200, 204, 404])
+def test_post_publish_download_status(release_api, action, channel, status):
+    state, release, run = release_api
+    if action == "publish":
+        state["existing"] = [release.copy()]
+    state["download_status"] = status
+    if status == 200:
+        assert run(action, channel)["draft"] is False
+    else:
+        with pytest.raises(RuntimeError, match=f"HTTP {status}: https://github.com/.*/v1.8.26/Setup.exe"):
+            run(action, channel)
+    assert release["draft"] is False
+    assert len(state["heads"]) == 1
