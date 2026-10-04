@@ -1,4 +1,5 @@
 from pathlib import Path
+import ast
 import json
 
 import home_web
@@ -39,7 +40,21 @@ def test_running_window_receives_channel_taskbar_icon():
 
     assert '"linguar_hub_trial.ico"' in shell
     assert 'else "linguar_hub.ico"' in shell
-    assert "webview.start(debug=False, http_server=True, icon=taskbar_icon)" in shell
+    starts = [
+        node for node in ast.walk(ast.parse(shell))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "webview"
+        and node.func.attr == "start"
+    ]
+    assert len(starts) == 1
+    # DEV adds safe-port options; they must not hide the required icon/server args.
+    kwargs = {kw.arg: kw.value for kw in starts[0].keywords if kw.arg}
+    assert ast.literal_eval(kwargs["debug"]) is False
+    assert ast.literal_eval(kwargs["http_server"]) is True
+    assert isinstance(kwargs["icon"], ast.Name)
+    assert kwargs["icon"].id == "taskbar_icon"
     assert "datas.append((os.path.join(base, ICON_FILE), '.'))" in spec
 
 
