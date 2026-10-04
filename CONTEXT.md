@@ -31,8 +31,16 @@ A person authorized to operate Linguar Hub within one or more franchises and rol
 _Avoid_: Client, contact
 
 **Job Log Entry**:
-A dated structured record of scheduled or completed work, findings, crew, equipment, and next steps for a Job or Division.
+A dated structured record of scheduled or completed work, findings, crew, equipment, and next steps for one Board Placement. Entries written before Board Placement ownership existed remain with the primary Division Card.
 _Avoid_: Snapshot, comment
+
+**Job Facts**:
+The canonical customer, contact, property, claim, payer, and loss information for one Job. Every Board Placement for that Job displays the same Job Facts.
+_Avoid_: Card description, placement activity
+
+**Placement Activity**:
+Comments, checklists, and Job Log Entries belonging to one exact Division Card. Placement Activity may differ between WIP, Estimating, Logs, Billing, or other Board Placements for the same Job.
+_Avoid_: Job Facts, shared customer record
 
 **Snapshot**:
 A point-in-time report generated from selected Job Log Entries. It is an output, not a separate history.
@@ -46,11 +54,29 @@ _Avoid_: Checklist item
 A task grouped by responsibility that can provide evidence for a Requirement but does not replace it.
 _Avoid_: Requirement
 
+## Reusable rules
+
+**Job Profile**:
+An admin-managed set of default Requirements selected by payer type, carrier/client, loss type, and Division. Applying a Job Profile copies its Requirements onto the Job so later profile edits do not silently rewrite work already underway.
+_Avoid_: live job, Trello template, checklist
+
+**Profile Match**:
+A Job Profile whose specified selectors match a Job. An unspecified selector means “Any”; when more than one profile matches, the most-specific match is presented first.
+_Avoid_: automatic overwrite
+
+**Applied Profile**:
+The immutable snapshot of a Job Profile copied onto one Job, including its name, selectors, Requirements, and application time.
+_Avoid_: pointer to the current profile
+
 ## External systems
 
 **Division Card**:
-The temporary Trello representation of one Division. Linguar Hub owns the Job relationship and operational state.
+One synchronized Trello representation of a Division in a particular work queue. A Division may temporarily have several linked cards with the same shared Job information—for example WIP and Estimating—while each card keeps its own queue-specific placement and work state.
 _Avoid_: Job, source of truth
+
+**Board Placement**:
+A Division Card's presence in one external board and lane for a particular responsibility or handoff. Moving, completing, or closing one Board Placement does not implicitly remove another placement for the same Division.
+_Avoid_: Duplicate job, Division stage
 
 **External Mirror**:
 A provider-specific representation of selected Linguar Hub information. It keeps the provider's permanent identifiers and sync state but never becomes the identity or complete record of a Client, Job, or Division.

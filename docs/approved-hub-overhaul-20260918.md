@@ -12,12 +12,60 @@ Target: Linguar Hub Windows/internal application in this repository. L OPS is a 
 - Keep comments on the right. All / EMS / Contents / Recon toggles support multiple visible divisions. Preserve source labels and use one explicit posting destination.
 - Run checklist action opens an Add to Schedule dialog for the job.
 
+### Job Log persistence — next update, implemented in dev
+
+Requested after release 1.8.21 on September 18, 2026. Implemented locally after the user requested continuation; not included in the published 1.8.21 installer.
+
+- Persist successfully loaded Job Log entries in Hub's database under their exact job/division and authorized workspace scope, including stable source IDs and source/update timestamps.
+- Reopening a job, switching tabs or restarting the app must show saved entries immediately without waiting for Trello or another provider.
+- Keep saved entries until an actual change is confirmed. Background refresh merges new/edited entries by stable identity instead of clearing and rebuilding the log; partial results, pagination, timeouts and failed syncs must not erase saved history.
+- Confirmed deletions must be handled explicitly; a missing entry in an incomplete response is not evidence of deletion. Pending local edits must not be silently overwritten by an older provider response.
+- Preserve reading position, expanded entries and drafts during refresh. Show stale/offline status separately from the saved content.
+- Acceptance: load once, reopen and restart offline with the same saved entries; then verify new/edited entries update without duplicates or blanking, and failed/partial refreshes preserve the saved log.
+
+Implementation: `job_log_projection.py` keeps scoped, persistent log rows in the existing local SQLite projection file, independently of whole-card eviction/invalidation. Existing 1.8.21 workspace copies are adopted on read. Confirmed edits/imports patch the saved copy; confirmed deletions retain a tombstone so an older response cannot resurrect the entry. Fresh shared-data reads still use the existing authorized backend. This is local read persistence, not a replacement shared database or new offline write queue. Cross-PC deletions require an explicit deletion feed in a later shared-sync pass; absence in a read is deliberately not treated as deletion.
+
+Cold reopens with a retained log skip shared identity/activity/folder reads in the immediate response. Other card details hydrate afterward. Background rendering keeps unchanged log rows, expanded source notes, scroll position and drafts mounted. The next app bundle must include the new module; no new production schema or provider write is required to adopt the local read copies.
+
+Verification: the initial persistence regression reproduced six failures. They now pass, including actual process restart, cache eviction, edit invalidation, partial/error reads, timestamp ordering, acknowledged deletion, stale requests, scope isolation and early Contents edits. The expanded browser loading-state test reproduced and fixed row replacement and log blanking during failure. Full suite at the first completed pass: 3,563 passed, two existing datetime warnings; all 22 browser scripts passed. The final immediate-read/Contents cases and related workspace/action suite: 58 passed. No live Trello writes or release publication were performed in this follow-up.
+
 ## 2. Digital schedule and run
 
 - Store structured visits, multiple per job, each with date, arrival window, crew and work notes.
 - Waiting/TBS/on-hold items remain undated until scheduled. Retain meaningful waiting sections.
 - Compact rows; use L OPS scheduling as a reference after inspecting it.
-- Print the schedule in the existing normal run-document layout and sections. Optional waiting-list section. Do not remove existing print capability during migration.
+- Print/export the schedule as a PDF in the existing normal run-document layout and sections. The waiting-list section is optional. Word remains only as a temporary legacy import/source during migration; the completed digital Schedule does not need to generate or maintain a Word document.
+
+Next-phase inspection: `run_doc_editor_web.Api.load_day/save_day` still reads/writes the actual Word document, `dispatch_schedule.DispatchSchedule` projects those documents into Operations, and `print_preview` opens the selected document through `office_print`. Existing crew selection and arrival fields are UI helpers, not durable shared visit records. Do not advertise a digital-first cutover yet.
+
+Next execution slice (Schedule, following the user's request to handle sync and move on):
+
+1. Define one shared visit record/ID used by Schedule, Add to Schedule from a job, and Operations. Keep exact job/division identity, workspace authorization, visit revision, date/time window, crew, waiting group and original authored run text.
+2. Prepare an idempotent, previewed import of existing run rows. Preserve unrecognized text, strike-through, ordering and every waiting section; leave source Word documents untouched during trial.
+3. Connect the real Schedule editor and Operations to the same visit service. Use revision checks for concurrent edits, not silent last-write-wins. Keep unscheduled/waiting work undated rather than assigning today.
+4. Render a PDF in the existing run-document layout from approved visits and compare it against current office examples before switching the source of truth. Retain rollback to the existing document-backed flow during acceptance, but require only PDF output after cutover.
+
+September 18 follow-up: the read-only Schedule import preview is implemented in `schedule_import.py`, called through the real Schedule bridge's `preview_schedule_import`. It preserves every top-level paragraph (including blanks, original spacing and strike-through), all eleven recognized sections, and table text for review. Waiting sections have no proposed date. It deliberately does not infer job links, crew or completion from free text. Replay keys are scoped to workspace/day/document revision and distinct for duplicate lines; they are NOT persistent visit IDs across changed documents. Changed versions require reconciliation, not automatic re-import. The Schedule now exposes a **Review digital import** button; no Apply action exists and no Word or database writes occur. Shared persistence, confirmed reconciliation, Operations integration and print-layout parity remain pending. Current Schedule editing and printing are unchanged.
+
+### Import review screen — implemented in dev, not released
+
+- The selected Schedule day opens the real read-only preview through the embedded Home bridge. Search and All / Dated work / Waiting filters show grouped authored Run lines, source paragraph numbers and proposed dates; original text and table evidence remain inspectable.
+- Uses existing Hub colors/type rather than another palette. Layout checked in dark/light themes and at 390-pixel width. Native modal provides keyboard focus containment, explicit Close/Escape and focus restoration; clicking outside does not dismiss it.
+- Unsaved Schedule edits and changed source revisions are explained without changing the editor. Late replies after close/reopen or day/workspace changes cannot render in the new context. Failed reads can retry; a 30-second timeout avoids indefinite loading. This does not cancel the underlying file read.
+- The oversized Schedule row bug was reproduced with the production renderer: a one-line row without an arrival time was 183px tall. The generic `.empty` page style leaked a 70px top margin into `.row-time.empty`. Scoping the page-empty styles to `#empty` reduced that case to 97px; row density is regression-tested. No blanket theme change was made.
+- Shared storage and final import remain explicitly unavailable. No live records, Word files, memberships or database schema were modified. Normal Print and Open in Word retain the current Run layout.
+
+Verification for this screen: 146 focused Python regressions passed (two existing datetime warnings); all 24 browser scripts passed, including the new real-renderer preview/row-density test, existing Schedule editor and printing tests. Dark/light and narrow screenshots were visually inspected. A read-only check of today's actual IE Run still returned 64 candidate rows and 44 undated waiting rows. These are import candidates, not confirmed job/visit identities. The development changes have not been packaged or published.
+
+### Trello sync warning — corrected in dev, not released
+
+Read-only checks reproduced PGRST205 for `crm_pipeline_cards` using the installed profile. A catalog query confirmed that all four optional Pipeline queue tables are absent from the Linguar server; Trello authentication/read succeeded. No production SQL migration, queued comment replay or card write was performed.
+
+The checker now distinguishes the existing direct-Trello deployment from a shared queued deployment. A successful refresh in direct mode displays "Trello connected" and explains that the shared background write queue is not enabled. Authentication, network and partially installed schema failures still need attention. A non-base workspace cannot drain the legacy unscoped queue. Rejected card writes and failed refreshes with saved-board fallback are no longer reported as successful syncs. Failed lane/card requests cannot replace a saved board with a successful empty board.
+
+Do not install the legacy v11 SQL merely to enable the queue: its missing franchise isolation and broad policies require the separately planned secured migration. This fix corrects status and failure handling; it does not claim the shared DB-first Pipeline cutover is complete. The installed 1.8.21 executable is unchanged until a new build is installed.
+
+Verification: sync regressions reproduced the erroneous warning, rejected-write success and saved-board fallback success before the fixes. Combined workspace, sync, Operations and Schedule regression suite: 141 passed (two existing datetime warnings); all 23 browser regression scripts passed. The live read-only installed-profile check now reports direct mode / schema missing with Trello reachable. Today's real IE Run (September 18) previews 95 paragraphs and 64 candidate rows, including 44 undated waiting rows. Source documents were not saved or imported; no customer data was printed by the diagnostic. Print parity and the shared Schedule cutover are not certified by these preview tests.
 
 ## 3. Billing and AR
 

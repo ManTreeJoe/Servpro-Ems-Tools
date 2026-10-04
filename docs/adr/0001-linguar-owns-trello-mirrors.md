@@ -10,6 +10,7 @@ Linguar Hub will be the canonical record for clients, jobs, divisions, requireme
 
 - All integration rows, links, queues, and conflicts must be franchise-scoped and protected by database authorization.
 - Trello IDs remain useful provider identifiers but never identify a Client, Job, or Division.
+- One Division may temporarily have multiple Trello board placements (for example WIP and Estimating). Every placement projects the same canonical Job Facts, while its comments, checklists, and Job Log remain attached to that exact card; changing one placement never silently deletes another.
 - Trello outages cannot block or roll back valid Linguar Hub work.
 - A provider write is successful only after an acknowledgement is stored; retries reuse the original operation key.
 - Imported activity keeps its origin and author. Hub-owned entries remain editable under Hub permissions and project outward.

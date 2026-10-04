@@ -2322,7 +2322,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   if (!preparation) document.body.appendChild(w);
   const previousFocus = preparation ? null : document.activeElement;
   window.JobFiles?.mount(w.querySelector('.job-files-section'), {client:data.client || res.client || '', attachments:data.attachments || []});
-  window.SavedRunActivity?.mount(w.querySelector('.job-run-section'), data.client || res.client || '', selectedDivision);
+  window.SavedRunActivity?.mount(w.querySelector('.job-run-section'), data.client || res.client || '', selectedDivision, data.card_id || '');
   const workspaceTabs = window.JobWorkspaceTabs.mount(w, `${state.department || ''}:${data.card_id || data.client || ''}`);
   if (!preparation && data.initial_workspace_tab) workspaceTabs.select(data.initial_workspace_tab);
   const dirtyDrafts = preparation?.dirtyDrafts || new Set();

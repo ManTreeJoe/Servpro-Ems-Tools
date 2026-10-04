@@ -3,7 +3,7 @@ window.JobWorkspaceTabs = (() => {
   const remembered = new Map();
   const definitions = [
     ['overview', 'Overview'], ['log', 'Job Log'],
-    ['requirements', 'Requirements'], ['files', 'Files'], ['run', 'Run Activity'],
+    ['requirements', 'Requirements'], ['files', 'Files'], ['run', 'Card Details'],
   ];
   function mount(root, identity) {
     const layout = root.querySelector('.job-card-layout');

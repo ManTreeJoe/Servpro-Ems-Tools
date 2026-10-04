@@ -25,14 +25,27 @@ def test_contents_card_makes_contents_visible_without_overwriting_manual_state()
     }
 
 
-def test_contents_folder_is_detected(tmp_path, monkeypatch):
+def test_folder_shell_does_not_invent_a_division(tmp_path, monkeypatch):
     (tmp_path / "CONTENTS").mkdir()
     monkeypatch.setattr("job_folders.shells_at", lambda _path: ["CONTENTS"])
     result = pipeline_web._detected_work_environments(
         {"work_environments": []}, {"path": str(tmp_path)}, [], "EMS")
     by_division = {item["work_environment"]: item for item in result}
-    assert by_division["CONTENTS"]["stage"] == "planned"
-    assert by_division["CONTENTS"]["detected_sources"] == ["job folder"]
+    assert "CONTENTS" not in by_division
+
+
+def test_selected_tab_without_card_does_not_invent_a_division():
+    assert pipeline_web._detected_work_environments(
+        {"work_environments": []}, {}, [], "RECON") == []
+
+
+def test_native_division_does_not_require_trello():
+    result = pipeline_web._detected_work_environments(
+        {"work_environments": [{"work_environment": "RECON", "stage": "active", "owner": "Sam"}]},
+        {}, [], "EMS")
+    assert len(result) == 1
+    assert result[0]["stage"] == "active"
+    assert result[0]["owner"] == "Sam"
 
 
 def test_live_contents_board_passes_contents_identity_to_workspace():
