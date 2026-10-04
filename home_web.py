@@ -203,6 +203,17 @@ ASSET_FOLDER = {
 }
 
 
+def _schedule_calendar_enabled():
+    """Expose the sample calendar in DEV and Trial without changing identity."""
+    if _is_dev_runtime():
+        return True
+    try:
+        import paths as _paths
+        return bool(getattr(_paths, "IS_TRIAL", False))
+    except Exception:
+        return False
+
+
 def _asset_folder_for(key: str) -> str:
     """Return the iframe src for a sidebar key.
 
@@ -220,7 +231,7 @@ def _asset_folder_for(key: str) -> str:
         return "../audit_web_assets/index.html?surface=daily"
     if key == "operations":
         return "../operations_web_assets/index.html?embedded=1"
-    if key == "run_doc_editor" and _is_dev_runtime():
+    if key == "run_doc_editor" and _schedule_calendar_enabled():
         return "../run_doc_editor_web_assets/calendar_preview.html"
     folder = ASSET_FOLDER.get(key, f"{key}_web_assets")
     return f"../{folder}/index.html"

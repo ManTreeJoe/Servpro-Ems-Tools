@@ -1,6 +1,8 @@
 """Regression coverage for live-run stability failures."""
 from pathlib import Path
 
+import pytest
+
 import data_backup
 import home_web
 import persistence
@@ -79,6 +81,36 @@ def test_full_dev_shell_uses_main_data_with_an_isolated_runtime(monkeypatch):
     assert home_web._instance_mutex_name() == (
         "Local\\LinguarHub.Dev.SingleInstance")
     assert home_web._window_title() == "OneLoss — DEV"
+
+
+@pytest.mark.parametrize(
+    "is_trial,dev_mode,page,channel,title",
+    [
+        (True, None, "calendar_preview.html", "Trial", "OneLoss — TRIAL"),
+        (False, None, "index.html", "Main", "OneLoss"),
+        (False, "1", "calendar_preview.html", "Dev", "OneLoss — DEV"),
+        (True, "1", "calendar_preview.html", "Dev", "OneLoss — DEV"),
+    ],
+)
+def test_schedule_route_preserves_runtime_identity(
+    monkeypatch, is_trial, dev_mode, page, channel, title,
+):
+    import paths
+
+    monkeypatch.setattr(paths, "IS_TRIAL", is_trial)
+    if dev_mode is None:
+        monkeypatch.delenv("LINGUAR_DEV_MODE", raising=False)
+    else:
+        monkeypatch.setenv("LINGUAR_DEV_MODE", dev_mode)
+
+    assert home_web._asset_folder_for("run_doc_editor") == (
+        f"../run_doc_editor_web_assets/{page}")
+    assert home_web._asset_folder_for("pipeline") == (
+        "../pipeline_web_assets/index.html")
+    assert home_web._runtime_channel() == channel
+    assert home_web._window_title() == title
+    assert home_web._instance_mutex_name() == (
+        f"Local\\LinguarHub.{channel}.SingleInstance")
 
 
 def test_state_replace_retries_a_brief_windows_lock(tmp_path, monkeypatch):
