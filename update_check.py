@@ -1,13 +1,8 @@
-"""Lightweight update check.
+"""Token-free update checks against the public linguar-hub-releases repository.
 
-The app polls a `version.txt` on the GitHub repo's main branch (raw). When its
-`version` is newer than the running build's `paths.VERSION`, the launcher shows
-an 'update available' banner linking to the download. No GitHub token / releases
-API needed — bumping version.txt in the repo notifies everyone on the next
-launch.
-
-To ship an update: build the new exe, bump `paths.VERSION`, bump `version`
-in version.txt (+ upload the zip to a GitHub Release), commit + push.
+Its main branch holds main/version.txt and trial/version.txt. Publishing a
+verified installer updates the matching feed; newer builds show an update
+banner on launch. The bundled version.txt identifies the running build.
 """
 from __future__ import annotations
 import json
@@ -16,12 +11,10 @@ import urllib.request
 
 import paths
 
-# Each channel polls its own branch's version.txt: the Main app tracks
-# `main`, the Trial app tracks `trial`. Promote a feature by merging
-# trial → main, which then notifies Main users on their next launch.
-_BRANCH = "trial" if getattr(paths, "IS_TRIAL", False) else "main"
+# Both channel feeds live on the releases repository's main branch.
+_CHANNEL = "trial" if getattr(paths, "IS_TRIAL", False) else "main"
 RAW_URL = (f"https://raw.githubusercontent.com/ManTreeJoe/"
-           f"Servpro-Ems-Tools/{_BRANCH}/version.txt")
+           f"linguar-hub-releases/main/{_CHANNEL}/version.txt")
 
 
 def _tuple(v: str):
