@@ -78,6 +78,19 @@ def token_request(token):
     return request
 
 
+def verify_installer_url(url):
+    """Check the public download, following redirects without API credentials."""
+    try:
+        request = urllib.request.Request(url, method='HEAD')
+        with urllib.request.urlopen(request, timeout=180) as response:
+            status = response.status
+    except urllib.error.HTTPError as error:
+        status = error.code
+        error.close()
+    if status != 200:
+        raise RuntimeError(f'Installer verification failed: HTTP {status}: {url}')
+
+
 def update_feed(request, channel, version, release, asset, notes):
     url = BASE + f'/contents/{channel}/version.txt'
     current = request('GET', url + '?ref=main', missing_ok=True)
@@ -127,7 +140,12 @@ def publish_release(request, *, action, version, commit, installer, notes, chann
     if action in ('publish', 'trial'):
         release = request('PATCH', release['url'], body={
             'draft': False, 'make_latest': 'false' if channel == 'trial' else 'true'})
-        update_feed(request, channel, version, release, asset, notes)
+        installer_url = ('https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/'
+                         + urllib.parse.quote(tag, safe='') + '/'
+                         + urllib.parse.quote(installer.name, safe=''))
+        feed_asset = {**asset, 'browser_download_url': installer_url}
+        update_feed(request, channel, version, release, feed_asset, notes)
+        verify_installer_url(installer_url)
     return {'tag': tag, 'draft': release['draft'], 'bytes': asset['size'],
             'sha256': digest, 'url': release['html_url']}
 
