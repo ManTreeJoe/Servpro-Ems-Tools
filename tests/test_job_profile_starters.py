@@ -7,7 +7,7 @@ def test_trello_starters_cover_company_templates_and_regular_work():
     rows = starters()
     assert len(rows) == 29
     names = {r['name'] for r in rows}
-    assert {'EMS - Residential', 'EMS - Commercial', 'Contents', 'EMS - State Farm',
+    assert {'EMS - Residential', 'EMS - Commercial', 'Contents', 'EMS - Residential (State Farm)',
             'EMS - Property Management', 'Fire - Property Management',
             'Greystar Property Management', 'PCM', 'Hyder & Company'} <= names
     for row in rows:
@@ -21,12 +21,29 @@ def test_trello_starters_cover_company_templates_and_regular_work():
 def test_state_farm_specific_forms_are_separate_from_regular():
     rows = {r['name']:r for r in starters()}
     regular = rows['EMS - Residential']['required_items']
-    special = rows['EMS - State Farm']['required_items']
+    special_row = rows['EMS - Residential (State Farm)']
+    special = special_row['required_items']
     assert not any('STATE FARM' in x for x in regular)
     assert 'INITIAL - ADMIN · ATP' in regular
-    assert 'INITIAL - ADMIN · STATE FARM ATP' in special
-    assert 'INITIAL - ADMIN · STATE FARM ATR' in special
-    assert 'INITIAL - ADMIN · ATP' not in special
+    assert special_row['starter_id'] == '6abff02d164361290cce80c6'
+    assert any('28000 - Auth to Perform' in x for x in special)
+    assert 'INITIAL - ADMIN · ATP State Farm - California (Auth to Pay)' in special
+    assert 'INITIAL - ADMIN · ATR State Farm - Authorization to Repair (ATR California)' in special
+    assert any('28531 - Certificate of Satisfaction' in x for x in special)
+    assert 'CLOSE OUT - ADMIN · State Farm Warranty Form' in special
+    assert not any(x.endswith(' · CIF') or x.endswith(' · CER') for x in special)
+
+
+def test_updated_property_management_requirements():
+    rows = {r['name']:r for r in starters()}
+    for name in ('EMS - Property Management', 'PCM', 'Greystar Property Management', 'Hyder & Company'):
+        items = rows[name]['required_items']
+        assert 'INITIAL - ADMIN · ATP' in items
+        assert 'INITIAL - ADMIN · CIF' in items
+        assert 'INITIAL - ADMIN · CER' in items
+        assert 'CLOSE OUT - ADMIN · COS' in items
+        assert 'FIELD LEADS · FINAL PHOTOS' in items
+        assert not any('SPREADSHEET' in item or 'PHYSICAL SKETCH' in item for item in items)
 
 
 def test_conditional_services_are_recommended_not_mandatory():

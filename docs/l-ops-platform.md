@@ -2,6 +2,17 @@
 
 Status: October 3, 2026. This file is the canonical cross-chat handoff.
 
+## Code handoff — October 3
+
+The team source snapshot is on `handoff/paperclip-source-20261003`, including the
+previously unpublished desktop, storage, Trello sync and migration source plus
+tests. Use that branch for Paperclip; see the publication update in
+[paperclip-handoff.md](paperclip-handoff.md). This publishes existing WIP, not a
+new shared-schema decision or live deployment. L OPS should inspect identity and
+contract compatibility before using any SQL or enabling writes. Targeted Python:
+60 passed; CompanyCam and Run activity Node checks passed. Storage SQL test blocked
+by missing local PGlite dependency. No production release.
+
 ## Start here — Paperclip / new-agent onboarding
 
 Read [paperclip-handoff.md](paperclip-handoff.md) for the mission, latest verified

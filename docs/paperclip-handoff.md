@@ -3,6 +3,42 @@
 Updated October 3, 2026. Start here when onboarding an agent or Paperclip project.
 This is an execution brief, not a Paperclip configuration or a production release.
 
+## Source publication update — use this branch
+
+**Team source branch: `handoff/paperclip-source-20261003`.** It includes all prior
+calendar commits plus the previously local desktop/backend implementation:
+Card Details, profiles/template sources, notification navigation, division handling,
+document import/store, CompanyCam gateway changes, Trello sync functions, existing
+migration/ops/test SQL, Python/browser regression tests and DEV helper tools.
+The local-only implementation inventory below is now historical for those files.
+
+This is a WIP source snapshot for inspection and continued development, NOT a
+release or a statement that every migration should be run. No migration/function
+deployment was performed. Supabase credential-pattern checks found only synthetic
+test fixtures among flagged candidates; this was not a full security audit.
+
+Validation for the snapshot: 60 targeted Python tests passed (card activity,
+document import/store, profile starters, notification navigation and division
+detection). CompanyCam gateway reliability and saved Run activity Node tests passed.
+`tests/document_storage_sql.cjs` was not runnable here because
+`@electric-sql/pglite` was missing; its header records tested dependency 0.5.8.
+No full clean-machine app build or live integration verification is claimed.
+
+Excluded and preserved locally: build/install output, customer-specific diagnostic
+notes and one-off repair scripts, scratch prototypes and generated artifacts.
+These are not required to inspect the published application/backend source.
+Private runtime credentials and customer documents are intentionally not supplied.
+
+Checkout for the team:
+
+```sh
+git clone --branch handoff/paperclip-source-20261003 https://github.com/ManTreeJoe/Servpro-Ems-Tools.git
+```
+
+Use this branch in the agent kickoff below instead of `main-lops-style-pivot`.
+The first task is now validating a clean checkout and reviewing the WIP snapshot,
+not recovering the published core files from this computer.
+
 ## Mission
 
 Build one integrated restoration-operations system: OneLoss desktop for the office,

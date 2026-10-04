@@ -6,3 +6,8 @@ verify_jwt = true
 
 [functions.companycam-oauth-callback]
 verify_jwt = false
+
+# Server-only endpoint: authenticates its own separate random cron secret.
+# User JWTs and the public anon/publishable key are deliberately not accepted.
+[functions.trello-sync]
+verify_jwt = false

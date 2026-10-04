@@ -15,13 +15,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -47,8 +62,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -62,7 +78,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -229,13 +245,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -261,8 +292,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -276,7 +308,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -327,13 +359,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -359,8 +406,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -374,7 +422,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -425,13 +473,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -457,8 +520,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -472,7 +536,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -523,13 +587,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -555,8 +634,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -570,7 +650,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -621,13 +701,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -653,8 +748,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -668,7 +764,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -719,13 +815,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -751,8 +862,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -766,7 +878,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -817,13 +929,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -849,8 +976,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -864,7 +992,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -915,13 +1043,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -947,8 +1090,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -962,7 +1106,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -1013,13 +1157,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -1045,8 +1204,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -1060,7 +1220,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -1111,13 +1271,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -1143,8 +1318,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -1158,7 +1334,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -1209,13 +1385,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -1241,8 +1432,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -1256,7 +1448,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -1420,13 +1612,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -1452,8 +1659,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -1467,7 +1675,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -1518,13 +1726,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -1550,8 +1773,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -1565,7 +1789,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -1616,13 +1840,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -1648,8 +1887,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -1663,7 +1903,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -1714,13 +1954,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -1746,8 +2001,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -1761,7 +2017,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -1812,13 +2068,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -1844,8 +2115,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -1859,7 +2131,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -1910,13 +2182,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -1942,8 +2229,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -1957,7 +2245,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -2008,13 +2296,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -2040,8 +2343,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -2055,7 +2359,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -2127,13 +2431,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -2159,8 +2478,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -2174,7 +2494,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -2225,13 +2545,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -2257,8 +2592,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -2272,7 +2608,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -2323,13 +2659,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -2355,8 +2706,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -2374,7 +2726,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -2425,13 +2777,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -2457,8 +2824,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -2472,7 +2840,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -2523,13 +2891,28 @@
         ]
       },
       {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
         "name": "INITIAL - ADMIN",
         "items": [
-          "SPREADSHEET",
-          " INITIAL PAPERWORK",
+          "ATP",
+          "CIF",
+          "CER",
           "INITIAL PHOTOS/PHOTO REPORT",
-          "INITIAL UPLOAD",
-          "PHYSICAL SKETCH"
+          "INITIAL UPLOAD"
         ]
       },
       {
@@ -2555,8 +2938,9 @@
         "items": [
           "ORDER DOCUSKETCH",
           "DEMO PHOTOS",
-          "ADDITIONAL DEMO - AFTER DRYING",
-          "ADDITIONAL SKETCH / SCOPE"
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKETCH",
+          "SCOPE"
         ]
       },
       {
@@ -2570,7 +2954,7 @@
       {
         "name": "CLOSE OUT - ADMIN",
         "items": [
-          "FINAL PAPERWORK",
+          "COS",
           "FINAL PHOTOS",
           "FINAL SKETCH",
           "FINAL SCOPE",
@@ -2755,6 +3139,121 @@
       },
       {
         "name": "ESTIMATING",
+        "items": [
+          "ASSIGNED",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY "
+        ]
+      },
+      {
+        "name": "CONTENTS - ESTIMATING",
+        "items": [
+          "** PACK OUT **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY",
+          "** PACK BACK **",
+          "BILLED",
+          "INVOICED",
+          "UPLOADED",
+          "EMAILED TO ADJUSTER OR PAYING PARTY"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "6abff02d164361290cce80c6",
+    "name": "EMS - Residential Template (State Farm)",
+    "url": "https://trello.com/c/FxmeBpJ6/9193-ems-residential-template-state-farm",
+    "checklists": [
+      {
+        "name": "INTAKE",
+        "items": [
+          "RUN",
+          "WORKCENTER",
+          "ONE DRIVE",
+          "TRELLO",
+          "COMPANYCAM"
+        ]
+      },
+      {
+        "name": "FIELD LEADS",
+        "items": [
+          "INITIAL PAPERWORK",
+          "INITIAL PHOTOS",
+          "DEMO PHOTOS",
+          "SCOPE - INITIAL",
+          "SCOPE - FINAL",
+          "SKETCH",
+          "EQUIPMENT COUNT - INITIAL",
+          "EQUIPMENT COUNT - FINAL",
+          "FINAL PAPERWORK",
+          "FINAL PHOTOS"
+        ]
+      },
+      {
+        "name": "INITIAL - ADMIN",
+        "items": [
+          "28000 - Auth to Perform Services and Direction of Payment (or approved alternative ATP)",
+          "ATP State Farm - California (Auth to Pay)",
+          "ATR State Farm - Authorization to Repair (ATR California)",
+          "INITIAL PHOTOS/PHOTO REPORT",
+          "INITIAL UPLOAD"
+        ]
+      },
+      {
+        "name": "INITIAL - COORDINATOR",
+        "items": [
+          "DOCUSKETCH LINK",
+          "VIDEO LINK",
+          "FIELD INITIAL INSPECTION NOTE",
+          "INITIAL ADJUSTER UPDATE"
+        ]
+      },
+      {
+        "name": "CONTENTS - COORDINATOR",
+        "items": [
+          "POD",
+          "VAULTS",
+          "ONSITE",
+          "STORAGE UNIT"
+        ]
+      },
+      {
+        "name": "IN PROGRESS - ADMIN",
+        "items": [
+          "ORDER DOCUSKETCH",
+          "DEMO PHOTOS",
+          "ADDITIONAL DEMO - AFTER DRYING PHOTOS",
+          "AFTER DEMO SKTECH",
+          "SCOPE"
+        ]
+      },
+      {
+        "name": "SUBS",
+        "items": []
+      },
+      {
+        "name": "EQUIPMENT COUNT - FIELD",
+        "items": []
+      },
+      {
+        "name": "CLOSE OUT - ADMIN",
+        "items": [
+          "28531 - Certificate of Satisfaction - Job Completion_11-2010",
+          "State Farm Warranty Form",
+          "FINAL PHOTOS",
+          "FINAL SKETCH",
+          "FINAL SCOPE",
+          "FINAL EQ COUNT",
+          "SNAPSHOT"
+        ]
+      },
+      {
+        "name": "EMS - ESTIMATING",
         "items": [
           "ASSIGNED",
           "BILLED",

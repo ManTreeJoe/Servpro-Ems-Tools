@@ -148,8 +148,8 @@ def _detected_work_environments(crm: dict, summary: dict,
                                 selected_division: str) -> list[dict]:
     """Add reliable division evidence without silently persisting a status.
 
-    Manual states win. Folder shells and pinned/open cards only make an
-    otherwise-unset division visible as Planned in the workspace.
+    Native saved states win. A linked card establishes migrated division
+    evidence; folder shells and the selected tab do not establish real work.
     """
     from ems_db_common import DIVISIONS, normalize_division
 
@@ -159,22 +159,13 @@ def _detected_work_environments(crm: dict, summary: dict,
         if isinstance(item, dict) and item.get("work_environment")
     }
     evidence = {division: [] for division in DIVISIONS}
-    job_path = str(summary.get("path") or "").strip()
-    if job_path and os.path.isdir(job_path):
-        try:
-            import job_folders
-            shells = {str(name or "").upper()
-                      for name in job_folders.shells_at(job_path)}
-            for division in DIVISIONS:
-                if division in shells:
-                    evidence[division].append("job folder")
-        except Exception:
-            pass
     for card in division_cards or []:
-        if not isinstance(card, dict) or not (card.get("pinned") or card.get("card_id")):
+        if not isinstance(card, dict) or not card.get("card_id"):
             continue
         evidence[normalize_division(card.get("division"))].append("Trello card")
-    evidence[normalize_division(selected_division)].append("open board")
+    selected = normalize_division(selected_division)
+    if evidence[selected]:
+        evidence[selected].append("open board")
 
     merged = []
     for division in DIVISIONS:
@@ -1755,6 +1746,13 @@ class Api(JobSettingsApi):
     def companycam_import_status(self, client: str, card_id: str = "",
                                 operation_id: str = "") -> dict:
         return self._audit_api().companycam_import_status(client, card_id, operation_id)
+
+    def card_activity_history(self, card_id: str) -> dict:
+        import card_activity
+        try:
+            return card_activity.history(card_id)
+        except Exception:
+            return {"ok": False, "error": "Card history could not load. Check your connection and retry."}
 
     def saved_run_activity(self, client: str, division: str = "EMS") -> dict:
         # This backfill indexes the EMS run library, never another division.

@@ -43,6 +43,16 @@ async function run({credentialFailure=false, statusFailure=false}={}) {
  const status=await run({statusFailure:true});
  assert.equal(status.response.status,200,'ancillary health write must not erase provider success');
  const healthy=await run();
+ for(const method of ['POST','PUT','PATCH','DELETE']) {
+  const response=await healthy.handler(new Request('https://fixture.invalid/functions/v1/companycam-gateway',{
+   method:'POST',headers:{Authorization:'Bearer fixture-session','Content-Type':'application/json'},
+   body:JSON.stringify({department:'IE',path:'/tags',method})}));
+  assert.equal(response.status,400,'Catalog endpoint is read-only');
+ }
+ const catalog=await healthy.handler(new Request('https://fixture.invalid/functions/v1/companycam-gateway',{
+  method:'POST',headers:{Authorization:'Bearer fixture-session','Content-Type':'application/json'},
+  body:JSON.stringify({department:'IE',path:'/tags',method:'GET'})}));
+ assert.equal(catalog.status,200);
  for(let i=0;i<4;i++)assert.equal((await healthy.handler(healthy.request())).status,200);
  console.log('PASS: failed credential lookup is closed; health failure preserves provider response.');
 })().catch(e=>{console.error(e);process.exit(1);});

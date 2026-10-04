@@ -68,7 +68,7 @@ async function personalCredential(userId: string, department: string): Promise<s
   const response = await fetch(`${base}/rest/v1/external_oauth_credentials?select=access_token_cipher,access_token_iv,refresh_token_cipher,refresh_token_iv,expires_at&user_id=eq.${encodeURIComponent(userId)}&provider=eq.companycam&department=eq.${encodeURIComponent(department)}&limit=1`, {
     headers: serviceHeaders(),
   });
-  if (!response.ok) return "";
+  if (!response.ok) throw new Error("CompanyCam account lookup unavailable; retry after the database connection recovers.");
   const rows = await response.json();
   const row = Array.isArray(rows) ? rows[0] : null;
   if (!row?.access_token_cipher) return "";
@@ -166,7 +166,7 @@ Deno.serve(async (request: Request) => {
     };
     if (!["GET", "HEAD"].includes(method)) {
       headers["Content-Type"] = "application/json";
-      if (user?.email) headers["X_COMPANYCAM_USER"] = String(user.email).toLowerCase();
+      if (user?.email) headers["X-CompanyCam-User"] = String(user.email).toLowerCase();
     }
     const upstream = await fetch(url, {
       method,
@@ -175,8 +175,12 @@ Deno.serve(async (request: Request) => {
     });
     const raw = await upstream.text();
     if (personal) {
-      await setConnectionStatus(String(user.id || ""), department,
-        upstream.status === 401 ? "revoked" : "connected");
+      // Observability is not part of the provider operation's success.
+      // A failed status write must not turn an accepted mutation into a 500
+      // and invite the client to create the same project again.
+      EdgeRuntime.waitUntil(setConnectionStatus(String(user.id || ""), department,
+        upstream.status === 401 ? "revoked" : "connected")
+        .catch(() => console.warn("CompanyCam connection status update failed")));
     }
     return new Response(raw || "null", {
       status: upstream.status,

@@ -1,1 +1,162 @@
-<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=home_web_assets/index.html"><title>OneLoss</title></head><body></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base href="home_web_assets/">
+<script src="../web_shared/loading_feedback.js?v=20261001dedup" data-bridge="off"></script>
+<script src="frame_loading.js?v=20261001"></script>
+  <script src="../web_shared/usage_track.js?v=20260825a"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#1A1A1A" />
+<title>OneLoss</title>
+<script src="../web_shared/appearance.js?v=20260901a"></script>
+<link rel="stylesheet" href="../web_shared/theme.css?v=20260910a" />
+<link rel="stylesheet" href="app.css?v=20260930badge-inline" />
+<link rel="stylesheet" href="../web_shared/workspace_controls.css?v=20260910a" />
+<link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
+<script src="../web_shared/text_context_menu.js?v=20260903a"></script>
+</head>
+<body class="responsive-ui">
+<div class="shell">
+  <!-- Left sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <header class="sb-head">
+      <div class="brand-row">
+        <div class="workspace-switch" id="workspace-switch" hidden>
+          <button class="workspace-trigger" id="workspace-trigger" type="button"
+                  aria-haspopup="menu" aria-expanded="false">
+            <span class="workspace-monogram" id="workspace-monogram">IE</span>
+            <span class="workspace-current" id="workspace-current">SERVPRO IE</span>
+            <span class="workspace-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div class="workspace-menu" id="workspace-menu" role="menu" hidden></div>
+        </div>
+      </div>
+    </header>
+    <nav class="sb-nav" id="sb-nav"></nav>
+    <footer class="sb-foot">
+      <div class="sb-session">
+        <span id="time-meta">—</span>
+        <div class="sb-utility-row">
+          <div class="sb-company-state" id="connection-state"><i aria-hidden="true"></i><span>Online</span></div>
+          <button class="sb-foot-btn sb-settings-btn" id="settings-btn" title="Settings" aria-label="Open Settings">⚙</button>
+          <button class="sb-foot-btn" id="refresh-btn" title="Reload current tool" aria-label="Reload current tool">↻</button>
+        </div>
+      </div>
+    </footer>
+  </aside>
+
+  <!-- Right pane — tool content (header removed; iframe gets full height) -->
+  <section class="pane">
+    <div class="pane-content">
+      <iframe id="content-frame" class="tool-frame" src="about:blank"
+              title="Tool content"></iframe>
+      <div class="welcome" id="welcome">
+        <div class="welcome-inner">
+          <div class="welcome-mark" aria-hidden="true"><img src="../linguar_hub.png" width="64" height="64" alt=""></div>
+          <div class="welcome-greet" id="welcome-greet">Welcome to OneLoss</div>
+          <div class="welcome-sub" id="welcome-sub">Pick a tool from the sidebar to get started</div>
+          <div class="welcome-quick" id="welcome-quick"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- First-run welcome (shown once, until dismissed) -->
+<div class="fr-overlay hidden" id="fr-overlay">
+  <div class="fr-card" role="dialog" aria-modal="true" aria-labelledby="fr-title">
+    <div class="fr-emoji" aria-hidden="true"><img src="../linguar_hub.png" width="38" height="38" alt=""></div>
+    <div class="fr-title" id="fr-title">Welcome to OneLoss</div>
+    <div class="fr-body">
+      <p>Before Clients, Jobs, Snapshot, and APA can load, connect your account and confirm your folders.</p>
+      <p>Open <strong>Settings</strong> at the bottom of the sidebar, then:</p>
+      <ul>
+        <li><strong>Sign in</strong> with your SERVPRO work account.</li>
+        <li><strong>Connect Trello</strong> using the guided sign-in.</li>
+        <li><strong>Confirm folder paths</strong> point to the right shared folders.</li>
+      </ul>
+      <p class="fr-note">Your settings are saved to your own PC
+         in its own local profile. Shared jobs and franchise access remain online.</p>
+    </div>
+    <!-- Setup check. Filled in by app.js; hidden until it has run, so a
+         healthy machine sees no extra noise on the welcome screen. -->
+    <div id="fr-preflight" style="display:none;margin:14px 0 0;padding:10px 12px;
+         border-radius:8px;background:var(--surface-2,#1b1c20);
+         border:1px solid var(--border,#2c2d33);font-size:12.5px;"></div>
+    <div class="fr-actions">
+      <button class="fr-btn fr-secondary" id="fr-later">I'll do it later</button>
+      <button class="fr-btn fr-primary" id="fr-settings">Open Settings</button>
+    </div>
+  </div>
+</div>
+
+<!-- Department switch splash — covers the window during relaunch -->
+<div class="dept-splash hidden" id="dept-splash">
+  <div class="dept-splash-inner">
+    <div class="dept-splash-spin"></div>
+    <div class="dept-splash-txt" id="dept-splash-txt">Switching franchise…</div>
+    <div class="dept-splash-sub">Reloading with the new board &amp; folders</div>
+  </div>
+</div>
+
+<style>
+  .dept-splash {
+    position: fixed; inset: 0; z-index: 2000;
+    background: var(--bg, #17181c);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dept-splash.hidden { display: none; }
+  .dept-splash-inner { text-align: center; }
+  .dept-splash-spin {
+    width: 40px; height: 40px; margin: 0 auto 16px;
+    border: 3px solid var(--border, #34353b);
+    border-top-color: var(--green, #2f7750); border-radius: 50%;
+    animation: dept-spin .8s linear infinite;
+  }
+  @keyframes dept-spin { to { transform: rotate(360deg); } }
+  .dept-splash-txt { font-size: 16px; font-weight: 600; color: var(--text, #e8e8ea); }
+  .dept-splash-sub { font-size: 12px; color: var(--text-muted, #9aa5ae); margin-top: 6px; }
+
+  .fr-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .fr-overlay.hidden { display: none; }
+  .fr-card {
+    background: var(--surface, #1e1f24); color: var(--text, #e8e8ea);
+    border: 1px solid var(--border, #34353b); border-radius: 12px;
+    max-width: 460px; width: 100%; padding: 26px 28px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.5);
+  }
+  .fr-emoji { font-size: 34px; line-height: 1; }
+  .fr-title { font-size: 20px; font-weight: 700; margin: 8px 0 12px; }
+  .fr-body { font-size: 13.5px; line-height: 1.55; color: var(--text-muted, #b6b7bd); }
+  .fr-body p { margin: 0 0 10px; }
+  .fr-body ul { margin: 0 0 10px; padding-left: 18px; }
+  .fr-body li { margin: 4px 0; }
+  .fr-body strong { color: var(--text, #e8e8ea); }
+  .fr-note { font-size: 12px; opacity: .8; }
+  .fr-note code { font-family: monospace; }
+  .fr-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .fr-btn {
+    padding: 8px 16px; border-radius: 7px; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--border, #34353b); background: transparent;
+    color: var(--text, #e8e8ea);
+  }
+  .fr-primary {
+    background: var(--green, #2f7750); border-color: var(--green, #2f7750);
+    color: #fff; font-weight: 600;
+  }
+  .fr-secondary:hover { background: rgba(255,255,255,.06); }
+</style>
+
+<script src="../web_shared/health_banner.js?v=20260826a"></script>
+<script src="../web_shared/toast_log.js?v=20260731j"></script>
+<script src="app.js?v=20260918sharedintake"></script>
+<script src="../web_shared/popout_menu.js?v=20260929"></script>
+<script src="notification_badge.js?v=20260930poll"></script>
+</body>
+</html>
