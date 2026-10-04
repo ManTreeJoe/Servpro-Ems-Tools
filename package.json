@@ -1,0 +1,8 @@
+{
+  "name": "linguar-hub-ci-tests",
+  "private": true,
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "playwright": "1.59.0"
+  }
+}

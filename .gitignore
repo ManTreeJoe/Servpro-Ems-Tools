@@ -74,3 +74,6 @@ build_release/
 
 # Inno Setup compiler output — installers are release artifacts, not source
 Output/
+
+# Node test dependencies
+node_modules/
