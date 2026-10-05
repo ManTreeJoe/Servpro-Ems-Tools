@@ -16,6 +16,42 @@ class Api:
     def attach(self, window):
         self._window = window
 
+    def schedule_load(self):
+        import schedule_store
+        try:
+            store = schedule_store.ScheduleStore()
+            return {'ok': True, 'context': store.context_id,
+                    'department': store.department, 'records': store.load()}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
+    def schedule_search(self, query, expected_context):
+        import schedule_store
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            return {'ok': True, 'jobs': store.search(query)}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
+    def schedule_realtime(self, expected_context):
+        """Short-lived user credentials, never a service key; RLS owns access."""
+        import schedule_store
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            return {'ok': True, 'url': store.url, 'key': store.key,
+                    'token': store.token, 'department': store.department}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
+    def schedule_save(self, command, expected_context):
+        import schedule_store
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            saved = store.save(command)
+            return {'ok': True, 'saved': saved}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
     def get_crew_roster(self):
         """Use the same editable roster as Snapshot and technician recognition."""
         try:

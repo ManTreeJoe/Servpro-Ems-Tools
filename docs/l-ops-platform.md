@@ -1,6 +1,74 @@
 # L OPS platform / EMS Tools coordination
 
-Status: October 3, 2026. This file is the canonical cross-chat handoff.
+Status: October 5, 2026. This file is the canonical cross-chat handoff.
+
+## October 5 — approved OneLoss-owned schedule drafts
+
+This section supersedes the readiness/coordination blockers below. Nathan approved
+OneLoss as owner and explicitly allowed L OPS to be rewired later because nobody
+uses it yet. L OPS and its database are untouched. Branch:
+`handoff/paperclip-source-20261003`.
+
+Implementation: `schedule_store.py`, dedicated `schedule_load/search/save` desktop
+methods, and `schedule_live.js` wire the existing calendar/Legacy editor to real
+job UUIDs. DEV uses `calendar_preview.html?live=1`; without that flag the original
+sample UI remains available for isolated tests. Installed Main is unchanged.
+
+Database contract: additive migration `20261005150008_oneloss_schedule_drafts.sql`
+creates `schedule_visits`, append-only `schedule_changes`, and
+`save_schedule_draft(p_command jsonb)`. Signed-in office membership plus the job's
+department are checked server-side. Direct client writes are denied. Exactly one
+active visit per job; revision conflicts reject stale edits. Identical retries use
+the same operation UUID. Optional `before_id` applies ordering atomically with the
+save; clients cannot supply numeric positions. Job facts are never updated here.
+
+L OPS integration later: use this contract or an agreed adapter, preserve canonical
+OneLoss job/visit IDs, resolve account/office mappings, and use user authorization.
+Do not mirror these drafts into test-only daily-run rows. Keep Supabase Storage
+and CompanyCam for files; this change does not move files or change media APIs.
+
+Scope: persistent active drafts, all waiting groups, per-activity crews, calendar
+and Legacy drag/reorder, real-job search, read-only job facts. Confirmation,
+Trello/board movement, comment posting, printable Run output, history UI and
+cancellation/rescheduling controls remain follow-up work. No Word writes. The
+calendar starts empty until real visits are explicitly added; there is no automatic
+Run import or synthetic data inserted into the live database.
+
+Validation: isolated PostgreSQL tests cover saves, revisions, retries, duplicate
+prevention, invalid payloads, history, cross-office reads/writes and direct-write
+denials. Python tests cover payload validation and bound-account transport.
+Browser tests cover existing layouts/dragging and live-mode save failure/retry.
+Deployment: applied successfully to OneLoss/Linguar Hub (`oqwwapqnzzhefqxobadl`)
+on October 5. Verified both tables have RLS enabled and authenticated users have
+SELECT but no direct INSERT/UPDATE/DELETE grants. The signed-in desktop loaded
+the empty live schedule and searched authorized jobs successfully. No real visits
+were created by tests. DEV launched the live route with three day columns and
+loaded theme assets. Source publication is not an installed-app release.
+
+Security advisor reported no schedule findings. Separate existing findings remain:
+[admin security-definer RPC review](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
+and [leaked-password protection disabled](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+Those were not changed as part of scheduling.
+
+### Same-day addition: near-real-time multiuser calendar
+
+Nathan requested immediate cross-user updates. Additive migration
+`20261005151551_oneloss_schedule_realtime.sql` enables `schedule_visits` in the
+existing `supabase_realtime` publication. Applied successfully. Two independent
+authenticated subscriptions reached PostgreSQL-subscription-ready status against
+the live service without modifying records. The browser uses the documented
+Phoenix v1 protocol with the user's short-lived JWT, table RLS and office filter;
+no service credentials. Credentials refresh every minute, heartbeats detect dead
+connections, and reconnects trigger a full read to recover missed events.
+
+Events trigger a debounced authorized reload, not direct trust in event payloads.
+There is a 15-second backup refresh and visibility/online catch-up. Healthy
+connections should update shortly after a committed save; this is not an SLA or
+simultaneous field-by-field co-editing. Unsaved editor content is preserved and
+stale saves remain rejected. Incoming updates wait during dragging. A Live /
+Reconnecting / Offline indicator shows connection state. Browser tests simulate
+remote edits while an editor is open and verify local text is retained. A real
+two-person save/observe test remains for Nathan and Sam in DEV.
 
 ## October 5 — live schedule readiness check (read-only)
 

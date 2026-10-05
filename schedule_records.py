@@ -1,7 +1,7 @@
 """Draft schedule contract: validation only, no storage or external side effects.
 
 Job facts are deliberately excluded. This contract must also be enforced by the
-future server migration; Python validation is not an authorization boundary.
+server migration; Python validation is not an authorization boundary.
 """
 from datetime import date
 from uuid import UUID
@@ -89,7 +89,7 @@ def visit_payload(record):
 def save_command(record, *, department, expected_revision, operation_id):
     """Stable operation ID must be reused for a retry of the identical command.
 
-    Reordering is a separate server operation, not an arbitrary client position.
+    The storage adapter may add a before_id; the server assigns the position.
     Server supplies entered-at dates, actors, revisions and timestamps.
     """
     if type(expected_revision) is not int or expected_revision < 0:

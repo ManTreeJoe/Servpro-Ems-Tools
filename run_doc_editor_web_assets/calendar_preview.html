@@ -52,8 +52,12 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 </style>
 <script src="calendar_drag.js"></script>
 <script src="weekly_calendar.js"></script>
+<script src="../web_shared/iframe_shim.js?v=20261005schedule"></script>
+<script src="schedule_live.js"></script>
+<script src="schedule_realtime.js"></script>
 <script>
 'use strict';
+const liveMode=new URLSearchParams(location.search).get('live')==='1';
 const current=new Date(),today=`${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,'0')}-${String(current.getDate()).padStart(2,'0')}`;
 const days=OneLossWeeklyCalendar.week(today);
 const records=[
@@ -65,28 +69,35 @@ const records=[
 let editing=null;
 let dropPlacement=null;
 let activityDraft=[];
+let editingRow=null, saving=false, ready=!liveMode, searchVersion=0, addDay=null;
 const field=id=>document.getElementById(id), split=value=>value.split(',').map(x=>x.trim()).filter(Boolean);
 const names=['Oak residence','Pine apartments','Maple office','Cedar home','Willow residence','Elm plaza','Birch home','Aspen duplex','Juniper office','Cypress home','Laurel residence','Spruce building'];
 records.length=0;
-days.forEach((day,d)=>{
+if(!liveMode)days.forEach((day,d)=>{
  for(let i=0;i<12;i++)records.push({id:`full-${d}-${i}`,title:`${names[i]} ${d+1}`,queue:'scheduled',date:day,
   group:i<4?'Monitor':'Work To Be Performed',address:`${100+i} Sample Lane, Example City`,time:i===8?'9–11 AM':i===10?'12–2 PM':'',
   activities:[{label:i<4?'Monitor':['Demo','Packout','Equipment pickup','Initial inspection'][i%4],people:[['Sam','Alex','Marco / Jose','Brenda / Priscilla'][i%4]]}]});
 });
-[['tbs','TBS New Loss /Reinspection',3],['tbs','TBS Mitigation',5],['tbs','TBS Contents',4],['pending','Pending Testing/Clearance/Abatement',4],['pending','Pending Approvals – Insurance/Self Pay',9],['pending','Pending Approvals – Property Management',12],['hold','On Hold',5]].forEach(([queue,group,count],g)=>{
+if(!liveMode)[['tbs','TBS New Loss /Reinspection',3],['tbs','TBS Mitigation',5],['tbs','TBS Contents',4],['pending','Pending Testing/Clearance/Abatement',4],['pending','Pending Approvals – Insurance/Self Pay',9],['pending','Pending Approvals – Property Management',12],['hold','On Hold',5]].forEach(([queue,group,count],g)=>{
  for(let i=0;i<count;i++)records.push({id:`queue-${g}-${i}`,title:`${names[i%names.length]} — sample ${g+1}.${i+1}`,queue,group,since:OneLossWeeklyCalendar.shift(today,-2-i),address:`${200+i} Example Street`,activities:[{label:queue==='pending'?'Awaiting approval':queue==='hold'?'Customer hold':'Needs scheduling',people:[]}]});
 });
 const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const availableJobs=names.map((name,i)=>({id:`available-${i}`,title:`${name} — new sample job`,address:`${300+i} Sample Avenue`,activities:[]}));
-function findJobs(){
+let availableJobs=liveMode?[]:names.map((name,i)=>({id:`available-${i}`,title:`${name} — new sample job`,address:`${300+i} Sample Avenue`,activities:[]}));
+async function findJobs(){
+ const version=++searchVersion;
  const query=field('add-job-search').value.trim().toLowerCase(),results=field('job-matches');
  results.hidden=!query;if(!query)return;
+ if(liveMode){
+   results.innerHTML='<p role="status">Searching jobs…</p>';
+   try{const found=await live.search(query);if(version!==searchVersion)return;availableJobs=found.map(job=>records.find(r=>r.job_id===job.job_id)||job);}
+   catch(error){if(version===searchVersion)results.innerHTML=`<p role="alert">${safe(error.message)}</p>`;return;}
+ }
  const jobs=[...records,...availableJobs.filter(job=>!records.some(row=>row.id===job.id))].filter(job=>`${job.title} ${job.address||''}`.toLowerCase().includes(query));
- results.innerHTML=jobs.length?jobs.map(job=>`<button type="button" data-found-job="${safe(job.id)}">${safe(job.title)}<small>${safe(job.address)} · ${job.queue==='scheduled'?`Scheduled ${OneLossWeeklyCalendar.displayDate(job.date)} — edit visit`:job.queue?'Waiting — schedule this job':'Not scheduled — add visit'}</small></button>`).join(''):'<p role="status">No matching sample jobs.</p>';
+ results.innerHTML=jobs.length?jobs.map(job=>`<button type="button" data-found-job="${safe(job.id)}">${safe(job.title)}<small>${safe(job.address)} · ${job.queue==='scheduled'?`Scheduled ${OneLossWeeklyCalendar.displayDate(job.date)} — edit visit`:job.queue?'Waiting — schedule this job':'Not scheduled — add visit'}</small></button>`).join(''):`<p role="status">No matching ${liveMode?'':'sample '}jobs.</p>`;
 }
 field('add-job-search').oninput=findJobs;
 field('add-job-search').onfocus=findJobs;
-field('job-matches').onclick=event=>{const button=event.target.closest('[data-found-job]');if(!button)return;const id=button.dataset.foundJob,row=records.find(r=>r.id===id);field('job-matches').hidden=true;openEditor(id,row?.date||today,true);};
+field('job-matches').onclick=event=>{const button=event.target.closest('[data-found-job]');if(!button)return;const id=button.dataset.foundJob,row=records.find(r=>r.id===id);field('job-matches').hidden=true;openEditor(id,row?.date||addDay||today,true);addDay=null;};
 document.addEventListener('pointerdown',event=>{if(!event.target.closest('.job-finder'))field('job-matches').hidden=true;});
 field('add-job-search').onkeydown=event=>{if(event.key==='Escape')field('job-matches').hidden=true;else if(event.key==='ArrowDown'){event.preventDefault();field('job-matches').querySelector('button')?.focus();}};
 function legacy({selected,records}){
@@ -99,8 +110,44 @@ function legacy({selected,records}){
  }).join('')}</article>`;
 }
 field('calendar').dataset.layout='dispatch';
-const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id),onSchedule:(id,day,placement)=>openEditor(id,day,true,placement)});
+const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onRetry:()=>loadLive(),onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id),onSchedule:(id,day,placement)=>openEditor(id,day,true,placement)});
 calendar.update({records});
+let realtime=null, refreshTimer=null, refreshing=false, refreshAgain=false;
+const live=liveMode?OneLossScheduleLive({render:rows=>{
+ if(document.querySelector('.is-dragging')){queueRefresh();return;}
+ const scrolls=[...field('calendar').querySelectorAll('.wc-day-items,.wc-waiting')].map(el=>el.scrollTop);
+ records.splice(0,records.length,...rows);ready=true;calendar.update({records,loading:false,error:''});
+ [...field('calendar').querySelectorAll('.wc-day-items,.wc-waiting')].forEach((el,i)=>el.scrollTop=scrolls[i]||0);
+ if(field('editor').open&&editingRow?.revision&&records.find(r=>r.id===editingRow.id)?.revision!==editingRow.revision)field('activity-error').textContent='This visit changed on another computer. Your edit is preserved; cancel and reopen to see the latest version.';
+},notice:(message,error)=>{document.querySelector('.preview-note').textContent=message;document.querySelector('.preview-note').setAttribute('role',error?'alert':'status');}}):null;
+function queueRefresh(){clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>loadLive(true),200);}
+async function loadLive(quiet=false){
+ if(!live)return;
+ if(saving||document.querySelector('.is-dragging')){queueRefresh();return;}
+ if(refreshing){refreshAgain=true;return;}
+ refreshing=true;
+ if(!quiet){ready=false;calendar.update({loading:true,error:''});}
+ try{
+   await live.load();
+   if(!realtime)realtime=OneLossScheduleRealtime({credentials:()=>live.credentials(),changed:queueRefresh,status:text=>field('sync-status').textContent=text});
+ }catch(error){if(!quiet){calendar.update({records:[],loading:false,error:error.message});}else field('sync-status').textContent='Offline · changes may be delayed';}
+ finally{refreshing=false;if(refreshAgain){refreshAgain=false;queueRefresh();}}
+}
+if(liveMode){
+ document.title='OneLoss — Live schedule drafts';
+ document.querySelector('.preview-note').textContent='Connecting to live Schedule…';
+ const sync=document.createElement('span');sync.id='sync-status';sync.role='status';sync.textContent='Connecting…';sync.style.cssText='font-size:12px;color:var(--text-muted);margin-left:auto';document.querySelector('.job-finder').append(sync);
+ document.querySelector('#visit-form header p').textContent='Job details are read-only here. Save changes only this schedule draft.';
+ document.querySelector('#visit-form button.btn-primary').textContent='Save draft';
+ ['job','address','contact','phone','insurance','claim'].forEach(id=>field(id).readOnly=true);
+ calendar.update({records:[],loading:true});
+ window.addEventListener('pywebviewready',loadLive,{once:true});
+ if(window.pywebview?.api)setTimeout(loadLive,0);
+ const fallback=setInterval(()=>{if(!document.hidden&&ready&&!saving)loadLive(true);},15000);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueRefresh();});
+ window.addEventListener('online',queueRefresh);
+ window.addEventListener('pagehide',()=>{clearInterval(fallback);clearTimeout(refreshTimer);realtime?.close();});
+}
 const runGroups={scheduled:['Monitor','Work To Be Performed'],tbs:['TBS New Loss /Reinspection','TBS Mitigation','TBS Contents'],pending:['Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management'],hold:['On Hold']};
 const extraFields=['address','contact','phone','insurance','claim','equipment','access','notes'];
 function renderGroups(chosen){field('run-group').innerHTML=runGroups[field('queue').value].map(g=>`<option>${safe(g)}</option>`).join('');if(runGroups[field('queue').value].includes(chosen))field('run-group').value=chosen;else if(field('queue').value==='scheduled')field('run-group').value='Work To Be Performed';field('date').required=field('queue').value==='scheduled';}
@@ -113,23 +160,38 @@ function renderActivities(){
 field('activity-options').onclick=event=>{const button=event.target.closest('[data-activity]');if(!button)return;const label=button.dataset.activity,index=activityDraft.findIndex(a=>a.label===label);if(index>=0)activityDraft.splice(index,1);else activityDraft.push({label,people:[]});renderActivities();field('activity-error').textContent='';};
 field('activity-assignments').oninput=event=>{if(event.target.dataset.assignment!==undefined)activityDraft[Number(event.target.dataset.assignment)].people=split(event.target.value);};
 function openEditor(id,day,schedule=false,placement=null){
+ if(liveMode&&!ready)return;
+ if(liveMode&&!id){addDay=day;field('add-job-search').focus();field('add-job-search').placeholder='Find the job to add a visit…';return;}
  dropPlacement=placement;
  editing=id; const row=records.find(r=>r.id===id)||availableJobs.find(r=>r.id===id);
+ editingRow=row?structuredClone(row):null;
  field('job').value=row?.title||'';field('queue').value=placement?.queue||(schedule?'scheduled':row?.queue||'scheduled');field('date').value=OneLossWeeklyCalendar.displayDate(schedule?day:row?.date||day||today);field('date').setCustomValidity('');
  field('time').value=row?.time||'';
  extraFields.forEach(key=>field(key).value=row?.[key]||'');
  activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(placement?.group||row?.group);field('activity-picker').open=false;field('activity-error').textContent='';
  field('editor').showModal();field('job').focus();
 }
-field('cancel').onclick=()=>field('editor').close();
+field('cancel').onclick=()=>{if(!saving)field('editor').close();};
+field('editor').addEventListener('cancel',event=>{if(saving)event.preventDefault();});
 field('date').oninput=()=>field('date').setCustomValidity('');
-field('visit-form').onsubmit=event=>{
- event.preventDefault(); const existing=records.find(r=>r.id===editing),queue=field('queue').value;
+field('visit-form').onsubmit=async event=>{
+ event.preventDefault(); if(saving)return;const existing=liveMode?editingRow:records.find(r=>r.id===editing),queue=field('queue').value;
  let visitDate;try{visitDate=queue==='scheduled'?OneLossWeeklyCalendar.parseDate(field('date').value):undefined;}catch{field('date').setCustomValidity('Enter a valid date as MM/DD/YY.');field('date').reportValidity();return;}
  if(!activityDraft.length){field('activity-error').textContent='Choose at least one activity.';return;}
  const row={...existing,id:editing||`sample-${Date.now()}`,group:field('run-group').value,title:field('job').value.trim(),queue,date:visitDate,time:field('time').value.trim(),activities:structuredClone(activityDraft)};
  extraFields.forEach(key=>row[key]=field(key).value.trim());
  if(!row.title)return;
+ if(liveMode){
+   row.id=existing.revision?existing.id:(existing.draftId||(existing.draftId=crypto.randomUUID()));
+   row.job_id=existing.job_id;
+   saving=true;field('visit-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=true);
+   const saveButton=field('visit-form').querySelector('.btn-primary');saveButton.textContent='Saving…';
+   try{await live.save(row,dropPlacement);field('editor').close();}
+   catch(error){field('activity-error').textContent=error.message;}
+   finally{saving=false;field('visit-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=false);saveButton.textContent='Save draft';}
+   if(!field('editor').open)await loadLive();
+   return;
+ }
  if(queue!=='scheduled')row.since=existing?.queue===queue?existing.since:today;
  if(existing)records.splice(records.indexOf(existing),1,row);else records.push(row);
  if(dropPlacement){

@@ -28,6 +28,8 @@ def create(*args, **kwargs):
           const f=document.querySelector('iframe[data-panel-key="run_doc_editor"]');
           const d=f?.contentDocument;
           return {src:f?.getAttribute('src'),days:d?.querySelectorAll('.wc-day').length,
+            status:d?.querySelector('.preview-note')?.textContent,
+            sync:d?.querySelector('#sync-status')?.textContent,
             theme:d?f.contentWindow.getComputedStyle(d.documentElement).getPropertyValue('--surface').trim():null};
         })())"""), flush=True)
 
