@@ -144,13 +144,18 @@ def upsert_job(*, display_name: str, claim_number: str = "",
                carrier: str = "", loss_type: str = "", year=None,
                status: str = "", date_received: str = "",
                department: str = "", metadata: dict | None = None,
+               clear_fields=(),
                **crm) -> str:
     """Insert or update, with the SQLite backend's partial-update rule: a
-    blank value never overwrites an existing non-blank one.
+    blank value never overwrites an existing non-blank one unless its column
+    is explicitly listed in clear_fields by a deliberate edit.
 
     v6 CRM fields come through **crm and share the sqlite column list, so
     the two backends cannot drift on which fields exist."""
     from ems_db_sqlite import CRM_COLUMNS, _TEXT_COLUMNS
+    clear_fields = set(clear_fields)
+    if clear_fields - set(_TEXT_COLUMNS):
+        raise ValueError('Only job text fields may be explicitly cleared')
     unknown = set(crm) - set(CRM_COLUMNS)
     if unknown:
         raise TypeError(
@@ -161,6 +166,8 @@ def upsert_job(*, display_name: str, claim_number: str = "",
         "loss_type": loss_type, "status": status,
         "date_received": date_received,
     })
+    for col in clear_fields:
+        supplied[col] = ''
 
     key = canon_key(display_name)
     if not key:
@@ -199,7 +206,7 @@ def upsert_job(*, display_name: str, claim_number: str = "",
                           or existing.get("department") or None),
     }
     for col in _TEXT_COLUMNS:
-        patch[col] = supplied.get(col) or existing.get(col)
+        patch[col] = '' if col in clear_fields else supplied.get(col) or existing.get(col)
     _sb.rest("PATCH", "jobs", params={"canon_key": f"eq.{key}"}, body=patch)
     if renamed_from:
         try:

@@ -643,6 +643,7 @@ def upsert_job(*, display_name: str,
                 date_received: str = "",
                 department: str = "",
                 metadata: dict | None = None,
+                clear_fields=(),
                 **crm) -> str:
     """Insert or update a job, keyed on `canon_key(display_name)`.
 
@@ -650,6 +651,7 @@ def upsert_job(*, display_name: str,
     overwrite an existing non-blank value. That way Trello sync can
     refresh display_name + status without nuking the loss_type a
     different tool already filled in.
+    Deliberate edits can opt specific text columns into clearing via clear_fields.
 
     The v6 CRM fields (`CRM_COLUMNS` — address, adjuster_*, date_of_loss,
     xa_id, wc_project_id …) are accepted as keywords too and follow the
@@ -660,6 +662,9 @@ def upsert_job(*, display_name: str,
     Returns the canon_key.
     """
     unknown = set(crm) - set(CRM_COLUMNS)
+    clear_fields = set(clear_fields)
+    if clear_fields - set(_TEXT_COLUMNS):
+        raise ValueError('Only job text fields may be explicitly cleared')
     if unknown:
         raise TypeError(
             f"upsert_job() got unexpected keyword(s): {sorted(unknown)}")
@@ -669,6 +674,8 @@ def upsert_job(*, display_name: str,
         "loss_type": loss_type, "status": status,
         "date_received": date_received,
     })
+    for col in clear_fields:
+        supplied[col] = ''
     key = canon_key(display_name)
     if not key:
         raise ValueError("display_name must canonicalize to a non-empty key")
@@ -722,7 +729,7 @@ def upsert_job(*, display_name: str,
             # hand-writing them was how the four original columns stayed
             # the only four for as long as they did.
             for col in _TEXT_COLUMNS:
-                new_vals[col] = supplied.get(col) or _row_get(existing, col)
+                new_vals[col] = '' if col in clear_fields else supplied.get(col) or _row_get(existing, col)
             # Re-detect on every upsert: if the display_name changed
             # (e.g. a rename in Trello), the parent/unit derivation
             # should follow. Partial-update rule: keep the existing

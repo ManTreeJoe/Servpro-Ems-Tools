@@ -58,6 +58,18 @@ def _saved(key):
     return js.stored_values(ems_db.get_job(key))
 
 
+@pytest.mark.parametrize('push_fails', [False, True])
+def test_cleared_insurance_stays_empty_on_reopen(job, trello, push_fails):
+    assert js.save(job, {'carrier': 'AAA', 'claim_number': 'TEST-123'}, edited_only=True)['ok']
+    trello['fail'] = push_fails
+    assert js.save(job, {'carrier': '', 'claim_number': ''}, edited_only=True)['ok']
+    reopened = _saved(job)
+    assert reopened['carrier'] == ''
+    assert reopened['claim_number'] == ''
+    refreshed = js.load(job, refresh=True)['values']
+    assert refreshed['carrier'] == refreshed['claim_number'] == ''
+
+
 # ── DB first ───────────────────────────────────────────────────────────
 def test_the_local_write_lands_even_when_trello_fails(job, trello):
     trello["fail"] = True

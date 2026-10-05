@@ -630,4 +630,4 @@ def _persist(canon_key, child_name, values, meta):
             cols[col] = values[fid]
     ems_db.upsert_job(display_name=(ems_db.get_job(canon_key) or {})
                       .get("display_name") or canon_key,
-                      metadata=meta, **cols)
+                      metadata=meta, clear_fields=[col for col, value in cols.items() if value == ''], **cols)

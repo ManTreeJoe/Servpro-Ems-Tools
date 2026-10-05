@@ -64,6 +64,18 @@ def test_unknown_attribute_still_raises():
         sup.definitely_not_a_function
 
 
+def test_explicit_clear_reaches_remote_patch_without_clearing_other_fields(monkeypatch):
+    existing={'canon_key':'test job','display_name':'Test Job','carrier':'AAA','claim_number':'OLD','phone':'555'}
+    monkeypatch.setattr(sup,'_one',lambda *a,**k:existing)
+    requests=[]
+    monkeypatch.setattr(sup._sb,'rest',lambda *a,**kw:requests.append(kw['body']))
+    sup.upsert_job(display_name='Test Job',carrier='',clear_fields=['carrier','claim_number'])
+    assert requests[-1]['carrier']==requests[-1]['claim_number']==''
+    assert requests[-1]['phone']=='555'
+    sup.upsert_job(display_name='Test Job',carrier='')
+    assert requests[-1]['carrier']=='AAA'
+
+
 # ── identity must be shared, not reimplemented ──────────────────────────
 
 @pytest.mark.parametrize("fn", [

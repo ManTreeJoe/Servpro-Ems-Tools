@@ -2,6 +2,19 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
+## October 5 — explicit Job Info field clearing
+
+Reproduced carrier/claim returning after add → clear → reopen even when Trello
+successfully cleared its description. Both database adapters' partial-upsert
+rules skipped empty text, leaving stale columns which beat the blank settings.
+Added optional `clear_fields` to SQLite/Supabase `upsert_job`; Job Info persistence
+passes only explicitly empty mapped columns. Default import semantics still
+preserve existing values on blank input. Offline calls retain the argument through
+the existing kwargs/outbox path. No schema change and no live customer repair.
+Tests cover reopening, refresh with successful/failed Trello pushes, remote PATCH
+shape and ordinary blank imports. L OPS must likewise distinguish explicit clears
+from omitted fields; do not globally change imports to overwrite with blanks.
+
 ## October 5 — follow-up drag/click protection
 
 The user still saw an editor after dropping. A browser regression reproduced a
