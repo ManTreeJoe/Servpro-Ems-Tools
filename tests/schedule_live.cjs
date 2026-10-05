@@ -32,7 +32,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
    }};
   });
   await page.goto('file:///'+path.resolve('run_doc_editor_web_assets/calendar_preview.html').replaceAll('\\','/')+'?live=1');
-  await page.getByText('Live drafts · IE', {exact:false}).waitFor();
+  await page.getByText('Live schedule · IE', {exact:false}).waitFor();
   assert.equal(await page.locator('.wc-day').count(),3);
   assert.equal(await page.locator('[data-edit]').count(),0);
   await page.locator('#add-job-search').fill('Test');

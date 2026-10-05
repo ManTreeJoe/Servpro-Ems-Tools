@@ -32,10 +32,22 @@ def create(*args, **kwargs):
             sync:d?.querySelector('#sync-status')?.textContent,
             theme:d?f.contentWindow.getComputedStyle(d.documentElement).getPropertyValue('--surface').trim():null};
         })())"""), flush=True)
+        if '--confirmation' in sys.argv:
+            for _ in range(60):
+                time.sleep(0.5)
+                if window.evaluate_js("""(()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]')?.contentDocument;return d?.querySelector('.preview-note')?.textContent.startsWith('Live ');})()"""):
+                    break
+            # Open the review only. Never press the dialog's Confirm day button.
+            window.evaluate_js("""(()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]').contentDocument;[...d.querySelectorAll('.job-finder button')].find(b=>b.textContent==='Confirm day').click();})()""")
+            for _ in range(60):
+                time.sleep(0.5)
+                if window.evaluate_js("""(()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]')?.contentDocument;return d?.querySelector('.schedule-confirmation [data-close]')?.disabled===false;})()"""):
+                    break
+            print(window.evaluate_js("""JSON.stringify((()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]').contentDocument;return {reviewOpen:d.querySelector('.schedule-confirmation').open,rows:d.querySelectorAll('.confirmation-row').length,status:d.querySelector('.schedule-confirmation [data-message]').textContent};})())"""),flush=True)
         if '--history' in sys.argv:
             for _ in range(60):
                 time.sleep(0.5)
-                if window.evaluate_js("""(()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]')?.contentDocument;return d?.querySelector('.preview-note')?.textContent.startsWith('Live drafts');})()"""):
+                if window.evaluate_js("""(()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]')?.contentDocument;return d?.querySelector('.preview-note')?.textContent.startsWith('Live ');})()"""):
                     break
             window.evaluate_js("""(()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]').contentDocument;[...d.querySelectorAll('button')].find(b=>b.textContent==='History').click();})()""")
             for _ in range(60):

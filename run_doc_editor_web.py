@@ -64,6 +64,35 @@ class Api:
         except Exception as ex:
             return schedule_store.failure(ex)
 
+    def schedule_confirmation_preview(self, day, expected_context):
+        import schedule_store
+        import schedule_confirmation
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            return {'ok': True, 'review': schedule_confirmation.preview(store, day)}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
+    def schedule_confirm_day(self, command, expected_context):
+        import schedule_store
+        import schedule_confirmation
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            result = schedule_confirmation.confirm(store, command)
+        except Exception as ex:
+            result = schedule_store.failure(ex)
+            if result.get('conflict'):
+                result['error'] = 'The day or a card changed during review. Reload the review before confirming; no partial moves were saved.'
+            return result
+        # Confirmation is already durable. Worker startup failure must not turn
+        # success into an ambiguous save error; pending placements retry later.
+        try:
+            import card_placements
+            card_placements.start_sync(force=True)
+        except Exception:
+            pass
+        return {'ok': True, 'result': result}
+
     def schedule_realtime(self, expected_context):
         """Short-lived user credentials, never a service key; RLS owns access."""
         import schedule_store

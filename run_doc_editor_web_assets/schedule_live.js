@@ -9,6 +9,8 @@ window.OneLossScheduleLive = function ({render, notice}) {
     return result;
   };
   return {
+    confirmationPreview(day){return call('schedule_confirmation_preview',day,context);},
+    confirmDay(command){return call('schedule_confirm_day',command,context);},
     history(start,end){return call('schedule_history',start,end,context);},
     historyRows(id){return call('schedule_history_rows',id,context);},
     historyLink(row,job){return call('schedule_history_link',row.id,job,row.revision,context);},
@@ -21,7 +23,7 @@ window.OneLossScheduleLive = function ({render, notice}) {
         const result=await call('schedule_load');
         if(context&&context!==result.context)throw new Error('Account or office changed. Reopen Schedule before continuing.');
         context=result.context;department=result.department;
-        render(result.records);notice('Live drafts · '+department+' · Saved visits only. Confirm day, posting and printing are not enabled yet.');
+        render(result.records);notice('Live schedule · '+department+' · Draft edits do not move cards. Review Confirm day to apply board moves. Comment posting and printing are not enabled yet.');
       } catch(error) {notice(error.message,true);throw error;}
       finally {loading=false;}
     },

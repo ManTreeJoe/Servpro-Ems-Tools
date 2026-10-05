@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="weekly_calendar.css">
 <link rel="stylesheet" href="schedule_document_import.css">
 <link rel="stylesheet" href="schedule_history.css">
+<link rel="stylesheet" href="schedule_confirmation.css">
 <style>
 html,body{height:auto;min-height:100%;overflow-y:auto}body{padding:16px} .preview-note{padding:12px;background:var(--amber-soft);border:1px solid var(--amber);border-radius:6px;margin-bottom:8px}
 dialog{color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;width:min(520px,calc(100% - 32px));max-height:90vh;overflow:auto}dialog::backdrop{background:#0009}
@@ -60,6 +61,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <script src="schedule_realtime.js"></script>
 <script src="schedule_document_import.js"></script>
 <script src="schedule_history.js"></script>
+<script src="schedule_confirmation.js"></script>
 <script>
 'use strict';
 const liveMode=new URLSearchParams(location.search).get('live')==='1';
@@ -146,6 +148,7 @@ if(liveMode){
  documentImport=OneLossScheduleDocumentImport({today,read:day=>live.importDocument(day),apply:key=>live.importAll(key),onImported:()=>loadLive(true)});
  importButton.onclick=()=>{if(ready)documentImport.open();};
  const history=OneLossScheduleHistory(live),historyButton=document.createElement('button');historyButton.type='button';historyButton.className='btn';historyButton.textContent='History';historyButton.onclick=()=>{if(ready)history.open();};document.querySelector('.job-finder').append(historyButton);
+ const confirmation=OneLossScheduleConfirmation({live,onConfirmed:()=>loadLive(true)}),confirmButton=document.createElement('button');confirmButton.type='button';confirmButton.className='btn btn-primary';confirmButton.textContent='Confirm day';confirmButton.onclick=()=>{if(ready&&!saving)confirmation.open(calendar.selectedDay());};document.querySelector('.job-finder').append(confirmButton);
  document.querySelector('#visit-form header p').textContent='Job details are read-only here. Save changes only this schedule draft.';
  document.querySelector('#visit-form button.btn-primary').textContent='Save draft';
  ['job','address','contact','phone','insurance','claim'].forEach(id=>field(id).readOnly=true);

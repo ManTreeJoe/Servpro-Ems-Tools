@@ -2,7 +2,59 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
-## October 5 — Confirm day contract proposal (approved review flow)
+## October 5 — Confirm day implemented in DEV
+
+Branch: `handoff/paperclip-source-20261003`. Applied migration
+`20261005215806_schedule_day_confirmation.sql` to OneLoss project
+`oqwwapqnzzhefqxobadl`; L OPS database untouched. No confirmation or card move
+was executed against customer data during testing. Active visits remain 133;
+the new confirmation table and markers were empty after deployment.
+
+Schedule → select day → Confirm day opens a complete-day review (independent of
+calendar search/filters). Each entry shows linked card, current lane, and proposed
+lane. Correct the dropdown or choose Keep current placement. Multiple eligible
+cards default to no selection. Only existing active WIP/Contents card lanes are
+offered, never estimating masters, archived cards or Recon. No copy is created.
+Monitor as a side activity keeps placement; Monitor as the Run group may suggest
+the Monitor lane. Suggestions require exact lane names; duplicates stay put.
+Today's read-only check found 32 scheduled entries, 11 with eligible cards; the
+remaining entries are explicitly kept in place rather than guessed or omitted.
+
+Shared contract for L OPS:
+
+- `confirm_schedule_day(p_command jsonb)` accepts version 1, department, ISO date,
+  stable operation UUID, and the complete day's `entries` (`id`, `revision`,
+  `action: keep|move`). Moves additionally specify exact `card_id`, `board_id`,
+  `from_list`, placement `version` and target `list_id` on that same board.
+- Server checks office/job access, exact unambiguous job links, board/origin
+  permissions, current card state and revisions. It shares the draft save's
+  office transaction lock. A missing/new/changed visit or stale move fails the
+  whole transaction; no partial confirmation or partial board movement remains.
+- Immutable office-RLS `schedule_confirmations` stores actor, timestamp, command,
+  reviewed visit snapshots and result. Provider card descriptions are not copied
+  into receipts. Identical operation retries return the original result.
+- `schedule_visits.confirmed_revision == revision` means currently confirmed;
+  `confirmed_at` is server time. Ordinary draft edits advance revision, making
+  them drafts again. Confirmation does NOT mean work completed.
+- Moves use `app_placement_change` and its existing durable Trello sync state.
+  Desktop wakes the existing worker after the successful transaction. Confirmation
+  means saved in OneLoss, not proof that Trello delivery has finished. No comments
+  or Job Log posts occur. No automatic lane-mapping administration is added.
+
+Verification: 61 focused Python tests, isolated PostgreSQL tests using the real
+placement lifecycle (rollback, retries, stale review, RLS, disallowed board/lane,
+link checks and re-draft), plus live/sample/weekly browser suites. New browser
+coverage includes selected date, ambiguous/missing cards, corrected lane, safe
+retry, cancellation and narrow layout. Desktop/narrow renders inspected. Supabase
+security advisors report no findings on these new objects; previously documented
+admin function/password-protection findings remain outside this change.
+
+Still next: complete/cancel/reschedule with retained original and replacement
+links; separate idempotent Post to comments/Job Log; explicit Pull board into
+draft; Legacy print/PDF without Word; Nathan/Sam two-PC acceptance test. None of
+these is implied complete by the new Confirm day button. Main installer unchanged.
+
+### Original approved coordination proposal
 
 Branch: `handoff/paperclip-source-20261003`. Nathan approved a review of each
 job's current and proposed lane, with corrections before Confirm day. Preserve

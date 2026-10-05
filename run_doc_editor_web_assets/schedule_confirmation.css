@@ -1,0 +1,13 @@
+.schedule-confirmation{width:min(1000px,calc(100% - 32px));padding:20px}
+.schedule-confirmation header p,.schedule-confirmation [data-message]{color:var(--text-muted);font-size:13px;line-height:1.5}
+.schedule-confirmation [role=alert]{color:var(--red,#ff9494)}
+.confirmation-row{padding:14px 0;border-bottom:1px solid var(--border)}
+.confirmation-row h3{margin:0;font-size:15px}.confirmation-row h3 small{font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px}
+.confirmation-row>p{font-size:12px;margin:6px 0;color:var(--text-muted)}
+.confirmation-row .confirmation-note{color:var(--amber,#e6bc70)}
+.confirmation-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:start;margin-top:12px;font-size:12px}
+.confirmation-fields label{display:grid;gap:6px;min-width:0}.confirmation-fields p{margin:6px 0}
+.confirmation-fields select{width:100%;padding:8px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:5px}
+.schedule-confirmation footer{position:sticky;bottom:-20px;background:var(--surface);padding:14px 0 8px;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.schedule-confirmation :focus-visible{outline:2px solid var(--green,#62ac8e);outline-offset:2px}
+@media(max-width:700px){.confirmation-fields{grid-template-columns:1fr}.schedule-confirmation{padding:14px}.schedule-confirmation footer{bottom:-14px}}

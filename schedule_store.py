@@ -102,6 +102,8 @@ class ScheduleStore:
                 'time': payload['arrival'], 'revision': row['revision'],
                 'since': row['queue_entered_at'][:10],
                 'entry_title': row.get('entry_title') or '', 'source_key': row.get('source_key'),
+                'confirmed': row.get('confirmed_revision', 0) == row['revision'],
+                'confirmed_at': row.get('confirmed_at'),
                 'title': (row.get('jobs') or {}).get('display_name') or row.get('entry_title') or 'Unlinked entry',
                 'needs_link': not row['job_id']}
 
