@@ -2,6 +2,25 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
+## October 5 — historical Run backfill proposed (not deployed)
+
+Nathan requested several months of Run history. Source library located at the
+configured EMS Daily Run OneDrive directory; proposed initial window July 1 through
+October 4, 2026. Do not use active schedule bulk import for historical documents.
+It would turn historical waiting rows into current work and cannot faithfully
+represent repeated daily observations of the same job.
+
+Shared-backend coordination proposal: separate office-scoped historical Run documents
+and their dated source rows from active visits. Preserve all source sections,
+raw text, source digest, original row identity, cancellation markings and reviewed
+job links. Scheduled work is not evidence of completion. Repeated pending/TBS/hold
+rows belong to each historical day, not today's waiting queue. Exact file retries
+must deduplicate; changed versions must be retained for review, not overwrite history.
+Calendar/Legacy history should be read-only initially, with unresolved links visible.
+L OPS should consume this history separately from active schedule visits. Schema
+and API agreement is required before implementation; no migration or history writes
+have been made for this request.
+
 ## October 5 — live schedule drop fix
 
 Branch: `handoff/paperclip-source-20261003`. Live calendar and Legacy drops now
