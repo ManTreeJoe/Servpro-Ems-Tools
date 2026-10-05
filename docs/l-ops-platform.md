@@ -2,6 +2,33 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
+## October 5 — Confirm day contract proposal (approved review flow)
+
+Branch: `handoff/paperclip-source-20261003`. Nathan approved a review of each
+job's current and proposed lane, with corrections before Confirm day. Preserve
+the calendar layout; posting comments is a separate later action. This slice
+confirms scheduled active visits for the selected day, not all waiting queues.
+
+Planned additive contract: office-scoped immutable `schedule_confirmations`
+receipts, plus `confirmed_revision`/`confirmed_at` on visits. One transaction
+checks the complete reviewed day's visit revisions and exact saved job/card
+links, applies reviewed moves through the existing placement lifecycle/outbox,
+and records the confirmation. Stable operation IDs make retries safe. Editing
+a confirmed visit makes that revision a draft again; board changes never edit
+the schedule. Concurrent changes require a fresh review, never partial moves.
+
+Initial lane choices stay within the selected linked WIP or Contents card's
+current board. An estimating master must not move instead of its WIP copy.
+Ambiguous cards require explicit selection; unlinked/unsupported cards may be
+confirmed with Keep placement, visibly identified. Recon boards/lanes are not
+eligible. Extra Monitor activity does not propose a move to Monitor; the Run
+group, not an incidental activity, controls that suggestion. Cancellation and
+replacement linking remain a separate follow-up, with no placement change.
+
+L OPS must consume confirmation revisions separately from completion and must
+not treat a confirmation as permission to post comments. No live card moves
+will be used for development tests. This proposal is pushed before schema work.
+
 ## October 5 — explicit Job Info field clearing
 
 Reproduced carrier/claim returning after add → clear → reopen even when Trello
