@@ -5,6 +5,13 @@ Status: October 3, 2026. This file is the canonical cross-chat handoff.
 ## October 5 — live schedule readiness check (read-only)
 
 Update: Nathan approved OneLoss/Linguar Hub as the canonical schedule backend.
+`schedule_records.py` now defines a validation-only draft save envelope, covered
+by 32 passing tests in `tests/test_schedule_records.py`. It performs no database
+or external writes, is not wired to the sample UI, and is not a security boundary.
+No migration has been created or applied. Server-side enforcement and the
+adapter/UI connection remain pending cross-app contract review and implementation.
+Reordering requires a separate atomic server operation; client position values
+are deliberately not accepted by the visit save payload.
 Implementation starts with a draft persistence contract; no automatic L OPS
 writes, database merging, Word writes, board movement or comment posting.
 Existing OneLoss job UUIDs and department access are authoritative. L OPS must
