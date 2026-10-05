@@ -2,7 +2,7 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
-## October 5 — approved bulk import correction (implementation in progress)
+## October 5 — bulk import correction implemented in DEV
 
 Nathan rejected mandatory per-line linking and approved importing the whole Run,
 auto-linking strong job/Trello matches, retaining unmatched rows on the calendar,
@@ -16,6 +16,34 @@ Trello card creation or original-document writes. L OPS remains untouched; its
 future consumer must support nullable job links and display needs-link states.
 Branch: handoff/paperclip-source-20261003. Deployment and tests follow below once
 verified; this section publishes the schema decision before implementation.
+
+Implementation update: `20261005154121_schedule_bulk_import.sql` applied to
+OneLoss/Linguar Hub. Added nullable job links, entry_title/source_key, v2
+`save_schedule_entry` and atomic `import_schedule_entries`. Existing v1 save
+remains available for linked visits. Direct writes stay denied; RLS allows only
+office-authorized unlinked entries or authorized linked jobs. Link changes and
+edits use revisions and append-only receipts. Source identity is immutable.
+
+The .docx dialog now has one **Import all** action. Unique normalized full-name
+and street-address evidence auto-matches existing jobs; ambiguous/conflicting
+evidence stays unlinked. Existing saved `job_links` Trello pins follow the job—
+this does not create/repin external cards or fuzzy-match directly against Trello.
+Unmatched entries persist and show Needs link in calendar and Legacy. The visit
+editor can search/change/remove its job link and edit an unlinked entry title.
+Retries of the same source reuse rows, preserving subsequent edits. An already
+active matched job is not overwritten; its new source line is retained unlinked
+for reconciliation. Dates absent from Upcoming remain TBS with a review note;
+unsupported sections are retained in On Hold with the original section in notes.
+Crossed-out lines are counted/skipped. Tables remain explicit manual-review text.
+Raw text is retained in notes; crew is not guessed from ambiguous abbreviations.
+
+Validation: 51 Python tests passed; calendar/Legacy and live browser suites passed.
+Isolated PostgreSQL tests cover unlinked saves, retries, duplicate handling,
+link/unlink, stale edits, forbidden cross-office links and atomic batch rollback.
+Signed-in read-only checks found 510 authorized jobs and confirmed saved Trello
+links could be read. Live schedule load succeeded after migration; no real Run
+entries were inserted by tests. Database changes and documentation are shared;
+L OPS consumer adaptation remains future work. This is DEV, not an app release.
 
 ## October 5 — Schedule document import
 

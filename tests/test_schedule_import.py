@@ -124,6 +124,7 @@ def test_selected_document_proposals_preserve_waiting_and_flag_uncertain(source,
     import schedule_store
     from unittest.mock import Mock
     fake = Mock(department='IE')
+    fake.jobs.return_value=[]
     monkeypatch.setattr(schedule_store, 'ScheduleStore', lambda context: fake)
     api = Api()
     api._window = Mock()

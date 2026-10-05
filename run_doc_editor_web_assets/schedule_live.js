@@ -10,6 +10,7 @@ window.OneLossScheduleLive = function ({render, notice}) {
   };
   return {
     importDocument(day){return call('schedule_pick_document',day,context);},
+    importAll(key){return call('schedule_import_all',key,context);},
     credentials(){return call('schedule_realtime',context);},
     async load() {
       if(loading)return; loading=true;
@@ -30,7 +31,7 @@ window.OneLossScheduleLive = function ({render, notice}) {
       const visit={id:row.id,job_id:row.job_id,queue:row.queue,group:row.group,
         date:row.date||null,arrival:row.time||'',activities:row.activities,
         equipment:row.equipment||'',access:row.access||'',notes:row.notes||'',status:'active'};
-      const command={department,expected_revision:row.revision||0,visit};
+      const command={department,expected_revision:row.revision||0,visit,entry_title:row.entry_title||row.title||'',source_key:row.source_key||null};
       if(placement)command.before_id=placement.beforeId||null;
       const signature=JSON.stringify(command);
       if(!pending||pending.signature!==signature)pending={signature,command:{...command,operation_id:crypto.randomUUID()}};

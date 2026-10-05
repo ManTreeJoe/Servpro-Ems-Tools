@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -10,7 +11,7 @@ import config
 import schedule_records
 import supabase_client as sb
 
-JOB_FIELDS = 'job_id,display_name,address,phone,email,carrier,claim_number'
+JOB_FIELDS = 'job_id,canon_key,display_name,address,phone,email,carrier,claim_number'
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -77,7 +78,11 @@ class ScheduleStore:
                 'department': 'eq.' + self.department, 'payload->>status': 'eq.active',
                 'select': '*,jobs(' + JOB_FIELDS + ')', 'order': 'position.asc,id.asc',
                 'limit': 500, 'offset': offset})
-            result.extend(self.row(row) for row in rows)
+            linked = self.trello_links([r.get('jobs') for r in rows if r.get('jobs')])
+            for row in rows:
+                item=self.row(row)
+                item['trello_cards']=linked.get((row.get('jobs') or {}).get('canon_key'),[])
+                result.append(item)
             if len(rows) < 500:
                 return result
         raise ValueError('Schedule exceeds the supported view size; no partial list was shown.')
@@ -95,7 +100,37 @@ class ScheduleStore:
         payload = row['payload']
         return {**cls.job(row.get('jobs') or {'job_id': row['job_id']}), **payload,
                 'time': payload['arrival'], 'revision': row['revision'],
-                'since': row['queue_entered_at'][:10]}
+                'since': row['queue_entered_at'][:10],
+                'entry_title': row.get('entry_title') or '', 'source_key': row.get('source_key'),
+                'title': (row.get('jobs') or {}).get('display_name') or row.get('entry_title') or 'Unlinked entry',
+                'needs_link': not row['job_id']}
+
+    def jobs(self):
+        result=[]
+        for offset in range(0,10000,500):
+            rows=self.request('jobs',params={'department':'eq.'+self.department,
+                'select':JOB_FIELDS,'order':'job_id.asc','limit':500,'offset':offset})
+            result.extend(rows)
+            if len(rows)<500:return result
+        raise ValueError('Too many jobs for automatic matching; no import was saved.')
+
+    def trello_links(self, jobs):
+        keys=sorted({j.get('canon_key') for j in jobs if j.get('canon_key')})
+        result={}
+        for start in range(0,len(keys),50):
+            values='('+','.join(json.dumps(key) for key in keys[start:start+50])+')'
+            for offset in range(0,5000,500):
+                rows=self.request('job_links',params={'canon_key':'in.'+values,'link_type':'eq.trello_card',
+                    'select':'canon_key,link_value','order':'canon_key.asc,link_value.asc','offset':offset,'limit':500})
+                for row in rows:
+                    if re.fullmatch(r'[a-fA-F0-9]{24}',row['link_value'] or ''):
+                        result.setdefault(row['canon_key'],[]).append(row['link_value'])
+                if len(rows)<500:break
+        return result
+
+    def import_entries(self, entries):
+        clean=[{k:v for k,v in c.items() if k not in ('match_reason','review_note')} for c in entries]
+        return self.request('rpc/import_schedule_entries',body={'p_department':self.department,'p_entries':clean})
 
     def search(self, query):
         # Only literal words enter the PostgREST expression, never operators.
@@ -111,11 +146,17 @@ class ScheduleStore:
     def save(self, command):
         if not isinstance(command, dict) or command.get('department') != self.department:
             raise ValueError('Office changed. Reopen Schedule.')
-        clean = schedule_records.save_command(command.get('visit'), department=self.department,
+        record = dict(command.get('visit') or {})
+        unlinked = record.get('job_id') is None
+        if unlinked: record['job_id']='00000000-0000-4000-8000-000000000000'
+        clean = schedule_records.save_command(record, department=self.department,
             expected_revision=command.get('expected_revision'), operation_id=command.get('operation_id'))
         if 'before_id' in command:
             clean['before_id'] = None if command['before_id'] is None else schedule_records.identifier(command['before_id'])
-        return self.request('rpc/save_schedule_draft', body={'p_command': clean})
+        if unlinked: clean['visit']['job_id']=None
+        clean.update(contract_version=2,entry_title=schedule_records.text(command.get('entry_title',''),300,required=unlinked),source_key=command.get('source_key'))
+        if clean['source_key'] is not None: clean['source_key']=schedule_records.text(clean['source_key'],160,required=True)
+        return self.request('rpc/save_schedule_entry', body={'p_command': clean})
 
 
 def failure(error):

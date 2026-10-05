@@ -71,6 +71,7 @@
       return `<button type="button" class="wc-visit" data-color="${color}" data-edit="${escape(row.id)}" draggable="${Boolean(options.onSchedule)}" ${options.onEdit ? '' : 'disabled'}>
         ${row.time || row.canceled || row.completed ? `<span class="wc-time">${escape([row.time,row.canceled?'Canceled — needs rescheduling':row.completed?'Complete':''].filter(Boolean).join(' · '))}</span>` : ''}
         <strong>${escape(row.title)}</strong>
+        ${row.needs_link?'<small class="wc-needs-link">Needs link</small>':row.trello_cards?.length?'<small>Trello linked</small>':''}
         ${(row.activities||[]).map(a=>`<span><span class="wc-activity" data-color="${activityColor(a.label)}">${escape(a.label)}</span>${a.people?.length ? `<small>${escape(a.people.join(', '))}</small>` : ''}</span>`).join('')}
         ${row.since && row.queue!=='scheduled' ? `<small>Since ${escape(displayDate(row.since))}</small>` : ''}
       </button>`;

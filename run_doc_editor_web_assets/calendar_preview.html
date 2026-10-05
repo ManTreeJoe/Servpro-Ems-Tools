@@ -30,6 +30,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <label>Contact name<input id="contact"></label><label>Contact phone<input id="phone" type="tel"></label>
 <label>Insurance carrier<input id="insurance"></label><label>Claim number<input id="claim"></label>
 </div></fieldset>
+<fieldset id="schedule-link-controls" hidden><legend>Job / Trello link</legend><p id="schedule-link-status"></p><label>Find or change linked job<input id="schedule-link-search" type="search" placeholder="Search name or address"></label><div id="schedule-link-results"></div><button type="button" class="btn" id="schedule-unlink">Remove link</button></fieldset>
 <fieldset><legend>Schedule</legend><div class="edit-grid">
 <label>Section<select id="queue"><option value="scheduled">Scheduled</option><option value="tbs">To be scheduled</option><option value="pending">Pending</option><option value="hold">On hold</option></select></label>
 <label>Run group<select id="run-group"></select></label>
@@ -71,7 +72,7 @@ const records=[
 let editing=null;
 let dropPlacement=null;
 let activityDraft=[];
-let editingRow=null, saving=false, ready=!liveMode, searchVersion=0, addDay=null, pendingImport=null, documentImport=null;
+let editingRow=null, saving=false, ready=!liveMode, searchVersion=0, addDay=null, documentImport=null;
 const field=id=>document.getElementById(id), split=value=>value.split(',').map(x=>x.trim()).filter(Boolean);
 const names=['Oak residence','Pine apartments','Maple office','Cedar home','Willow residence','Elm plaza','Birch home','Aspen duplex','Juniper office','Cypress home','Laurel residence','Spruce building'];
 records.length=0;
@@ -108,7 +109,7 @@ function legacy({selected,records}){
  const items=records.filter(r=>group==='Upcoming'?r.queue==='scheduled'&&r.date>selected:r.queue==='scheduled'?r.date===selected&&(r.group||'Work To Be Performed')===group:r.group===group||(!r.group&&({tbs:'TBS Mitigation',pending:'Pending Approvals – Insurance/Self Pay',hold:'On Hold'})[r.queue]===group));
  const queue=group.startsWith('TBS')?'tbs':group.startsWith('Pending')?'pending':group==='On Hold'?'hold':'scheduled';
  const targetDate=group==='Upcoming'?OneLossWeeklyCalendar.shift(selected,1):selected;
- return `<section data-drop-date="${targetDate}" data-drop-queue="${queue}" data-drop-group="${safe(group==='Upcoming'?'Work To Be Performed':group)}"><h4><u>${safe(group)}</u></h4><ol data-drop-list>${items.map(r=>`<li><button class="wc-legacy-card" draggable="true" type="button" data-edit="${safe(r.id)}">${safe(r.title)}: ${safe(r.address||'')} <b>${r.activities.map(a=>`(${safe(a.label)}) ${safe(a.people.join('/'))}`).join(' ')} ${safe(r.time||'')} ${group==='Upcoming'?OneLossWeeklyCalendar.displayDate(r.date):''}</b></button></li>`).join('')}</ol></section>`;
+ return `<section data-drop-date="${targetDate}" data-drop-queue="${queue}" data-drop-group="${safe(group==='Upcoming'?'Work To Be Performed':group)}"><h4><u>${safe(group)}</u></h4><ol data-drop-list>${items.map(r=>`<li><button class="wc-legacy-card" draggable="true" type="button" data-edit="${safe(r.id)}">${safe(r.title)}${r.needs_link?' [Needs link]':''}: ${safe(r.address||'')} <b>${r.activities.map(a=>`(${safe(a.label)}) ${safe(a.people.join('/'))}`).join(' ')} ${safe(r.time||'')} ${group==='Upcoming'?OneLossWeeklyCalendar.displayDate(r.date):''}</b></button></li>`).join('')}</ol></section>`;
  }).join('')}</article>`;
 }
 field('calendar').dataset.layout='dispatch';
@@ -140,16 +141,12 @@ if(liveMode){
  document.querySelector('.preview-note').textContent='Connecting to live Schedule…';
  const sync=document.createElement('span');sync.id='sync-status';sync.role='status';sync.textContent='Connecting…';sync.style.cssText='font-size:12px;color:var(--text-muted);margin-left:auto';document.querySelector('.job-finder').append(sync);
  const importButton=document.createElement('button');importButton.type='button';importButton.className='btn';importButton.textContent='Import document';document.querySelector('.job-finder').append(importButton);
- documentImport=OneLossScheduleDocumentImport({today,read:day=>live.importDocument(day),onSelect:row=>{
-   pendingImport=row;field('add-job-search').value=row.raw_text.split(':')[0].trim().slice(0,80);field('add-job-search').focus();findJobs();
-   field('import-selection').hidden=false;field('import-selection').querySelector('span').textContent='Link this line to a job: '+row.raw_text;
- }});
- const selection=document.createElement('div');selection.id='import-selection';selection.hidden=true;selection.innerHTML='<span></span> <button class="btn" type="button">Cancel line</button>';document.querySelector('.job-finder').after(selection);
- selection.querySelector('button').onclick=()=>{pendingImport=null;selection.hidden=true;};
+ documentImport=OneLossScheduleDocumentImport({today,read:day=>live.importDocument(day),apply:key=>live.importAll(key),onImported:()=>loadLive(true)});
  importButton.onclick=()=>{if(ready)documentImport.open();};
  document.querySelector('#visit-form header p').textContent='Job details are read-only here. Save changes only this schedule draft.';
  document.querySelector('#visit-form button.btn-primary').textContent='Save draft';
  ['job','address','contact','phone','insurance','claim'].forEach(id=>field(id).readOnly=true);
+ field('schedule-link-controls').hidden=false;
  calendar.update({records:[],loading:true});
  window.addEventListener('pywebviewready',loadLive,{once:true});
  if(window.pywebview?.api)setTimeout(loadLive,0);
@@ -160,6 +157,19 @@ if(liveMode){
 }
 const runGroups={scheduled:['Monitor','Work To Be Performed'],tbs:['TBS New Loss /Reinspection','TBS Mitigation','TBS Contents'],pending:['Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management'],hold:['On Hold']};
 const extraFields=['address','contact','phone','insurance','claim','equipment','access','notes'];
+let linkSequence=0;
+field('schedule-link-search').oninput=async()=>{
+ const sequence=++linkSequence,query=field('schedule-link-search').value.trim(),results=field('schedule-link-results');
+ if(query.length<2){results.textContent='';return;}results.textContent='Searching jobs…';
+ try{const jobs=await live.search(query);if(sequence!==linkSequence)return;
+   results.replaceChildren(...jobs.map(job=>{const button=document.createElement('button');button.type='button';button.className='btn';button.textContent=job.title+' · '+(job.address||'');button.onclick=()=>{
+     editingRow.job_id=job.job_id;field('job').value=job.title;field('job').readOnly=true;
+     ['address','contact','phone','insurance','claim'].forEach(key=>field(key).value=job[key]||'');
+     field('schedule-link-status').textContent='Selected '+job.title+' — link changes when you save. Saved Trello links follow this job.';results.textContent='';
+   };return button;}));if(!jobs.length)results.textContent='No matching jobs.';
+ }catch(error){if(sequence===linkSequence)results.textContent=error.message;}
+};
+field('schedule-unlink').onclick=()=>{editingRow.job_id=null;field('job').readOnly=false;field('schedule-link-status').textContent='Needs link — save to keep this as an unlinked schedule entry.';['address','contact','phone','insurance','claim'].forEach(key=>field(key).value='');};
 function renderGroups(chosen){field('run-group').innerHTML=runGroups[field('queue').value].map(g=>`<option>${safe(g)}</option>`).join('');if(runGroups[field('queue').value].includes(chosen))field('run-group').value=chosen;else if(field('queue').value==='scheduled')field('run-group').value='Work To Be Performed';field('date').required=field('queue').value==='scheduled';}
 field('queue').onchange=()=>renderGroups();
 function renderActivities(){
@@ -174,19 +184,12 @@ function openEditor(id,day,schedule=false,placement=null){
  if(liveMode&&!id){addDay=day;field('add-job-search').focus();field('add-job-search').placeholder='Find the job to add a visit…';return;}
  dropPlacement=placement;
  editing=id; const row=records.find(r=>r.id===id)||availableJobs.find(r=>r.id===id);
- if(pendingImport&&row?.revision){field('job-matches').hidden=false;field('job-matches').innerHTML='<p role="alert">This job already has an active visit. Cancel this import line and edit its existing visit to combine activities.</p>';return;}
  editingRow=row?structuredClone(row):null;
+ if(liveMode){linkSequence++;field('schedule-link-search').value='';field('schedule-link-results').textContent='';field('job').readOnly=!!row?.job_id;field('schedule-link-status').textContent=row?.job_id?`Linked job · ${row.trello_cards?.length||0} saved Trello card link(s). You can change the job below.`:'Needs link — this entry is saved even without a job or Trello match.';}
  field('job').value=row?.title||'';field('queue').value=placement?.queue||(schedule?'scheduled':row?.queue||'scheduled');field('date').value=OneLossWeeklyCalendar.displayDate(schedule?day:row?.date||day||today);field('date').setCustomValidity('');
  field('time').value=row?.time||'';
  extraFields.forEach(key=>field(key).value=row?.[key]||'');
  activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(placement?.group||row?.group);field('activity-picker').open=false;field('activity-error').textContent='';
- if(pendingImport){
-   editingRow.draftId=pendingImport.draft_id;
-   field('queue').value=pendingImport.queue;renderGroups(pendingImport.group);
-   field('date').value=pendingImport.proposed_date?OneLossWeeklyCalendar.displayDate(pendingImport.proposed_date):'';
-   field('notes').value=pendingImport.raw_text+'\nImported from: '+pendingImport.filename.slice(0,150);
-   activityDraft=pendingImport.section==='monitor'?[{label:'Monitor',people:[]}]:[];renderActivities();
- }
  field('editor').showModal();field('job').focus();
 }
 field('cancel').onclick=()=>{if(!saving)field('editor').close();};
@@ -202,9 +205,10 @@ field('visit-form').onsubmit=async event=>{
  if(liveMode){
    row.id=existing.revision?existing.id:(existing.draftId||(existing.draftId=crypto.randomUUID()));
    row.job_id=existing.job_id;
+   row.entry_title=field('job').value.trim();
    saving=true;field('visit-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=true);
    const saveButton=field('visit-form').querySelector('.btn-primary');saveButton.textContent='Saving…';
-   try{await live.save(row,dropPlacement);if(pendingImport){documentImport.saved(pendingImport.draft_id);pendingImport=null;field('import-selection').hidden=true;}field('editor').close();}
+   try{await live.save(row,dropPlacement);field('editor').close();}
    catch(error){field('activity-error').textContent=error.message;}
    finally{saving=false;field('visit-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=false);saveButton.textContent='Save draft';}
    if(!field('editor').open)await loadLive();

@@ -12,6 +12,7 @@ import run_doc_editor as editor
 class Api:
     def __init__(self):
         self._window = None
+        self._schedule_import_preview = None
 
     def attach(self, window):
         self._window = window
@@ -67,7 +68,23 @@ class Api:
             except Exception:
                 raise ValueError('The document could not be read. Choose a valid, locally available .docx Run file.') from None
             store.check()
+            import schedule_bulk_import
+            entries, skipped = schedule_bulk_import.commands(result, store.jobs())
+            self._schedule_import_preview = {'context': store.context_id,
+                'key':result['import_key'], 'entries':entries}
+            result.update(bulk_entries=entries, skipped=skipped)
             return {'ok': True, 'preview': result}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
+    def schedule_import_all(self, import_key, expected_context):
+        import schedule_store
+        try:
+            store=schedule_store.ScheduleStore(expected_context)
+            preview=self._schedule_import_preview
+            if not preview or preview['context']!=store.context_id or preview['key']!=import_key:
+                raise ValueError('Choose the document again in the current office before importing.')
+            return {'ok':True, 'result':store.import_entries(preview['entries'])}
         except Exception as ex:
             return schedule_store.failure(ex)
 
