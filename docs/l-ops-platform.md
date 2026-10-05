@@ -2,6 +2,17 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
+## October 5 — follow-up drag/click protection
+
+The user still saw an editor after dropping. A browser regression reproduced a
+delayed compatibility click opening the live editor after the old 500 ms guard
+expired. The pointer helper now suppresses post-drag pointer clicks until a fresh
+pointerdown (keyboard activation remains available), including canceled drags and
+calendar rerenders. Native fallback dragging also enables suppression and passes
+queue/group information. Sample preview now moves directly too; it no longer
+deliberately opens the editor on drop. Live/sample/renderer browser tests pass,
+including delayed click suppression and ordinary click-to-edit. No backend changes.
+
 ## October 5 — historical Run backfill deployed; DEV viewer implemented
 
 Nathan approved read-only Calendar/Legacy history with correctable job links.
@@ -66,8 +77,8 @@ Branch: `handoff/paperclip-source-20261003`. Live calendar and Legacy drops now
 save the move directly through the existing revision-checked schedule API instead
 of opening the preview editor. Ordinary clicks still edit. Saving has status
 feedback; failures refresh the saved placement and display an error. No schema,
-Trello, Word, or L OPS changes required. Sample-only preview retains its edit-on-drop
-flow. Browser regression tests cover direct drop, click editing, failed move, and
+Trello, Word, or L OPS changes required. Sample-only preview's original edit-on-drop
+flow was removed in the follow-up above. Browser regression tests cover direct drop, click editing, failed move, and
 Legacy movement; calendar renderer and sample-preview tests also pass.
 
 ## October 5 — bulk import correction implemented in DEV

@@ -2,15 +2,17 @@
 (function(global){
   'use strict';
   global.bindCalendarDrag=function(host,onDrop){
-    let active=null,ignoreClickUntil=0;
+    let active=null,suppressDropClick=false;
     function clear(){
       if(!active)return;
+      if(active.ghost)suppressDropClick=true;
       active.ghost?.remove();active.slot?.remove();
       active.card.classList.remove('is-dragging');
       host.querySelectorAll('.is-drop-target').forEach(el=>el.classList.remove('is-drop-target'));
       active=null;
     }
     function down(event){
+      suppressDropClick=false;
       const card=event.target.closest('[data-edit][draggable="true"]');
       if(event.button!==0 || !card || card.disabled || active)return;
       const rect=card.getBoundingClientRect();
@@ -50,7 +52,7 @@
     async function up(event){
       const a=active;if(!a || event.pointerId!==a.id || a.landing)return;
       if(!a.ghost){clear();return;}
-      ignoreClickUntil=Date.now()+500;
+      suppressDropClick=true;
       const valid=event.type==='pointerup' && a.target && a.slot.isConnected;
       const destination=(valid?a.slot:a.card).getBoundingClientRect(),origin=a.ghost.getBoundingClientRect();
       a.landing=true;
@@ -62,10 +64,12 @@
       clear();if(valid)onDrop(id,day,placement);
     }
     function native(event){if(active)event.preventDefault();}
-    function click(event){if(Date.now()<ignoreClickUntil && event.target.closest('[data-edit]')){event.preventDefault();event.stopImmediatePropagation();ignoreClickUntil=0;}}
-    function key(event){if(event.key==='Escape'){ignoreClickUntil=Date.now()+500;clear();}}
+    // Keep the drag's compatibility click blocked across async saves/rerenders.
+    // A fresh pointerdown starts a real click; keyboard activation remains usable.
+    function click(event){if(suppressDropClick && event.detail!==0 && event.target.closest('[data-edit]')){event.preventDefault();event.stopImmediatePropagation();}}
+    function key(event){if(event.key==='Escape'){clear();}else if(event.key==='Enter'||event.key===' '){suppressDropClick=false;}}
     host.addEventListener('pointerdown',down);host.addEventListener('dragstart',native,true);host.addEventListener('click',click,true);
     document.addEventListener('pointermove',move,{passive:false});document.addEventListener('pointerup',up);document.addEventListener('pointercancel',up);document.addEventListener('keydown',key);
-    return {clear,destroy(){clear();host.removeEventListener('pointerdown',down);host.removeEventListener('dragstart',native,true);host.removeEventListener('click',click,true);document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up);document.removeEventListener('keydown',key);}};
+    return {clear,suppressClick(){suppressDropClick=true;},destroy(){clear();host.removeEventListener('pointerdown',down);host.removeEventListener('dragstart',native,true);host.removeEventListener('click',click,true);document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up);document.removeEventListener('keydown',key);}};
   };
 })(globalThis);

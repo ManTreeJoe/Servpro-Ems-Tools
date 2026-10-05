@@ -160,13 +160,18 @@ if(liveMode){
 }
 const runGroups={scheduled:['Monitor','Work To Be Performed'],tbs:['TBS New Loss /Reinspection','TBS Mitigation','TBS Contents'],pending:['Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management'],hold:['On Hold']};
 async function moveVisit(id,day,placement={}){
- if(!liveMode){openEditor(id,day,true,placement);return;}
  if(!ready||saving||field('editor').open)return;
  const existing=records.find(row=>row.id===id);if(!existing)return;
  const queue=placement.queue||'scheduled';
  const group=placement.group||(runGroups[queue].includes(existing.group)?existing.group:queue==='scheduled'?'Work To Be Performed':runGroups[queue][0]);
  const row={...structuredClone(existing),queue,group,date:queue==='scheduled'?day:null};
  const before=records.find(item=>item.id===placement.beforeId&&item.id!==id&&item.queue===queue&&item.group===group&&item.date===row.date);
+ if(!liveMode){
+   if(queue!=='scheduled')row.since=existing.queue===queue?existing.since:today;
+   records.splice(records.indexOf(existing),1);
+   const index=before?records.findIndex(item=>item.id===before.id):-1;
+   records.splice(index<0?records.length:index,0,row);calendar.update({records});return;
+ }
  saving=true;field('sync-status').textContent='Saving move…';
  field('calendar').setAttribute('aria-busy','true');
  let failure;

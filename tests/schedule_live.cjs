@@ -68,6 +68,10 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   assert.equal(await page.locator('#editor').isVisible(),false,'Dropping must not open the editor');
   await page.waitForFunction(day=>window.savedCommands.at(-1).visit.date===day,targetDate);
   await page.waitForTimeout(300);
+  await page.waitForTimeout(600);
+  // A delayed compatibility click has no new pointerdown gesture.
+  await page.locator('.wc-day [data-edit]').dispatchEvent('click',{detail:1});
+  assert.equal(await page.locator('#editor').isVisible(),false,'A delayed drop click must not open the editor');
   await page.locator('.wc-day [data-edit]').click();
   await page.locator('#notes').fill('My unsaved work');
   await page.evaluate(()=>{window.rows[0].revision=2;window.rows[0].time='1 PM';window.testSocket.change();});

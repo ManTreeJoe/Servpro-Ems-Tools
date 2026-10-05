@@ -178,6 +178,7 @@
         const card=event.target.closest('[draggable="true"]');
         if(!card || !host.contains(card) || !options.onSchedule || loading || error)return;
         draggedId=card.dataset.edit;
+        pointerDrag?.suppressClick();
         event.dataTransfer.effectAllowed='move';
         event.dataTransfer.setData('text/plain',draggedId);
         card.classList.add('is-dragging');return;
@@ -197,7 +198,7 @@
       }else if(event.type==='drop'){
         const id=draggedId,day=target.dataset.dropDate;
         endDrag();
-        if(records.some(row=>row.id===id))options.onSchedule(id,day);
+        if(records.some(row=>row.id===id))options.onSchedule(id,day,{queue:target.dataset.dropQueue,group:target.dataset.dropGroup});
       }
     }
     const dragEvents=['dragstart','dragover','dragleave','drop','dragend'];
