@@ -4,6 +4,23 @@ Status: October 3, 2026. This file is the canonical cross-chat handoff.
 
 ## October 5 — live schedule readiness check (read-only)
 
+Update: Nathan approved OneLoss/Linguar Hub as the canonical schedule backend.
+Implementation starts with a draft persistence contract; no automatic L OPS
+writes, database merging, Word writes, board movement or comment posting.
+Existing OneLoss job UUIDs and department access are authoritative. L OPS must
+consume the agreed contract with verified identity mappings rather than write
+its test-only daily-run rows as production data.
+
+Draft v1 contract for cross-app review: persistent visit UUID + job UUID,
+department, lifecycle (active/completed/canceled), queue (scheduled/tbs/pending/hold),
+Run group, optional date/arrival label, activities with independent people,
+equipment/access/notes, ordering, revision and actor-attributed change history.
+Exactly one active visit per job; canceled/completed records remain history.
+Save uses expected revision and a retry identity; requests never write job facts.
+Authorization, allowed groups and payload limits must be enforced server-side.
+Confirm day and posting require separate idempotent operations, not side effects
+of a draft save. Deployment remains pending migration tests and cross-app review.
+
 Nathan requested connecting the agreed calendar/Legacy layout to real persistent
 schedule data. No layout redesign, Word write-back or Reconstruction expansion.
 
