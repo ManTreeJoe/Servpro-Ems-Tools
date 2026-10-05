@@ -2,7 +2,46 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
-## October 5 — historical Run backfill proposed (not deployed)
+## October 5 — historical Run backfill deployed; DEV viewer implemented
+
+Nathan approved read-only Calendar/Legacy history with correctable job links.
+Branch: `handoff/paperclip-source-20261003`. Migration
+`20261005171816_run_document_history.sql` applied to OneLoss project
+`oqwwapqnzzhefqxobadl`; no L OPS database changes. Imported 81 source documents,
+July 1–October 3, 2026 (searched through October 4; no document for that day),
+5,290 source lines, 3,303 automatically linked lines, 57 struck lines. Unlinked
+lines include headers/notes as well as unmatched jobs. Active visits stayed at
+133 before/after; original files are read-only and were not uploaded or rewritten.
+
+API contract for L OPS adoption:
+
+- `run_history_documents`: immutable department/date/digest/filename and parsed
+  snapshot (paragraphs/tables/source review flags). Same department/date/digest
+  deduplicates; different file revisions remain separate.
+- `run_history_rows`: immutable source index, text, section and strike flag;
+  only `job_id`/`revision` may change through the link RPC.
+- `run_history_link_changes`: append-only actor/old/new job/revision audit.
+- `import_run_history(p_department,p_document)` atomically imports one document;
+  `link_run_history(p_row,p_job,p_revision)` corrects a link, checks office/job
+  access and revision. No direct table writes granted. Read access uses office RLS.
+- These records are observations of a dated Run, NOT active visits or evidence
+  of completion. Do not feed old TBS/pending/hold rows into current waiting queues.
+
+Desktop: Schedule → History → select Run (3 Days/Week/Month calendar or Legacy
+selector) → original sectioned text, with Correct link beside source lines.
+History cannot be dragged or edited. Dates display MM/DD/YY. This is a sectioned
+text rendering, not a byte-identical Word layout. Search on the history calendar
+finds document names; link search finds existing jobs. Source snapshots may
+contain table/tracked-change review flags and are retained for future richer rendering.
+
+Verification: 53 Python tests; PGlite revision/retry/RLS/atomic rollback and source
+immutability tests; browser tests include waiting/struck lines, link correction,
+non-draggable archive and unchanged live save calls. Security advisors returned
+no findings on these new objects; existing unrelated auth/admin findings remain.
+Backfill CLI: `tools/import_run_history.py --start 2026-07-01 --end 2026-10-04`
+previews; `--apply` performs office-bound authenticated imports, safe to repeat.
+
+### Original coordination proposal (approved)
 
 Nathan requested several months of Run history. Source library located at the
 configured EMS Daily Run OneDrive directory; proposed initial window July 1 through
@@ -17,9 +56,9 @@ job links. Scheduled work is not evidence of completion. Repeated pending/TBS/ho
 rows belong to each historical day, not today's waiting queue. Exact file retries
 must deduplicate; changed versions must be retained for review, not overwrite history.
 Calendar/Legacy history should be read-only initially, with unresolved links visible.
-L OPS should consume this history separately from active schedule visits. Schema
-and API agreement is required before implementation; no migration or history writes
-have been made for this request.
+L OPS should consume this history separately from active schedule visits. This
+proposal was pushed before implementation and approved by Nathan; deployment
+details above supersede its earlier proposed status.
 
 ## October 5 — live schedule drop fix
 

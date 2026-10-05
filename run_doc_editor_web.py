@@ -26,6 +26,36 @@ class Api:
         except Exception as ex:
             return schedule_store.failure(ex)
 
+    def schedule_history(self, start, end, expected_context):
+        import schedule_store
+        import run_history_store
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            return {'ok': True, 'documents': run_history_store.documents(store, start, end)}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
+    def schedule_history_rows(self, document_id, expected_context):
+        import schedule_store
+        import run_history_store
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            return {'ok': True, 'rows': run_history_store.rows(store, document_id)}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
+    def schedule_history_link(self, row_id, job_id, revision, expected_context):
+        import schedule_store
+        import run_history_store
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            return {'ok': True, 'revision': run_history_store.link(store, row_id, job_id, revision)}
+        except Exception as ex:
+            result = schedule_store.failure(ex)
+            if result.get('conflict'):
+                result['error'] = 'This history link changed elsewhere. Close this Run and reopen it before correcting the link.'
+            return result
+
     def schedule_search(self, query, expected_context):
         import schedule_store
         try:

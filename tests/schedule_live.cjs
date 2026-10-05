@@ -13,6 +13,9 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
    };
    window.savedCommands=[];window.rows=[];window.failSave=false;
    window.pywebview={api:{
+    schedule_history:async()=>({ok:true,documents:[{id:'history1',run_date:'2026-07-01',filename:'Wednesday 7.1.26.docx'}]}),
+    schedule_history_rows:async()=>({ok:true,rows:[{id:'h1',source_index:0,section:'TBS Mitigation',raw_text:'Historic waiting job',struck:false,job_id:null,revision:1},{id:'h2',source_index:1,section:'Work',raw_text:'Crossed out job',struck:true,job_id:null,revision:1}]}),
+    schedule_history_link:async(id,job,revision)=>{window.historyLink={id,job,revision};return {ok:true,revision:2};},
     schedule_load:async()=>({ok:true,context:'ctx',department:'IE',records:window.rows}),
     schedule_realtime:async()=>({ok:true,url:'https://example.supabase.co',key:'public',token:'user-token',department:'IE'}),
     schedule_search:async()=>({ok:true,jobs:[window.searchJob||{id:'job1',job_id:'job1',title:'Test real job',address:'123 Test Street',insurance:'AAA',activities:[]}]}),
@@ -99,7 +102,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   await page.getByRole('button',{name:'Import document',exact:true}).click();
   await page.getByRole('button',{name:'Choose document',exact:true}).click();
   await page.getByText('Second job: Demo needed',{exact:true}).waitFor();
-  assert.match(await page.locator('[data-message]').innerText(),/1 crossed-out/);
+  assert.match(await page.locator('#document-import [data-message]').innerText(),/1 crossed-out/);
   await page.screenshot({path:path.join(os.tmpdir(),'schedule-document-import.png')});
   await page.evaluate(()=>window.searchJob={id:'job2',job_id:'job2',title:'Second job',activities:[]});
   await page.getByRole('button',{name:'Import all',exact:true}).click();
@@ -118,6 +121,22 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   assert.equal(imported.visit.id,'50000000-0000-4000-8000-000000000001');
   assert.equal(imported.visit.job_id,'job2');
   assert.equal(imported.source_key,'batch:1');
+  const beforeHistory=await page.evaluate(()=>window.savedCommands.length);
+  await page.getByRole('button',{name:'History',exact:true}).click();
+  await page.locator('#run-history [data-edit="history1"]').click();
+  await page.locator('#history-document').getByText('Historic waiting job',{exact:true}).waitFor();
+  assert.equal(await page.locator('#history-document s').innerText(),'Crossed out job');
+  assert.equal(await page.locator('#run-history [draggable="true"]').count(),0);
+  await page.locator('#history-document [data-link="h1"]').click();
+  await page.locator('#history-link [data-search]').fill('Second');
+  await page.locator('#history-link [data-results] button').click();
+  await page.locator('#history-link').waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>window.historyLink.job),'job2');
+  assert.equal(await page.evaluate(()=>window.savedCommands.length),beforeHistory);
+  await page.screenshot({path:path.join(os.tmpdir(),'schedule-history-source.png')});
+  await page.getByRole('button',{name:'Back to history',exact:true}).click();
+  await page.screenshot({path:path.join(os.tmpdir(),'schedule-history-calendar.png')});
+  await page.getByRole('button',{name:'Close history',exact:true}).click();
   console.log('Live schedule UI: real-job selection, readonly facts, save failure/retry and rendering passed');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

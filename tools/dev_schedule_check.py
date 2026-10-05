@@ -32,6 +32,17 @@ def create(*args, **kwargs):
             sync:d?.querySelector('#sync-status')?.textContent,
             theme:d?f.contentWindow.getComputedStyle(d.documentElement).getPropertyValue('--surface').trim():null};
         })())"""), flush=True)
+        if '--history' in sys.argv:
+            for _ in range(60):
+                time.sleep(0.5)
+                if window.evaluate_js("""(()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]')?.contentDocument;return d?.querySelector('.preview-note')?.textContent.startsWith('Live drafts');})()"""):
+                    break
+            window.evaluate_js("""(()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]').contentDocument;[...d.querySelectorAll('button')].find(b=>b.textContent==='History').click();})()""")
+            for _ in range(60):
+                time.sleep(0.5)
+                if window.evaluate_js("""!!document.querySelector('iframe[data-panel-key="run_doc_editor"]')?.contentDocument?.querySelector('#run-history [data-edit]')"""):
+                    break
+            print(window.evaluate_js("""JSON.stringify((()=>{const d=document.querySelector('iframe[data-panel-key="run_doc_editor"]').contentDocument;return {historyOpen:d.querySelector('#run-history').open,status:d.querySelector('#run-history [data-status]').textContent,draggableHistory:d.querySelectorAll('#run-history [draggable="true"]').length};})())"""),flush=True)
 
     window.events.loaded += lambda: threading.Thread(target=inspect, daemon=True).start()
     return window

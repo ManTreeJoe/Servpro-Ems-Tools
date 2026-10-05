@@ -9,6 +9,9 @@ window.OneLossScheduleLive = function ({render, notice}) {
     return result;
   };
   return {
+    history(start,end){return call('schedule_history',start,end,context);},
+    historyRows(id){return call('schedule_history_rows',id,context);},
+    historyLink(row,job){return call('schedule_history_link',row.id,job,row.revision,context);},
     importDocument(day){return call('schedule_pick_document',day,context);},
     importAll(key){return call('schedule_import_all',key,context);},
     credentials(){return call('schedule_realtime',context);},

@@ -49,12 +49,14 @@
       return Array.from({length:42},(_,i)=>shift(start,i));
     }
     function grouped(items) {
+      if(options.archive)return items.map(card).join('') || '<p class="wc-empty">No imported Run</p>';
       return ['Monitor','Work To Be Performed'].map(group=>{
         const entries=items.filter(r=>(r.group || 'Work To Be Performed')===group);
         return `<h3 class="wc-group-title">${group} <small>${entries.length}</small></h3>${entries.map(card).join('') || '<p class="wc-empty">None scheduled</p>'}`;
       }).join('');
     }
     function queues() {
+      if(options.archive)return '';
       const groups=[['tbs','TBS New Loss /Reinspection'],['tbs','TBS Mitigation'],['tbs','TBS Contents'],['pending','Pending Testing/Clearance/Abatement'],['pending','Pending Approvals – Insurance/Self Pay'],['pending','Pending Approvals – Property Management'],['hold','On Hold']];
       return `<section class="wc-waiting"><h2>Waiting work</h2><p>Not booked on a day · grouped like the Run</p><div class="wc-waiting-grid" tabindex="0" aria-label="Waiting work groups">${groups.map(([queue,title])=>{
         const fallback={tbs:'TBS Mitigation',pending:'Pending Approvals – Insurance/Self Pay',hold:'On Hold'};
@@ -64,7 +66,7 @@
     }
     function monthCell(day) {
       const entries=rows(day);
-      return `<section class="wc-month-day ${day.slice(0,7)!==anchor.slice(0,7)?'wc-other-month':''}"><button class="wc-day-heading" type="button" data-open-day="${day}" aria-label="Open ${escape(label(day))}">${date(day).getDate()} <small>${entries.length} visits</small></button>${entries.slice(0,2).map(card).join('')}${entries.length>2?`<button type="button" class="btn" data-open-day="${day}">+ ${entries.length-2} more</button>`:''}</section>`;
+      return `<section class="wc-month-day ${day.slice(0,7)!==anchor.slice(0,7)?'wc-other-month':''}"><button class="wc-day-heading" type="button" data-open-day="${day}" aria-label="Open ${escape(label(day))}">${date(day).getDate()} <small>${entries.length} ${options.archive?'Runs':'visits'}</small></button>${entries.slice(0,2).map(card).join('')}${entries.length>2?`<button type="button" class="btn" data-open-day="${day}">+ ${entries.length-2} more</button>`:''}</section>`;
     }
     function card(row) {
       const color=row.canceled?'canceled':row.queue==='pending'?'pending':row.queue==='hold'?'hold':activityColor(row.activities?.[0]?.label);
@@ -79,8 +81,8 @@
     function dayColumn(day) {
       const items=rows(day);
       return `<section class="wc-day ${day===selected?'is-selected':''}" aria-label="${escape(label(day))}">
-        <button type="button" class="wc-day-heading" data-day="${day}" aria-pressed="${day===selected}" ${day===today()?'aria-current="date"':''}>${escape(label(day))}<small>${items.length} visit${items.length===1?'':'s'}</small></button>
-        <div class="wc-day-items" tabindex="0" aria-label="${escape(label(day))} visits">${grouped(items)}</div>
+        <button type="button" class="wc-day-heading" data-day="${day}" aria-pressed="${day===selected}" ${day===today()?'aria-current="date"':''}>${escape(label(day))}<small>${items.length} ${options.archive?'Run':'visit'}${items.length===1?'':'s'}</small></button>
+        <div class="wc-day-items" tabindex="0" aria-label="${escape(label(day))} ${options.archive?'Runs':'visits'}">${grouped(items)}</div>
         ${options.onAdd ? `<button type="button" class="btn wc-add" data-add="${day}">+ Add work<span class="wc-sr"> on ${escape(label(day))}</span></button>` : ''}
       </section>`;
     }
@@ -108,6 +110,7 @@
       popup.append(host.querySelector('.wc-periods'));
       const heading=document.createElement('strong');heading.textContent='Show';popup.append(heading);
       const filters=host.querySelector('.wc-filters'),search=filters.querySelector('.wc-search');
+      if(options.archive){search.querySelector('input').placeholder='Find a Run document';search.querySelector('span').textContent='Search Run documents';}
       popup.append(filters);
       toolbar.insertBefore(dropdown,toolbar.querySelector('.wc-date'));
       const pills=document.createElement('div');pills.className='wc-selected-filters';pills.setAttribute('aria-label','Selected filters');
