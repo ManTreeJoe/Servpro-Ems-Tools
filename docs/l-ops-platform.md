@@ -2,6 +2,21 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
+## October 5 — approved bulk import correction (implementation in progress)
+
+Nathan rejected mandatory per-line linking and approved importing the whole Run,
+auto-linking strong job/Trello matches, retaining unmatched rows on the calendar,
+and correcting links afterward. Planned shared contract change: permit a null
+schedule visit job_id for an imported/unlinked entry, retain an explicit display
+title and source identity, and provide an authorized revision-checked save/link
+operation plus an atomic bulk import. Office membership remains mandatory even
+without a job link. Link changes must validate both the old and new job's office.
+Existing visits must not be silently overwritten or duplicated. No fake jobs,
+Trello card creation or original-document writes. L OPS remains untouched; its
+future consumer must support nullable job links and display needs-link states.
+Branch: handoff/paperclip-source-20261003. Deployment and tests follow below once
+verified; this section publishes the schema decision before implementation.
+
 ## October 5 — Schedule document import
 
 Added **Import document** beside the live Schedule search. A native file picker
