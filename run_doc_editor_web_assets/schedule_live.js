@@ -9,6 +9,7 @@ window.OneLossScheduleLive = function ({render, notice}) {
     return result;
   };
   return {
+    importDocument(day){return call('schedule_pick_document',day,context);},
     credentials(){return call('schedule_realtime',context);},
     async load() {
       if(loading)return; loading=true;

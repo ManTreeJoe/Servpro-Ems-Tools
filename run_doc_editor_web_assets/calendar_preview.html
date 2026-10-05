@@ -4,6 +4,7 @@
 <title>OneLoss — Calendar TEST PREVIEW</title>
 <link rel="stylesheet" href="../web_shared/theme.css">
 <link rel="stylesheet" href="weekly_calendar.css">
+<link rel="stylesheet" href="schedule_document_import.css">
 <style>
 html,body{height:auto;min-height:100%;overflow-y:auto}body{padding:16px} .preview-note{padding:12px;background:var(--amber-soft);border:1px solid var(--amber);border-radius:6px;margin-bottom:8px}
 dialog{color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;width:min(520px,calc(100% - 32px));max-height:90vh;overflow:auto}dialog::backdrop{background:#0009}
@@ -55,6 +56,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <script src="../web_shared/iframe_shim.js?v=20261005schedule"></script>
 <script src="schedule_live.js"></script>
 <script src="schedule_realtime.js"></script>
+<script src="schedule_document_import.js"></script>
 <script>
 'use strict';
 const liveMode=new URLSearchParams(location.search).get('live')==='1';
@@ -69,7 +71,7 @@ const records=[
 let editing=null;
 let dropPlacement=null;
 let activityDraft=[];
-let editingRow=null, saving=false, ready=!liveMode, searchVersion=0, addDay=null;
+let editingRow=null, saving=false, ready=!liveMode, searchVersion=0, addDay=null, pendingImport=null, documentImport=null;
 const field=id=>document.getElementById(id), split=value=>value.split(',').map(x=>x.trim()).filter(Boolean);
 const names=['Oak residence','Pine apartments','Maple office','Cedar home','Willow residence','Elm plaza','Birch home','Aspen duplex','Juniper office','Cypress home','Laurel residence','Spruce building'];
 records.length=0;
@@ -137,6 +139,14 @@ if(liveMode){
  document.title='OneLoss — Live schedule drafts';
  document.querySelector('.preview-note').textContent='Connecting to live Schedule…';
  const sync=document.createElement('span');sync.id='sync-status';sync.role='status';sync.textContent='Connecting…';sync.style.cssText='font-size:12px;color:var(--text-muted);margin-left:auto';document.querySelector('.job-finder').append(sync);
+ const importButton=document.createElement('button');importButton.type='button';importButton.className='btn';importButton.textContent='Import document';document.querySelector('.job-finder').append(importButton);
+ documentImport=OneLossScheduleDocumentImport({today,read:day=>live.importDocument(day),onSelect:row=>{
+   pendingImport=row;field('add-job-search').value=row.raw_text.split(':')[0].trim().slice(0,80);field('add-job-search').focus();findJobs();
+   field('import-selection').hidden=false;field('import-selection').querySelector('span').textContent='Link this line to a job: '+row.raw_text;
+ }});
+ const selection=document.createElement('div');selection.id='import-selection';selection.hidden=true;selection.innerHTML='<span></span> <button class="btn" type="button">Cancel line</button>';document.querySelector('.job-finder').after(selection);
+ selection.querySelector('button').onclick=()=>{pendingImport=null;selection.hidden=true;};
+ importButton.onclick=()=>{if(ready)documentImport.open();};
  document.querySelector('#visit-form header p').textContent='Job details are read-only here. Save changes only this schedule draft.';
  document.querySelector('#visit-form button.btn-primary').textContent='Save draft';
  ['job','address','contact','phone','insurance','claim'].forEach(id=>field(id).readOnly=true);
@@ -164,11 +174,19 @@ function openEditor(id,day,schedule=false,placement=null){
  if(liveMode&&!id){addDay=day;field('add-job-search').focus();field('add-job-search').placeholder='Find the job to add a visit…';return;}
  dropPlacement=placement;
  editing=id; const row=records.find(r=>r.id===id)||availableJobs.find(r=>r.id===id);
+ if(pendingImport&&row?.revision){field('job-matches').hidden=false;field('job-matches').innerHTML='<p role="alert">This job already has an active visit. Cancel this import line and edit its existing visit to combine activities.</p>';return;}
  editingRow=row?structuredClone(row):null;
  field('job').value=row?.title||'';field('queue').value=placement?.queue||(schedule?'scheduled':row?.queue||'scheduled');field('date').value=OneLossWeeklyCalendar.displayDate(schedule?day:row?.date||day||today);field('date').setCustomValidity('');
  field('time').value=row?.time||'';
  extraFields.forEach(key=>field(key).value=row?.[key]||'');
  activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(placement?.group||row?.group);field('activity-picker').open=false;field('activity-error').textContent='';
+ if(pendingImport){
+   editingRow.draftId=pendingImport.draft_id;
+   field('queue').value=pendingImport.queue;renderGroups(pendingImport.group);
+   field('date').value=pendingImport.proposed_date?OneLossWeeklyCalendar.displayDate(pendingImport.proposed_date):'';
+   field('notes').value=pendingImport.raw_text+'\nImported from: '+pendingImport.filename.slice(0,150);
+   activityDraft=pendingImport.section==='monitor'?[{label:'Monitor',people:[]}]:[];renderActivities();
+ }
  field('editor').showModal();field('job').focus();
 }
 field('cancel').onclick=()=>{if(!saving)field('editor').close();};
@@ -186,7 +204,7 @@ field('visit-form').onsubmit=async event=>{
    row.job_id=existing.job_id;
    saving=true;field('visit-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=true);
    const saveButton=field('visit-form').querySelector('.btn-primary');saveButton.textContent='Saving…';
-   try{await live.save(row,dropPlacement);field('editor').close();}
+   try{await live.save(row,dropPlacement);if(pendingImport){documentImport.saved(pendingImport.draft_id);pendingImport=null;field('import-selection').hidden=true;}field('editor').close();}
    catch(error){field('activity-error').textContent=error.message;}
    finally{saving=false;field('visit-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=false);saveButton.textContent='Save draft';}
    if(!field('editor').open)await loadLive();

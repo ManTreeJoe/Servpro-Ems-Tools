@@ -118,3 +118,35 @@ def test_embedded_home_bridge_exposes_the_real_preview(source):
     result = home.run_doc_editor_preview_schedule_import(0, "2026-09-18", "IE")
     assert result["ok"] and result["preview_only"]
     assert len(result["visits"]) == len(editor.SECTIONS) + 2
+
+
+def test_selected_document_proposals_preserve_waiting_and_flag_uncertain(source, monkeypatch):
+    import schedule_store
+    from unittest.mock import Mock
+    fake = Mock(department='IE')
+    monkeypatch.setattr(schedule_store, 'ScheduleStore', lambda context: fake)
+    api = Api()
+    api._window = Mock()
+    api._window.create_file_dialog.return_value = [str(source)]
+    before = source.read_bytes()
+    result = api.schedule_pick_document('2026-10-05', 'context')
+    assert result['ok']
+    rows = result['preview']['visits']
+    assert next(r for r in rows if r['section'] == 'monitor')['skip_reason']
+    assert next(r for r in rows if r['section'] == 'marketing')['skip_reason']
+    assert next(r for r in rows if r['section'] == 'tbs_mitigation')['queue'] == 'tbs'
+    assert next(r for r in rows if r['section'] == 'upcoming')['proposed_date'] is None
+    again = api.schedule_pick_document('2026-10-05', 'context')
+    assert [r['draft_id'] for r in rows] == [r['draft_id'] for r in again['preview']['visits']]
+    assert source.read_bytes() == before
+    fake.save.assert_not_called()
+
+
+def test_document_picker_cancel_does_not_read(monkeypatch):
+    from unittest.mock import Mock
+    import schedule_store
+    monkeypatch.setattr(schedule_store, 'ScheduleStore', lambda context: Mock())
+    api = Api()
+    api._window = Mock()
+    api._window.create_file_dialog.return_value = None
+    assert api.schedule_pick_document('2026-10-05', 'context') == {'ok': True, 'canceled': True}

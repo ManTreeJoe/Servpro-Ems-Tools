@@ -1,0 +1,10 @@
+#document-import{width:min(920px,calc(100% - 32px));font-family:var(--font-body);padding:20px;box-sizing:border-box}
+#document-import header,.import-controls{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#document-import p{font-size:13px;line-height:1.5}
+.import-controls{justify-content:flex-start;flex-wrap:wrap}.import-controls label{display:grid;gap:5px;font-size:12px}
+.import-controls input{padding:8px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:5px}
+.document-import-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:16px;padding:16px 0;border-top:1px solid var(--border)}
+.document-import-row p{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}.document-import-row small{color:var(--text-muted)}
+#import-selection{padding:8px 0;font-size:13px;color:var(--text-muted)}#import-selection span{white-space:pre-wrap;overflow-wrap:anywhere}
+#document-import pre{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:650px){.document-import-row{grid-template-columns:1fr}.job-finder{flex-wrap:wrap}}

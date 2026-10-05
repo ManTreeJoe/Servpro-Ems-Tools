@@ -2,6 +2,31 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
+## October 5 — Schedule document import
+
+Added **Import document** beside the live Schedule search. A native file picker
+reads a .docx Run into a review dialog, with an explicit MM/DD/YY Run date.
+Each recognized line can be linked to a real job and opened in the existing visit
+editor. Save draft uses the same revision/idempotency/RLS path as manual visits.
+This is reviewed line-by-line import, not unattended bulk matching.
+
+Work/Monitor use the reviewed Run date. Upcoming requires its date to be entered;
+TBS, Pending and Hold remain undated. Original line text and filename are retained
+in notes. Crew and activities require review; only an explicit Monitor section
+proposes Monitor. Crossed-out rows and unsupported sections such as Marketing are
+flagged/skipped, not silently converted. Tables are displayed for manual review;
+tracked changes/text boxes warn that original-document review is needed.
+
+No Word edits, Trello posts, job-fact changes or database migrations. Existing
+active visits cannot be overwritten through import. Stable source-row UUIDs plus
+the database's one-active-visit constraint prevent blind duplicate creation.
+Changed documents need fresh review. The source is read from one bounded byte
+snapshot; compressed and expanded document sizes are limited. UI-design guidance
+kept the existing dialog/editor workflow. Parser/picker tests verify unchanged
+source bytes, repeatable IDs, waiting groups and cancellation. Browser tests cover
+file review, skip state, linking, editor handoff, saving and Saved feedback.
+Supported input in this first version: Word .docx, not legacy .doc or PDF.
+
 ## October 5 — approved OneLoss-owned schedule drafts
 
 This section supersedes the readiness/coordination blockers below. Nathan approved

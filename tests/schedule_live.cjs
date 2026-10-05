@@ -15,7 +15,10 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
    window.pywebview={api:{
     schedule_load:async()=>({ok:true,context:'ctx',department:'IE',records:window.rows}),
     schedule_realtime:async()=>({ok:true,url:'https://example.supabase.co',key:'public',token:'user-token',department:'IE'}),
-    schedule_search:async()=>({ok:true,jobs:[{id:'job1',job_id:'job1',title:'Test real job',address:'123 Test Street',insurance:'AAA',activities:[]}]}),
+    schedule_search:async()=>({ok:true,jobs:[window.searchJob||{id:'job1',job_id:'job1',title:'Test real job',address:'123 Test Street',insurance:'AAA',activities:[]}]}),
+    schedule_pick_document:async()=>({ok:true,preview:{source_filename:'Monday Run.docx',section_labels:{tbs_mitigation:'TBS Mitigation',monitor:'Monitor'},visits:[
+      {draft_id:'50000000-0000-4000-8000-000000000001',raw_text:'Second job: Demo needed',section:'tbs_mitigation',queue:'tbs',group:'TBS Mitigation',proposed_date:null,skip_reason:''},
+      {draft_id:'skip',raw_text:'Crossed-out work',section:'monitor',skip_reason:'Crossed out in document'}],tables:[],blockers:[]}}),
     schedule_save:async(command)=>{
      window.savedCommands.push(command);
      if(window.failSave)return {ok:false,error:'Connection interrupted. Retry safely.'};
@@ -59,6 +62,28 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   assert.equal(await page.locator('#time').inputValue(),'1 PM');
   await page.locator('#cancel').click();
   await page.screenshot({path:path.join(os.tmpdir(),'schedule-live-drafts.png')});
+  await page.getByRole('button',{name:'Import document',exact:true}).click();
+  await page.getByRole('button',{name:'Choose document',exact:true}).click();
+  await page.getByText('Second job: Demo needed',{exact:true}).waitFor();
+  assert.equal(await page.locator('[data-line="1"]').isDisabled(),true);
+  await page.screenshot({path:path.join(os.tmpdir(),'schedule-document-import.png')});
+  await page.evaluate(()=>window.searchJob={id:'job2',job_id:'job2',title:'Second job',activities:[]});
+  await page.locator('[data-line="0"]').click();
+  await page.locator('[data-found-job="job2"]').click();
+  assert.equal(await page.locator('#queue').inputValue(),'tbs');
+  assert.equal(await page.locator('#run-group').inputValue(),'TBS Mitigation');
+  assert.match(await page.locator('#notes').inputValue(),/Second job: Demo needed/);
+  await page.locator('#activity-picker summary').click();
+  await page.locator('[data-activity="Demo"]').click();
+  await page.locator('#activity-picker summary').click();
+  await page.getByRole('button',{name:'Save draft',exact:true}).click();
+  await page.locator('#editor').waitFor({state:'hidden'});
+  const imported=await page.evaluate(()=>window.savedCommands.at(-1));
+  assert.equal(imported.visit.date,null);
+  assert.equal(imported.visit.id,'50000000-0000-4000-8000-000000000001');
+  assert.equal(imported.visit.job_id,'job2');
+  await page.getByRole('button',{name:'Import document',exact:true}).click();
+  assert.equal(await page.locator('[data-line="0"]').innerText(),'Saved');
   console.log('Live schedule UI: real-job selection, readonly facts, save failure/retry and rendering passed');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

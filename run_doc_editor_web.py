@@ -43,6 +43,34 @@ class Api:
         except Exception as ex:
             return schedule_store.failure(ex)
 
+    def schedule_pick_document(self, date_iso, expected_context):
+        """Native selection and immutable read only; never edits the source."""
+        import schedule_import
+        import schedule_records
+        import schedule_store
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            day = _dt.date.fromisoformat(schedule_records.day(date_iso))
+            if not self._window:
+                raise ValueError('Open Schedule in the desktop app to choose a document.')
+            import webview
+            selected = self._window.create_file_dialog(webview.OPEN_DIALOG,
+                allow_multiple=False, file_types=('Word Run document (*.docx)',))
+            if not selected:
+                return {'ok': True, 'canceled': True}
+            path = selected[0] if isinstance(selected, (tuple, list)) else selected
+            try:
+                result = schedule_import.draft_rows(schedule_import.preview(
+                    path, day=day, workspace=store.department))
+            except ValueError:
+                raise
+            except Exception:
+                raise ValueError('The document could not be read. Choose a valid, locally available .docx Run file.') from None
+            store.check()
+            return {'ok': True, 'preview': result}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
     def schedule_save(self, command, expected_context):
         import schedule_store
         try:

@@ -13,6 +13,8 @@ from hashlib import sha256
 from io import BytesIO
 import json
 from pathlib import Path
+from zipfile import ZipFile
+from uuid import NAMESPACE_URL, uuid5
 
 from docx import Document
 
@@ -27,7 +29,13 @@ def preview(path: str, *, day: date, workspace: str) -> dict:
     source = Path(path)
     if source.suffix.casefold() != ".docx":
         raise ValueError("Schedule import preview requires a Word .docx document")
-    content = source.read_bytes()
+    with source.open('rb') as stream:
+        content = stream.read(20 * 1024 * 1024 + 1)
+    if len(content) > 20 * 1024 * 1024:
+        raise ValueError('Run document must be 20 MB or smaller')
+    with ZipFile(BytesIO(content)) as archive:
+        if sum(info.file_size for info in archive.infolist()) > 80 * 1024 * 1024:
+            raise ValueError('Expanded Run document is too large')
     version = sha256(content).hexdigest()
     # Path is informational only: mapped drives and UNC paths may identify
     # the same file. Workspace/day/content are the replay identity.
@@ -78,3 +86,29 @@ def preview(path: str, *, day: date, workspace: str) -> dict:
         "visits": visits, "tables": tables, "blockers": blockers,
         "print_template_required": True,
     }
+
+
+def draft_rows(result):
+    """Proposals only: explicit job selection and normal draft save are required."""
+    mapping = {
+        'work': ('scheduled', 'Work To Be Performed'),
+        'monitor': ('scheduled', 'Monitor'),
+        'upcoming': ('scheduled', 'Work To Be Performed'),
+        'tbs_new_loss': ('tbs', 'TBS New Loss /Reinspection'),
+        'tbs_mitigation': ('tbs', 'TBS Mitigation'),
+        'tbs_contents': ('tbs', 'TBS Contents'),
+        'pending_testing': ('pending', 'Pending Testing/Clearance/Abatement'),
+        'pending_insurance': ('pending', 'Pending Approvals – Insurance/Self Pay'),
+        'pending_property': ('pending', 'Pending Approvals – Property Management'),
+        'on_hold': ('hold', 'On Hold'),
+    }
+    proposals = []
+    for row in result['visits']:
+        placement = mapping.get(row['section'])
+        reason = ('Crossed out in document' if row['struck'] else
+                  'Section needs manual handling' if not placement else
+                  'Line exceeds the 3,800-character import limit' if len(row['raw_text']) > 3800 else '')
+        proposals.append({**row, 'queue': placement[0] if placement else None,
+            'group': placement[1] if placement else None, 'skip_reason': reason,
+            'draft_id': str(uuid5(NAMESPACE_URL, row['source_row_key']))})
+    return {**result, 'visits': proposals}
