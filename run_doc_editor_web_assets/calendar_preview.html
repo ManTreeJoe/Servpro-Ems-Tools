@@ -113,11 +113,11 @@ function legacy({selected,records}){
  }).join('')}</article>`;
 }
 field('calendar').dataset.layout='dispatch';
-const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onRetry:()=>loadLive(),onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id),onSchedule:(id,day,placement)=>openEditor(id,day,true,placement)});
+const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onRetry:()=>loadLive(),onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id),onSchedule:moveVisit});
 calendar.update({records});
 let realtime=null, refreshTimer=null, refreshing=false, refreshAgain=false;
 const live=liveMode?OneLossScheduleLive({render:rows=>{
- if(document.querySelector('.is-dragging')){queueRefresh();return;}
+ if(saving||document.querySelector('.is-dragging')){queueRefresh();return;}
  const scrolls=[...field('calendar').querySelectorAll('.wc-day-items,.wc-waiting')].map(el=>el.scrollTop);
  records.splice(0,records.length,...rows);ready=true;calendar.update({records,loading:false,error:''});
  [...field('calendar').querySelectorAll('.wc-day-items,.wc-waiting')].forEach((el,i)=>el.scrollTop=scrolls[i]||0);
@@ -156,6 +156,24 @@ if(liveMode){
  window.addEventListener('pagehide',()=>{clearInterval(fallback);clearTimeout(refreshTimer);realtime?.close();});
 }
 const runGroups={scheduled:['Monitor','Work To Be Performed'],tbs:['TBS New Loss /Reinspection','TBS Mitigation','TBS Contents'],pending:['Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management'],hold:['On Hold']};
+async function moveVisit(id,day,placement={}){
+ if(!liveMode){openEditor(id,day,true,placement);return;}
+ if(!ready||saving||field('editor').open)return;
+ const existing=records.find(row=>row.id===id);if(!existing)return;
+ const queue=placement.queue||'scheduled';
+ const group=placement.group||(runGroups[queue].includes(existing.group)?existing.group:queue==='scheduled'?'Work To Be Performed':runGroups[queue][0]);
+ const row={...structuredClone(existing),queue,group,date:queue==='scheduled'?day:null};
+ const before=records.find(item=>item.id===placement.beforeId&&item.id!==id&&item.queue===queue&&item.group===group&&item.date===row.date);
+ saving=true;field('sync-status').textContent='Saving move…';
+ field('calendar').setAttribute('aria-busy','true');
+ let failure;
+ try{await live.save(row,{beforeId:before?.id||null});}
+ catch(error){failure=error.message;}
+ finally{saving=false;field('calendar').removeAttribute('aria-busy');}
+ await loadLive(true);
+ field('sync-status').textContent=failure?'Move not saved':'Move saved';
+ if(failure){const notice=document.querySelector('.preview-note');notice.textContent=`Move not saved. ${failure} The schedule has been refreshed; try dragging again.`;notice.setAttribute('role','alert');}
+}
 const extraFields=['address','contact','phone','insurance','claim','equipment','access','notes'];
 let linkSequence=0;
 field('schedule-link-search').oninput=async()=>{
@@ -180,7 +198,7 @@ function renderActivities(){
 field('activity-options').onclick=event=>{const button=event.target.closest('[data-activity]');if(!button)return;const label=button.dataset.activity,index=activityDraft.findIndex(a=>a.label===label);if(index>=0)activityDraft.splice(index,1);else activityDraft.push({label,people:[]});renderActivities();field('activity-error').textContent='';};
 field('activity-assignments').oninput=event=>{if(event.target.dataset.assignment!==undefined)activityDraft[Number(event.target.dataset.assignment)].people=split(event.target.value);};
 function openEditor(id,day,schedule=false,placement=null){
- if(liveMode&&!ready)return;
+ if(liveMode&&(!ready||saving))return;
  if(liveMode&&!id){addDay=day;field('add-job-search').focus();field('add-job-search').placeholder='Find the job to add a visit…';return;}
  dropPlacement=placement;
  editing=id; const row=records.find(r=>r.id===id)||availableJobs.find(r=>r.id===id);

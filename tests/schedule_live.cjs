@@ -53,6 +53,18 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   assert.equal(commands[0].visit.job_id,'job1');
   assert.equal(commands[0].visit.title,undefined);
   assert.deepEqual(commands[0].visit.activities,[{label:'Demo',people:['Sam']}]);
+  const dragCard=await page.locator('.wc-day [data-edit]').boundingBox();
+  const dropDay=page.locator('.wc-day').nth(1);
+  const dropBox=await dropDay.boundingBox();
+  const targetDate=await dropDay.getAttribute('data-drop-date');
+  await page.mouse.move(dragCard.x+30,dragCard.y+20);
+  await page.mouse.down();
+  await page.mouse.move(dropBox.x+50,dropBox.y+100,{steps:12});
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator('#editor').isVisible(),false,'Dropping must not open the editor');
+  await page.waitForFunction(day=>window.savedCommands.at(-1).visit.date===day,targetDate);
+  await page.waitForTimeout(300);
   await page.locator('.wc-day [data-edit]').click();
   await page.locator('#notes').fill('My unsaved work');
   await page.evaluate(()=>{window.rows[0].revision=2;window.rows[0].time='1 PM';window.testSocket.change();});
@@ -63,6 +75,27 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   assert.equal(await page.locator('#time').inputValue(),'1 PM');
   await page.locator('#cancel').click();
   await page.screenshot({path:path.join(os.tmpdir(),'schedule-live-drafts.png')});
+  async function dragTo(source,target){
+   const a=await source.boundingBox(),b=await target.boundingBox();
+   await page.mouse.move(a.x+25,a.y+15);await page.mouse.down();
+   await page.mouse.move(b.x+40,b.y+45,{steps:12});await page.mouse.up();
+   await page.waitForTimeout(400);
+   assert.equal(await page.locator('#editor').isVisible(),false);
+  }
+  await page.evaluate(()=>window.failSave=true);
+  await dragTo(page.locator('.wc-day [data-edit]'),page.locator('.wc-day').nth(2));
+  await page.getByText('Move not saved.',{exact:false}).waitFor();
+  assert.equal(await page.evaluate(()=>window.rows[0].date),targetDate);
+  await page.evaluate(()=>window.failSave=false);
+  await page.getByRole('button',{name:'Legacy view',exact:true}).click();
+  const legacyCard=page.locator('.wc-legacy-card');
+  await legacyCard.scrollIntoViewIfNeeded();
+  const monitor=page.locator('.run-paper [data-drop-group="Monitor"]');
+  await monitor.scrollIntoViewIfNeeded();
+  await dragTo(legacyCard,monitor);
+  await page.waitForFunction(()=>window.rows[0].group==='Monitor');
+  await page.screenshot({path:path.join(os.tmpdir(),'schedule-live-drag-legacy.png')});
+  await page.getByRole('button',{name:'Back to calendar',exact:true}).click();
   await page.getByRole('button',{name:'Import document',exact:true}).click();
   await page.getByRole('button',{name:'Choose document',exact:true}).click();
   await page.getByText('Second job: Demo needed',{exact:true}).waitFor();

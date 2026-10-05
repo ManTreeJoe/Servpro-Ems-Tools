@@ -2,6 +2,16 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
+## October 5 — live schedule drop fix
+
+Branch: `handoff/paperclip-source-20261003`. Live calendar and Legacy drops now
+save the move directly through the existing revision-checked schedule API instead
+of opening the preview editor. Ordinary clicks still edit. Saving has status
+feedback; failures refresh the saved placement and display an error. No schema,
+Trello, Word, or L OPS changes required. Sample-only preview retains its edit-on-drop
+flow. Browser regression tests cover direct drop, click editing, failed move, and
+Legacy movement; calendar renderer and sample-preview tests also pass.
+
 ## October 5 — bulk import correction implemented in DEV
 
 Nathan rejected mandatory per-line linking and approved importing the whole Run,
