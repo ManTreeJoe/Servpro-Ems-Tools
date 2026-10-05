@@ -2,6 +2,36 @@
 
 Status: October 3, 2026. This file is the canonical cross-chat handoff.
 
+## October 5 — live schedule readiness check (read-only)
+
+Nathan requested connecting the agreed calendar/Legacy layout to real persistent
+schedule data. No layout redesign, Word write-back or Reconstruction expansion.
+
+Verified against public information_schema metadata: OneLoss/Linguar Hub has no
+public tables whose names contain schedule, visit or run. The L OPS database has
+`workspace_job_visits` and `workspace_daily_run_rows`. The latter enforces
+`CHECK (is_test)` and must not be repurposed for real scheduling by bypassing it.
+Existing visits require an HH:MM time and use one crew string; they do not directly
+represent the agreed optional arrival, undated waiting queues, and per-activity
+assignments. The current L OPS main source at
+`1fd31841bc2bf05320776536218482fd207058af` contains the older visit migration and
+actions, but its migration tree lacks the live daily-run table and the additional
+visit source-log/workstream fields. Source/deployment parity needs reconciliation.
+
+Decision required before writing live data: which backend owns the canonical
+schedule, and how the existing OneLoss job/account/workspace identities map to it.
+No schema or data was changed during this inspection. Do not solve missing fields
+by inventing arrival times, flattening independent crews, storing production work
+as test rows, or connecting the new calendar to Word persistence.
+
+Recommended decision to Nathan: start with the current OneLoss database as the
+schedule owner for existing OneLoss jobs/users, publish the versioned contract,
+and coordinate L OPS consumption/mapping before cross-app writes. This is a
+proposal, not permission to create a competing schema or an accepted migration.
+If L OPS instead owns persistence, require its current source/migration handoff
+and explicit identity/auth mapping before implementation. Await Nathan's backend
+direction and the previously required cross-app contract agreement.
+
 ## Code handoff — October 3
 
 The team source snapshot is on `handoff/paperclip-source-20261003`, including the
