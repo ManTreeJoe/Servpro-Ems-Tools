@@ -280,6 +280,20 @@ def test_saving_unchanged_values_sends_nothing(monkeypatch):
     assert res["pushed"] is True
 
 
+def test_scope_save_then_refresh_retains_only_replacement(monkeypatch):
+    original = '**Scope of Work:**\nInitial :\nDownstairs:\nOld work\n\nAdditional:\nExtra work\n'
+    _db, sent = _wire(monkeypatch, original)
+    res = js.save('k', {'scope_initial': 'Kitchen:\nNew work'}, edited_only=True)
+    assert res['wrote_to_card'] == ['scope_initial']
+    assert js.from_card(sent['desc'])['scope_initial'] == 'Kitchen:\nNew work'
+    assert js.from_card(sent['desc'])['scope_additional'] == 'Extra work'
+    assert 'Old work' not in sent['desc']
+    _db, cleared = _wire(monkeypatch, sent['desc'])
+    js.save('k', {'scope_initial': ''}, edited_only=True)
+    assert js.from_card(cleared['desc'])['scope_initial'] == ''
+    assert 'New work' not in cleared['desc']
+
+
 def test_markdown_links_survive_a_save(monkeypatch):
     _db, sent = _wire(monkeypatch, CARD)
     vals = js.from_card(CARD)

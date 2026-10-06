@@ -21,8 +21,8 @@ board that is a matter of when, not if.
 
 Writing back without losing anything
 ------------------------------------
-`render_desc` rewrites the description LINE BY LINE. A line we did not
-change is emitted byte-identical, so:
+`render_desc` rewrites ordinary fields line by line and scope fields as
+complete text blocks. An untouched line is preserved, so:
 
   * fields the UI never shows (tenant block, scope of work) survive,
   * markdown the office typed by hand survives — emails arrive as
@@ -138,6 +138,42 @@ _META_BASE     = "trello_base"  # what we last synced, for the 3-way merge
 _SECTION_RE = re.compile(r"^\*\*([^*]+)\*\*\s*$")
 _KV_RE      = re.compile(r"^([A-Za-z][^:]{0,40}):\s*(.*)$")
 
+# Explicit template aliases only. Do not fuzzy-match insurance/customer fields.
+_KEY_ALIASES = {(LINKS, "INITIAL DOCUSKETCH LINK"): "DOCUSKETCH LINK"}
+
+
+def _section_name(name):
+    name = name.strip().upper()
+    return SCOPE if name.rstrip(':').strip() == 'SCOPE OF WORK' else name
+
+
+def _scope_blocks(lines):
+    """Yield (start, end, field key, value) for the two free-text scope blocks.
+
+    Room labels such as ``Downstairs:`` belong to the scope, not separate
+    fields. Section headers, rules, and the next scope field end the block.
+    Trailing blank separators are excluded so an edit preserves spacing.
+    """
+    section, current = None, None
+    for index in range(len(lines) + 1):
+        line = lines[index].strip() if index < len(lines) else ''
+        header = _SECTION_RE.match(line)
+        kv = _KV_RE.match(line)
+        key = kv.group(1).strip().upper() if kv else None
+        scope_start = section == SCOPE and key in ('INITIAL', 'ADDITIONAL')
+        if current is not None and (index == len(lines) or header or line == '---' or scope_start):
+            start, field_key, first_value = current
+            end = index
+            while end > start + 1 and not lines[end - 1].strip():
+                end -= 1
+            value = '\n'.join([first_value, *lines[start + 1:end]]).strip()
+            yield start, end, field_key, value
+            current = None
+        if header:
+            section = _section_name(header.group(1))
+        elif scope_start:
+            current = (index, key, kv.group(2))
+
 
 def schema():
     """Field list for the UI, grouped and flagged core/collapsed.
@@ -182,6 +218,14 @@ def from_card(desc):
     """Card description text -> {field_id: value}."""
     import trello_client as tc
     parsed = tc.parse_card_desc(desc or "") or {}
+    parsed = {_section_name(section): fields for section, fields in parsed.items()}
+    for (section, alias), key in _KEY_ALIASES.items():
+        fields = parsed.get(section, {})
+        # An explicitly empty canonical field is a clear, not a fallback.
+        if key not in fields and alias in fields:
+            fields[key] = fields[alias]
+    for _start, _end, key, value in _scope_blocks((desc or '').splitlines()):
+        parsed.setdefault(SCOPE, {})[key] = value
     out = {}
     for fid, section, key, _label, _core in FIELDS:
         out[fid] = ((parsed.get(section) or {}).get(key) or "").strip()
@@ -245,19 +289,31 @@ def render_desc(original, values, changed_ids=None):
         if f:
             want[(f[1], f[2])] = (f[2], values.get(fid) or "")
 
-    out, cur, seen = [], None, set()
-    for raw in (original or "").splitlines():
+    lines = (original or '').splitlines()
+    seen = set()
+    # Replace the whole old block, not just its first line. The same block
+    # boundaries serve the reader and writer, including explicit clears.
+    for start, end, key, _old in reversed(list(_scope_blocks(lines))):
+        hit = want.get((SCOPE, key))
+        if hit is not None:
+            label = lines[start].split(':', 1)[0]
+            lines[start:end] = [f'{label}: {hit[1]}'.rstrip()]
+            seen.add((SCOPE, key))
+
+    out, cur = [], None
+    for raw in lines:
         line = raw.strip()
         m = _SECTION_RE.match(line)
         if m:
-            cur = m.group(1).strip().upper()
+            cur = _section_name(m.group(1))
             out.append(raw)
             continue
         kv = _KV_RE.match(line)
         if kv and cur is not None:
             key = kv.group(1).strip().upper()
+            key = _KEY_ALIASES.get((cur, key), key)
             hit = want.get((cur, key))
-            if hit is not None:
+            if hit is not None and cur != SCOPE:
                 # Keep the card's own label casing — rewriting
                 # "Customer Name" as "CUSTOMER NAME" would churn the whole
                 # description on the first save.
@@ -285,7 +341,7 @@ def _append_missing(lines, missing):
         idx = None
         for i, raw in enumerate(lines):
             m = _SECTION_RE.match(raw.strip())
-            if m and m.group(1).strip().upper() == section:
+            if m and _section_name(m.group(1)) == section:
                 idx = i
                 continue
             if idx is not None and _SECTION_RE.match(raw.strip()):

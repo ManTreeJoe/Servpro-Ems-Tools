@@ -2,6 +2,55 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
+## October 5 — Stability pass, first slice (source only)
+
+Branch: `handoff/paperclip-source-20261003`. No release, schema migration,
+profile activation, or live card mutation is included in this slice.
+
+- Job Facts import and save-back now share multiline scope boundaries. Room
+  labels belong to Initial/Additional scope; replacing or clearing a scope
+  removes its old body without consuming the next scope/section or separator.
+- `Initial Docusketch Link` is an explicit read/write alias for `Docusketch
+  Link`. Existing label spelling survives edits. If both labels exist, an
+  explicitly blank canonical label wins on read; edits update both labels so
+  stale alias data cannot reappear. Scope headings with/without `:` are equal.
+- APA status menus keep the clicked row's object identity and opening text.
+  Identical row names no longer falsely conflict if that exact row survives,
+  including reordering. After document replacement, only an originally unique,
+  still-unique unchanged name is eligible. Ambiguous duplicates, changed text,
+  and changed dates still block; durable row IDs remain future work.
+- Verified 74 focused Python tests and three APA browser suites. Read-only
+  checks against all 29 live template descriptions preserve no-edit text;
+  Gary Newberry's actual Initial scope now imports nonempty. This does not
+  prove every template label is mapped or measure general UI latency.
+
+L OPS follow-up: use equivalent multiline/alias/explicit-clear behavior if
+parsing Trello descriptions. No database/client migration is required here.
+Profile snapshots on existing jobs must remain immutable.
+
+### Remaining work / coordination proposal (not implemented)
+
+1. Shared division-card resolution: ScheduleStore and `confirm_schedule_day`
+   currently accept only `trello_card`, excluding `trello_card_contents` even
+   when the pin is valid. Update the reader and server validation together,
+   retaining office access, exact card identity, unambiguous distinct job
+   ownership, active WIP/Contents limits and Recon exclusion. Multiple link
+   types for the same job/card must not count as multiple owners. Coordinate
+   the RPC change with L OPS before a migration; do not loosen validation in
+   the UI alone or silently choose between multiple eligible cards.
+2. Profile activation review: the 29 bundled source checklist name/item sets
+   match live Trello, but the shared IE library currently has 13 inactive
+   baseline profiles; Gary has no applied snapshot. Review/import the intended
+   starter profiles through admin controls rather than enabling old generic
+   profiles or mass-applying requirements. State Farm remains its own variant;
+   conditional services must not become universal obligations.
+3. Cross-computer acceptance: read/edit/save/refresh with Nathan and Sam,
+   explicit deletions, division pins and conflicts; no such two-user live
+   acceptance is claimed by the synthetic tests above.
+4. Measure perceived slowness separately with timings around Trello fetches,
+   database reads and UI refresh. Do not infer a performance fix from these
+   correctness regressions passing.
+
 ## October 5 — Confirm day implemented in DEV
 
 Branch: `handoff/paperclip-source-20261003`. Applied migration

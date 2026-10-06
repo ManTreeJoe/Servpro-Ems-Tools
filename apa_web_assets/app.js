@@ -1964,6 +1964,11 @@ async function openApaItemCtxMenu(ev, itemEl) {
   const item = section.items[idx];
   if (!item) return;
 
+  // Capture before the asynchronous menu lookup. Identical display names
+  // are valid, but a mutated object must not redefine what we opened.
+  const menuText = item.text;
+  const menuTextWasUnique = section.items.filter(row => row.text === menuText).length === 1;
+
   // Pull status + sub options for this section so the submenus
   // reflect the right list. Also fetch the pinned Trello card so
   // the menu can show either "🔗 Open Trello" or "📌 Pin Trello…"
@@ -1981,7 +1986,7 @@ async function openApaItemCtxMenu(ev, itemEl) {
 
   // Strip suffixes to recover current status/sub from the rendered
   // text — same logic showItemPopover uses to pre-fill its selects.
-  let bareText = item.text;
+  let bareText = menuText;
   let curStatus = "", curSub = "";
   for (const s of (opts.statuses || []).filter(Boolean)) {
     const suf = "-" + s;
@@ -2010,13 +2015,21 @@ async function openApaItemCtxMenu(ev, itemEl) {
   }
   function currentMenuRow() {
     const liveSection = state.doc?.sections.find((s) => s.name === sectionName);
-    const matches = (liveSection?.items || []).map((row, index) => ({row, index}))
-      .filter(({row}) => row.text === item.text);
-    if (state.doc?.date_iso !== menuDate || matches.length !== 1) {
+    const rows = liveSection?.items || [];
+    const identityIndex = rows.indexOf(item);
+    const matches = rows.map((row, index) => ({row, index}))
+      .filter(({row}) => row.text === menuText);
+    // Prefer the exact clicked object (even after a reorder). After a full
+    // document replacement, only a unique unchanged title can be resolved
+    // safely; never guess among duplicate rows by their former index.
+    const current = identityIndex >= 0
+      ? (item.text === menuText ? {row:item, index:identityIndex} : null)
+      : (menuTextWasUnique && matches.length === 1 ? matches[0] : null);
+    if (state.doc?.date_iso !== menuDate || !current) {
       setStatus("This APA card changed while the menu was open. Reopen its status menu; nothing was changed.", "warn");
       return null;
     }
-    return {section:liveSection, idx:matches[0].index, item:matches[0].row};
+    return {section:liveSection, idx:current.index, item:current.row};
   }
   async function applyChange({ status, sub, section: newSec, highlight }) {
     const current = currentMenuRow();
