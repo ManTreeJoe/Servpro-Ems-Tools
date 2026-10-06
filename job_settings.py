@@ -144,7 +144,7 @@ _KEY_ALIASES = {(LINKS, "INITIAL DOCUSKETCH LINK"): "DOCUSKETCH LINK"}
 
 def _section_name(name):
     name = name.strip().upper()
-    return SCOPE if name.rstrip(':').strip() == 'SCOPE OF WORK' else name
+    return SCOPE if name.rstrip(':').strip() in ('SCOPE', 'SCOPE OF WORK') else name
 
 
 def _scope_blocks(lines):
@@ -171,6 +171,12 @@ def _scope_blocks(lines):
             current = None
         if header:
             section = _section_name(header.group(1))
+            if section == SCOPE:
+                following = next((s.strip() for s in lines[index + 1:] if s.strip()), '')
+                first = _KV_RE.match(following)
+                if following and not _SECTION_RE.match(following) and following != '---' and not (
+                        first and first.group(1).strip().upper() in ('INITIAL', 'ADDITIONAL')):
+                    current = (index, 'INITIAL', '')
         elif scope_start:
             current = (index, key, kv.group(2))
 
@@ -186,6 +192,9 @@ def schema():
     for fid, section, key, label, core in FIELDS:
         f = {"id": fid, "section": section, "key": key,
              "label": label, "core": core}
+        if section == SCOPE:
+            f['multiline'] = True
+            f['core'] = True
         if fid == "carrier":
             try:
                 import carriers
@@ -296,8 +305,11 @@ def render_desc(original, values, changed_ids=None):
     for start, end, key, _old in reversed(list(_scope_blocks(lines))):
         hit = want.get((SCOPE, key))
         if hit is not None:
-            label = lines[start].split(':', 1)[0]
-            lines[start:end] = [f'{label}: {hit[1]}'.rstrip()]
+            if _SECTION_RE.match(lines[start].strip()):
+                lines[start:end] = [lines[start], str(hit[1])]
+            else:
+                label = lines[start].split(':', 1)[0]
+                lines[start:end] = [f'{label}: {hit[1]}'.rstrip()]
             seen.add((SCOPE, key))
 
     out, cur = [], None

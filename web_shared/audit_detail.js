@@ -2979,6 +2979,10 @@
               // Showing it plain would read as "this unit says Mercury",
               // and the user couldn't tell what typing here would override.
               const inh = inherited.has(f.id);
+              if (f.multiline) return `<label style="display:block;grid-column:1 / -1;font-size:11px;color:var(--text-muted)">
+                ${_escapeHtml(f.label)}${inh ? ' · from client' : ''}
+                <textarea class="ji-f" data-fid="${_escapeAttr(f.id)}" rows="5"
+                  style="width:100%;margin-top:3px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;resize:vertical;line-height:1.5">${_escapeHtml(vals[f.id] || '')}</textarea></label>`;
               // Suggestions, never a whitelist — a datalist keeps the
               // field free text, so a carrier nobody has seen before
               // still types straight through. `group` shows as the

@@ -1,5 +1,25 @@
 """Regression fixtures for the updated residential template (no live data)."""
 import job_settings as js
+import pytest
+
+
+@pytest.mark.parametrize('heading', ['Scope', 'Scope:', 'Scope of Work', 'Scope of Work:'])
+def test_freeform_scope_heading_roundtrip(heading):
+    card = f'**{heading}**\nKitchen:\nRemove material\n\n**NOTES**\nOffice Notes: keep'
+    assert js.from_card(card)['scope_initial'] == 'Kitchen:\nRemove material'
+    out = js.render_desc(card, {'scope_initial': 'Bath:\nProtect floor'}, ['scope_initial'])
+    assert js.from_card(out)['scope_initial'] == 'Bath:\nProtect floor'
+    assert 'Remove material' not in out
+    assert '**NOTES**\nOffice Notes: keep' in out
+    assert f'**{heading}**' in out
+    cleared = js.render_desc(out, {'scope_initial': ''}, ['scope_initial'])
+    assert js.from_card(cleared)['scope_initial'] == ''
+
+
+def test_scope_editor_schema_is_multiline_and_visible():
+    fields = {f['id']: f for f in js.schema()}
+    for key in ('scope_initial', 'scope_additional'):
+        assert fields[key]['multiline'] and fields[key]['core']
 
 
 CARD = """**LINKS**

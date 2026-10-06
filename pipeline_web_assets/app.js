@@ -1742,8 +1742,8 @@ async function openJobInfoEditor(data, audit, onSaved) {
   const fields = schema.fields || [];
   const renderFields = (items) => items.map((field) => {
     const listId = field.options?.length ? `pipeline-job-info-${field.id}` : "";
-    return `<label class="job-info-edit-field"><span>${escapeHtml(field.label)}${inherited.has(field.id) ? " · from client" : ""}</span>
-      <input data-job-info-input="${escapeAttr(field.id)}" value="${escapeAttr(values[field.id] || "")}" ${listId ? `list="${escapeAttr(listId)}"` : ""}>
+    return `<label class="job-info-edit-field ${field.multiline ? 'job-info-edit-wide' : ''}"><span>${escapeHtml(field.label)}${inherited.has(field.id) ? " · from client" : ""}</span>
+      ${field.multiline ? `<textarea rows="5" data-job-info-input="${escapeAttr(field.id)}">${escapeHtml(values[field.id] || '')}</textarea>` : `<input data-job-info-input="${escapeAttr(field.id)}" value="${escapeAttr(values[field.id] || "")}" ${listId ? `list="${escapeAttr(listId)}"` : ""}>`}
       ${listId ? `<datalist id="${escapeAttr(listId)}">${field.options.map((option) => `<option value="${escapeAttr(option.value)}"></option>`).join("")}</datalist>` : ""}</label>`;
   }).join("");
   const core = fields.filter((field) => field.core);

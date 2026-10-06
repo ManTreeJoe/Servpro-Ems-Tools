@@ -715,6 +715,8 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .job-save-mode { color:var(--text-dim); font-size:10px; }
 .job-info-edit-card { width:min(820px,94vw); max-height:min(820px,92vh); }
 .job-info-edit-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.job-info-edit-wide { grid-column:1 / -1; }
+.job-info-edit-field textarea { width:100%; min-height:110px; resize:vertical; padding:7px 9px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--text); font:inherit; font-size:12px; line-height:1.5; }
 .job-info-edit-field { display:grid; gap:4px; min-width:0; color:var(--text-muted); font-size:10px; font-weight:650; }
 .job-info-edit-field input { width:100%; min-height:36px; padding:7px 9px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--text); font:inherit; font-size:12px; }
 .job-info-edit-field input:focus { border-color:var(--green); outline:2px solid color-mix(in srgb,var(--green) 30%,transparent); }
