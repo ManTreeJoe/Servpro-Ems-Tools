@@ -32,8 +32,12 @@ const path=require('node:path'),assert=require('node:assert/strict');
    modal.applyRefresh({...payload,crm:{...payload.crm,job_log:[...payload.crm.job_log,
     {entry_id:'log2',work_type:'Monitor',note:'New reading'}]}});
   });
+  assert.equal(await page.locator('[data-job-log-id]').count(),1,'Unrelated refresh must not replace the protected Job Log');
+  await page.evaluate(()=>modal.applyRefresh({...payload,crm:{...payload.crm,job_log:[...payload.crm.job_log,
+    {entry_id:'log2',work_type:'Monitor',note:'New reading'}]}},true));
+  assert.equal(await page.locator('[data-job-log-id]').count(),2,'Explicit saved-log refresh must load the new entry');
   if(!await page.evaluate(()=>window.retainedLogRow===document.querySelector('[data-job-log-id="log1"]'))) failures.push('A new log entry rebuilt an unchanged log row');
-  await page.evaluate(()=>modal.applyRefresh({...payload,crm:{ok:false,job_log:[],job_log_error:'Offline'}}));
+  await page.evaluate(()=>modal.applyRefresh({...payload,crm:{ok:false,job_log:[],job_log_error:'Offline'}},true));
   if(await page.locator('[data-job-log-id]').count()!==2) failures.push('Failed log refresh erased saved entries');
   await page.locator('#job-tab-files').click();
   await page.evaluate(()=>modal.applyRefresh({ok:true,card_id:'card1',deferred_loading:true,documents:{files:[]},audit:{audit_pending:true}}));

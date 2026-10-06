@@ -31,7 +31,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
   assert.match(await page.locator('.job-info-section').textContent(),/555-0199/);
   assert.match(await page.locator('.job-info-section').textContent(),/Saved customer/);
   assert.match(await page.locator('[data-comment-stream]').textContent(),/Ready for billing/);
-  assert.equal(await page.locator('[data-comment-division="CONTENTS"]').isDisabled(),false);
+  assert.equal(await page.locator('[data-division-data="CONTENTS"]').isDisabled(),false);
   assert.equal(await page.evaluate(()=>{
    const files=document.querySelector('.signatures-section'),facts=document.querySelector('.job-info-section');
    state.openWorkspace.applyRefresh({ok:true,card_id:'card1',comments:[{id:'c1',text:'Ready for billing',source:'trello'}]});

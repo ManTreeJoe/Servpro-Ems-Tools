@@ -4,6 +4,22 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
+### Loading regression tests aligned with current behavior
+
+Branch `handoff/paperclip-source-20261003`. Resolved the two previously reported
+test failures: incremental hydration now checks the shared division tabs (not
+the removed comments-only switcher); log preservation explicitly exercises
+background protection, successful explicit refresh, and failed explicit refresh.
+Also updated the division test's obsolete manual file-check expectation to the
+automatic-check UI. No production code changed in this pass.
+
+Seven browser tests passed: `job_workspace_loading_state`,
+`job_workspace_incremental`, `job_workspace_slow_placement`,
+`comment_initial_cache`, `linked_workspace_preload`, `job_division_tabs`, and
+`job_popup_height` (all under `tests/*.cjs`). These use controlled backend
+fixtures, not live multi-user performance measurements. No database or L OPS
+changes required. Shared thread work stays deferred.
+
 ### L OPS TODO — shared comments/threads (deferred by user)
 
 User parked this work on October 6. Do not implement or deploy it until the
