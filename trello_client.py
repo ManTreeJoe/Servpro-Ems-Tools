@@ -89,6 +89,9 @@ def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_re
                 attempt += 1
                 continue
             raise
+    if method.upper() in ('POST', 'PUT', 'DELETE'):
+        from card_activity_notifications import record
+        record(path, method, dict(params or {}) | dict(data or {}) | dict(json_data or {}))
     if not raw or not _expect_json:
         return None
     return json.loads(raw)

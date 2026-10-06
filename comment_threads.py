@@ -67,12 +67,9 @@ def reply(card_id, parent_id, body, operation_id):
     # Claim is durable. A timeout after claiming never permits a second POST.
     claim = call('claim', card_id, {'id': row['id']})
     if claim.get('claimed'):
-        parent = result.get('parent') or {}
-        reference = parent.get('provider_id')
-        link = (f'https://trello.com/c/{card_id}#comment-{reference}' if reference
-                else f'OneLoss thread {parent.get("id", "")}')
-        text = f'{body}\n\nReply to {parent.get("actor", "comment")} · {link}\n[OneLoss reply {operation_id}]'
-        posted = tc.post_comment(card_id, text)
+        # Relationships and operation IDs belong in shared storage, not in the
+        # user-visible Trello message. Uncertain delivery is never auto-reposted.
+        posted = tc.post_comment(card_id, body)
         external_id = str((posted or {}).get('id') or '')
         finished = call('finish', card_id, {'id': row['id'], 'provider_id': external_id})
         if finished.get('ok'):

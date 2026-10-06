@@ -34,13 +34,34 @@ preparation step before calling the shared reply RPC. A pending native reply
 without a provider mapping cannot yet supply verified provider-author context;
 its draft is preserved rather than posting with guessed recipients.
 
-The author's desktop claims delivery once and sends a normal Trello comment
-with parent reference and operation marker. Uncertain results are never reposted;
-later reads reconcile a unique exact marker/body from the server mirror. This
-is not a server delivery worker: if the author closes before claiming, they
-must retry their saved draft. OneLoss still retains the reply. Edit/delete of
-native replies and dedicated reply-author notifications are follow-up work;
-existing subscribed-member notifications are queued after confirmed delivery.
+The author's desktop claims delivery once and sends only the prepared reply
+body and @mentions to Trello: no reference link or operation-marker footer.
+Parent/root/operation identity stays in shared storage; confirmed provider IDs
+deduplicate the Trello echo. Uncertain results are never automatically reposted
+or correlated by guessed text matches. Legacy marked replies can still reconcile
+by their exact marker/body. New unmarked uncertain deliveries need reconciliation
+before any retry. This is not a server delivery worker: if the author closes
+before claiming, they must retry their saved draft. OneLoss retains the reply.
+Edit/delete of native replies remains follow-up work.
+
+Migration `20261006231958_thread_participant_notifications.sql` notifies saved
+native thread authors and subscribed job members transactionally when a native
+reply is saved, independent of Trello delivery. Placement changes notify members;
+sync acknowledgements do not. Delivery excludes sender, muted users and users
+without access, and deduplicates each event per recipient. Imported Trello authors
+and usernames still require a verified app-user mapping; membership is currently
+job-wide, not exact-card. Direct Trello activity ingestion remains follow-up work.
+
+Verification (2026-10-06): 26 focused Python tests and the browser thread/pin
+regression passed. The rolled-back SQL fixture covers native reply participants,
+member delivery, duplicate operations, mute/access/self exclusions, archive,
+restore and sync acknowledgement without duplicate notifications. No real-user
+test comments were posted. Two-user desktop acceptance testing remains pending.
+Security advisors reported no findings naming the new helper/triggers. Existing
+RPC-only tables remain default-deny (RLS without direct policies); existing admin
+RPC exposure warnings still warrant a separate access-control review. Leaked
+password protection is disabled; see the [password-security guidance](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+See also the [definer-function advisory](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).
 
 L OPS must paginate the shared records, merge native replies into the regular
 feed, deduplicate provider_id/operation-marker echoes, leave chronological order
@@ -67,7 +88,7 @@ not a shared or durable thread authority.
 - Old @mentions do not establish relationships automatically.
 - The thread view includes root plus descendants, with pagination; it must not
   mistake the currently loaded feed page for the entire thread.
-- Trello receives a normal comment with a readable reply reference. OneLoss
+- Trello receives a normal comment with reply-all @mentions, without a footer. OneLoss
   owns the relationship. A plain Trello reply/mention stays unthreaded unless
   a verified OneLoss publication mapping establishes its parent.
 

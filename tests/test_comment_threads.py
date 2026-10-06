@@ -30,7 +30,7 @@ def test_recent_parent_is_verified_before_reply_and_mentions_are_shared(monkeypa
     monkeypatch.setattr(trello_client, 'post_comment', lambda card, text: sent.append(text) or {'id':'posted'})
     monkeypatch.setattr(personal_notifications, 'enqueue', lambda *args: '')
     assert threads.reply('card','parent','Answer','operation')['ok']
-    assert sent[0].startswith('@sam @Laura\n\nAnswer')
+    assert sent[0] == '@sam @Laura\n\nAnswer'
 
 
 def test_shared_failure_never_posts(monkeypatch):
@@ -76,5 +76,5 @@ def test_reply_reference_and_confirmed_mapping(monkeypatch):
     monkeypatch.setattr(personal_notifications, 'enqueue', lambda *args: '')
     result = threads.reply('card', 'p', 'Body', 'operation')
     assert result['ok'] and not result['warning']
-    assert 'Reply to Sam' in sent[0] and '[OneLoss reply operation]' in sent[0]
+    assert sent[0] == 'Body'
     assert calls[-1] == ('finish', {'id': 'native', 'provider_id': 'external'})

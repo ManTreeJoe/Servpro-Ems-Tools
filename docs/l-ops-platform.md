@@ -782,6 +782,23 @@ This is a documentation snapshot. Some new-platform code is still local/uncommit
 
 ## 2026-10-06 — Shared pins and threaded replies resumed
 
+Activity notification increment (user-approved default): card members should
+receive all activity. Migration `20261006231958` adds transactional notifications
+for native replies (members + native thread authors) and placement events.
+Confirmed desktop Trello card edits now use the existing durable member queue;
+comment/move paths already owned by another producer are excluded to avoid
+double delivery. Recipient access, mutes and self-exclusion remain enforced.
+No production event backfill is performed. The existing member model is job-level,
+so exact card-specific membership and ingestion of changes made directly in
+Trello are still open work, not claimed complete by this increment. Trello-only
+thread authors cannot be mapped to OneLoss accounts by guessing usernames.
+
+Trello reply payload is now only the reply body and deduplicated @mentions.
+Thread IDs and operation IDs remain internal. Legacy marker reconciliation stays
+available for previously posted replies; new uncertain clean-text deliveries
+must not auto-repost or guess an action match. A confirmed Trello action ID is
+still saved as the provider link. Existing posted comments are not rewritten.
+
 Follow-up: authenticated `comment-parent` Edge Function verifies/imports recent
 Trello parents on demand, removing the comment-snapshot delay. No table changes.
 Live verification also revealed two PL/pgSQL alias/variable collisions in the
