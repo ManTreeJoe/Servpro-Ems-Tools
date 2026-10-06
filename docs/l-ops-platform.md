@@ -4,6 +4,18 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
+### First-load editor follow-up
+
+The editor now previews facts from an explicitly resolved Trello card only when
+the linked record has no populated settings and no recorded setting/baseline
+keys. Existing values and intentionally cleared fields stay database-first.
+An unavailable provider fails that initial load instead of opening a successful
+blank form. Opening the editor performs no import/write. On the first edited
+save, the displayed preview initializes saved settings, while only touched fields
+are mirrored to Trello. Subsequent opens retain untouched preview fields.
+Child inheritance is unchanged; ambiguous links remain blocked. No bulk backfill,
+schema change, or automatic reconciliation is included.
+
 Branch: `handoff/paperclip-source-20261003`. User approved consolidating Gary's
 empty internal placeholder into the populated workspace job. A guarded database
 transaction rechecked the empty row and its dependencies, preserved both job

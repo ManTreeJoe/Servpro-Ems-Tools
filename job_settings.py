@@ -450,7 +450,13 @@ def inherited_values(canon_key, child_rec):
     return out, inherited, parent
 
 
-def load(canon_key, child_name="", *, refresh=True, exact_card_id=""):
+def _uninitialized(rec):
+    meta = _meta_of(rec)
+    recorded = set(meta.get(_META_SETTINGS) or {}) | set(meta.get(_META_BASE) or {})
+    return not (recorded & BY_ID.keys()) and not any(stored_values(rec).values())
+
+
+def load(canon_key, child_name="", *, refresh=True, exact_card_id="", initialize_missing=False):
     """Current values for a job (or child), merged with its Trello card.
 
     Pulls the card ONCE — about half a second — because syncing all 300
@@ -478,7 +484,8 @@ def load(canon_key, child_name="", *, refresh=True, exact_card_id=""):
     out = {"ok": True, "canon_key": canon_key, "child_name": child_name,
            "card_id": card_id, "values": mine, "conflicts": [],
            "synced": False, "error": ""}
-    if not refresh:
+    first_load = bool(initialize_missing and exact_card_id and not child_name and _uninitialized(rec))
+    if not refresh and not first_load:
         out.update(source='database', refresh_pending=bool(card_id),
                    conflicts=list(_meta_of(rec).get('trello_import_conflicts') or []))
         return out
@@ -492,6 +499,9 @@ def load(canon_key, child_name="", *, refresh=True, exact_card_id=""):
         # Only the desc is read — get_card_lite, not the whole card.
         desc = (tc.get_card_lite(card_id) or {}).get("desc") or ""
     except Exception as ex:
+        if first_load:
+            out.update(ok=False, error='Job info has not been imported yet and Trello could not be reached. Retry before editing.')
+            return out
         # Offline or Trello down: show what we have rather than nothing.
         out["error"] = f"couldn't reach Trello ({ex}); showing local values"
         return out
@@ -500,6 +510,8 @@ def load(canon_key, child_name="", *, refresh=True, exact_card_id=""):
     merged, conflicts = merge(stored_base(rec), mine, theirs)
     out.update({"values": merged, "conflicts": conflicts, "synced": True,
                 "card_desc": desc})
+    if first_load:
+        out['source'] = 'verified_card_preview'
     return out
 
 
@@ -613,6 +625,11 @@ def save(canon_key, values, child_name="", card_desc="", *, edited_only=False, e
                 "overrides": sorted(overrides)}
 
     before = stored_values(rec)
+    if edited_only and exact_card_id and card_desc and _uninitialized(rec):
+        # Commit the displayed first-load facts only when the user saves an
+        # edit. Never mirror untouched preview values back to Trello.
+        before = from_card(card_desc)
+        meta[_META_BASE] = dict(before)
     changed = [fid for fid, v in values.items() if v != before.get(fid, "")]
     settings = {fid: values.get(fid, before.get(fid, "")) for fid in BY_ID}
     meta[_META_SETTINGS] = settings

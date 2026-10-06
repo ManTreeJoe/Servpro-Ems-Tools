@@ -49,7 +49,7 @@ class JobSettingsApi:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def job_settings_load(self, client: str, child_name: str = "", card_id: str = "") -> dict:
-        """Show stored values immediately, without a provider round trip."""
+        """Prefer saved facts; preview the verified card for an untouched placeholder."""
         try:
             import job_settings
             if card_id:
@@ -59,7 +59,8 @@ class JobSettingsApi:
                 key = _resolve(client)
             if not key:
                 return {"ok": False, "error": "This card is not linked to a saved job yet." if card_id else "no job name"}
-            return job_settings.load(key, child_name or "", refresh=False, exact_card_id=card_id)
+            return job_settings.load(key, child_name or "", refresh=False, exact_card_id=card_id,
+                                     initialize_missing=True)
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
