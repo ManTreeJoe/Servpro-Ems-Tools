@@ -4,6 +4,16 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
+### Daily Run audit-list header: Open job card
+
+Corrected surface: the user meant the Daily Run audit list, not just the Run
+editor. Its selected-job header now offers Open job card through the existing
+shell workspace message, retaining the mounted Daily Run. Uses the row's exact
+Trello card ID when present; otherwise the existing name resolver. Shared detail
+renderer exposes the button only when its host supplies the openJob callback.
+`tests/daily_run_open_card.cjs` verifies the real rendered button, exact payload,
+and retained selection/detail DOM. No schema/L OPS changes; DEV reload needed.
+
 ### Job window visual simplification
 
 Branch `handoff/paperclip-source-20261003`: scope fields now appear after app

@@ -645,6 +645,9 @@ body { display: flex; flex-direction: column; }
   display: flex; flex-direction: column; gap: 4px;
   margin-bottom: 16px;
 }
+.detail-head:has([data-action="open-job-card"]) { display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:12px; }
+.detail-head [data-action="open-job-card"] { grid-column:2;grid-row:1; }
+.detail-head .detail-techs { grid-column:1 / -1; }
 .detail-name {
   font-size: 22px;
   font-weight: 700;

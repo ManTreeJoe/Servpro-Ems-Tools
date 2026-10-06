@@ -2618,6 +2618,15 @@ function techStripeColor(tech) {
 // (can't drift). Audit maps it to its own modals / helpers / re-render.
 function buildAuditDetailCtx() {
   return {
+    openJob: (row) => {
+      if (window.parent === window) {
+        setStatus('Open Daily Run inside OneLoss to view the job card.', 'error');
+        return;
+      }
+      window.parent.postMessage({type:'linguar-open-job',
+        focus:row.client || row.display_name || '',
+        cardId:row.trello_card_id || '', division:row.division || ''}, '*');
+    },
     helpers: { escapeHtml, escapeAttr, titleCase, copyText, setStatus },
     modals: {
       openFindFolder: openFindFolderModal,

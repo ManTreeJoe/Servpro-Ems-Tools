@@ -224,6 +224,7 @@
     return `
       <header class="detail-head">
         <div class="detail-name">${esc(ctx, _firstLast(r.display_name || tc(ctx, r.client)))}</div>
+        ${ctx.openJob ? '<button type="button" class="action-btn" data-action="open-job-card">Open job card ↗</button>' : ''}
         ${techs ? `<div class="detail-techs">${esc(ctx, techs)}</div>` : ""}
       </header>
       <div class="detail-chip-row">${chips.join(" ")}</div>
@@ -1671,6 +1672,7 @@
   }
 
   async function detailAction(action, row, ctx) {
+    if (action === 'open-job-card') { ctx.openJob?.(row); return; }
     const M = (ctx && ctx.modals) || {};
     if (action === "cc-menu") {
       // The caret button is gone — right-clicking Pull CompanyCam is the
