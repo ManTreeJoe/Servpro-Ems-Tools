@@ -13,8 +13,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.setViewportSize({width:1426,height});
   const bounds=await page.locator('.audit-card').boundingBox();
   const post=await page.locator('[data-post-comment]').boundingBox();
+  const close=await page.locator('.workspace-corner-close').boundingBox();
+  const count=await page.locator('[data-comment-count]').boundingBox();
+  assert(Math.abs(bounds.x+bounds.width-close.x-close.width-13)<3,'Close belongs at the overall top-right corner');
+  assert(close.y-bounds.y<16,'Close stays at top of workspace');
+  assert(count.x+count.width<=close.x,'Comment count must not overlap close');
   assert(bounds.y>=8 && bounds.y+bounds.height<=height-8,`Job popup must fit with breathing room at ${height}px: ${JSON.stringify(bounds)}`);
   assert(post.y>=0&&post.y+post.height<=height-8,`Post button must be fully visible: ${JSON.stringify(post)}`);
  }
+ await page.locator('.workspace-corner-close').click();
+ assert.equal(await page.locator('.audit-overlay').count(),0,'Corner close dismisses the whole workspace');
  console.log('PASS: notification job popup and post button fit at 960, 720 and 600px heights');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

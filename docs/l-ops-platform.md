@@ -4,6 +4,16 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
+### Workspace close control
+
+Branch: `handoff/paperclip-source-20261003`. The job workspace close button now
+anchors to the whole dialog's top-right corner, above comments on desktop,
+instead of beside the job title. Comment count spacing is preserved. The
+production popup browser test verifies placement, no count overlap, and closing
+at three window heights. No database/schema or L OPS changes required. Broader
+toolbar/comment visual simplification and database-first comment loading remain
+proposals, not implemented by this change.
+
 ### First-load editor follow-up
 
 The editor now previews facts from an explicitly resolved Trello card only when

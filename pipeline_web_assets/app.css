@@ -576,6 +576,11 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .audit-card .modal-title { font-size: 18px; line-height: 1.25; }
 .audit-close { flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); font-size: 25px; line-height: 1; cursor: pointer; }
 .audit-close:hover { background: var(--surface-2); color: var(--text); }
+.audit-card > .workspace-corner-close { position: absolute; top: 12px; right: 12px; z-index: 20; }
+.audit-card:has(> .workspace-corner-close) .activity-head { padding-right: 58px; }
+@media (max-width: 950px) {
+  .audit-card:has(> .workspace-corner-close) > .modal-head { padding-right: 58px; }
+}
 .audit-card .modal-body { flex: 1; min-height: 0; padding: 0; overflow: hidden; overscroll-behavior: contain; }
 .card-quick-actions { width:100%; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:8px; overflow:visible; padding:5px 0 4px; }
 .quick-main-actions { min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px; }

@@ -2271,11 +2271,12 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   w.className = "modal-scrim audit-overlay";
   w.innerHTML = `
     <div class="modal-box audit-card" role="dialog" aria-modal="true" aria-label="Job workspace" tabindex="-1">
+      <button type="button" class="audit-close workspace-corner-close" data-close aria-label="Close job workspace" title="Close job workspace">×</button>
       <header class="modal-head">
         <div class="audit-head-main"><div class="audit-head-copy"><div class="modal-title-row"><div class="modal-title">${escapeHtml(data.client || res.client || "")}</div><button type="button" class="client-page-link" data-open-client-page>👤 Client page</button></div>
         <div class="modal-sub">${claimNumber ? `Claim ${escapeHtml(claimNumber)} · ` : ""}${escapeHtml(crm.lifecycle_stage ? crm.lifecycle_stage.replaceAll("_", " ") : "Job audit")} · ${clean ? "ready" : issues.length + " item(s) need attention"}${res.aging ? " · " + res.aging + " days" : ""}</div></div>
         <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Checking details…" : data.refresh_pending ? "Saved details · checking for updates" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh details</button>`}</div>
-        <button class="audit-close" data-close aria-label="Close job audit">×</button></div>
+        </div>
         ${headerTagsHtml}
         ${divisionDataTabs}
         <div class="card-quick-actions" aria-label="Job actions">
