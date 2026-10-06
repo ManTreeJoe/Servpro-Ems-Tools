@@ -26,6 +26,7 @@ const {chromium}=require('playwright');
  assert.equal(await page.locator('[data-comment-stream] article:visible').count(),1);
  await page.locator('[data-comment-all]').click();
  await page.locator('[data-reply-comment]').click();
+ await page.locator('[data-reply-comment]').click();
  assert.match(await page.locator('.comment-reply-banner').innerText(),/Replying to Sam/);
  await page.locator('[contenteditable=true]').fill('A linked reply');
  await page.locator('[data-post-comment]').click();
@@ -38,6 +39,7 @@ const {chromium}=require('playwright');
  assert.equal(calls[0].op,calls[1].op);assert.equal(await page.evaluate(()=>ordinary),0);
  assert.equal(await page.locator('[data-comment-input]').inputValue(),'');
  assert.equal(await page.locator('.comment-reply-banner').isVisible(),false);
+ assert.equal(await page.locator('[data-comment-destination="EMS"]').isEnabled(),true);
  // Pins never move the original above the newer reply.
  assert.match(await page.locator('[data-comment-stream] article').first().innerText(),/A linked reply/);
  await page.locator('[contenteditable=true]').fill('Unsent regular draft');

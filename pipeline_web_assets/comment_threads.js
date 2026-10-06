@@ -29,7 +29,7 @@ window.CommentThreads = (() => {
       const reply = root._commentReply;
       replyBanner.hidden = !reply;
       compose.querySelectorAll('[data-comment-destination],[data-comment-placement]').forEach(el => {
-        if (reply) { el.dataset.threadDisabled = String(el.disabled); el.disabled = true; }
+        if (reply) { if (!('threadDisabled' in el.dataset)) el.dataset.threadDisabled = String(el.disabled); el.disabled = true; }
         else if ('threadDisabled' in el.dataset) { el.disabled = el.dataset.threadDisabled === 'true'; delete el.dataset.threadDisabled; }
       });
       if (!reply) return;
