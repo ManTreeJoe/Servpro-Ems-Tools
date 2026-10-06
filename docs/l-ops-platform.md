@@ -4,6 +4,15 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
+### Daily Run: visible Open job action
+
+Branch `handoff/paperclip-source-20261003`: document-based Daily Run rows now
+expose Open job alongside the existing edit controls. Uses the existing shell
+job resolver (exact card ID when available, name lookup otherwise); no new links
+are created. Right-click/keyboard access stays available and unsaved Run edits
+stay mounted. Browser test passes for all three entry points. No schema or
+L OPS updates. Calendar/legacy-calendar enhancements remain deferred.
+
 ### Loading reliability: independent placement lookup
 
 Branch: `handoff/paperclip-source-20261003`. Job opening previously awaited

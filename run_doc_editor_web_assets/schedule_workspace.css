@@ -24,6 +24,8 @@
 :root[data-theme="light"] .document-section .row-tab{background:transparent!important;color:var(--text-muted)}
 .document-section .add-row{background:var(--surface-2)!important;color:var(--text);font-size:12px}
 .row-main{display:grid;grid-template-columns:minmax(95px,125px) minmax(0,1fr);column-gap:14px;padding:12px 6px}
+.open-run-job{grid-column:2;justify-self:start;margin-top:6px}
+@media(max-width:700px){.open-run-job{grid-column:1}}
 .row-schedule-meta{grid-column:1;grid-row:1 / 3;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:6px;margin:0}
 .row-time,.row-crew{background:transparent!important;color:var(--text)!important;padding:0;min-height:0;border-radius:0;white-space:normal;overflow-wrap:anywhere}
 .row-time{font-size:16px;line-height:1.35}.row-time.empty{font-size:12px;color:var(--text-muted)!important;font-weight:500}

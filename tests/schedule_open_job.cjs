@@ -13,6 +13,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    state.model={sections:{work:[{text:'Robertino Fieraru: 21490 Pine Ln (Demo)',card_id:'linked-card',division:'EMS'}]},section_order:['work'],section_labels:{work:'Work'},editable:true};
    state.dirty=true;renderRows();
   });
+  await frame.getByRole('button',{name:'Open job ↗',exact:true}).click();
+  await page.waitForFunction(()=>messages.some(x=>x.type==='linguar-open-job'));
+  assert.equal(await frame.evaluate(()=>state.dirty),true);
+  await page.evaluate(()=>{messages=[];});
   await frame.locator('.run-row').click({button:'right'});
   await frame.getByRole('button',{name:'Open job',exact:true}).click();
   await page.waitForFunction(()=>messages.some(x=>x.type==='linguar-open-job'));

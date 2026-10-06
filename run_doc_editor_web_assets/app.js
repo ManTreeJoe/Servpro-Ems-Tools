@@ -257,6 +257,7 @@ function rowHtml(section, row, index) {
         <span class="row-crew">${escapeHtml(meta.crew || 'Crew not assigned')}</span>
       </div>
       <button type="button" class="visit-summary" aria-label="Edit ${escapeHtml(meta.job || 'scheduled work')}">${visitSummary(meta)}</button>
+      <button type="button" class="btn compact open-run-job" title="Open job card without changing this Run">Open job ↗</button>
       <details class="run-source"><summary>Edit Run line</summary><textarea class="row-text" rows="1" spellcheck="true" aria-label="${section} row ${index + 1}">${escapeHtml(row.text || "")}</textarea></details>
     </div>
     <div class="row-tools"><button class="row-tool format" title="Edit visit" aria-label="Format item">▤</button><button class="row-tool done ${row.struck ? "active" : ""}" title="${row.struck ? 'Reopen work' : 'Mark complete'}" aria-label="${row.struck ? 'Reopen work' : 'Mark complete'}">✓</button><button class="row-tool delete" title="Remove row" aria-label="Remove row">×</button></div>
@@ -289,23 +290,30 @@ function renderSummary() {
 function bindRows() {
   document.querySelectorAll(".run-row").forEach((element) => {
     const ref = () => ({ section: element.dataset.section, index: Number(element.dataset.index) });
-    const openMenu = (event) => {
+    const jobAction = () => {
       const at = ref();
       const row = state.model?.sections?.[at.section]?.[at.index];
-      if (!row) return;
+      if (!row) return {label:'Open job', disabled:true};
       // Existing Word rows use "Customer: address..."; structured rows use
       // pipe-separated fields. Preserve a saved exact link when provided.
       const client = String(row.client || ScheduleFields.parse(row.text, DATED_SECTIONS.has(at.section)).job.split(':')[0])
         .replace(/^\s*\d+[.)]\s*/, '').trim();
-      window.showContextMenu(event, [{label: 'Open job', disabled: !client,
+      return {label: 'Open job', disabled: !client && !row.card_id && !row.trello_card_id,
         action: () => {
           if (window.parent === window) {
             showNotice('Open Schedule inside OneLoss to view the linked job.', 'error'); return;
           }
           window.parent.postMessage({type:'linguar-open-job', focus:client,
             cardId:row.card_id || row.trello_card_id || '', division:row.division || ''}, '*');
-        }}]);
+        }};
     };
+    const openMenu = event => window.showContextMenu(event, [jobAction()]);
+    element.querySelector('.open-run-job').addEventListener('click', event => {
+      event.stopPropagation();
+      const action = jobAction();
+      if (!action.disabled) action.action();
+    });
+    element.querySelector('.open-run-job').disabled = jobAction().disabled;
     element.addEventListener('contextmenu', openMenu);
     element.addEventListener('keydown', event => {
       if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
