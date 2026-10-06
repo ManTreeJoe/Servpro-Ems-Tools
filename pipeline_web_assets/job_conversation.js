@@ -190,6 +190,21 @@ window.JobConversation = (() => {
       paint();
     }
     paint();
+    // The initial workspace owns its remote refresh. Read only the saved
+    // projection here so comments can paint before that larger request ends.
+    if (options.cardId && options.fetchSaved && !completed.has(current) &&
+        !(records.get(current) || []).length) {
+      const requestedCard = cards.get(current);
+      Promise.resolve().then(() => options.fetchSaved(requestedCard)).then(saved => {
+        if (!root.isConnected || cards.get(current) !== requestedCard ||
+            completed.has(current) || versions.get(current) ||
+            (records.get(current) || []).length) return;
+        if (saved?.ok && saved.cached && Array.isArray(saved.comments)) {
+          records.set(current, saved.comments);
+          paint();
+        }
+      }).catch(() => {}); // A cache miss must not interfere with live loading.
+    }
     return {
       refresh,
       updateCards(rows) {

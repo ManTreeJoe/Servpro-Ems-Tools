@@ -4,6 +4,17 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
+### Initial conversation saved-first loading
+
+Branch `handoff/paperclip-source-20261003`: the initially mounted comment pane
+now reads the existing account/franchise/card-scoped SQLite projection without
+waiting for full workspace hydration or starting another remote fetch. Cached
+comments never overwrite a completed live response, a locally edited conversation,
+or a closed pane. Verified with initial-cache and linked-preload browser tests
+and 11 Python cache tests. No Supabase/schema changes; this is not shared
+cross-device comment persistence. That storage contract and full reply threads
+remain pending coordination before implementation.
+
 ### Daily Run: visible Open job action
 
 Branch `handoff/paperclip-source-20261003`: document-based Daily Run rows now
