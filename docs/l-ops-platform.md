@@ -4,7 +4,20 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
-### Shared comments/threads — coordination required
+### L OPS TODO — shared comments/threads (deferred by user)
+
+User parked this work on October 6. Do not implement or deploy it until the
+user resumes it. Existing local saved-comment loading remains in place.
+
+- [ ] L OPS: review the linked proposal when the user resumes this work.
+- [ ] Agree source database and explicit user/job/placement identity mappings.
+- [ ] Agree shared comment/thread API, access rules, delivery and notification ownership.
+- [ ] Record agreement or counterproposal in this handoff before schema work.
+- [ ] OneLoss: implement the accepted backend and desktop Reply/thread UI afterward.
+- [ ] L OPS: wire web/mobile to the accepted contract and verify cross-app replies.
+
+Required behavior: all replies appear in the regular feed and can open their
+linked thread. This TODO does not authorize deployment or replace coordination.
 
 See [comment-threads-contract-proposal.md](comment-threads-contract-proposal.md).
 Branch: `handoff/paperclip-source-20261003`. Live read-only inspection confirms

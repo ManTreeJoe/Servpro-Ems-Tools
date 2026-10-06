@@ -1,5 +1,8 @@
 # Shared comments and threads — proposal, not deployed
 
+Status: deferred by the user on 2026-10-06. Track the L OPS checklist in
+`docs/l-ops-platform.md`; resume only when requested.
+
 Date: 2026-10-06. Owner: OneLoss/shared backend.
 Branch: `handoff/paperclip-source-20261003`.
 L OPS web/mobile must agree this contract before implementation. Pushing this
