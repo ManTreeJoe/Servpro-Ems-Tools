@@ -4,6 +4,22 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
+### Loading reliability: independent placement lookup
+
+Branch: `handoff/paperclip-source-20261003`. Job opening previously awaited
+both saved facts and board/lane lookup before painting either or starting the
+full refresh. A deterministic browser test held only placement unresolved and
+reproduced missing saved facts. Placement now updates independently, with the
+existing request identity/closed-window guards. Draft and loading status survive
+the late update. Slow-placement, linked-preload, and popup-height browser tests
+pass. No schema changes or L OPS updates required.
+
+Remaining audit: the older loading-state test expects an unrelated refresh to
+add a Job Log row, contrary to current explicit-refresh protection; investigate
+its expectation separately rather than relaxing that protection. The broader
+incremental test did not complete in this pass. Database-backed comment cache,
+threading, and whole-app performance work are not delivered by this slice.
+
 ### Workspace close control
 
 Toolbar follow-up: Initial notes now lives in More (same handler and availability),

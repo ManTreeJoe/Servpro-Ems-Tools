@@ -1289,11 +1289,15 @@ async function onAuditCard(cardOrClient, cardId = "", trelloUrl = "", division =
   }
   setStatus("");
   try {
-    const [fast, placement] = await Promise.all([
-      loadSession ? loadSession.load(client, resolvedCardId, resolvedDivision) : pywebview.api.job_card_workspace_fast(client, resolvedCardId, resolvedDivision),
-      pywebview.api.job_card_placement?.(resolvedCardId).catch(() => ({})) || Promise.resolve({})
-    ]);
-    if (fast && placement?.lane) fast.app_placement = placement;
+    // Location is independent of saved facts. A slow provider lookup must not
+    // hold back the database response or the subsequent full refresh.
+    Promise.resolve().then(() => pywebview.api.job_card_placement?.(resolvedCardId))
+      .then(placement => {
+        if (placement?.lane && requestId === workspaceRequestId && modal.element.isConnected)
+          modal.applyPlacement(placement);
+      }).catch(() => {}); // Keep the board preview location if lookup fails.
+    const fast = await (loadSession ? loadSession.load(client, resolvedCardId, resolvedDivision)
+      : pywebview.api.job_card_workspace_fast(client, resolvedCardId, resolvedDivision));
     if (requestId !== workspaceRequestId || !modal.element.isConnected) return;
     if (!fast?.ok) {
       modal.setDeferredError(fast?.error || "Shared job details unavailable");
@@ -3318,6 +3322,15 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       const notice = w.querySelector('[data-job-log-status]');
       if (notice) notice.textContent = message;
       setStatus(message, 'ok');
+    },
+    applyPlacement(placement) {
+      const host = w.querySelector('[data-workspace-load-state]');
+      const previousStatus = host?.textContent;
+      const applied = controller.applyRefresh({ok:true, card_id:data.card_id,
+        app_placement:placement, deferred_loading:data.deferred_loading,
+        refresh_pending:data.refresh_pending});
+      if (host && applied) host.textContent = previousStatus;
+      return applied;
     },
     applyRefresh(next, refreshJobLog = false) {
       if (!w.isConnected || (next.card_id && data.card_id && next.card_id !== data.card_id)) return false;
