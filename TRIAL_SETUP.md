@@ -139,10 +139,11 @@ fails, and so does a personal token or a `C:\Users\...` path sneaking in.
 
 ## Keeping a way back
 
-Updates are one-way: `version.txt` names the newest build and every PC
-follows it on the next launch. That is fine right up until the newest
-build is the problem — and then the previous installer exists only on
-whichever machine happened to build it.
+Updates read `main/version.txt` or `trial/version.txt` on the `main` branch
+of the public `ManTreeJoe/linguar-hub-releases` repository. Installers are kept
+in that repository's Releases. The code repository's root `version.txt` only
+identifies the bundled build. See [CI and publishing](docs/CI.md) for the manual
+stable publisher and Trial installer dispatch.
 
 After a release is confirmed working on a real machine, keep it:
 
@@ -176,7 +177,10 @@ python -c "import release_keep as r; print(r.rollback_target(
 ```
 
 It prints a path and never installs anything — that is a decision made
-at a machine, by a person. Remember to point `version.txt` back as well,
+at a machine, by a person. You can also obtain a previous installer from
+`https://github.com/ManTreeJoe/linguar-hub-releases/releases`. Remember to point
+the affected `main/version.txt` or `trial/version.txt` back on that repo's
+`main` branch as well,
 or every PC will "update" straight to the broken build again on next
 launch.
 

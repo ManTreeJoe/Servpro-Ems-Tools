@@ -1,0 +1,7 @@
+{
+  "name": "linguar-hub-ci-tests",
+  "private": true,
+  "devDependencies": {
+    "playwright": "1.59.0"
+  }
+}

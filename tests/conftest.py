@@ -191,3 +191,29 @@ def tk_root():
         r.destroy()
     except Exception:
         pass
+
+
+# Explicit CI-only exclusions: keep normal developer runs unchanged.
+def _ci_skip_policy():
+    if os.environ.get("LINGUAR_CI") != "1":
+        return {"python_modules": {}, "python_tests": {}}
+    import json
+    from pathlib import Path
+    return json.loads((Path(_SCRIPTS) / ".github" / "ci-skips.json").read_text())
+
+
+def pytest_pycollect_makemodule(module_path, parent):
+    relative = module_path.relative_to(_SCRIPTS).as_posix()
+    reason = _ci_skip_policy()["python_modules"].get(relative)
+    if reason:
+        class SkippedCIModule(pytest.Module):
+            def collect(self):
+                pytest.skip(reason, allow_module_level=True)
+        return SkippedCIModule.from_parent(parent, path=module_path)
+
+
+def pytest_collection_modifyitems(items):
+    reasons = _ci_skip_policy()["python_tests"]
+    for item in items:
+        if item.nodeid in reasons:
+            item.add_marker(pytest.mark.skip(reason=reasons[item.nodeid]))
