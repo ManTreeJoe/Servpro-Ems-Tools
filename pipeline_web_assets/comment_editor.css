@@ -10,6 +10,8 @@
 .comment-editor-toolbar [data-comment-format="strike"] { text-decoration:line-through; }
 .comment-editor-toolbar [data-comment-format="bullet"],.comment-editor-toolbar [data-comment-format="link"] { margin-left:7px; }
 .comment-editor-content { min-height:86px; max-height:180px; overflow-y:auto; padding:10px 12px; outline:none; color:var(--text); font:inherit; font-size:13px; line-height:1.5; overflow-wrap:anywhere; white-space:pre-wrap; }
+.comment-compose .comment-editor.is-empty:not(:focus-within) .comment-editor-content { min-height:42px; }
+.comment-compose .comment-editor.is-empty:not(:focus-within) .comment-editor-toolbar { display:none; }
 .comment-editor-content p { margin:0 0 8px; }
 .comment-editor-content > :last-child { margin-bottom:0; }
 .comment-editor-content ul,.comment-editor-content ol { padding-left:22px; margin:6px 0; }

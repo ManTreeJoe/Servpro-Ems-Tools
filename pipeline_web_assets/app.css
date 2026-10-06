@@ -572,6 +572,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .modal-title-row .modal-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .client-page-link { flex:0 0 auto; padding:4px 7px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--green-light); font:inherit; font-size:11px; font-weight:700; cursor:pointer; }
 .client-page-link:hover { border-color:var(--green); background:var(--green-soft); }
+.audit-card .client-page-link { padding:3px 5px; border-color:transparent; font-weight:600; }
 .audit-head-copy { min-width: 0; }
 .audit-card .modal-title { font-size: 18px; line-height: 1.25; }
 .audit-close { flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); font-size: 25px; line-height: 1; cursor: pointer; }
@@ -799,6 +800,7 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .comment-compose { flex: 0 0 auto; padding: 12px 14px 14px; border-top: 1px solid var(--border); background: var(--surface); }
 .comment-compose textarea { width: 100%; resize: vertical; min-height: 66px; max-height: 150px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); font: inherit; }
 .comment-compose textarea:focus { border-color: var(--green); box-shadow: 0 0 0 2px var(--green-soft); }
+.comment-compose textarea:placeholder-shown:not(:focus) { min-height:42px; height:42px; }
 .comment-compose > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .comment-compose [data-comment-state] { color: var(--text-dim); font-size: 10px; }
 .comment-extra-destinations { margin: 0 0 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); }
@@ -912,7 +914,11 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 @media (hover:none) { .requirement-edit { opacity:1; } }
 @media (max-width:620px) { .requirement-editor-grid { grid-template-columns:1fr; } .requirement-review-note { align-items:flex-start;flex-direction:column;gap:2px; } }
 @media (max-width:720px) { .paperwork-list { grid-template-columns:1fr; } }
-.work-types { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.work-types { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; align-items:start; }
+.inactive-division-tools summary { cursor:pointer; color:var(--text-muted); font-size:11px; padding:4px 0; }
+.inactive-division-tools[open] input { margin:6px 0; }
+.job-info-field.job-scope-field { grid-column:1 / -1; }
+.job-info-field.job-scope-field strong { white-space:pre-wrap; overflow-wrap:anywhere; text-overflow:clip; }
 .division-conflict-banner { display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #9a681c;border-radius:8px;background:#402f13;color:#f4d594; }
 .division-conflict-banner strong { flex:0 0 auto;font-size:11px; }
 .division-conflict-banner span { min-width:0;font-size:11px;line-height:1.4;overflow-wrap:anywhere; }

@@ -8,7 +8,23 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.addStyleTag({path:path.resolve('pipeline_web_assets',match[1].split('?')[0])});
  }
  for(const file of ['web_shared/modal.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(file)});
- await page.evaluate(()=>{window.pywebview={api:{}};openAuditModal({ok:true,client:'Popup height test',card_id:'ems-card',selected_division:'EMS',audit:{found:true},crm:{},comments:[]});});
+ await page.evaluate(()=>{window.pywebview={api:{}};openAuditModal({ok:true,client:'Popup height test',card_id:'ems-card',selected_division:'EMS',audit:{found:true},crm:{},info_sections:[{name:'Customer',fields:[{id:'customer_name',label:'Name',value:'Example customer'}]},{name:'Scope of work',fields:[{id:'scope_initial',label:'Initial scope',value:'Inspect kitchen\nDry affected walls'}]}],comments:[]});});
+ assert.deepEqual(await page.locator('.job-info-group h4').allTextContents(),['App location','Scope of work','Customer']);
+ assert.equal(await page.locator('.job-scope-field strong').evaluate(el=>getComputedStyle(el).whiteSpace),'pre-wrap');
+ const inactive=page.locator('.inactive-division-tools').first();
+ assert.equal(await inactive.locator('input').isVisible(),false);
+ await inactive.locator('summary').click();
+ assert.equal(await inactive.locator('input').isVisible(),true);
+ await inactive.locator('summary').click();
+ const composer=page.locator('[data-comment-input]');
+ const compactHeight=(await composer.boundingBox()).height;
+ await composer.focus();
+ assert((await composer.boundingBox()).height>compactHeight,'Empty composer expands on focus');
+ await composer.fill('Draft stays expanded');
+ await page.locator('.modal-title').click();
+ assert((await composer.boundingBox()).height>compactHeight,'Draft stays expanded after blur');
+ await composer.fill('');
+ await page.locator('.modal-title').click();
  assert.equal(await page.locator('.quick-primary-actions [data-initial-notes]').count(),0);
  assert.equal(await page.locator('.more-quick-menu [data-initial-notes]').count(),1);
  await page.locator('.more-quick-menu > .tool-menu-trigger').click();
@@ -27,6 +43,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert(bounds.y>=8 && bounds.y+bounds.height<=height-8,`Job popup must fit with breathing room at ${height}px: ${JSON.stringify(bounds)}`);
   assert(post.y>=0&&post.y+post.height<=height-8,`Post button must be fully visible: ${JSON.stringify(post)}`);
  }
+ await page.setViewportSize({width:1426,height:960});
+ await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-clean-job-window.png')});
  await page.locator('.workspace-corner-close').click();
  assert.equal(await page.locator('.audit-overlay').count(),0,'Corner close dismisses the whole workspace');
  console.log('PASS: notification job popup and post button fit at 960, 720 and 600px heights');

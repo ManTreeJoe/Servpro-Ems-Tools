@@ -4,6 +4,17 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
+### Job window visual simplification
+
+Branch `handoff/paperclip-source-20261003`: scope fields now appear after app
+location with full-width, multiline copy targets; Client page has quieter
+styling; inactive division owner/link controls are available under Manage
+division while status remains visible; empty composer is compact and expands
+on focus (rich toolbar also reveals on focus). Nonempty drafts remain expanded.
+UI design simplification guidance used; no new animation, schema or L OPS work.
+Popup layout/interaction, incremental hydration and rich-editor browser tests
+pass. Rendered fixture visually checked. Not a Main release; DEV reload needed.
+
 ### Loading regression tests aligned with current behavior
 
 Branch `handoff/paperclip-source-20261003`. Resolved the two previously reported

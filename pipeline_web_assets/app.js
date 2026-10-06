@@ -1981,14 +1981,16 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     {id:'app_board',label:'Board',value:placement.board || ''},
     {id:'app_lane',label:'Lane / section',value:placement.lane || 'App location not loaded'}
   ]};
-  const populatedInfoSections = [locationSection, ...(data.info_sections || []).filter(section => !['Pipeline','App location'].includes(section.name))].map((section) => ({
+  const detailSections = (data.info_sections || []).filter(section => !['Pipeline','App location'].includes(section.name));
+  const isScopeSection = section => (section.fields || []).some(field => ['scope_initial','scope_additional'].includes(field.id));
+  const populatedInfoSections = [locationSection, ...detailSections.filter(isScopeSection), ...detailSections.filter(section => !isScopeSection(section))].map((section) => ({
     ...section,
     fields: (section.fields || []).filter((field) => String(field.value || "").trim()),
   })).filter((section) => section.fields.length);
   const facts = populatedInfoSections.map((section) => `
     <div class="job-info-group"><h4>${escapeHtml(section.name)}</h4>
       <div class="job-info-grid">${section.fields.map((field) =>
-        `<button type="button" class="job-info-field" ${['app_board','app_lane'].includes(field.id)
+        `<button type="button" class="job-info-field ${['scope_initial','scope_additional'].includes(field.id) ? 'job-scope-field' : ''}" ${['app_board','app_lane'].includes(field.id)
           ? `data-move-job-location="${field.id}" aria-haspopup="dialog" title="Change ${escapeAttr(field.label)}" ${data.card_id ? '' : 'disabled'}`
           : `data-copy-job-field="${escapeAttr(field.value)}" data-copy-job-label="${escapeAttr(field.label)}" title="Copy ${escapeAttr(field.label)}"`}>
           <span>${escapeHtml(field.label)}</span><strong>${escapeHtml(field.value)}</strong><i aria-hidden="true">${['app_board','app_lane'].includes(field.id) ? 'Move ▾' : 'Copy'}</i>
@@ -2144,6 +2146,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       return `<div class="work-type work-type-${name.toLowerCase()} ${stage !== "not_applicable" ? "has-stage" : ""}" data-work-type-card="${name}">
         <div class="work-type-head"><span aria-hidden="true">${icon}</span><div><strong>${label}</strong><small>${name}${env.inferred ? ` · Detected from ${(env.detected_sources || []).join(" + ")}` : ""}</small></div></div>
         <select data-work-env="${name}" aria-label="${label} status">${workTypeStages.map(([value, text]) => `<option value="${value}" ${value === stage ? "selected" : ""}>${text}</option>`).join("")}</select>
+        ${stage === 'not_applicable' ? '<details class="inactive-division-tools"><summary>Manage division</summary>' : ''}
         <input data-work-env-owner="${name}" value="${escapeAttr(env.owner || "")}" placeholder="Owner or crew" aria-label="${label} owner or crew">
         <div class="division-trello ${trello.pinned ? "is-pinned" : ""}">
           <span>${trello.pinned ? "📌 Trello card pinned" : "○ No Trello card"}</span>
@@ -2154,6 +2157,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
           ${name === "EMS" && trello.pinned ? `<button class="text-btn" data-create-ems-copy>Copy to board…</button><button class="text-btn" data-link-ems-copy>Link WIP / Estimating copy</button>` : ""}
           ${extraPlacements.length ? `<div class="division-placement-list">${extraPlacements.map((item) => `<button class="division-placement" data-placement-open="${escapeAttr(item.url || `https://trello.com/c/${item.card_id}`)}"><span>Also on ${escapeHtml(item.board || item.purpose || "linked board")}</span><small>${escapeHtml(item.lane || "Open card")}</small></button>`).join("")}</div>` : ""}
         </div>
+        ${stage === 'not_applicable' ? '</details>' : ''}
       </div>`;
     }).join("");
   const checklistRoles = [
