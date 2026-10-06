@@ -1,4 +1,4 @@
-# Shared comments and threads — proposal, not deployed
+# Shared comments and threads — incremental implementation
 
 Status: resumed by explicit user approval on 2026-10-06, including permission
 to implement without waiting for L OPS. See the incremental contract below.
@@ -13,8 +13,11 @@ Migration `20261006224224_shared_comment_threads.sql` adds shared annotations
 and native replies to the existing exact-card feed. RPC `job_comment_threads`
 takes `p_action`, `p_card`, `p_data`. Actions: read (200-row pages, `after`/`next`),
 pin (id, pinned, expected), reply (parent, body, operation_id), claim and finish.
-The server imports provider parents only from the authorized mirror snapshot;
-client text/author names cannot establish provider identity. Imported bodies
+The authenticated `comment-parent` Edge Function now verifies the exact parent
+directly with Trello and imports it without waiting for the background snapshot.
+It checks user-scoped mirror RLS first, then verifies the live card board and
+action/card association; client text/author names cannot establish identity. No
+schema change is needed. Imported bodies
 are labelled saved context in the thread, not proof the original still exists.
 
 Every native reply has an app-owned `oneloss:<operation UUID>` identity, immutable
@@ -22,6 +25,14 @@ parent/root, authenticated author and durable delivery state. Card authorization
 uses the mirror's enabled-source/all-required-departments boundary. All actions
 fail closed; no fallback to an unlinked ordinary comment. Pins are card-shared.
 Main clients do not consume these records and remain unchanged.
+
+Reply-all: OneLoss adds the verified provider author's username and original
+@mentions to the reply body, case-insensitively deduplicated against each other
+and existing reply mentions, excluding the posting user's Trello username.
+The same body is saved in OneLoss and sent to Trello. L OPS must adopt this
+preparation step before calling the shared reply RPC. A pending native reply
+without a provider mapping cannot yet supply verified provider-author context;
+its draft is preserved rather than posting with guessed recipients.
 
 The author's desktop claims delivery once and sends a normal Trello comment
 with parent reference and operation marker. Uncertain results are never reposted;

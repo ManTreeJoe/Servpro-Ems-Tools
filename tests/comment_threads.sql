@@ -18,6 +18,8 @@ begin
  again:=public.job_comment_threads('reply',card,jsonb_build_object('parent',parent,'body','Thread integration test','operation_id',op));
  if result#>>'{comment,id}' is distinct from again#>>'{comment,id}' then raise exception 'Retry duplicated'; end if;
  if result#>>'{comment,author_id}'<>who::text or result#>>'{comment,parent_id}'<>parent then raise exception 'Identity failed'; end if;
+ again:=public.job_comment_threads('read',card,'{}');
+ if not (again->>'ok')::boolean or jsonb_array_length(again->'comments')<2 then raise exception 'Authenticated thread read failed'; end if;
  set constraints all immediate;
  execute 'set local role authenticated';
  if not exists(select 1 from public.job_comment_threads where card_id=card and id=result#>>'{comment,id}') then raise exception 'Authorized RLS read failed'; end if;

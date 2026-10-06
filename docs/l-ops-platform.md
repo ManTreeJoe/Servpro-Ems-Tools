@@ -782,6 +782,18 @@ This is a documentation snapshot. Some new-platform code is still local/uncommit
 
 ## 2026-10-06 — Shared pins and threaded replies resumed
 
+Follow-up: authenticated `comment-parent` Edge Function verifies/imports recent
+Trello parents on demand, removing the comment-snapshot delay. No table changes.
+Live verification also revealed two PL/pgSQL alias/variable collisions in the
+thread read/reconciliation branch. Migrations `20261006231105` and
+`20261006231154` rename those internal aliases; public contract and permissions
+are unchanged. Authenticated thread reads are now included in rollback tests.
+The desktop prepares author/original-mention reply-all tags (deduplicated, no
+self-tag) and uses that body in both OneLoss and Trello. L OPS should adopt this
+same preparation contract; never upload client-supplied original-comment facts
+as verified provider data. Existing authorization, thread IDs and outbox claims
+are unchanged. Six Python tests and the gateway authorization/import tests pass.
+
 Owner: OneLoss/shared backend. Branch: `handoff/paperclip-source-20261003`.
 User approved implementing without waiting for L OPS; Main remains unchanged.
 See `docs/comment-threads-contract-proposal.md` for the incremental RPC contract,

@@ -1981,8 +1981,8 @@ class Api(JobSettingsApi):
         return call('read', card_id, {'after': after})
 
     def pin_job_comment(self, card_id: str, comment_id: str, pinned: bool, expected: bool) -> dict:
-        from comment_threads import call
-        return call('pin', card_id, {'id': comment_id, 'pinned': pinned, 'expected': expected})
+        from comment_threads import pin
+        return pin(card_id, comment_id, pinned, expected)
 
     def reply_job_comment(self, card_id: str, parent_id: str, text: str, operation_id: str) -> dict:
         from comment_threads import reply
