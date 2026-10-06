@@ -2,6 +2,24 @@
 
 Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
+## October 6 — Approved duplicate identity repair
+
+Branch: `handoff/paperclip-source-20261003`. User approved consolidating Gary's
+empty internal placeholder into the populated workspace job. A guarded database
+transaction rechecked the empty row and its dependencies, preserved both job
+snapshots and their links/events in a `job_reconciled` event on the survivor,
+moved the original creation event, removed the redundant placeholder/link,
+and added the alternate spelling as an alias. No Trello card or description
+was changed. Recovery payload stays in the database, not this repository.
+
+The actual editor API now resolves the populated record and returns 20 filled
+fields. Both database adapters now reject multiple link owners instead of
+choosing the oldest. No schema or L OPS migration is required; L OPS should
+likewise treat ambiguous external references as an identity conflict, never
+choose a record by age or by which one has more fields. Packaged Main is not
+updated by this source change. This does not globally reconcile other duplicates
+or remove old rows from every machine's offline cache.
+
 ## October 5 — Stability pass, first slice (source only)
 
 Branch: `handoff/paperclip-source-20261003`. No release, schema migration,

@@ -1757,9 +1757,11 @@ def find_job_by_link(link_type: str, link_value: str) -> dict | None:
             JOIN job_links l ON l.canon_key = j.canon_key
             WHERE l.link_type=? AND l.link_value=?
             ORDER BY l.added_at ASC
-            LIMIT 1
-        """, (link_type, nv)).fetchone()
-    return _row_to_dict(row)
+            LIMIT 2
+        """, (link_type, nv)).fetchall()
+    if len(row) > 1:
+        raise ValueError('This reference is linked to multiple jobs. Reconcile the links before editing.')
+    return _row_to_dict(row[0]) if row else None
 
 
 def resolve_and_link(name: str = "", *, folder_path: str = "",

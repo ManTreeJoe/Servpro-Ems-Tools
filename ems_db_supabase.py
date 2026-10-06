@@ -878,11 +878,13 @@ def find_job_by_link(link_type: str, link_value: str):
     if not (link_type and candidates):
         return None
     for candidate in candidates:
-        l = _one("job_links", link_type=f"eq.{link_type}",
+        links = _rows("job_links", link_type=f"eq.{link_type}",
                  link_value=f"eq.{candidate}", select="canon_key",
-                 order="added_at.asc")
-        if l:
-            return get_job(l["canon_key"])
+                 order="added_at.asc", limit="2")
+        if len(links) > 1:
+            raise ValueError('This reference is linked to multiple jobs. Reconcile the links before editing.')
+        if links:
+            return get_job(links[0]["canon_key"])
     return None
 
 
