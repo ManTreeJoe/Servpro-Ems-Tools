@@ -4,6 +4,19 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ## October 6 — Approved duplicate identity repair
 
+### Shared comments/threads — coordination required
+
+See [comment-threads-contract-proposal.md](comment-threads-contract-proposal.md).
+Branch: `handoff/paperclip-source-20261003`. Live read-only inspection confirms
+the optional `crm_pipeline_activity`/`crm_pipeline_cards` tables are absent;
+the current posting path can fall back to Trello. Proposed dedicated comments,
+conversation identities, provider mappings and transactional delivery must be
+agreed with L OPS before schema implementation. No live schema/data changes.
+Next owner: L OPS reviews identity/API/access mapping and records agreement or
+counterproposal here; OneLoss then implements the accepted contract. All replies
+remain in the main feed with a separate thread view. This proposal is not a
+working Reply feature, and acknowledgment alone is not contract approval.
+
 ### Initial conversation saved-first loading
 
 Branch `handoff/paperclip-source-20261003`: the initially mounted comment pane
