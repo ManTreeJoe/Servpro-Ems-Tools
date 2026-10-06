@@ -1,0 +1,16 @@
+.comment-thread-filter { display:flex; align-items:center; gap:10px; padding:5px 14px; flex-wrap:wrap; }
+.comment-thread-filter [aria-pressed="true"] { color:var(--text,#eee); text-decoration:underline; text-underline-offset:5px; }
+.comment-thread-filter small { flex-basis:100%; color:var(--muted,#aeb8bd); }
+.comment-thread-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.comment-thread-actions .text-btn,.comment-thread-filter .text-btn,.comment-reply-reference { color:#b9cddd; font-size:12px; min-height:24px; }
+.comment-thread-filter small:empty { display:none; }
+.comment-reply-reference { border-left:2px solid #538c76; margin:4px 0; padding-left:8px; }
+.comment-reply-banner { display:flex; align-items:center; gap:8px; padding:8px; border-left:2px solid #538c76; font-size:12px; }
+.comment-reply-banner span { flex:1; overflow-wrap:anywhere; }
+.comment-thread-panel { margin:4px 12px; padding:10px; border:1px solid #46505a; border-radius:8px; min-height:0; flex-shrink:0; }
+.comment-thread-panel header { display:flex; justify-content:space-between; align-items:center; }
+.comment-thread-messages { max-height:min(180px,22vh); overflow-y:auto; overscroll-behavior:contain; }
+.comment-thread-messages article { padding:10px 0; border-top:1px solid #36404a; }
+.comment-thread-messages small { display:block; color:#aeb8bd; font-size:11px; }
+.comment-thread-messages p { white-space:pre-wrap; overflow-wrap:anywhere; margin:6px 0; }
+.comment-thread-panel[hidden],.comment-reply-banner[hidden] { display:none; }

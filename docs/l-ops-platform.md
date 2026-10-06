@@ -779,3 +779,30 @@ Branch: `main-lops-style-pivot`. The sample calendar now accepts waiting-work dr
 No database/schema, Trello, Word, or live scheduling writes were added. L OPS does not need a schema update for this UI-only change. Shared persistence remains subject to a coordinated contract before implementation.
 
 This is a documentation snapshot. Some new-platform code is still local/uncommitted; the mobile repo has no remote yet. Verify the actual source revision and migration state before assuming a described feature is available from GitHub or deployed. No production release is implied by these notes.
+
+## 2026-10-06 — Shared pins and threaded replies resumed
+
+Owner: OneLoss/shared backend. Branch: `handoff/paperclip-source-20261003`.
+User approved implementing without waiting for L OPS; Main remains unchanged.
+See `docs/comment-threads-contract-proposal.md` for the incremental RPC contract,
+delivery limitations and L OPS adoption requirements. Schema is additive to
+OneLoss project `oqwwapqnzzhefqxobadl`; do not assume L OPS user/job UUIDs match.
+L OPS TODO: adopt shared pins, immutable reply links, paginated thread records,
+normal-feed reply visibility and provider echo deduplication. Do not implement
+local-only pins or infer threads from @mentions. Supabase Storage/CompanyCam
+file ownership is unchanged. Schedule and Recon work remain deferred.
+
+Deployment: additive migration applied to the shared backend; remote migration
+version `20261006224700` (local CLI-generated source `20261006224224`). No Main
+binary release. SQL rollback tests passed for actual authenticated-role RLS,
+anonymous/unrelated-user denial, forged parents, retry identity, exclusive
+delivery claims and deferred foreign keys. Browser tests passed for pins,
+ordering, drafts, failed-send retry, thread access and provider echo deduplication.
+Three Python delivery-boundary tests passed; existing rich-editor, initial-cache,
+incremental workspace and popup-height tests also passed.
+
+Security advisor reported no findings on the new table/RPC. Existing unrelated
+warnings remain: [admin SECURITY DEFINER endpoints](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
+and [disabled leaked-password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+No auth settings were changed in this task. Still needs a two-device user test
+and real Trello reply test; automated tests do not post production comments.

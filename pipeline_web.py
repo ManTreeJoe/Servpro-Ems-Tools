@@ -1976,6 +1976,18 @@ class Api(JobSettingsApi):
         from job_comment_reactions import reactions
         return reactions(card_id, action_id, code, active)
 
+    def comment_thread_state(self, card_id: str, after: str = '') -> dict:
+        from comment_threads import call
+        return call('read', card_id, {'after': after})
+
+    def pin_job_comment(self, card_id: str, comment_id: str, pinned: bool, expected: bool) -> dict:
+        from comment_threads import call
+        return call('pin', card_id, {'id': comment_id, 'pinned': pinned, 'expected': expected})
+
+    def reply_job_comment(self, card_id: str, parent_id: str, text: str, operation_id: str) -> dict:
+        from comment_threads import reply
+        return reply(card_id, parent_id, text, operation_id)
+
     def post_job_comment(self, client: str, card_id: str, text: str) -> dict:
         text = (text or "").strip()
         if not text:

@@ -108,6 +108,7 @@ window.JobConversation = (() => {
     const post = root.querySelector('[data-post-comment]');
     if (post) post.disabled = !cards.size;
     let fingerprint = null;
+    let threadRecords = [];
     function paint() {
       for (const [key, button] of buttons) {
         button.setAttribute('aria-pressed', String(visible.has(key)));
@@ -121,6 +122,17 @@ window.JobConversation = (() => {
           seen.add(key);
           messages.push({...row, division, card_id: cards.get(division)});
         }
+      }
+      for (const shared of threadRecords) {
+        const index = messages.findIndex(row => row.card_id === shared.card_id &&
+          (row.id === shared.id || (shared.provider_id && (row.external_id || row.id) === shared.provider_id) ||
+            (shared.native && shared.operation_id && String(row.text || '').endsWith(`[OneLoss reply ${shared.operation_id}]`))));
+        if (shared.native) {
+          const row = {...shared, text:shared.body, at:shared.created_at, source:'linguar',
+            external_id:shared.provider_id || '', can_manage:false, division:current, thread:shared};
+          if (index >= 0) messages[index] = row;
+          else messages.push(row);
+        } else if (index >= 0) messages[index] = {...messages[index], thread:shared};
       }
       messages.sort((a,b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
       const failed = [...visible].some(key => errors.has(key));
@@ -137,6 +149,7 @@ window.JobConversation = (() => {
         const count = root.querySelector('[data-comment-count]');
         if (count) count.textContent = !messages.length && (loading || failed) ? '…' : String(messages.length);
         options.onChange?.();
+        root.dispatchEvent(new Event('comments-painted'));
       }
       const errorText = [...visible].flatMap(key => errors.has(key)
         ? [`${label(key)}: ${errors.get(key)}`]
@@ -207,6 +220,7 @@ window.JobConversation = (() => {
     }
     return {
       refresh,
+      setThreadRecords(rows) { threadRecords = rows; paint(); },
       updateCards(rows) {
         const hadCards = cards.size > 0;
         const next = new Map();

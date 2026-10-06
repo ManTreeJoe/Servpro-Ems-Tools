@@ -1,12 +1,42 @@
 # Shared comments and threads — proposal, not deployed
 
-Status: deferred by the user on 2026-10-06. Track the L OPS checklist in
-`docs/l-ops-platform.md`; resume only when requested.
+Status: resumed by explicit user approval on 2026-10-06, including permission
+to implement without waiting for L OPS. See the incremental contract below.
 
 Date: 2026-10-06. Owner: OneLoss/shared backend.
 Branch: `handoff/paperclip-source-20261003`.
-L OPS web/mobile must agree this contract before implementation. Pushing this
-document is not deployment approval or evidence of agreement.
+L OPS web/mobile adoption remains a separate handoff. No Main release is authorized.
+
+## First implementation contract (supersedes provisional names below)
+
+Migration `20261006224224_shared_comment_threads.sql` adds shared annotations
+and native replies to the existing exact-card feed. RPC `job_comment_threads`
+takes `p_action`, `p_card`, `p_data`. Actions: read (200-row pages, `after`/`next`),
+pin (id, pinned, expected), reply (parent, body, operation_id), claim and finish.
+The server imports provider parents only from the authorized mirror snapshot;
+client text/author names cannot establish provider identity. Imported bodies
+are labelled saved context in the thread, not proof the original still exists.
+
+Every native reply has an app-owned `oneloss:<operation UUID>` identity, immutable
+parent/root, authenticated author and durable delivery state. Card authorization
+uses the mirror's enabled-source/all-required-departments boundary. All actions
+fail closed; no fallback to an unlinked ordinary comment. Pins are card-shared.
+Main clients do not consume these records and remain unchanged.
+
+The author's desktop claims delivery once and sends a normal Trello comment
+with parent reference and operation marker. Uncertain results are never reposted;
+later reads reconcile a unique exact marker/body from the server mirror. This
+is not a server delivery worker: if the author closes before claiming, they
+must retry their saved draft. OneLoss still retains the reply. Edit/delete of
+native replies and dedicated reply-author notifications are follow-up work;
+existing subscribed-member notifications are queued after confirmed delivery.
+
+L OPS must paginate the shared records, merge native replies into the regular
+feed, deduplicate provider_id/operation-marker echoes, leave chronological order
+unchanged by pins, and offer a separate thread projection. Keep existing cached
+content on shared-read failure. Do not infer threads from old @mentions. Future
+provider-independent conversation/job mapping requires a coordinated migration;
+this increment deliberately retains exact Trello-card conversation scope.
 
 ## Verified starting point
 

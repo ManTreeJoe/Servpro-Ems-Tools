@@ -3170,10 +3170,11 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   const commentSearch = w.querySelector("[data-comment-search]");
   const filterComments = () => {
     const query = String(commentSearch?.value || "").trim().toLocaleLowerCase();
-    const rows = Array.from(w.querySelectorAll("[data-comment-id]"));
+    const rows = Array.from(w.querySelectorAll("[data-comment-stream] [data-comment-id]"));
     let shown = 0;
     rows.forEach((row) => {
-      const matches = !query || row.textContent.toLocaleLowerCase().includes(query);
+      const matches = (!query || row.textContent.toLocaleLowerCase().includes(query)) &&
+        (!w._pinnedCommentsOnly || row.dataset.commentPinned === 'true');
       row.hidden = !matches;
       if (matches) shown += 1;
     });
@@ -3206,12 +3207,13 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   };
   if (!preparation) state.openWorkspace = workspaceContext;
   const commentDraft = preparation?.commentDraft || (!preparation && window.JobDrafts?.mount(w.querySelector('.comment-compose'), [data.card_id || '', selectedDivision, 'comment', ''], () =>
-    commentInput.value.trim() ? {text:commentInput.value, targets:conversation.targets().map(target => target.cardId)} : null,
-    saved => { commentInput.value = saved.text || ''; conversation.restoreTargets?.(saved.targets || []); markDraftDirty('comment', !!commentInput.value.trim()); }));
+    commentInput.value.trim() ? {text:commentInput.value, targets:conversation.targets().map(target => target.cardId), reply:w._commentReply || null} : null,
+    saved => { commentInput.value = saved.text || ''; w._commentReply = saved.reply || null; w.dispatchEvent(new Event('comment-reply-restored')); conversation.restoreTargets?.(saved.targets || []); markDraftDirty('comment', !!commentInput.value.trim()); }));
   if (commentDraft) recoveredDrafts.add(commentDraft);
   if (!preparation) {
     commentInput._mentionTargets = () => conversation.targets();
     window.CommentMarkdown?.mount(commentInput);
+    window.CommentThreads?.mount(w, conversation, data.card_id || '');
   }
   w.querySelector('.comment-compose')?.addEventListener('click', event => {
     if (event.target.closest('[data-comment-destination],[data-comment-placement]')) commentDraft?.capture();
@@ -3877,9 +3879,13 @@ function renderJobComment(comment) {
   const initial = window.CommentMarkdown?.initials(actor) || actor.trim().charAt(0).toUpperCase() || "L";
   const avatarColor = window.CommentMarkdown?.avatarColor(actor) || '#315A40';
   const source = comment?.source === "trello" ? "trello" : "linguar";
-  return `<article class="job-comment" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-card-id="${escapeAttr(comment?.card_id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar" style="background:${avatarColor};color:#fff" title="${escapeAttr(actor)}">${escapeHtml(initial)}</div>
+  const thread = comment?.thread;
+  const key = thread?.id || comment?.external_id || comment?.id || '';
+  return `<article class="job-comment" data-thread-key="${escapeAttr(key)}" data-thread-root="${escapeAttr(thread?.root_id || key)}" data-comment-pinned="${!!thread?.pinned}" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-card-id="${escapeAttr(comment?.card_id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar" style="background:${avatarColor};color:#fff" title="${escapeAttr(actor)}">${escapeHtml(initial)}</div>
     <div><header><strong>${escapeHtml(actor)}</strong><time>${escapeHtml(formatCommentDate(comment?.at || ""))}</time></header>
-    <div class="comment-markdown" data-comment-raw="${escapeAttr(comment?.text || '')}">${window.CommentMarkdown ? window.CommentMarkdown.display(comment?.text) : `<p>${escapeHtml(comment?.text || '')}</p>`}</div><footer><small>${escapeHtml(comment?.division ? comment.division + ' · ' : '')}${source === "trello" ? "Trello" : "OneLoss"}</small>
+    ${thread?.parent_id ? '<button class="text-btn comment-reply-reference" data-open-thread>↳ Reply · View thread</button>' : ''}
+    <div class="comment-markdown" data-comment-raw="${escapeAttr(comment?.text || '')}">${window.CommentMarkdown ? window.CommentMarkdown.display(comment?.text) : `<p>${escapeHtml(comment?.text || '')}</p>`}</div><footer><small>${escapeHtml(comment?.division ? comment.division + ' · ' : '')}${source === "trello" ? "Trello" : "OneLoss"}${thread?.native && thread.delivery !== 'sent' ? ' · Trello delivery unconfirmed' : ''}</small>
+    ${key ? `<span class="comment-thread-actions"><button class="text-btn" data-reply-comment>Reply</button><button class="text-btn" data-pin-comment aria-pressed="${!!thread?.pinned}">${thread?.pinned ? 'Unpin' : 'Pin'}</button><button class="text-btn" data-open-thread>Thread</button></span>` : ''}
     ${comment?.id && comment?.can_manage ? `<span><button class="text-btn" data-comment-edit>Edit</button><button class="text-btn danger" data-comment-delete>Delete</button></span>` : ""}</footer>${window.CommentReactions?.markup(comment) || ''}</div></article>`;
 }
 
