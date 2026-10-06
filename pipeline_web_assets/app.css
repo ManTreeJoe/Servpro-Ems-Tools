@@ -755,8 +755,8 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 .job-card-main { min-width: 0; overflow-y: auto; padding: 0 24px 30px; scrollbar-width: thin; }
 .job-card-activity { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: #202120; }
 .activity-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); }
-.activity-head h3 { margin: 0; font-size: 13px; }
-.activity-head > [data-comment-count] { min-width: 24px; padding: 2px 7px; border-radius: 999px; background: var(--chip-bg); color: var(--text-muted); text-align: center; font-size: 11px; }
+.activity-head h3 { margin: 0; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.activity-head [data-comment-count] { min-width: 24px; padding: 2px 7px; border-radius: 999px; background: var(--chip-bg); color: var(--text-muted); text-align: center; font-size: 11px; }
 .comment-search { flex:0 0 auto; display:flex; align-items:center; gap:7px; margin:10px 14px 0; padding:0 10px; min-height:34px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--text-dim); }
 .comment-search:focus-within { border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft); }
 .comment-search input { min-width:0; flex:1; border:0; outline:0; background:transparent; color:var(--text); font:inherit; font-size:12px; }

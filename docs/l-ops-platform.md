@@ -6,6 +6,11 @@ Status: October 5, 2026. This file is the canonical cross-chat handoff.
 
 ### Workspace close control
 
+Toolbar follow-up: Initial notes now lives in More (same handler and availability),
+and the loaded-comment count sits next to the Comments heading. Add update and
+Import files remain visible. The browser test checks menu visibility and count
+placement. Other visual cleanup ideas remain unimplemented; no backend changes.
+
 Branch: `handoff/paperclip-source-20261003`. The job workspace close button now
 anchors to the whole dialog's top-right corner, above comments on desktop,
 instead of beside the job title. Comment count spacing is preserved. The

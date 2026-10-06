@@ -9,6 +9,12 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  }
  for(const file of ['web_shared/modal.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(file)});
  await page.evaluate(()=>{window.pywebview={api:{}};openAuditModal({ok:true,client:'Popup height test',card_id:'ems-card',selected_division:'EMS',audit:{found:true},crm:{},comments:[]});});
+ assert.equal(await page.locator('.quick-primary-actions [data-initial-notes]').count(),0);
+ assert.equal(await page.locator('.more-quick-menu [data-initial-notes]').count(),1);
+ await page.locator('.more-quick-menu > .tool-menu-trigger').click();
+ assert(await page.locator('.more-quick-menu [data-initial-notes]').isVisible(),'Initial notes is accessible from More');
+ await page.locator('.more-quick-menu > .tool-menu-trigger').click();
+ assert.equal(await page.locator('.activity-head h3 [data-comment-count]').count(),1);
  for(const height of [960,720,600]){
   await page.setViewportSize({width:1426,height});
   const bounds=await page.locator('.audit-card').boundingBox();

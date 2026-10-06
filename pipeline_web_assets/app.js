@@ -2260,8 +2260,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       <details class="aud-section compact-section job-run-section" open><summary>Run activity <span>${(res.activity || []).length}</span></summary>${activity}</details>
       <details class="aud-section compact-section job-attachments-section" open><summary>Other attachments <span>${(data.attachments || []).length}</span></summary>${attachments}</details>
     </div>
-    <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments and activity</h3><small>${escapeHtml(selectedDivision === 'CONTENTS' ? 'Contents' : selectedDivision === 'RECON' ? 'Recon' : 'EMS')} conversation</small></div>
-      <span data-comment-count>${(data.comments || []).length}</span></div>
+    <aside class="job-card-activity"><div class="activity-head"><div><h3>Comments <span data-comment-count title="Loaded comments">${(data.comments || []).length}</span></h3><small>${escapeHtml(selectedDivision === 'CONTENTS' ? 'Contents' : selectedDivision === 'RECON' ? 'Recon' : 'EMS')} conversation</small></div></div>
       <label class="comment-search"><span aria-hidden="true">⌕</span><input type="search" data-comment-search placeholder="Search comments" aria-label="Search comments"><small data-comment-search-count></small></label>
       <div class="comment-stream" data-comment-stream>${comments}</div>
       <div class="comment-compose"><textarea data-comment-input name="job-comment" rows="3" aria-label="Job comment" autocomplete="off" placeholder="Write an update for this job…"></textarea>
@@ -2283,7 +2282,6 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
           <div class="quick-main-actions">
           <div class="quick-primary-actions" aria-label="Work actions">
             <button class="action-btn primary" data-add-job-log><span class="quick-action-icon">＋</span>Add update</button>
-            <button class="action-btn" data-initial-notes ${data.card_id ? "" : "disabled"}>📋 Initial notes</button>
             <button class="action-btn" data-import-files title="Import downloaded or selected files into this job's OD folder">📥 Import files</button>
           </div>
           <div class="quick-destination-actions" aria-label="Connected tools">
@@ -2311,6 +2309,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
           </div>
           </div>
           <div class="quick-utility-actions"><div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu" aria-label="More job actions">
+            <button data-initial-notes ${data.card_id ? "" : "disabled"}>Initial notes</button>
             <button data-dispatch-subcontractor>Dispatch subcontractor</button><button data-import-existing-initial-notes>Copy existing initial notes</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
           </div></div></div>
         </div>
