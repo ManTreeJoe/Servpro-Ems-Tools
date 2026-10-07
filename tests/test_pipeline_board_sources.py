@@ -23,3 +23,15 @@ def test_recon_board_resolves_by_stable_link_even_after_a_rename():
 def test_pipeline_board_keys_are_unique():
     keys = [key for key, _name in pipeline_web.BOARD_SPECS]
     assert len(keys) == len(set(keys))
+
+
+def test_live_operational_lanes_are_not_hidden():
+    for name in ('WORK IN PROGRESS', 'TBS NEW LOSS/RE-INSPECTION',
+                 'TBS MITIGATION', 'TBS CONTENTS', 'TEST/CLEARANCE',
+                 'PENDING APPROVALS/INSURANCE/SELF PAY',
+                 'PENDING APPROVALS/PROPERTY MANAGEMENT/COMMERCIAL',
+                 'ON HOLD', 'MARKETING TEAM', 'MARKETING - ON HOLD',
+                 'SNAPSHOT', 'AMAYA', 'READY FOR REVIEW'):
+        assert not pipeline_web._is_noise_lane(name), name
+    assert pipeline_web._is_noise_lane('SPACER')
+    assert pipeline_web._is_noise_lane('PROPERTY MANAGEMENT TEMPLATES')

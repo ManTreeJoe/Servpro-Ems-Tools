@@ -2,6 +2,45 @@
 
 Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
+## October 7 — Lane timing requirements and live lane audit
+
+Branch: `handoff/paperclip-source-20261003`. Live Trello read verified WIP,
+Estimating and Contents open lists. MARKETING TEAM was incorrectly filtered as
+noise by the desktop; removed that exclusion. Spacers/templates stay excluded.
+This is a lane-visibility fix, NOT deployment of the analytics described below.
+
+Approved timing requirements:
+- Track each visit to WIP, TBS New Loss/Re-inspection, TBS Mitigation, TBS
+  Contents, Test/Clearance, each Pending Approvals lane, and On Hold separately.
+- Show current time in lane and cumulative time across returns; preserve every
+  entry/exit and source event, scoped to exact board/card placement and franchise.
+- Snapshot is on ESTIMATING (list `63a384193d3ec900984ab584`). Record arrival
+  from WIP, time awaiting snapshot, and overall Snapshot-to-Logs turnaround.
+- Estimator assignment lanes start assignment timing. Entering THE LOGS - EMS
+  board (`67bcf63154947b17268a18bb`) stops the estimating clock, regardless of
+  destination lane. Billed-month lanes are NOT the stop trigger.
+- Preserve estimator transfers/reopened cycles. Shared lanes such as KIM+ESTEBAN
+  cannot be attributed to one person without an explicit assignment.
+- Approved/billed/collected dollars and supplements are separate from elapsed
+  time; financial meaning/source and cost/profit integration remain unresolved.
+
+Live WIP includes separate PENDING APPROVALS/INSURANCE/SELF PAY and PENDING
+APPROVALS/PROPERTY MANAGEMENT/COMMERCIAL, plus MARKETING - ON HOLD. Estimating
+currently includes JUANTES, JOHNNY, AARON, AMAYA, KIM+ESTEBAN, SAMANTHA / AL JR.,
+NATHAN, PABLO, MARK, ZAC and unassigned/review/service-call queues. Use permanent
+lane IDs for mappings; preserve historical names and do not guess person identity.
+
+Implementation pending: coordinate a shared movement-history ingestion contract
+with L OPS before schema changes. Deduplicate Trello and OneLoss echoes, preserve
+provider timestamps, distinguish observed-first from actual lane-entry time,
+handle out-of-order events, and expose unknown history instead of fabricated days.
+The current board age chip uses last activity, not verified lane tenure; it must
+not feed this report. No automatic moves or schema changes were made. Snapshot
+auto-advance trigger/destination still require a user decision.
+
+Remaining refresh investigation: compare the app's authorized mirror/cache with
+these live lists. Reading Trello here does not refresh the running desktop cache.
+
 ## October 7 — Lightweight surface entrances (DEV)
 
 Follow-up: Jobs now includes the main job-card panel and lane menus in the same

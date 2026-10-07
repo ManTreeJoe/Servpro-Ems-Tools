@@ -186,7 +186,7 @@ def _detected_work_environments(crm: dict, summary: dict,
 # aren't real jobs. (Per-CARD noise is handled by pipeline_stages.
 # is_pipeline_skip.)
 _NOISE_LANE_SUBSTRINGS = (
-    "spacer", "template", "templet", "marketing team",
+    "spacer", "template", "templet",
     "on call", "on-call", "collections process", "disposal",
     "garments", "labels",
 )
