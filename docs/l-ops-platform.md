@@ -10,6 +10,15 @@ public update-feed and CI changes; promotion targets `main` and tag `v1.8.27`.
 See `docs/release-1.8.27.md` for scope, verification and known limitations.
 Installers and the Main channel feed use `ManTreeJoe/linguar-hub-releases`.
 
+Published and locally installed successfully: release tag `v1.8.27` points to
+desktop source `d208cdd`. Post-publication verification caught the temporary
+GitHub draft URL in the feed; adopted Paperclip's existing publisher fix
+`4632d24` as `329802c`, tested its 31 publisher/updater cases, and repaired the
+Main feed using the published asset metadata. The public download returned HTTP
+200 and matched the uploaded size/SHA-256. This tooling-only follow-up does not
+change the installer or move the release tag. Automatic launch after local
+installation was blocked; the user can open their normal OneLoss shortcut.
+
 No new schema or L OPS change is introduced by packaging. L OPS still needs to
 adopt the shared comment/pin/reply contract documented below. Existing shared
 reply/member-notification migrations and the verified-parent endpoint are live;
