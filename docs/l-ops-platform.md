@@ -1140,3 +1140,11 @@ warnings remain: [admin SECURITY DEFINER endpoints](https://supabase.com/docs/gu
 and [disabled leaked-password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
 No auth settings were changed in this task. Still needs a two-device user test
 and real Trello reply test; automated tests do not post production comments.
+# Timing UI and all-job movement retention — 2026-10-07
+
+Branch: `handoff/paperclip-source-20261003`. OneLoss owns shared-backend work.
+Timing detail now separates current duration, estimator cycles, movement timeline
+and lane totals using the shared theme. UI only; Main and database unchanged.
+Next integration decision: [persistent movement ledger](movement-ledger-handoff.md).
+This records the all-job/Logs requirement for L OPS coordination before schema
+implementation. Existing on-demand Trello history is not guaranteed full history.

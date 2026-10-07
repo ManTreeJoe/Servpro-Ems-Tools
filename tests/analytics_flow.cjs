@@ -30,7 +30,18 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
  await page.locator('[data-flow-open]').click();await page.waitForFunction(()=>messages.some(m=>m.cardId==='card6'));
  await page.locator('[data-history]').click();await page.waitForSelector('#flow-history h3');
  assert.match(await page.locator('#flow-history').textContent(),/Unknown/);
+ assert.match(await page.locator('.timing-coverage').textContent(),/does not prove/);
  await page.keyboard.press('Escape');assert.equal(await page.locator('#flow-history').isVisible(),false);
+ await page.evaluate(()=>{pywebview.api.flow_history=async()=>({ok:true,name:'Sample job — timing review',complete:true,current_seconds:527400,estimator_cycles:[{first_lane:'JOHNNY',started:'2026-10-01T17:20:00Z',ended:null,seconds:527400},{first_lane:'ZAC',started:'2026-09-01T17:20:00Z',ended:'2026-09-03T17:20:00Z',seconds:172800}],totals:[{board:'ESTIMATING',lane:'SNAPSHOT',seconds:62000,visits:1}],periods:[{board:'ESTIMATING',lane:'SNAPSHOT',entered:'2026-09-30T17:20:00Z',exited:'2026-10-01T17:20:00Z',seconds:86400,actor:'Sample coordinator'},{board:'ESTIMATING',lane:'JOHNNY',entered:'2026-10-01T17:20:00Z',exited:null,current:true,seconds:527400,actor:'Sample estimator'}]});});
+ await page.locator('[data-history]').click();await page.waitForSelector('.timing-cycle');
+ assert.equal(await page.locator('.timing-cycle').count(),2);
+ assert.match(await page.locator('.timing-current').textContent(),/6d 2h/);
+ assert.match(await page.locator('.timing-cycle').last().textContent(),/Reached Logs/);
+ await page.screenshot({path:path.join(os.tmpdir(),'oneloss-timing-detail.png'),animations:'disabled'});
+ await page.setViewportSize({width:390,height:844});
+ assert(await page.locator('#flow-history').evaluate(el=>el.scrollWidth<=el.clientWidth));
+ await page.screenshot({path:path.join(os.tmpdir(),'oneloss-timing-detail-mobile.png')});
+ await page.keyboard.press('Escape');await page.setViewportSize({width:1280,height:900});
  await page.locator('#flow-all').click();await page.locator('#flow-search').fill('Sample job 2');assert.equal(await page.locator('[data-history]').count(),1);
  await page.locator('#flow-search').fill('');
  assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(23, 25, 28)');
