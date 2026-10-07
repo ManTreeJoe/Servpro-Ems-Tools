@@ -2,18 +2,26 @@
   const get=id=>document.getElementById(id);let items=[],generation=0;
   const status=text=>get('personal-status').textContent=text;
   const pendingReads=new Map();
-  async function readOpened(item){
-    if(item.read_at)return;
+  async function setRead(item,read){
     if(pendingReads.has(item.id))return pendingReads.get(item.id);
-    const task=(async()=>{
-      const result=await pywebview.api.personal_read(item.id,true);
-      if(!result?.ok)throw Error(result?.error||'Opened, but read status was not saved.');
-      item.read_at=new Date().toISOString();
-      items.forEach(it=>{if(it.id===item.id)it.read_at=item.read_at;});
-      render();
-    })();
+    const before=item.read_at;
+    generation++; // Discard reads started before this local change.
+    item.read_at=read?new Date().toISOString():null;
+    const task=Promise.resolve().then(async()=>{
+      try{
+        const result=await pywebview.api.personal_read(item.id,read);
+        if(!result?.ok)throw Error(result?.error||'Read status was not saved.');
+      }catch(error){item.read_at=before;throw error;}
+      finally{pendingReads.delete(item.id);render();}
+    });
     pendingReads.set(item.id,task);
-    try{await task;}finally{pendingReads.delete(item.id);}
+    render();get('personal-refresh').disabled=false;
+    return task;
+  }
+  async function readOpened(item){
+    if(pendingReads.has(item.id))return pendingReads.get(item.id);
+    if(item.read_at)return;
+    return setRead(item,true);
   }
   async function openJob(item){
     try{
@@ -34,11 +42,12 @@
       function button(label,fn){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=async()=>{b.disabled=true;try{await fn();}catch(e){status(e.message||'Action was not confirmed. Refresh and retry.');}finally{b.disabled=false;}};actions.append(b);return b;}
       button('Open job',()=>openJob(item));
       button('Read message',async()=>{if(window.NotificationReader){window.NotificationReader.open(item,()=>openJob(item));await readOpened(item);}});
-      button(item.read_at?'Mark unread':'Mark read',async()=>{const result=await pywebview.api.personal_read(item.id,!item.read_at);if(!result?.ok)throw Error(result?.error||'Read status was not saved.');item.read_at=item.read_at?null:new Date().toISOString();render();status('Read status saved across PCs.');});
+      const readButton=button(item.read_at?'Mark unread':'Mark read',async()=>{await setRead(item,!item.read_at);status('Read status saved across PCs.');});
+      readButton.disabled=pendingReads.has(item.id);
       button(item.muted?'Unmute job':'Mute job',async()=>{const result=await pywebview.api.personal_mute(item.card_id,!item.muted);if(!result?.ok)throw Error(result?.error||'Mute was not saved.');const muted=!item.muted;await load();status(muted?'This job is muted, including mentions.':'Notifications enabled for this job.');});
     }feed.scrollTop=scroll;
   }
-  async function load(){const token=++generation;get('personal-refresh').disabled=true;status('Checking your inbox…');
+  async function load(){if(pendingReads.size){status('Saving read status…');return;}const token=++generation;get('personal-refresh').disabled=true;status('Checking your inbox…');
     try{const result=await pywebview.api.personal_inbox(get('personal-filter').value,false);if(token!==generation)return;if(!result?.ok)throw Error(result?.error||'Your inbox could not load.');items=result.items||[];render();status(`Latest ${items.length} notifications · refresh to check for new activity.${result.pending_delivery?' '+result.pending_delivery+' comment notification deliveries pending on this PC. Refresh to retry.':''}`);}
     catch(e){if(token===generation)status(e.message);}finally{if(token===generation)get('personal-refresh').disabled=false;}
   }

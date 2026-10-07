@@ -48,6 +48,12 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await page.screenshot({path:path.join(process.env.TEMP,'oneloss-personal-inbox.png')});
   await page.setViewportSize({width:390,height:740});assert(await page.locator('#personal-panel').evaluate(e=>e.scrollWidth<=innerWidth));
   await page.screenshot({path:path.join(process.env.TEMP,'oneloss-personal-inbox-narrow.png')});
+  await page.evaluate(()=>{pywebview.api.personal_read=()=>new Promise(resolve=>{window.finishRead=resolve;});});
+  await page.getByRole('button',{name:'Mark read',exact:true}).click();
+  assert(await page.getByRole('button',{name:'Mark unread',exact:true}).isDisabled(),'Pending action immediately paints read state and blocks double submit');
+  await page.evaluate(()=>finishRead({ok:false,error:'Read rejected'}));
+  await page.getByText('Read rejected',{exact:true}).waitFor();
+  assert(await page.getByRole('button',{name:'Mark read',exact:true}).isEnabled(),'Failed read rolls back');
   await page.evaluate(()=>fail=true);await page.locator('#personal-refresh').click();await page.getByText('Connection unavailable').waitFor();assert.equal(await page.locator('.personal-notification').count(),1);
   assert.deepEqual(errors,[]);console.log('PASS: membership success/failure, native inbox, exact job link, read/unread, mute, filters, error preservation and narrow layout');
  }finally{await browser.close();}

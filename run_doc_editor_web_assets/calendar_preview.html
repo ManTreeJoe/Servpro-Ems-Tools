@@ -58,7 +58,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <script src="calendar_drag.js"></script>
 <script src="weekly_calendar.js?v=20261007return"></script>
 <script src="../web_shared/iframe_shim.js?v=20261005schedule"></script>
-<script src="schedule_live.js"></script>
+<script src="schedule_live.js?v=20261007optimistic"></script>
 <script src="schedule_realtime.js"></script>
 <script src="schedule_document_import.js"></script>
 <script src="schedule_history.js"></script>
@@ -135,11 +135,11 @@ async function loadLive(quiet=false){
  if(saving||document.querySelector('.is-dragging')){queueRefresh();return;}
  if(refreshing){refreshAgain=true;return;}
  refreshing=true;
- if(!quiet){ready=false;calendar.update({loading:true,error:''});}
+ if(!quiet&&!ready){calendar.update({loading:true,error:''});}
  try{
    await live.load();
    if(!realtime)realtime=OneLossScheduleRealtime({credentials:()=>live.credentials(),changed:queueRefresh,status:text=>field('sync-status').textContent=text});
- }catch(error){if(!quiet){calendar.update({records:[],loading:false,error:error.message});}else field('sync-status').textContent='Offline · changes may be delayed';}
+ }catch(error){if(!ready){calendar.update({records:[],loading:false,error:error.message});}else field('sync-status').textContent='Offline · changes may be delayed';}
  finally{refreshing=false;if(refreshAgain){refreshAgain=false;queueRefresh();}}
 }
 if(liveMode){
@@ -178,14 +178,21 @@ async function moveVisit(id,day,placement={}){
    records.splice(index<0?records.length:index,0,row);calendar.update({records});return;
  }
  saving=true;field('sync-status').textContent='Saving move…';
- field('calendar').setAttribute('aria-busy','true');
+ const previous=structuredClone(records);
+ const scrolls=[...field('calendar').querySelectorAll('.wc-day-items,.wc-waiting')].map(el=>el.scrollTop);
+ const paint=()=>{calendar.update({records});[...field('calendar').querySelectorAll('.wc-day-items,.wc-waiting')].forEach((el,i)=>el.scrollTop=scrolls[i]||0);};
+ if(queue!=='scheduled')row.since=existing.queue===queue?existing.since:today;
+ row.confirmed=false;
+ records.splice(records.indexOf(existing),1);
+ const index=before?records.findIndex(item=>item.id===before.id):-1;
+ records.splice(index<0?records.length:index,0,row);paint();
  let failure;
- try{await live.save(row,{beforeId:before?.id||null});}
- catch(error){failure=error.message;}
- finally{saving=false;field('calendar').removeAttribute('aria-busy');}
+ try{const saved=await live.save(row,{beforeId:before?.id||null});if(saved?.revision)row.revision=saved.revision;}
+ catch(error){failure=error.message;records.splice(0,records.length,...previous);paint();}
+ finally{saving=false;}
  await loadLive(true);
  field('sync-status').textContent=failure?'Move not saved':'Move saved';
- if(failure){const notice=document.querySelector('.preview-note');notice.textContent=`Move not saved. ${failure} The schedule has been refreshed; try dragging again.`;notice.setAttribute('role','alert');}
+ if(failure){const notice=document.querySelector('.preview-note');notice.textContent=`Move not saved. ${failure} The previous position was restored while checking the server. Review the current position before retrying.`;notice.setAttribute('role','alert');}
 }
 const extraFields=['address','contact','phone','insurance','claim','equipment','access','notes'];
 let linkSequence=0;

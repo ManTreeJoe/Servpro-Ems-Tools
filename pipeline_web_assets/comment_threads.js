@@ -10,6 +10,7 @@ window.CommentThreads = (() => {
     const search = root.querySelector('[data-comment-search]');
     const state = root.querySelector('[data-comment-state]');
     let records = [], loading = false, generation = 0, threadRoot = '', opener = null;
+    const pendingPins = new Set();
     const toolbar = document.createElement('div');
     toolbar.className = 'comment-thread-filter';
     toolbar.innerHTML = '<button class="text-btn" type="button" aria-pressed="true" data-comment-all>All</button><button class="text-btn" type="button" aria-pressed="false" data-comment-pinned-filter>Pinned</button><small role="status"></small>';
@@ -136,9 +137,15 @@ window.CommentThreads = (() => {
       if (!original.children.length) original.textContent = 'Original message is not available in the saved thread.';
       list.scrollTop = scroll; paintComposer();
     }
-    function apply() { conversation.setThreadRecords(records); filter(); paintThread(); }
+    function apply() {
+      conversation.setThreadRecords(records); filter(); paintThread();
+      stream.querySelectorAll('[data-comment-id]').forEach(article=>{
+        const pin=article.querySelector('[data-pin-comment]');
+        if(pin)pin.disabled=pendingPins.has(article.dataset.threadKey);
+      });
+    }
     async function refresh() {
-      if (loading || !root.isConnected || document.hidden) return;
+      if (loading || pendingPins.size || !root.isConnected || document.hidden) return;
       loading = true; const version = generation;
       try {
         let after = '', rows = [];
@@ -169,15 +176,22 @@ window.CommentThreads = (() => {
         thread.showModal(); positionThread(); window.addEventListener('resize', positionThread);
         thread.querySelector('button')?.focus({preventScroll:true});
       } else {
+        if(pendingPins.has(id))return;
+        const expected = article.dataset.commentPinned === 'true';
+        const original = records.find(row=>row.id===id);
+        pendingPins.add(id);
         button.disabled = true; generation++;
+        if(original){records=records.map(row=>row.id===id?{...row,pinned:!expected}:row);apply();}
         try {
-          const expected = article.dataset.commentPinned === 'true';
           const result = await api.pin_job_comment(cardId, id, !expected, expected);
           if (!result?.ok) throw new Error(result?.error || 'Pin was not saved');
           records = records.filter(row => row.id !== result.comment.id); records.push(result.comment); apply();
           notice.textContent = result.comment.pinned ? 'Pinned for this card' : 'Pin removed';
-        } catch (error) { notice.textContent = error.message; }
-        finally { button.disabled = false; }
+        } catch (error) {
+          if(original)records=records.map(row=>row.id===id?{...row,pinned:original.pinned}:row);
+          notice.textContent = error.message;
+        }
+        finally { pendingPins.delete(id);generation++;apply();button.disabled = false; }
       }
     });
     // Capture before the ordinary-comment handler: replies must never silently

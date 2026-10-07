@@ -2,6 +2,45 @@
 
 Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
+## October 7 — Immediate feedback rollout, first pass (DEV)
+
+Branch: `handoff/paperclip-source-20261003`. User requests app-wide immediate
+visual response for reversible edits, background persistence, and rollback/error
+on rejection. This rollout is NOT complete app-wide.
+
+Implemented and delay-tested:
+- Calendar and Legacy moves paint the new record/position before the save; crew
+  and scroll are retained. Rejection restores the snapshot before reconciliation.
+  Pre-mutation reads are discarded by the schedule adapter; acknowledgement
+  revision is retained. Moves remain serialized while saving (not an offline queue).
+- Schedule refresh keeps the loaded board instead of replacing it with a loader.
+- Personal inbox read/unread (including opening) paints first, blocks duplicate
+  same-item writes and restores on failure. In-flight old inbox reads are ignored;
+  manual refresh is deferred while a read write is pending.
+- Pins with an existing shared snapshot paint first, block repeat writes and
+  roll back on rejection. New unsnapshotted pins still await verified server data.
+- Trello reactions paint the intended count/state immediately and restore on
+  failure; ambiguous failures still require provider refresh before retrying.
+
+Audit findings / remaining work:
+- Jobs board drops already have pending previews and rollback; preserve them.
+- APA already paints edits before its serialized saves. Its failure path retains
+  unsaved edits: needs a deliberate unsaved/retry experience, not whole-document
+  rollback that could discard later edits.
+- Checklist clicks already paint checks/progress first and revert on failure.
+- Scheduling crew/activities are local draft edits until Save; already immediate.
+- Still to implement/verify: label edits, Trello notification read/mark-all,
+  personal notification mute, requirement saves that recreate the job modal,
+  and pending comment/reply feed entries with stable retry IDs and echo dedupe.
+- Do not make archive/delete, document generation or external delivery appear
+  successful before acknowledgement. Lost responses can mean a write succeeded;
+  reconcile and preserve operation identity rather than blind retries.
+
+No schema changes or L OPS deployment required. L OPS should adopt this behavior
+without interpreting a visual pending state as a confirmed database write.
+Browser suites: schedule_optimistic, schedule_live, schedule_return_waiting,
+personal_notifications, comment_threads, comment_reactions pass. Main unchanged.
+
 ## October 7 — Return calendar visits to waiting work (DEV)
 
 Waiting groups lacked drop-target metadata, so calendar-to-waiting drops were

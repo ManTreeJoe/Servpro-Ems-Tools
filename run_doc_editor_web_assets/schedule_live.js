@@ -1,6 +1,6 @@
 /* Persistent drafts only. Transport is the signed-in desktop API. */
 window.OneLossScheduleLive = function ({render, notice}) {
-  let context='', department='', pending=null, loading=false;
+  let context='', department='', pending=null, loading=false, mutation=0;
   const call=async(name,...args)=>{
     const api=window.pywebview?.api;
     if(!api)throw new Error('The desktop connection is not ready. Reopen Schedule.');
@@ -19,10 +19,12 @@ window.OneLossScheduleLive = function ({render, notice}) {
     credentials(){return call('schedule_realtime',context);},
     async load() {
       if(loading)return; loading=true;
+      const version=mutation;
       try {
         const result=await call('schedule_load');
         if(context&&context!==result.context)throw new Error('Account or office changed. Reopen Schedule before continuing.');
         context=result.context;department=result.department;
+        if(version!==mutation)return; // A pre-save read cannot undo newer UI state.
         render(result.records);notice('Live schedule · '+department+' · Draft edits do not move cards. Review Confirm day to apply board moves. Comment posting and printing are not enabled yet.');
       } catch(error) {notice(error.message,true);throw error;}
       finally {loading=false;}
@@ -33,6 +35,7 @@ window.OneLossScheduleLive = function ({render, notice}) {
     },
     async save(row, placement) {
       if(!context)throw new Error('Reopen Schedule before saving.');
+      mutation++;
       const visit={id:row.id,job_id:row.job_id,queue:row.queue,group:row.group,
         date:row.date||null,arrival:row.time||'',activities:row.activities,
         equipment:row.equipment||'',access:row.access||'',notes:row.notes||'',status:'active'};
@@ -40,8 +43,9 @@ window.OneLossScheduleLive = function ({render, notice}) {
       if(placement)command.before_id=placement.beforeId||null;
       const signature=JSON.stringify(command);
       if(!pending||pending.signature!==signature)pending={signature,command:{...command,operation_id:crypto.randomUUID()}};
-      await call('schedule_save',pending.command,context);
+      const result=await call('schedule_save',pending.command,context);
       pending=null;
+      return result.saved;
     }
   };
 };

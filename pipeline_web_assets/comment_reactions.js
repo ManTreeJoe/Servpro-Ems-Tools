@@ -70,6 +70,12 @@ window.CommentReactions = (() => {
   async function load(box,code){
     const s=stateFor(box);if(s.busy||code&&(!s.rows||s.error))return;
     const article=box.closest('.job-comment'),active=!s.rows?.find(r=>r.code===code)?.mine;
+    const previous=s.rows;
+    if(code){
+      const existing=s.rows.find(r=>r.code===code),choice=s.choices?.find(r=>r.code===code);
+      const changed={...(existing||choice||{code,emoji:'☺'}),mine:active,count:Math.max(0,(existing?.count||0)+(active?1:-1))};
+      s.rows=[...s.rows.filter(r=>r.code!==code),changed].filter(r=>r.count>0);
+    }
     s.busy=true;s.writing=!!code;s.error='';states.set(box,s);if(code&&owner===box)close(true);paint(box);
     try{
       const card=article.dataset.commentCardId,id=article.dataset.commentSource==='trello'?article.dataset.commentId:article.dataset.commentExternalId;
@@ -78,7 +84,7 @@ window.CommentReactions = (() => {
       if(!result?.ok)throw Error(result?.error||'Trello could not confirm reactions. Reopen React to check.');
       s.rows=result.reactions||[];s.choices=result.choices||[];s.account=result.account;
       if(code&&active){recent=[code,...recent.filter(c=>c!==code)].slice(0,16);try{localStorage.setItem('oneloss.recentEmoji',JSON.stringify(recent));}catch(_){}}
-    }catch(e){s.error=e.message||'Trello is unavailable. Reopen React to check before trying again.';}
+    }catch(e){if(code)s.rows=previous;s.error=e.message||'Trello is unavailable. Reopen React to check before trying again.';}
     finally{s.busy=false;s.checkedAt=Date.now();repaint(s);}
   }
   function draw(){
