@@ -2,6 +2,17 @@
 
 Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
+## October 7 — Return calendar visits to waiting work (DEV)
+
+Waiting groups lacked drop-target metadata, so calendar-to-waiting drops were
+ignored. All seven waiting sections now accept drops (including empty sections)
+using the existing queue/group save path and highlighted drop slot. Returning
+clears the scheduled date while preserving activities/crew and the same record;
+it does not create a second visit. Existing queue-entry timestamps follow the
+current backend contract. No schema change. Browser regression covers the
+waiting/day/waiting round trip, correct group, preserved people, no accidental
+editor opening, and empty On Hold destination.
+
 ## October 7 — Schedule editor crew pills (DEV)
 
 Replaced calendar's repeated single-select dropdown with a searchable native

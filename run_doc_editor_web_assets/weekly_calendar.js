@@ -61,7 +61,7 @@
       return `<section class="wc-waiting"><h2>Waiting work</h2><p>Not booked on a day · grouped like the Run</p><div class="wc-waiting-grid" tabindex="0" aria-label="Waiting work groups">${groups.map(([queue,title])=>{
         const fallback={tbs:'TBS Mitigation',pending:'Pending Approvals – Insurance/Self Pay',hold:'On Hold'};
         const entries=records.filter(r=>r.queue===queue && (r.group||fallback[queue])===title && matching(r));
-        return `<section class="wc-waiting-group"><h3>${escape(title)} <small>${entries.length}</small></h3><div class="wc-queue-scroll" tabindex="0" aria-label="${escape(title)} items">${entries.map(card).join('')||'<p class="wc-empty">No matching items</p>'}</div></section>`;
+        return `<section class="wc-waiting-group" data-drop-date="" data-drop-queue="${queue}" data-drop-group="${escape(title)}"><h3>${escape(title)} <small>${entries.length}</small></h3><div class="wc-queue-scroll" data-drop-list tabindex="0" aria-label="${escape(title)} items">${entries.map(card).join('')||'<p class="wc-empty">Drop work here</p>'}</div></section>`;
       }).join('')}</div></section>`;
     }
     function monthCell(day) {
