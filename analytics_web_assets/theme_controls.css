@@ -1,0 +1,16 @@
+/* Color-only bridge for analytics controls; shared theme owns all values. */
+button{background:var(--surface-2)}
+button:hover{background:var(--surface-3)}
+input,select,textarea,#flow input,#flow select,
+#logs-audit input:not([type=checkbox]):not([type=hidden]),#logs-audit select,#logs-audit textarea{
+  background:var(--surface-2);color:var(--text);border-color:var(--border);
+}
+.primary,#logs-audit .primary{background:var(--green);border-color:var(--green);color:var(--on-accent)}
+.primary:hover,#logs-audit .primary:hover{background:var(--green-hover);border-color:var(--green-hover)}
+#logs-audit input[type=checkbox]{accent-color:var(--green)}
+#review-error{color:var(--red)}
+dialog::backdrop,#flow-history::backdrop{background:var(--scrim)}
+.flow-lane{background:var(--surface);border-left-color:var(--cobalt)}
+.flow-lane.waiting{border-left-color:var(--amber)}
+.flow-lane.hold{border-left-color:var(--violet)}
+.flow-lane[aria-pressed=true]{background:var(--row-active)}

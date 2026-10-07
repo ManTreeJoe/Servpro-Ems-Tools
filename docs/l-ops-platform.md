@@ -4,6 +4,13 @@ Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
 ## October 7 — Operations analytics first working slice (DEV)
 
+Color follow-up: Analytics now imports shared theme.css and aliases its palette
+to the Jobs tokens instead of defining a separate green-tinted dark theme.
+Controls, lane accents and audit dialogs follow the same light/dark colors.
+Preserved scrolling when importing shared chrome; both Analytics browser suites
+pass, including exact dark/light background and lane-surface color assertions.
+UI polish guidance limited this to theme consistency; no analytics logic changed.
+
 Branch: `handoff/paperclip-source-20261003`. Analytics now starts at Operations
 & lane timing instead of the weekly review. Existing weekly/audit views remain.
 This read-only view uses existing scoped Jobs board sources independently of

@@ -9,8 +9,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   const html=fs.readFileSync('analytics_web_assets/index.html','utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,'').replace(/<link\b[^>]*>/g,'');
   await page.route('http://review.test/**',route=>route.fulfill({contentType:'text/html',body:html}));
   await page.goto('http://review.test/');
+  await page.addStyleTag({path:path.resolve('web_shared/theme.css')});
   await page.addStyleTag({path:path.resolve('analytics_web_assets/app.css')});
   await page.addStyleTag({path:path.resolve('analytics_web_assets/workspace_layout.css')});
+  await page.addStyleTag({path:path.resolve('analytics_web_assets/theme_controls.css')});
   await page.evaluate(()=>{
    window.savedReviews={};window.messages=[];
    window.addEventListener('message',e=>messages.push(e.data));
