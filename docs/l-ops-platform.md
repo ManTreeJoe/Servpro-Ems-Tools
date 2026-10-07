@@ -1,6 +1,25 @@
 # L OPS platform / EMS Tools coordination
 
-Status: October 6, 2026. This file is the canonical cross-chat handoff.
+Status: October 7, 2026. This file is the canonical cross-chat handoff.
+
+## October 7 — Floating comment thread (DEV)
+
+Branch: `handoff/paperclip-source-20261003`. The thread projection now uses a
+native modal dialog anchored over the comments side, leaving the job in context.
+Saved original is separate from newest-first replies. Its own reply composer
+does not replace the regular feed draft; thread drafts survive closing/reopening
+the panel while this job window remains open (not persisted across job closure).
+Escape, close button and backdrop dismiss only the thread, restore focus, and
+do not reflow the main feed. Narrow screens use the available viewport; reduced
+motion is respected. Failed sends retain text and the same retry operation ID.
+
+Uses the existing reply RPC and notification/provider pipeline; no schema or
+L OPS backend changes. L OPS can adopt the same presentation independently.
+Main 1.8.27 is unchanged. Browser regressions cover newest-first ordering,
+separate drafts, failed-send retry, feed echo deduplication, backdrop/Escape,
+layout/scroll preservation, narrow bounds and reduced motion. Desktop and narrow
+renders inspected. Durable thread-composer drafts and rich-text controls in this
+new composer remain follow-up work; the regular composer still supports both.
 
 ## October 6 — Main 1.8.27 promotion
 

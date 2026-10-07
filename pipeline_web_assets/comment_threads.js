@@ -18,10 +18,70 @@ window.CommentThreads = (() => {
     const replyBanner = document.createElement('div');
     replyBanner.className = 'comment-reply-banner'; replyBanner.hidden = true;
     compose.prepend(replyBanner);
-    const thread = document.createElement('section');
-    thread.className = 'comment-thread-panel'; thread.hidden = true;
+    const threadDrafts = new Map();
+    const thread = document.createElement('dialog');
+    thread.className = 'comment-thread-panel';
     thread.setAttribute('aria-label', 'Comment thread');
-    stream.before(thread);
+    thread.innerHTML = '<header class="comment-thread-head"><div><strong>Thread</strong><small data-thread-count></small></div><button class="text-btn" type="button" aria-label="Close thread">×</button></header><div class="comment-thread-original"></div><div class="comment-thread-messages"></div><form class="comment-thread-compose"><label>Reply to thread<textarea rows="3" data-thread-input placeholder="Write a reply…"></textarea></label><div><small role="status" data-thread-status></small><button type="submit" class="btn btn-primary">Send reply</button></div></form>';
+    root.append(thread);
+    const threadInput = thread.querySelector('[data-thread-input]');
+    const threadStatus = thread.querySelector('[data-thread-status]');
+    const threadSend = thread.querySelector('[type="submit"]');
+    function draft() {
+      if (!threadDrafts.has(threadRoot)) threadDrafts.set(threadRoot, {text:'', parent:threadRoot, actor:'original message', status:'', sending:false});
+      return threadDrafts.get(threadRoot);
+    }
+    function positionThread() {
+      if (!thread.open) return;
+      const area = root.querySelector('.job-card-activity').getBoundingClientRect();
+      const width = window.innerWidth <= 700 ? window.innerWidth - 24 : 460;
+      const height = Math.min(820, window.innerHeight - 24);
+      thread.style.width = width + 'px';
+      thread.style.left = Math.max(12, Math.min(area.right - width, window.innerWidth - width - 12)) + 'px';
+      thread.style.top = Math.max(12, Math.min(area.top, window.innerHeight - height - 12)) + 'px';
+      thread.style.height = height + 'px';
+    }
+    function closeThread() {
+      if (!thread.open) return;
+      thread.close(); threadRoot = '';
+      window.removeEventListener('resize', positionThread);
+      if (opener?.isConnected) opener.focus({preventScroll:true});
+      else search?.focus({preventScroll:true});
+    }
+    thread.querySelector('.comment-thread-head button').onclick = closeThread;
+    thread.addEventListener('cancel', event => { event.preventDefault(); event.stopPropagation(); closeThread(); });
+    thread.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeThread(); }
+    });
+    let backdropDown = false;
+    thread.addEventListener('pointerdown', event => { backdropDown = event.target === thread; });
+    thread.addEventListener('click', event => {
+      if (event.target === thread && backdropDown) closeThread();
+      backdropDown = false;
+    });
+    threadInput.addEventListener('input', () => { draft().text = threadInput.value; });
+    function paintComposer() {
+      const saved = draft();
+      if (threadInput.value !== saved.text) threadInput.value = saved.text;
+      threadStatus.textContent = saved.status || `Replying to ${saved.actor}`;
+      threadSend.disabled = saved.sending;
+    }
+    thread.querySelector('form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const saved = draft(), activeRoot = threadRoot, text = saved.text.trim();
+      if (!text || saved.sending) return;
+      if (saved.body !== text) { saved.body = text; saved.operation = crypto.randomUUID(); }
+      saved.sending = true; saved.status = 'Saving reply…'; paintComposer(); generation++;
+      try {
+        const result = await api.reply_job_comment(cardId, saved.parent, text, saved.operation);
+        if (!result?.ok) throw new Error(result?.error || 'Reply was not confirmed. Retry with this draft.');
+        records = records.filter(row => row.id !== result.comment.id); records.push(result.comment);
+        if (result.parent && !records.some(row => row.id === result.parent.id)) records.push(result.parent);
+        if (saved.text.trim() === text) { saved.text = ''; saved.body = ''; saved.operation = null; }
+        saved.status = result.warning || 'Reply saved'; apply();
+      } catch (error) { saved.status = error.message; }
+      finally { saved.sending = false; if (threadRoot === activeRoot) paintComposer(); }
+    });
 
     function filter() { search?.dispatchEvent(new Event('input')); }
     function banner() {
@@ -47,29 +107,34 @@ window.CommentThreads = (() => {
     }
     function paintThread() {
       if (!threadRoot) return;
-      thread.replaceChildren(); thread.hidden = false;
-      const head = document.createElement('header');
-      const title = document.createElement('strong'); title.textContent = 'Thread';
-      const close = document.createElement('button'); close.className = 'text-btn'; close.type = 'button';
-      close.textContent = 'Close thread';
-      close.onclick = () => { threadRoot = ''; thread.hidden = true; opener?.focus(); };
-      head.append(title, close); thread.append(head);
-      const list = document.createElement('div'); list.className = 'comment-thread-messages';
-      const rows = records.filter(row => row.root_id === threadRoot).sort((a,b) => Date.parse(a.created_at)-Date.parse(b.created_at));
-      if (!rows.length) {
-        const empty = document.createElement('p'); empty.textContent = 'No linked replies yet. Use Reply on a comment to start a thread.'; list.append(empty);
+      const list = thread.querySelector('.comment-thread-messages'), original = thread.querySelector('.comment-thread-original');
+      const scroll = list.scrollTop;
+      list.replaceChildren(); original.replaceChildren();
+      const rows = records.filter(row => row.root_id === threadRoot).sort((a,b) => (Date.parse(b.created_at)||0)-(Date.parse(a.created_at)||0));
+      const replies = rows.filter(row => row.id !== threadRoot);
+      thread.querySelector('[data-thread-count]').textContent = `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'} · Newest first`;
+      if (!replies.length) {
+        const empty = document.createElement('p'); empty.textContent = 'No replies yet. Start the conversation below.'; list.append(empty);
       }
       for (const row of rows) {
         const article = document.createElement('article');
+        article.dataset.threadMessage = row.id;
         const label = document.createElement('strong'); label.textContent = row.actor;
         const body = document.createElement('p'); body.textContent = row.body;
         const context = document.createElement('small');
-        context.textContent = row.native ? (row.parent_id ? 'Reply' : 'Comment') : 'Saved original · may have changed in Trello';
+        context.textContent = row.id === threadRoot ? (row.native ? 'Original message' : 'Saved original · may have changed in Trello') : new Date(row.created_at).toLocaleString();
         const reply = document.createElement('button'); reply.type = 'button'; reply.className = 'text-btn'; reply.textContent = 'Reply';
-        reply.onclick = () => selectReply(row.id, row.actor, row.body);
-        article.append(label, context, body, reply); list.append(article);
+        reply.onclick = () => {
+          const saved = draft(); if (saved.sending) return;
+          if (saved.parent !== row.id) { saved.parent = row.id; saved.operation = null; saved.body = ''; }
+          saved.actor = row.actor; saved.status = ''; paintComposer(); threadInput.focus();
+        };
+        article.append(label, context, body, reply);
+        (row.id === threadRoot ? original : list).append(article);
+        if (row.id === draft().parent) draft().actor = row.actor;
       }
-      thread.append(list);
+      if (!original.children.length) original.textContent = 'Original message is not available in the saved thread.';
+      list.scrollTop = scroll; paintComposer();
     }
     function apply() { conversation.setThreadRecords(records); filter(); paintThread(); }
     async function refresh() {
@@ -100,7 +165,9 @@ window.CommentThreads = (() => {
       if (button.hasAttribute('data-reply-comment')) {
         selectReply(id, article.querySelector('header strong')?.textContent || 'comment', article.querySelector('[data-comment-raw]')?.dataset.commentRaw || '');
       } else if (button.hasAttribute('data-open-thread')) {
-        opener = button; threadRoot = article.dataset.threadRoot; paintThread(); thread.querySelector('button')?.focus();
+        opener = button; threadRoot = article.dataset.threadRoot; paintThread();
+        thread.showModal(); positionThread(); window.addEventListener('resize', positionThread);
+        thread.querySelector('button')?.focus({preventScroll:true});
       } else {
         button.disabled = true; generation++;
         try {
@@ -142,7 +209,7 @@ window.CommentThreads = (() => {
     root.addEventListener('comments-painted', filter);
     root.addEventListener('comment-reply-restored', banner);
     banner(); refresh();
-    const timer = setInterval(() => { if (!root.isConnected) clearInterval(timer); else refresh(); }, 30000);
+    const timer = setInterval(() => { if (!root.isConnected) { clearInterval(timer); window.removeEventListener('resize', positionThread); } else refresh(); }, 30000);
   }
   return {mount};
 })();
