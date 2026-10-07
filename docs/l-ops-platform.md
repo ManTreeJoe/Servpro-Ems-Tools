@@ -1142,6 +1142,25 @@ No auth settings were changed in this task. Still needs a two-device user test
 and real Trello reply test; automated tests do not post production comments.
 # Timing UI and all-job movement retention — 2026-10-07
 
+## Retention contract: approved forward requirement, implementation underway
+
+OneLoss owns retention across every configured board and all Analytics consumers.
+First additive backend slice: service-only `hub_card_observations` stores changes
+observed in the existing server mirror: card payload, details, comments and
+presence, with board/card IDs, captured scope and observation time. No destructive
+foreign-key cascade, no client writes, no use of observation time as move time.
+Existing cached records will be baselined; later changes retain before/after
+values. This does NOT capture intermediate changes between polls or prove exact
+move times. Provider action ingestion/backfill and confirmed OneLoss move events
+remain necessary. No public L OPS read API until historical scope guards exist.
+
+L OPS: do not add a separate timing store. All Analytics pages (Weekly Review,
+Jobs to Review, Corrections, Billing/AR, Trends, Data Quality and Operations),
+plus job cards, must ultimately consume one verified movement projection. Current
+legacy views are NOT yet rewired. Store observation time separately from event
+time; show missing coverage, not an inferred age or zero. Recon data retention
+is included, but Recon workflow/analytics design remains deferred.
+
 Branch: `handoff/paperclip-source-20261003`. OneLoss owns shared-backend work.
 Timing detail now separates current duration, estimator cycles, movement timeline
 and lane totals using the shared theme. UI only; Main and database unchanged.
