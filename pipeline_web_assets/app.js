@@ -14,6 +14,8 @@
 
 const pipelineQuery = new URLSearchParams(window.location.search);
 const jobWorkspaceMode = pipelineQuery.get("job_workspace") === "1";
+const snapshotCommentsMode = pipelineQuery.get('snapshot_comments') === '1';
+if (snapshotCommentsMode) document.documentElement.classList.add('snapshot-comments-mode');
 
 const state = {
   view: "board",            // "board" | "stages"
@@ -1970,6 +1972,40 @@ function patchWorkspaceSections(root, prepared, editedSections, refreshJobLog = 
   }
 }
 
+function jobSummaryCopyText(sections) {
+  const fields = Object.fromEntries((sections || []).flatMap(section => section.fields || [])
+    .map(field => [field.id, String(field.value ?? '').trim()]));
+  const groups = [
+    ['CUSTOMER INFORMATION', [
+      ['Customer Name', 'customer_name'], ['Address', 'address'], ['Phone Number', 'phone'],
+      ['Email', 'email'], ['Additional Contacts', 'addl_contacts', 'additional_contacts'],
+      ['Source of Lead', 'source_of_lead']]],
+    ['INSURANCE INFORMATION', [
+      ['Inspection Fee (Self Pay)', 'inspection_fee'], ['Insurance Company', 'carrier'],
+      ['Claim Number', 'claim_number'], ['Adjuster Name', 'adjuster_name'],
+      ['Adjuster Email', 'adjuster_email'], ['Adjuster Number', 'adjuster_phone'],
+      ['Deductible', 'deductible'], ['Agent Name', 'agent_name']]],
+  ];
+  return groups.map(([heading, rows]) => heading + '\n\n' + rows.map(([label, ...ids]) => {
+    const value = ids.map(id => fields[id]).find(value => value !== undefined && value !== '') || '';
+    return `${label}:${value ? (value.includes('\n') ? '\n' : ' ') + value : ''}`;
+  }).join('\n\n')).join('\n\n');
+}
+
+function customerInfoCopyText(sections) {
+  const ids = new Set(['customer_name', 'phone', 'email', 'address', 'carrier',
+    'claim_number', 'adjuster', 'adjuster_name', 'adjuster_email', 'adjuster_phone', 'deductible']);
+  const seen = new Set();
+  return (sections || []).flatMap(section => (section.fields || []).filter(field =>
+    ids.has(field.id) || /^(customer|insurance) information$/i.test(section.name || '')))
+    .filter(field => {
+      const key = field.id || field.label;
+      if (!String(field.value ?? '').trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).map(field => `${field.label || field.id}: ${String(field.value).trim()}`).join('\n');
+}
+
 function openAuditModal(data, trelloUrl = "", preparation = null) {
   const res = data.audit || {};
   const crm = data.crm || {};
@@ -2012,17 +2048,6 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   const oldJobsSection = oldJobs ? `<section class="aud-section old-jobs-section"><div class="section-title-row"><div><h3>Previous EMS jobs</h3><small>Separate closed claims found in THE LOGS – EMS</small></div><span>${(data.old_jobs || []).length}</span></div><div class="old-jobs-list">${oldJobs}</div></section>` : "";
   const copyFacts = (data.info_sections || []).flatMap((section) => section.fields || []);
   const copyField = (id) => (copyFacts.find((field) => field.id === id) || {}).value || "";
-  const copyValue = (...needles) => (copyFacts.find((field) => needles.some((needle) =>
-    String(field.label || "").toLowerCase().includes(needle))) || {}).value || "";
-  const copyOptions = [
-    ["Customer name", copyField("customer_name") || copyValue("customer name", "insured name") || data.client || res.client || ""],
-    ["Customer phone", copyField("phone")],
-    ["Customer email", copyField("email")],
-    ["Loss address", copyField("address")],
-    ["Claim number", copyField("claim_number")],
-    ["Job folder path", res.path || ""],
-    ["Trello link", trelloUrl],
-  ].filter((item) => item[1]);
   const claimNumber = copyField("claim_number");
   const headerTags = [...new Set([copyField('carrier'), ...String(copyField('loss_type') || '').split(',')]
     .map(value => String(value || '').trim()).filter(Boolean))];
@@ -2322,7 +2347,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
           </div>
           <div class="quick-utility-actions"><div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu" aria-label="More job actions">
             <button data-initial-notes ${data.card_id ? "" : "disabled"}>Initial notes</button>
-            <button data-dispatch-subcontractor>Dispatch subcontractor</button><button data-import-existing-initial-notes>Copy existing initial notes</button><button data-flag-job>Flag missing item</button><button data-copy-summary>Copy job summary</button>
+            <button data-dispatch-subcontractor>Dispatch subcontractor</button><button data-import-existing-initial-notes>Copy existing initial notes</button><button data-flag-job>Flag missing item</button><button type="button" data-copy-customer-info title="Copy customer, address and insurance details" ${customerInfoCopyText(data.info_sections) ? '' : 'disabled'}>Copy customer info</button><button data-copy-summary>Copy job summary</button>
           </div></div></div>
         </div>
       </header>
@@ -2363,7 +2388,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     previousFocus?.focus?.();
     return true;
   };
-  const requestClose = () => { if (close()) notifyJobWorkspaceClosed(); };
+  const requestClose = () => { if (!snapshotCommentsMode && close()) notifyJobWorkspaceClosed(); };
   w.querySelector("[data-close]").addEventListener("click", requestClose);
   const keyClose = (e) => {
     if (e.key !== "Escape") return;
@@ -2598,6 +2623,22 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     });
   }));
   w.querySelector('[data-job-members]')?.addEventListener('click', () => openJobMembers(data.card_id || ''));
+  w.querySelector('[data-copy-customer-info]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const text = customerInfoCopyText(data.info_sections);
+      if (!text || !await pywebview.api.copy_to_clipboard(text)) throw new Error('Copy failed');
+      button.textContent = 'Copied';
+      setStatus('Copied customer, address and insurance info', 'ok');
+    } catch (_) {
+      button.textContent = 'Retry copy';
+      setStatus('Could not copy customer info. Please try again.', 'error');
+    } finally {
+      button.disabled = false;
+      window.setTimeout(() => { if (button.isConnected) button.textContent = 'Copy customer info'; }, 1500);
+    }
+  });
   w.querySelector('.modal-title')?.addEventListener('contextmenu', event => window.OneLossPopout?.menu(event,'pipeline',{
     cardId:data.card_id||'',client:data.client||res.client||'',division:selectedDivision}));
   w.querySelector("[data-edit-job-info]")?.addEventListener("click", () => openJobInfoEditor(data, res, async () => {
@@ -2605,10 +2646,15 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS");
   }));
   w.querySelector("[data-copy-summary]")?.addEventListener("click", async (event) => {
-    const summary = copyOptions.map(([label, value]) => `${label}: ${value}`).join("\n");
-    await pywebview.api.copy_to_clipboard(summary);
-    event.currentTarget.closest(".tool-quick-menu")?.classList.remove("is-open");
-    setStatus("Copied formatted job summary", "ok");
+    const button = event.currentTarget;
+    const summary = jobSummaryCopyText(data.info_sections);
+    try {
+      if (!await pywebview.api.copy_to_clipboard(summary)) throw new Error('Copy failed');
+      button.closest(".tool-quick-menu")?.classList.remove("is-open");
+      setStatus("Copied formatted job summary", "ok");
+    } catch (_) {
+      setStatus("Could not copy job summary. Please try again.", "error");
+    }
   });
   w.querySelector("[data-dispatch-subcontractor]")?.addEventListener("click", () => {
     const fields = Object.fromEntries(copyFacts
@@ -3191,7 +3237,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     .filter(item => ['conflict', 'ambiguous'].includes(item.state))
     .map(item => String(item.division || '').toUpperCase()));
   const conversation = preparation?.conversation || window.JobConversation.mount(w, {
-    followWorkspace: true,
+    followWorkspace: !snapshotCommentsMode,
     cardId: data.card_id || '', division: selectedDivision,
     cards: workspaceDivisionCards.map(card => ({...card,
       conflict: conflictedDivisions.has(String(card.division || '').toUpperCase())})),
@@ -3215,6 +3261,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     commentInput.value.trim() ? {text:commentInput.value, targets:conversation.targets().map(target => target.cardId), reply:w._commentReply || null} : null,
     saved => { commentInput.value = saved.text || ''; w._commentReply = saved.reply || null; w.dispatchEvent(new Event('comment-reply-restored')); conversation.restoreTargets?.(saved.targets || []); markDraftDirty('comment', !!commentInput.value.trim()); }));
   if (commentDraft) recoveredDrafts.add(commentDraft);
+  if (snapshotCommentsMode && !preparation) window.flushSnapshotCommentDraft = () => commentDraft?.flush();
   if (!preparation) {
     commentInput._mentionTargets = () => conversation.targets();
     window.CommentMarkdown?.mount(commentInput);
@@ -3383,9 +3430,14 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     setDeferredError(message) {
       const host = w.querySelector("[data-workspace-load-state]");
       if (host) host.textContent = message;
+      if (snapshotCommentsMode) window.parent.postMessage({type:'snapshot-job-overview',cardId:data.card_id || '',error:message,pending:false},location.origin);
     },
   };
   if (!preparation) workspaceContext.applyRefresh = controller.applyRefresh;
+  if (snapshotCommentsMode) window.parent.postMessage({type:'snapshot-job-overview',
+    cardId:data.card_id || '', client:data.client || res.client || '',
+    sections:data.info_sections || [], placement:data.app_placement || {},
+    division:selectedDivision, pending:!!data.deferred_loading}, location.origin);
   return controller;
 }
 

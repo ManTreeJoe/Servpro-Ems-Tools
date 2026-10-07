@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync('pipeline_web_assets/app.js', 'utf8');
+const code = source.slice(source.indexOf('function jobSummaryCopyText('), source.indexOf('function customerInfoCopyText('));
+const context = vm.createContext({});
+vm.runInContext(code, context);
+const values = {customer_name:'Sample Customer',address:'123 Sample St',phone:'CONTACT A 555-0100\nCONTACT B 555-0101\nSpanish Speakers',source_of_lead:'Call Center',carrier:'Mercury',claim_number:'00123',adjuster_name:'Sample Adjuster',adjuster_email:'sample@example.com',adjuster_phone:'555-0199 x2',deductible:0,addl_contacts:'Tenant',agent_name:'Sample Agent',inspection_fee:'100',trello:'DO NOT COPY'};
+const text = context.jobSummaryCopyText([{fields:Object.entries(values).map(([id,value])=>({id,value}))}]);
+assert.equal(text, 'CUSTOMER INFORMATION\n\nCustomer Name: Sample Customer\n\nAddress: 123 Sample St\n\nPhone Number:\nCONTACT A 555-0100\nCONTACT B 555-0101\nSpanish Speakers\n\nEmail:\n\nAdditional Contacts: Tenant\n\nSource of Lead: Call Center\n\nINSURANCE INFORMATION\n\nInspection Fee (Self Pay): 100\n\nInsurance Company: Mercury\n\nClaim Number: 00123\n\nAdjuster Name: Sample Adjuster\n\nAdjuster Email: sample@example.com\n\nAdjuster Number: 555-0199 x2\n\nDeductible: 0\n\nAgent Name: Sample Agent');
+assert.match(context.jobSummaryCopyText([]), /Phone Number:\n\nEmail:/);
+console.log('PASS: job summary format, blank labels, multiline contacts, zero deductible, and excluded links');

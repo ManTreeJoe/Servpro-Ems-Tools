@@ -1,0 +1,17 @@
+/* The real job-card conversation, hosted persistently by Snapshot. */
+.snapshot-comments-mode .audit-overlay {padding:0;background:none;backdrop-filter:none}
+.snapshot-comments-mode .audit-card,
+.snapshot-comments-mode .audit-card.full-height-comments {display:flex;flex-direction:column;width:100%;height:100dvh;max-height:none;border:0;border-radius:0;box-shadow:none}
+.snapshot-comments-mode .audit-card > .modal-head,
+.snapshot-comments-mode .audit-card > .job-workspace-tabs,
+.snapshot-comments-mode .audit-card > .modal-foot,
+.snapshot-comments-mode .audit-card > .workspace-corner-close,
+.snapshot-comments-mode .job-card-main {display:none!important}
+.snapshot-comments-mode .audit-card .modal-body,
+.snapshot-comments-mode .audit-card .job-card-layout {display:flex;flex:1;min-height:0;width:100%;overflow:hidden}
+.snapshot-comments-mode .audit-card .job-card-activity {display:flex;flex-direction:column;flex:1;width:100%;min-width:0;min-height:0;height:100%;border:0;overflow:hidden}
+.snapshot-comments-mode .audit-card .activity-head {padding-right:16px}
+.snapshot-comments-mode .comment-stream {flex:1;min-height:0;overflow:auto}
+@media(max-height:600px) {
+  .snapshot-comments-mode .comment-editor-content {min-height:42px;max-height:86px}
+}

@@ -56,6 +56,7 @@ window.JobDrafts = (() => {
     }).catch(fail);
     return {
       capture: change,
+      async flush() { clearTimeout(timer); await loaded; if (changed && ready && !retained) await write(read()); },
       async clear() { clearTimeout(timer); changed = false; retained = null; await loaded; if (ready) await write(null); },
       dispose() { clearTimeout(timer); if (changed && ready && !retained) save(); disposed = true; host.removeEventListener('input',change); host.removeEventListener('change',change); },
       notice

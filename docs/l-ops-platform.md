@@ -1218,3 +1218,16 @@ A read-only scan found 12 other cross-type candidates, not yet verified or
 repaired. Do not automatically merge, delete or re-pin these jobs. Shared API
 enforcement needs coordinated design before implementation. 56 targeted tests
 pass for this bounded fix; local/shared legacy mirroring remains best-effort.
+
+## Snapshot job-card presentation — DEV only
+
+Snapshot's audit subview is now a compact read-only job overview with copyable
+facts and an Open job card action. Its report form and PDF-generation contract
+remain unchanged. Comments use the actual Pipeline workspace in a dedicated
+embedded conversation mode, not another comment implementation. The pane stays
+open while editing a Snapshot; same-card refresh retains the frame and draft.
+Nested API calls route to the Home shell, preserving existing Pipeline access
+checks. This embedding targets Snapshot inside the OneLoss hub. No schema or
+L OPS changes required. Do not create another comments/thread store in L OPS.
+Tests cover shared composer/pins, Escape, same-card draft retention, nested API
+routing, narrow layout, and Snapshot report isolation. Main is not released.

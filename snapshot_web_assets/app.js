@@ -240,6 +240,7 @@ async function changeTrackingDir() {
 
 function switchTo(view) {
   state.view = view;
+  window.SnapshotJobWorkspace?.visible(view === 'gen');
   $("#view-list").classList.toggle("hidden", view !== "list");
   $("#view-gen").classList.toggle("hidden", view !== "gen");
   // Hide the Today/Tracked tab strip when the form is open — it
@@ -249,6 +250,7 @@ function switchTo(view) {
 }
 
 function refreshSnapshotCommentsButton() {
+  window.SnapshotJobWorkspace?.select({cardId:state.cardId || '',client:state.sourceClient || state.lastClient || '',division:state.division || 'EMS'});
   const button = $("#snapshot-comments-btn");
   if (!button) return;
   button.disabled = !state.cardId;
@@ -263,8 +265,7 @@ function toggleSnapshotComments() {
   const row = { client: state.sourceClient || client, display_name: client,
     trello_card_id: state.cardId, division: state.division || 'EMS' };
   const ctx = snapshotAuditCtx();
-  window.AuditDetail.syncCommentsDrawer(row, ctx);
-  window.AuditDetail.toggleCommentsDrawer(row, ctx);
+  window.SnapshotJobWorkspace?.select({cardId:row.trello_card_id,client:row.client,division:row.division});
 }
 
 async function loadList() {
@@ -1445,7 +1446,7 @@ async function runSnapshotAudit() {
   const result = $("#audit-result");
   sub.classList.remove("hidden");
   summary.textContent = "Running audit…";
-  result.innerHTML = "";
+  // Keep the current job overview and conversation visible during re-audit.
 
   let res;
   try {
@@ -1505,9 +1506,7 @@ function renderSnapshotAuditRow(row) {
     summary.style.color = "var(--green)";
   }
   // Render + wire through the shared module — identical to the Audit tool.
-  const ctx = snapshotAuditCtx();
-  result.innerHTML = window.AuditDetail.buildDetailBodyHTML(row, ctx);
-  window.AuditDetail.wireDetail(result, row, ctx);
+  window.SnapshotJobWorkspace?.render();
 }
 
 async function onAuditAction(act, row) {
@@ -2251,7 +2250,7 @@ async function openSnapshotFindFolder(row) {
 
 function openSnapshotCommentModal(row) {
   if (!row?.trello_card_id) { setStatus('Choose a Trello card first', 'warn'); return; }
-  window.AuditDetail.openCommentsDrawer(row, snapshotAuditCtx());
+  window.SnapshotJobWorkspace?.select({cardId:row.trello_card_id,client:row.client,division:row.division || state.division || 'EMS'});
 }
 
 // ── 📋 CLOSE OUT checklist (mirrors Tk open_close_out_dialog) ───
