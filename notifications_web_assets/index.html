@@ -89,7 +89,7 @@
 <script src="desktop.js?v=20261001"></script>
 <nav class="inbox-sources" aria-label="Notification source"><button id="personal-source" aria-pressed="true">My OneLoss inbox</button><button id="trello-source" aria-pressed="false">Connected Trello account</button></nav>
 <section id="personal-panel">
-  <header class="topbar"><div class="brand"><span class="brand-name">My notifications</span></div><div class="topbar-actions"><label>Show <select id="personal-filter"><option value="all">All activity</option><option value="mentions">@mentions</option><option value="my_jobs">My jobs</option></select></label><label class="toggle"><input type="checkbox" id="personal-unread"> Unread only</label><button class="btn" id="personal-refresh">Refresh</button></div></header>
+  <header class="topbar"><div class="brand"><span class="brand-name">My notifications</span></div><div class="topbar-actions"><label>Show <select id="personal-filter"><option value="all">All activity</option><option value="mentions">@mentions</option><option value="my_jobs">My jobs</option></select></label><label class="toggle"><input type="checkbox" id="personal-unread"> Only show unread</label><button class="btn" id="personal-refresh">Refresh</button></div></header>
   <p class="personal-status" id="personal-status" role="status">Loading your inbox…</p>
   <main id="personal-feed" class="content"></main>
 </section>
@@ -101,7 +101,7 @@
     <span id="unread-pill" class="unread-pill zero">0</span>
   </div>
   <div class="topbar-actions">
-    <label class="toggle"><input type="checkbox" id="unread-only" /> Unread only</label>
+    <label class="toggle"><input type="checkbox" id="unread-only" /> Only show unread</label>
     <button id="mark-all-btn" class="btn">✓ Mark all read</button>
     <button id="refresh-btn" class="btn">↻ Refresh</button>
   </div>
@@ -119,7 +119,7 @@
 <script src="reader.js?v=20260929"></script>
 <script src="app.js?v=20260930board-tabs"></script>
 <link rel="stylesheet" href="personal.css?v=20260929">
-<script src="personal.js?v=20260929"></script>
+<script src="personal.js?v=20261007"></script>
 <link rel="stylesheet" href="inbox.css?v=20260930board-tabs">
 </body>
 </html>

@@ -15,6 +15,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
    assert.equal(await page.locator('[data-initial-notes]').isVisible(),false,'One-time notes stay in More');
    assert.ok(Math.abs(more.y-first.y)<3,`More should remain on first action row at ${width}px; got ${more.y} vs ${first.y}`);
    await page.locator('.more-quick-menu .tool-menu-trigger').click();
+   await page.locator('.more-quick-menu .tool-menu-panel').evaluate(el=>Promise.all(el.getAnimations().map(a=>a.finished)));
    assert.equal(await page.locator('[data-initial-notes]').isVisible(),true,'Initial notes remain accessible');
    const menu=await page.locator('.more-quick-menu .tool-menu-panel').boundingBox();
    assert.ok(menu.x>=0 && menu.x+menu.width<=width,'More menu must remain onscreen');
@@ -22,6 +23,9 @@ const path=require('node:path'),assert=require('node:assert/strict');
    assert.equal(await page.locator('.audit-card').isVisible(),true);
   }
   await page.setViewportSize({width:1440,height:1000});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.locator('.more-quick-menu .tool-menu-trigger').click();
+  assert.equal(await page.locator('.more-quick-menu .tool-menu-panel').evaluate(el=>getComputedStyle(el).animationName),'none');
   await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-more-layout.png')});
   console.log('PASS: More stays on first action row and its menu stays onscreen at four widths.');
  }finally{await browser.close();}

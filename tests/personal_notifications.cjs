@@ -31,6 +31,18 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await page.getByRole('button',{name:'Open job',exact:true}).click();await page.waitForFunction(()=>posts.length>0);assert.equal(await page.evaluate(()=>posts[0].cardId),'exact-card');
   await page.getByRole('button',{name:'Mark unread',exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>calls.filter(c=>c[0]==='read'&&c[2]===true).length),1,'Opening marks personal notification read');
+  assert.equal(await page.locator('#personal-unread').isChecked(),false,'Read items remain visible by default');
+  assert.equal(await page.locator('.personal-notification').count(),1);
+  await page.locator('#personal-unread').check();
+  assert.equal(await page.locator('.personal-notification').count(),0);
+  await page.locator('#personal-unread').uncheck();
+  assert.equal(await page.locator('.personal-notification').count(),1,'Clearing unread filter restores saved message without reload');
+  await page.getByRole('button',{name:'Mark unread',exact:true}).click();
+  await page.locator('#personal-unread').check();
+  await page.getByRole('button',{name:'Mark read',exact:true}).click();
+  assert.equal(await page.locator('.personal-notification').count(),0);
+  await page.locator('#personal-unread').uncheck();
+  assert.equal(await page.locator('.personal-notification').count(),1,'Reading does not discard the loaded record');
   await page.getByRole('button',{name:'Mute job',exact:true}).click();await page.getByRole('button',{name:'Unmute job',exact:true}).waitFor();
   await page.locator('#personal-filter').selectOption('mentions');await page.waitForFunction(()=>calls.some(c=>c[0]==='inbox'&&c[1]==='mentions'));
   await page.screenshot({path:path.join(process.env.TEMP,'oneloss-personal-inbox.png')});

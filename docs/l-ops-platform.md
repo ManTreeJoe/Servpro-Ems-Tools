@@ -4,6 +4,19 @@ Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
 ## October 7 — Floating comment thread (DEV)
 
+Follow-up motion pass: refine existing Job Log height transition to 180ms;
+140ms fade/short-slide entrance for its editor, activity picker, and job action
+menus. All respect reduced motion, with no delay to saves/click handling.
+Notifications default to showing read and unread items. Both sources label the
+optional checkbox Only show unread. Personal inbox filters the loaded inbox
+locally without discarding read rows, so turning it off restores messages
+immediately; refresh obtains the latest bounded inbox page. Trello retains its
+existing server-filtered refresh behavior. Read status and badge counts remain
+separate from visibility. Five browser regression suites pass, including read
+retention/filter toggling in both sources and reduced-motion menu behavior.
+Main is unchanged. Broader card-opening, sync-change highlights, and schedule
+motion remain future passes; no new notification-dismiss animation in this pass.
+
 Branch: `handoff/paperclip-source-20261003`. The thread projection now uses a
 native modal dialog anchored over the comments side, leaving the job in context.
 Saved original is separate from newest-first replies. Its own reply composer

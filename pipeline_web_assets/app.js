@@ -3006,7 +3006,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       el?._jobLogMotion?.cancel();
       if (!el || !from || !el.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       const to = el.getBoundingClientRect().height;
-      el._jobLogMotion = el.animate([{height:`${from}px`,overflow:'hidden'}, {height:`${to}px`,overflow:'hidden'}], {duration:200,easing:'cubic-bezier(.2,.7,.2,1)'});
+      el._jobLogMotion = el.animate([{height:`${from}px`,overflow:'hidden'}, {height:`${to}px`,overflow:'hidden'}], {duration:180,easing:'cubic-bezier(.2,.7,.2,1)'});
     };
     const closeEditor = () => {
       const height = row?.getBoundingClientRect().height;
