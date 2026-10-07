@@ -157,16 +157,15 @@ class Api:
             return schedule_store.failure(ex)
 
     def get_crew_roster(self):
-        """Use the same editable roster as Snapshot and technician recognition."""
+        """Scheduling-only people plus local tech additions; never login users."""
         try:
             import audit_logic
             import persistence
             audit_logic.ensure_roster_seeded()
             roster = persistence.get_user_techs() or {}
-            aliases = roster.get('abbrev') or {}
-            return {'ok': True, 'entries': [
-                {'name': name, 'aliases': [key for key, value in aliases.items() if value == name]}
-                for name in sorted(set(roster.get('names') or []), key=str.casefold)]}
+            import scheduling_roster
+            return {'ok': True, 'entries': scheduling_roster.entries(
+                config.active_department(), roster)}
         except Exception:
             return {'ok': False, 'entries': [], 'error': 'Technician roster unavailable. You can still enter crew names manually.'}
 

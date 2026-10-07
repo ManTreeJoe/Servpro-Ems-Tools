@@ -62,6 +62,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <script src="schedule_document_import.js"></script>
 <script src="schedule_history.js"></script>
 <script src="schedule_confirmation.js"></script>
+<script src="schedule_crew.js?v=20261007"></script>
 <script>
 'use strict';
 const liveMode=new URLSearchParams(location.search).get('live')==='1';
@@ -205,6 +206,7 @@ function renderActivities(){
  const labels=[...new Set(['Initial inspection','Demo','Monitor','Equipment placed','Equipment pickup','Contents','Packout','Final inspection',...activityDraft.map(a=>a.label)])];
  field('activity-options').innerHTML=labels.map(label=>`<button class="btn" type="button" data-activity="${safe(label)}" aria-pressed="${activityDraft.some(a=>a.label===label)}">${safe(label)}</button>`).join('');
  field('activity-assignments').innerHTML=activityDraft.map((a,i)=>`<label>${safe(a.label)} — assigned to<input data-assignment="${i}" value="${safe(a.people.join(', '))}" placeholder="Crew names, separated by commas"></label>`).join('');
+ ScheduleCrew.mount(field('activity-assignments'));
 }
 field('activity-options').onclick=event=>{const button=event.target.closest('[data-activity]');if(!button)return;const label=button.dataset.activity,index=activityDraft.findIndex(a=>a.label===label);if(index>=0)activityDraft.splice(index,1);else activityDraft.push({label,people:[]});renderActivities();field('activity-error').textContent='';};
 field('activity-assignments').oninput=event=>{if(event.target.dataset.assignment!==undefined)activityDraft[Number(event.target.dataset.assignment)].people=split(event.target.value);};
@@ -220,6 +222,7 @@ function openEditor(id,day,schedule=false,placement=null){
  extraFields.forEach(key=>field(key).value=row?.[key]||'');
  activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(placement?.group||row?.group);field('activity-picker').open=false;field('activity-error').textContent='';
  field('editor').showModal();field('job').focus();
+ ScheduleCrew.load();
 }
 field('cancel').onclick=()=>{if(!saving)field('editor').close();};
 field('editor').addEventListener('cancel',event=>{if(saving)event.preventDefault();});

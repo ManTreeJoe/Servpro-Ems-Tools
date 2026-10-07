@@ -2,6 +2,37 @@
 
 Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
+## October 7 — Approved IE scheduling roster (DEV)
+
+Branch: `handoff/paperclip-source-20261003`. `scheduling_roster.py` records
+Nathan's approved 33 scheduling people and aliases. The Schedule crew picker
+uses this list in IE, retaining local custom additions. Jose/Jose Diaz and
+Jose M/Jose Manuel are TWO people; Juan/Juan M, Maricruz/M.Cruz/Cruz,
+Mario Nevarez/Mario N/Nevarez, and Vince/Vicente each resolve to one choice.
+Aaron/AP maps to Aaron P; JL to Johnny. Rafa and Mike are included.
+
+This is a bundled scheduling picker roster, NOT shared database staff records
+or Auth accounts. No permissions, emails, passwords or invitations are created.
+No schema changes, historical visit rewrites, or photo-folder alias changes.
+Existing schedule payloads still store activity people as strings. Main's
+installed release is unchanged; updated desktop source supplies the new list.
+
+L OPS follow-up: use these approved canonical names/aliases when presenting
+scheduling people. Before implementing shared editable staff profiles, coordinate
+stable person IDs, office scoping, admin edits/deactivation, nullable verified
+Auth linkage, and backward-compatible activity assignment IDs here in GitHub.
+Do not auto-link accounts by first name or convert these records into logins.
+The bundled roster is an interim picker source, not an account-linking contract.
+
+Calendar activities now have an Add crew member selector backed by the same
+API, with manual names preserved. Selecting an alias's canonical person removes
+only that person's duplicate aliases; Jose Diaz and Jose Manuel remain separate.
+Roster loading/error/empty states never block manual entry or erase assignments.
+Validation: 18 Python roster/dispatch tests and three browser suites (Daily Run
+crew controls, calendar regression, and scheduling crew) pass. Narrow editor
+render inspected. No new visual system: existing labeled native controls and
+scrolling editor are retained.
+
 ## October 7 — Floating comment thread (DEV)
 
 Follow-up motion pass: refine existing Job Log height transition to 180ms;
