@@ -20,6 +20,44 @@ class Api:
         self._data = data or OperationsData()
         self._window = None
         self._lock = _review_lock
+        self._flow_scope = None
+        self._flow_ids = set()
+
+    def load_flow(self, force=False):
+        """Read existing Jobs sources independently of the weekly-review graph."""
+        import lane_analytics
+        import pipeline_store
+        import pipeline_web
+        scope = pipeline_store._cache_scope()
+        try:
+            payload = None if force else pipeline_store.load_board_cache()
+            if not payload or not payload.get('ok'):
+                payload = pipeline_web._server_board_payload() or pipeline_web._trello_board_payload()
+            if not payload.get('ok'):
+                return {'ok':False, 'error':'Jobs queues could not load. Retry or check your connection.'}
+            if pipeline_store._cache_scope() != scope:
+                return {'ok':False, 'error':'Workspace changed. Refresh Analytics.'}
+            result = lane_analytics.queues(payload)
+            self._flow_scope = scope
+            self._flow_ids = {c['id'] for lane in result['lanes'] for c in lane['cards']}
+            result['location'] = config.active_department()
+            return result
+        except Exception:
+            return {'ok':False, 'error':'Jobs queues could not load. Retry or check your connection.'}
+
+    def flow_history(self, card_id):
+        import lane_analytics
+        import pipeline_store
+        scope = pipeline_store._cache_scope()
+        if scope != self._flow_scope:
+            return {'ok':False, 'error':'Workspace changed. Refresh Analytics.'}
+        try:
+            result = lane_analytics.read_history(str(card_id), self._flow_ids)
+            if pipeline_store._cache_scope() != scope:
+                return {'ok':False, 'error':'Workspace changed. Refresh Analytics.'}
+            return result
+        except Exception:
+            return {'ok':False, 'error':'Movement history could not load. Retry; no timing was inferred.'}
 
     def attach(self, window):
         self._window = window

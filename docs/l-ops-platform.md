@@ -2,6 +2,44 @@
 
 Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
+## October 7 — Operations analytics first working slice (DEV)
+
+Branch: `handoff/paperclip-source-20261003`. Analytics now starts at Operations
+& lane timing instead of the weekly review. Existing weekly/audit views remain.
+This read-only view uses existing scoped Jobs board sources independently of
+the slow review graph, lists active WIP/Estimating/Contents lanes, supports board
+and name filtering, and opens exact cards. Recon remains deferred. Counts are
+card placements, NOT unique jobs; existing Jobs card-level exclusions still apply.
+
+Inspect timing reads paginated Trello movement events (bounded at 10,000) for
+one allowed card. It displays recorded entries/exits, actors, durations, and
+cumulative recorded visits per lane. Missing entry evidence stays Unknown.
+IE estimator cycles use verified lane IDs; arrival on the Logs BOARD stops the
+cycle, independent of Billed lane. Shared estimator lanes retain their lane
+identity; they are not assigned to guessed individuals. Other franchises need
+explicit mappings. Closed cards do not retain a running current-lane clock.
+Provider event IDs deduplicate this read; cross-board events with unknown target
+lists end the prior lane without fabricating the next list. This does not prove
+full historical coverage or merge separate WIP/Estimating card copies.
+
+UI guidance kept compact, labelled queue colors and a 140 ms timing-dialog
+entrance with reduced-motion support. Read failures preserve previous queues;
+30-second UI timeouts offer retry rather than an endless spinner. Underlying
+reads are not canceled. CSV export is disabled for this new view (old exports
+are preserved). No new collection tables, schema, backend deployments, or live
+card writes. Uses the existing scoped cache/provider read paths only.
+
+Verified: 14 Python model/API tests; Operations browser test (filtering, opening,
+errors, narrow layout, reduced motion); existing Analytics workflow browser test.
+Read-only live smoke: 55 lanes/192 cards and one actual card movement timeline.
+
+Still pending: shared durable movement ingestion and L OPS contract/migration,
+automatic dashboard age hydration, completed-job cohorts/estimator-wide rollups,
+Snapshot-to-Logs summaries, historical backfill, edit-ready lane/person mapping,
+approved/invoiced/collected financial sources and the user's definition of gain.
+Do not present this on-demand inspector as continuous org-wide analytics.
+OneLoss owns shared integration; coordinate schema on GitHub before implementing.
+
 ## October 7 — Lane timing requirements and live lane audit
 
 User correction: show ALL open Trello lanes without name-based exclusions,

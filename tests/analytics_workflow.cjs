@@ -15,6 +15,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    window.savedReviews={};window.messages=[];
    window.addEventListener('message',e=>messages.push(e.data));
    window.pywebview={api:{
+    async load_flow(){return {ok:true,location:'IE',lanes:[],source:'Fixture'};},
     async load(f){
      if(window.failLoad)return {ok:false,error:'Test connection unavailable'};
      const key='v2:'+JSON.stringify([f.start,f.end,f.review_role]);
@@ -26,8 +27,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    }};
   });
   await page.addScriptTag({path:path.resolve('analytics_web_assets/logs_audit.js')});
+  await page.addScriptTag({path:path.resolve('analytics_web_assets/flow.js')});
   await page.addScriptTag({path:path.resolve('analytics_web_assets/app.js')});
   await page.evaluate(()=>window.dispatchEvent(new Event('pywebviewready')));
+  await page.locator('[data-tab="weekly"]').click();
   await page.waitForFunction(()=>document.querySelector('#rows button'));
   assert.equal(await page.getByRole('button',{name:'Logs audit · To Be Preserved',exact:true}).count(),1);
   const range=await page.evaluate(()=>[document.querySelector('[name=start]').value,document.querySelector('[name=end]').value]);

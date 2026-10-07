@@ -1,7 +1,7 @@
 "use strict";
 const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const views={overview:'Overview',weekly:'Weekly Review',jobs:'Jobs to Review',corrections:'Corrections and Follow-ups',billing:'Billing and AR',trends:'Trends',quality:'Data Quality'};
-const state={view:'weekly',data:null,ids:null,editing:null,request:0,snapshot:false};
+const views={flow:'Operations & lane timing',overview:'Overview',weekly:'Weekly Review',jobs:'Jobs to Review',corrections:'Corrections and Follow-ups',billing:'Billing and AR',trends:'Trends',quality:'Data Quality'};
+const state={view:'flow',data:null,ids:null,editing:null,request:0,snapshot:false};
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const displayDate=v=>{if(!v)return '—';const m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[2]}-${m[3]}-${m[1].slice(2)}`:esc(v);};
 function filters(){const f=Object.fromEntries(new FormData($('#filters')));if(['weekly','jobs'].includes(state.view))f.review_population='logs';if(state.view==='corrections')f.review_population='followups';return f;}
@@ -39,6 +39,12 @@ window.addEventListener('pywebviewready',()=>{
 });
 async function load(force=false){
  const token=++state.request;$('#status').textContent='Loading current records…';
+ const flow=state.view==='flow';
+ $('#flow').hidden=!flow;
+ for(const id of ['filters','records','view','coverage'])$('#'+id).hidden=flow;
+ document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===state.view)));
+ if(flow){$('#export').disabled=true;return window.AnalyticsFlow.load(force);}
+ window.AnalyticsFlow?.cancel();
  const queue=['weekly','jobs','corrections'].includes(state.view),statusFilter=$('#filters [name=status]');
  statusFilter.disabled=queue;
  if(queue)statusFilter.value='all';
