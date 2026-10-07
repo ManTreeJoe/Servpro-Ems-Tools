@@ -1,6 +1,6 @@
 /* Read-only operational queues. Independent from the slower weekly audit. */
 window.AnalyticsFlow=(()=>{
- let data=null, selected='', query='', board='', generation=0;
+ let data=null, selected='', query='', board='', generation=0, enterPending=true;
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  function bounded(promise){let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('The read is taking too long. Retry when the connection recovers.')),30000);})]).finally(()=>clearTimeout(timer));}
  const duration=s=>s==null?'Unknown':s<3600?`${Math.floor(s/60)} min`:`${(s/86400).toFixed(1)} days`;
@@ -10,7 +10,7 @@ window.AnalyticsFlow=(()=>{
   const max=Math.max(1,...lanes.map(l=>l.cards.length));
   return `<div class="flow-bars">${[...lanes].sort((a,b)=>b.cards.length-a.cards.length).map(l=>`<button class="flow-bar ${color(l.name)}" ${attribute}="${esc(l.id)}" aria-pressed="${l.id===selected}" aria-label="${esc(l.board)} / ${esc(l.name)}: ${l.cards.length} cards. Show cards."><span class="flow-bar-label">${esc(l.name)}<small>${esc(l.board)}</small></span><span class="flow-bar-track" aria-hidden="true"><i style="width:${l.cards.length/max*100}%"></i></span><strong>${l.cards.length}</strong></button>`).join('')||'<p>No lanes in this scope.</p>'}</div>`;
  }
- function paint(){
+ function paint(animate=false){
   const host=document.querySelector('#flow');
   if(!data){host.innerHTML='<p role="status">Loading Jobs queues…</p>';return;}
   const searched=data.lanes.map(l=>({...l,cards:l.cards.filter(c=>c.name.toLowerCase().includes(query.toLowerCase()))}));
@@ -22,7 +22,7 @@ window.AnalyticsFlow=(()=>{
   const cards=(lane?lane.cards:lanes.flatMap(l=>l.cards.map(c=>({...c,lane:l.name,board:l.board})))).filter(c=>c.name.toLowerCase().includes(query.toLowerCase()));
   host.innerHTML=`<div class="flow-heading"><div><h2>Where work is sitting</h2><p>Current card placements · not unique jobs or hours worked</p></div><span>${esc(data.location)} · ${data.stale?'Saved queues':'Updated queues'}</span></div>
    <div class="flow-controls"><label>Board<select id="flow-board"><option value="">All active boards (Recon deferred)</option>${[...new Map(data.lanes.map(l=>[l.board_id,l.board])).entries()].map(([id,name])=>`<option value="${esc(id)}" ${id===board?'selected':''}>${esc(name)}</option>`).join('')}</select></label><label>Find a card<input id="flow-search" type="search" value="${esc(query)}" placeholder="Job name"></label><button id="flow-all">All lanes</button></div>
-   <div class="flow-chart-grid">
+   <div class="flow-chart-grid${animate?' flow-chart-enter':''}">
     <section class="flow-chart"><h3>Cards by board</h3><p>Search-matched placements across boards · click a column to select a board.</p><div class="flow-columns">${boards.map((b,i)=>`<button class="flow-column" data-chart-board="${esc(b.id)}" aria-pressed="${b.id===board}" aria-label="${esc(b.name)}: ${b.count} cards. Select board."><strong>${b.count}</strong><span class="flow-column-track" aria-hidden="true"><i style="height:${b.count/maxBoard*100}%;background:var(${['--cobalt','--violet','--amber'][i%3]})"></i></span><span>${esc(b.name)}</span></button>`).join('')||'<p>No boards available.</p>'}</div><small>Baseline 0 · tallest column ${maxBoard===1&&!boards.some(b=>b.count)?0:maxBoard} cards</small></section>
     <section class="flow-chart"><h3>Cards by lane</h3><p>Selected board scope · longest bar ${Math.max(0,...lanes.map(l=>l.cards.length))} cards · click a bar for the card list.</p>${bars(lanes)}</section>
     ${estimating.length?`<section class="flow-chart flow-chart-wide"><h3>Estimating queues</h3><p>Card counts, not performance scores. Shared lanes remain shared; unassigned and review queues are included.</p>${bars(estimating,'data-est-lane')}</section>`:''}
@@ -53,8 +53,8 @@ window.AnalyticsFlow=(()=>{
  async function load(force=false){
   const token=++generation;const status=document.querySelector('#status');
   if(!data)paint();status.textContent=data?'Updating queues…':'Loading Jobs queues…';
-  try{const result=await bounded(pywebview.api.load_flow(force));if(token!==generation)return;if(!result.ok)throw Error(result.error);data=result;paint();status.textContent=`${result.source}${result.saved_at?' · '+date(result.saved_at):''}`;
+  try{const result=await bounded(pywebview.api.load_flow(force));if(token!==generation)return;if(!result.ok)throw Error(result.error);data=result;paint(enterPending);enterPending=false;status.textContent=`${result.source}${result.saved_at?' · '+date(result.saved_at):''}`;
   }catch(e){if(token!==generation)return;status.textContent=(e.message||'Could not load queues.')+(data?' — Previous queues retained.':'');if(!data)document.querySelector('#flow').textContent='Queues unavailable. Use Refresh to retry.';}
  }
- return {load,cancel(){generation++;}};
+ return {load,cancel(){generation++;enterPending=true;}};
 })();

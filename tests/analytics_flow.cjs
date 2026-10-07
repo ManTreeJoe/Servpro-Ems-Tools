@@ -13,10 +13,18 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
  for(const file of ['flow.js','app.js'])await page.addScriptTag({path:path.resolve('analytics_web_assets',file)});
  await page.evaluate(()=>dispatchEvent(new Event('pywebviewready')));await page.waitForSelector('[data-history]');
  assert.equal(await page.locator('#filters').isVisible(),false);
+ assert.equal(await page.locator('.flow-bar-track i').first().evaluate(el=>getComputedStyle(el).animationName),'chart-bar-enter');
+ assert.equal(await page.locator('.flow-column-track i').first().evaluate(el=>getComputedStyle(el).animationName),'chart-column-enter');
+ await page.emulateMedia({reducedMotion:'reduce'});
+ assert.equal(await page.locator('.flow-bar-track i').first().evaluate(el=>getComputedStyle(el).animationName),'none');
+ await page.emulateMedia({reducedMotion:'no-preference'});
  assert.equal(await page.locator('[data-chart-board="wip"] strong').textContent(),'7');
  assert.equal(await page.locator('[data-chart-board="est"] strong').textContent(),'5');
  assert.equal(await page.locator('[data-chart-board="wip"] i').evaluate(el=>el.style.height),'100%');
  await page.locator('[data-chart-board="est"]').click();assert.equal(await page.locator('[data-history]').count(),5);
+ assert.equal(await page.locator('.flow-bar-track i').first().evaluate(el=>getComputedStyle(el).animationName),'none','Filtering must not replay entrance');
+ await page.locator('#refresh').click();await page.waitForFunction(()=>document.querySelector('#status').textContent==='Test queues');
+ assert.equal(await page.locator('.flow-chart-enter').count(),0,'Refresh must not replay entrance');
  await page.locator('#flow-board').selectOption('');
  await page.locator('[data-lane="6"]').click();assert.equal(await page.locator('[data-history]').count(),1);
  await page.locator('[data-flow-open]').click();await page.waitForFunction(()=>messages.some(m=>m.cardId==='card6'));

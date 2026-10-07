@@ -4,6 +4,15 @@ Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
 ## October 7 — Operations analytics first working slice (DEV)
 
+Chart motion follow-up: user requested loading animation. Panels enter in
+160 ms; horizontal/vertical fills grow from their zero baseline in 260 ms.
+Only first successful load or returning to the Operations tab triggers this;
+search, selections and refreshes render without replay. Counts remain immediate,
+controls are never disabled for animation, and both reduced-motion preferences
+disable it. UI polish guidance kept motion short and limited to chart surfaces.
+Both Analytics browser suites pass, including entrance names, reduced motion,
+and absence of replay on filters/refresh. No backend or L OPS changes.
+
 Chart follow-up: inspected the local L OPS checkout (`bac93c8`), especially
 app/analytics-chart.tsx and app/operations-analytics.tsx. Adopted its accessible
 clickable-bar/drill-down pattern without changing that repository or adding React.

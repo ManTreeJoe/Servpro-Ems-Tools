@@ -1,4 +1,13 @@
 /* L OPS-style clickable charts, using OneLoss tokens and explicit baselines. */
+/* Entrance only: paint() omits this class for search, selection and refresh. */
+@keyframes chart-panel-enter{from{opacity:.65;translate:0 4px}to{opacity:1;translate:0 0}}
+@keyframes chart-bar-enter{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes chart-column-enter{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.flow-chart-enter .flow-chart{animation:chart-panel-enter 160ms ease-out}
+.flow-chart-enter .flow-bar-track i{transform-origin:left center;animation:chart-bar-enter 260ms cubic-bezier(.2,.7,.2,1)}
+.flow-chart-enter .flow-column-track i{transform-origin:center bottom;animation:chart-column-enter 260ms cubic-bezier(.2,.7,.2,1)}
+@media(prefers-reduced-motion:reduce){.flow-chart-enter .flow-chart,.flow-chart-enter .flow-bar-track i,.flow-chart-enter .flow-column-track i{animation:none}}
+.reduce-motion .flow-chart-enter .flow-chart,.reduce-motion .flow-chart-enter .flow-bar-track i,.reduce-motion .flow-chart-enter .flow-column-track i{animation:none}
 .flow-chart-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px}
 .flow-chart{min-width:0;padding:18px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
 .flow-chart h3{margin:0 0 8px;font-size:16px}.flow-chart p{font-size:12px;margin:0 0 16px}.flow-chart small{color:var(--text-muted)}

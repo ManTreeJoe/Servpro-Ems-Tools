@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="workspace_layout.css?v=20260911a">
 <link rel="stylesheet" href="flow.css?v=20261007">
 <link rel="stylesheet" href="theme_controls.css?v=20261007">
-<link rel="stylesheet" href="charts.css?v=20261007"></head>
+<link rel="stylesheet" href="charts.css?v=20261007motion"></head>
 <body class="responsive-ui"><header><div><small id="location">OneLoss</small><h1>Analytics</h1></div><div class="actions"><button id="apa">APA monitor</button><button id="export">Export CSV</button><button id="refresh">Refresh</button></div></header>
 <main><nav id="tabs" aria-label="Analytics views"></nav>
 <form id="filters"><label>From<input type="date" name="start" required></label><label>Through<input type="date" name="end" required></label><label>Division<select name="division"><option value="">All divisions</option><option>EMS</option><option>CONTENTS</option><option>RECON</option></select></label><label>Status<select name="status"><option value="active_recent">Active and recently billed</option><option value="all">All records</option><option value="open">Open</option><option value="billed">Billed</option><option value="paid">Paid</option><option value="closed">Closed</option><option value="archived">Archived</option></select></label><label>Find a Loss<input name="query" type="search" placeholder="Name or carrier"></label><details><summary>More filters</summary><div id="extra-filters"></div></details><button class="primary">Apply filters</button></form>
@@ -24,5 +24,5 @@
 </main>
 <dialog id="review"><form method="dialog"><div class="section-head"><h2 id="review-title">Weekly review</h2><button value="cancel" aria-label="Close review">×</button></div><p>Review notes are saved on this PC for the current workspace.</p><label>Correction / review note<textarea id="review-note" rows="5"></textarea></label><div class="review-fields"><label>Owner<input id="review-owner"></label><label>Due date<input id="review-due" type="date"></label><label>Outcome<select id="review-outcome"><option value="reviewed">Reviewed</option><option value="follow_up">Follow-up required</option><option value="resolved">Correction resolved</option></select></label></div><p id="review-error" role="alert"></p><button type="button" class="primary" id="save-review">Save review</button></form></dialog>
 <script src="logs_audit.js?v=20260918release1821"></script>
-<script src="flow.js?v=20261007charts"></script>
+<script src="flow.js?v=20261007chart-motion"></script>
 <script src="app.js?v=20261007flow"></script></body></html>
