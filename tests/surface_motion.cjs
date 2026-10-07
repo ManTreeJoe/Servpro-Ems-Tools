@@ -1,0 +1,24 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict'),path=require('node:path'),os=require('node:os');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1280,height:900}});
+ await page.setContent('<button id="launch">Open</button>');
+ for(const file of ['web_shared/theme.css','web_shared/modal.css','audit_web_assets/app.css','pipeline_web_assets/app.css'])await page.addStyleTag({path:path.resolve(file)});
+ await page.addScriptTag({path:path.resolve('web_shared/modal.js')});
+ await page.locator('#launch').focus();
+ await page.evaluate(()=>openModal({title:'Job details',body:'<label>Name<input autofocus value="Example job"></label><button class="modal-close">Cancel</button>'}));
+ assert.equal(await page.locator('.overlay-panel').evaluate(el=>getComputedStyle(el).animationName),'ui-surface-enter');
+ assert(await page.locator('.overlay-panel').evaluate(el=>el.contains(document.activeElement)),'Opening must keep keyboard focus inside the dialog');
+ await page.screenshot({path:path.join(os.tmpdir(),'oneloss-surface-motion.png')});
+ await page.keyboard.press('Escape');assert.equal(await page.locator('.overlay').count(),0);
+ assert(await page.locator('#launch').evaluate(el=>el===document.activeElement));
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await page.evaluate(()=>openModal({title:'Reduced motion',body:'<input>'}));
+ assert.equal(await page.locator('.overlay-panel').evaluate(el=>getComputedStyle(el).animationName),'none');
+ await page.evaluate(()=>closeModal());
+ await page.evaluate(()=>{const el=document.createElement('div');el.className='modal-scrim';el.innerHTML='<div class="modal-box audit-card">Job</div>';document.body.append(el);});
+ assert.equal(await page.locator('.modal-scrim').evaluate(el=>getComputedStyle(el).animationName),'none');
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ assert.equal(await page.locator('.audit-card').evaluate(el=>getComputedStyle(el).animationName),'none','Job content replacement must not reanimate');
+ console.log('PASS: opening motion, immediate close, focus restore, reduced motion, no job-content replay');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1);});

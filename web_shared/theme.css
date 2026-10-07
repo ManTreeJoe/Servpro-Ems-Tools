@@ -248,6 +248,15 @@ option, optgroup {
   .topbar-actions { gap: 4px; }
 }
 /* Shared, fixed-size loading feedback. Labels remain available to screen readers. */
+/* One-shot entrances only. No delayed dismissal or persistent transforms. */
+@keyframes ui-surface-enter { from { opacity:.55; translate:0 5px; } to { opacity:1; translate:0 0; } }
+@keyframes ui-backdrop-enter { from { opacity:.6; } to { opacity:1; } }
+.ui-modal-enter > .overlay-panel { animation:ui-surface-enter 140ms ease-out; }
+.ui-modal-enter > .overlay-backdrop { animation:ui-backdrop-enter 120ms ease-out; }
+@media(prefers-reduced-motion:reduce) {
+  .ui-modal-enter > .overlay-panel,.ui-modal-enter > .overlay-backdrop { animation:none; }
+}
+.reduce-motion .ui-modal-enter > .overlay-panel,.reduce-motion .ui-modal-enter > .overlay-backdrop { animation:none; }
 .ui-spinner { display:inline-block; width:16px; height:16px; flex:none; box-sizing:border-box; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:ui-loading-spin .8s linear infinite; vertical-align:middle; }
 .ui-loading-label { position:absolute!important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
 .ui-loading-state { display:flex; align-items:center; justify-content:center; min-height:44px; color:var(--text-muted); }

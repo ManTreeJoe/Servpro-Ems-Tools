@@ -73,7 +73,7 @@
     const invoker = document.activeElement;
     const titleId = `${overlayId}-title`;
     const wrap = document.createElement("div");
-    wrap.className = "overlay";
+    wrap.className = "overlay ui-modal-enter";
     wrap.id = overlayId;
     wrap.innerHTML = `
       <div class="overlay-backdrop" aria-hidden="true"></div>

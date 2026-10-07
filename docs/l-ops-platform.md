@@ -2,6 +2,24 @@
 
 Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
+## October 7 — Lightweight surface entrances (DEV)
+
+Branch: `handoff/paperclip-source-20261003`. Shared dialogs, pipeline modal
+shells, the schedule editor and crew picker now use 120–140 ms CSS entrances.
+Closing remains immediate; no save or click is delayed. Job content replacement
+does not animate the audit-card panel again. Existing thread/menu motion remains
+unchanged. Reduced-motion settings disable the new effects. Add update is retained
+until the later job-card cleanup requested by the user.
+
+Browser checks: surface animation, focus containment/restoration, immediate Escape,
+reduced motion, job-panel animation exclusion; existing strict-backdrop, schedule
+crew and comment-thread suites pass. This is a scoped motion pass, not a claim
+that all app performance or interaction work is complete. UI-design guidance kept
+the existing layouts and short entrance-only effects.
+
+No database/schema, API or L OPS changes required. Main is not released by this
+handoff; remaining immediate-feedback work is listed below.
+
 ## October 7 — Immediate feedback rollout, first pass (DEV)
 
 Branch: `handoff/paperclip-source-20261003`. User requests app-wide immediate

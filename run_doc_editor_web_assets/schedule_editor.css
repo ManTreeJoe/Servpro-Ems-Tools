@@ -1,4 +1,7 @@
 /* Compact visit editor using the existing palette and controls. */
+#editor[open],.crew-popover:popover-open{animation:ui-surface-enter 140ms ease-out}
+@media(prefers-reduced-motion:reduce){#editor[open],.crew-popover:popover-open{animation:none}}
+.reduce-motion #editor[open],.reduce-motion .crew-popover:popover-open{animation:none}
 #visit-form{gap:14px;padding:18px 20px}
 #visit-form fieldset{border:0;border-top:1px solid var(--border);border-radius:0;padding:12px 0 0}
 #visit-form legend{padding:0 8px 0 0}
