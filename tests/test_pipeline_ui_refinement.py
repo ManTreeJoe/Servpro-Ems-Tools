@@ -364,7 +364,9 @@ def test_job_workspace_visibly_separates_work_from_connected_tools():
     assert 'class="quick-primary-actions" aria-label="Work actions"' in header
     assert 'class="quick-destination-actions" aria-label="Connected tools"' in header
     assert header.index("data-add-job-log") < header.index("quick-destination-actions")
-    assert header.index("data-initial-notes") < header.index("quick-destination-actions")
+    # One-time setup belongs in More, not the permanent work-action row.
+    assert header.index("data-initial-notes") > header.index("quick-destination-actions")
+    assert 'Initial notes</button>' in header
     xa_start = header.index('alt="">XA <small>')
     xa_end = header.index('</div></div>', xa_start)
     assert "data-xa-note" in header[xa_start:xa_end]

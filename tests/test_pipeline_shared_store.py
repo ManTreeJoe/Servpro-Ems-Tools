@@ -278,7 +278,7 @@ def test_pipeline_card_is_the_full_job_workspace():
                    "import_job_log_from_trello"):
         assert marker in py
     for marker in ("Job requirements", "Checklists", "Job Log",
-                   "Comments and activity", "data-post-comment",
+                   "Comments <span data-comment-count", "data-post-comment",
                    "data-division-data", "data-import-job-log"):
         assert marker in js
     for marker in ("data-add-job-log", "data-edit-job-log", "data-delete-job-log",

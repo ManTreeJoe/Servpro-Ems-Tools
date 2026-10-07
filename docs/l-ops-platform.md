@@ -1,6 +1,28 @@
 # L OPS platform / EMS Tools coordination
 
-Status: October 5, 2026. This file is the canonical cross-chat handoff.
+Status: October 6, 2026. This file is the canonical cross-chat handoff.
+
+## October 6 — Main 1.8.27 promotion
+
+User approved promoting the tested desktop before building the floating thread
+view. Release source is `handoff/paperclip-source-20261003`, incorporating Main's
+public update-feed and CI changes; promotion targets `main` and tag `v1.8.27`.
+See `docs/release-1.8.27.md` for scope, verification and known limitations.
+Installers and the Main channel feed use `ManTreeJoe/linguar-hub-releases`.
+
+No new schema or L OPS change is introduced by packaging. L OPS still needs to
+adopt the shared comment/pin/reply contract documented below. Existing shared
+reply/member-notification migrations and the verified-parent endpoint are live;
+do not infer a verified app identity from a Trello display name or username.
+
+Next desktop UI: floating in-app thread panel over comments, not a separate
+window. Keep the regular feed and thread replies newest-first; show the original
+message as context, preserve the main feed's scroll and draft on close. All
+replies remain in the regular feed. This new panel is not part of 1.8.27.
+Direct-Trello activity ingestion, exact-card membership and verified provider
+user mapping remain unfinished; current notifications must not be described as
+complete all-activity coverage. Calendar, Reconstruction and L OPS follow-ups
+remain separate work.
 
 ## October 6 — Approved duplicate identity repair
 

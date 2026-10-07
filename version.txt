@@ -1,6 +1,6 @@
 {
-  "version": "1.8.26",
-  "url": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/tag/v1.8.26",
-  "installer": "https://github.com/ManTreeJoe/Servpro-Ems-Tools/releases/download/v1.8.26/Linguar-Hub-Setup-1.8.26.exe",
-  "notes": "Multi-activity Job Logs with crew assignments and subcontractors; compact logs and Snapshots from saved entries; floating activity picker; quieter automatic file checks and unified loading indicators; improved notification tabs, unread counts, reactions, CompanyCam relinking and editable profiles; optional Windows alerts for your personal OneLoss inbox."
+  "version": "1.8.27",
+  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.27",
+  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.27/Linguar-Hub-Setup-1.8.27.exe",
+  "notes": "Shared pinned comments and threaded replies with clean Trello reply-all mentions; saved comments load first; Job Info editing and scope fixes; cleaner job workspace and direct Daily Run job opening; member and native-thread alerts. Thread pop-out and full direct-Trello activity notification coverage are not included."
 }

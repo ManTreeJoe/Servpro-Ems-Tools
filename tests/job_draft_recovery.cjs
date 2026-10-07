@@ -3,7 +3,7 @@ const {chromium}=require('playwright'),path=require('node:path'),assert=require(
  const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.setContent('<div id="status-msg"></div>');
  for(const f of ['web_shared/theme.css','pipeline_web_assets/app.css','pipeline_web_assets/job_workspace_tabs.css'])await page.addStyleTag({path:path.resolve(f)});
- for(const f of ['web_shared/modal.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/job_drafts.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(f)});
+ for(const f of ['web_shared/modal.js','web_shared/job_activities.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/job_drafts.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(f)});
  await page.evaluate(()=>{
   document.documentElement.dataset.theme='dark';window.savedDrafts=new Map();window.posts=[];
   window.pywebview={api:{job_draft:async(card,division,kind,id,change)=>{

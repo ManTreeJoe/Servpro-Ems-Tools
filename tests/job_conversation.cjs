@@ -7,7 +7,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.setContent('<div id="status-msg"></div>');
   for(const file of ['web_shared/theme.css','pipeline_web_assets/app.css','pipeline_web_assets/job_workspace_tabs.css']) await page.addStyleTag({path:path.resolve(file)});
-  for(const file of ['web_shared/modal.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js']) await page.addScriptTag({path:path.resolve(file)});
+  for(const file of ['web_shared/modal.js','web_shared/job_activities.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js']) await page.addScriptTag({path:path.resolve(file)});
   await page.evaluate(()=>{
    // Exercise the reusable standalone conversation selector here. The actual
    // workspace's single shared switcher is covered by job_division_tabs.cjs.
@@ -33,8 +33,8 @@ const path=require('node:path'),assert=require('node:assert/strict');
   assert.equal(await page.locator('[data-comment-input]').isVisible(),true);
   await page.locator('#job-tab-log').click();
   await page.locator('[data-edit-job-log="log-1"]').click();
-  assert.equal(await page.locator('[data-log-custom]').inputValue(),'Custom drying review');
-  assert.equal(await page.locator('[data-log-field="technicians"]').inputValue(),'Mike');
+  assert.equal(await page.locator('[data-log-field="work_type"]').inputValue(),'Custom drying review');
+  assert.equal(await page.getByRole('textbox',{name:'Custom drying review assigned to',exact:true}).inputValue(),'Mike');
   await page.locator('[data-log-field="note"]').fill('Corrected update');
   await page.locator('[data-save-job-log]').click();
   assert.equal(await page.evaluate(()=>savedLogs[0][1].entry_id),'log-1');

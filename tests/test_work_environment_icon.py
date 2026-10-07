@@ -39,7 +39,7 @@ def test_running_window_receives_channel_taskbar_icon():
 
     assert '"linguar_hub_trial.ico"' in shell
     assert 'else "linguar_hub.ico"' in shell
-    assert "webview.start(debug=False, http_server=True, icon=taskbar_icon)" in shell
+    assert "webview.start(debug=False, http_server=True, icon=taskbar_icon, **start_options)" in shell
     assert "datas.append((os.path.join(base, ICON_FILE), '.'))" in spec
 
 
