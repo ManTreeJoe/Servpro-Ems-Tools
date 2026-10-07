@@ -2099,14 +2099,18 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                                 "lane": str(metadata.get("lane") or ""),
                                 "primary": bool(metadata.get("primary",
                                                     purpose == "primary")),
+                                "explicit_primary": metadata.get('primary') is True or (
+                                    'primary' not in metadata and metadata.get('purpose') == 'primary'),
                             }
                             item["url"] = (f"https://trello.com/c/{item['card_id']}"
                                            if item["card_id"] else "")
                             item["pinned"] = bool(item["card_id"])
                             normalized_links.append(item)
                             placements.append(item)
-                        primary = next((item for item in normalized_links
-                                        if item["primary"]), None)
+                        explicit = [item for item in normalized_links if item['explicit_primary']]
+                        eligible = explicit or [item for item in normalized_links if item['primary']]
+                        ambiguous = len(eligible) > 1
+                        primary = eligible[0] if len(eligible) == 1 else None
                         primary = primary or {}
                         card_id = str(primary.get("card_id") or "")
                         cards.append({
@@ -2114,6 +2118,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                             "card_id": card_id,
                             "url": f"https://trello.com/c/{card_id}" if card_id else "",
                             "pinned": bool(card_id),
+                            "ambiguous": ambiguous,
                         })
                     result = {"ok": True, "cards": cards,
                               "placements": placements}
@@ -2337,7 +2342,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         opened_matches = any(c['card_id'] == opened_card_id
                              for c in grouped[clicked_division])
         existing_pin = str(current.get(clicked_division, {}).get('card_id') or '')
-        if opened_card_id and opened_matches and not existing_pin:
+        if opened_card_id and opened_matches and not existing_pin and not current.get(clicked_division, {}).get('ambiguous'):
             # Opening a card may fill an empty verified division, never
             # replace an existing pin or cross division boundaries.
             saved = self.pin_crm_division_trello(
@@ -2354,7 +2359,9 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             candidate_ids = {card["card_id"] for card in candidates}
             other_ids = {c['card_id'] for other, rows in grouped.items()
                          if other != division for c in rows}
-            if pin and pin in other_ids:
+            if current.get(division, {}).get('ambiguous'):
+                state, reason = 'conflict', 'multiple_saved_primaries'
+            elif pin and pin in other_ids:
                 state, reason = "conflict", "saved_pin_wrong_division"
             elif (opened_matches and opened_card_id and pin == opened_card_id and
                     division == clicked_division):

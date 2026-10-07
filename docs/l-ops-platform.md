@@ -1200,3 +1200,21 @@ changes or durable all-job tracking are introduced. L OPS can mirror this UI
 after the shared movement-ledger contract is implemented; do not infer entry
 times from last activity. Tests cover scoping, workspace changes, incremental
 card rendering, history expansion and narrow layout. Main remains unchanged.
+
+## 2026-10-07 — Legacy division pin guard and Laura repair
+
+Branch: `handoff/paperclip-source-20261003`. OneLoss owns this fix; no schema
+change or Main release. Legacy pin setter and backfill now verify EMS board
+ownership before writes. Readers prefer explicit primary metadata and report
+ambiguity rather than selecting the oldest unmarked card. Laura Juarez's
+Contents card was incorrectly saved as EMS; that exact association was removed,
+the verified EMS card marked primary, and Contents preserved. Read-only
+reconciliation now reports no conflict. See [repair record](division-pin-repair-20261007.md).
+
+L OPS must use division-specific verified links, not assume every Trello card
+is EMS. Preserve primary/secondary metadata. Follow-up: harden generic identity,
+workspace and import writers; old clients can still write these associations.
+A read-only scan found 12 other cross-type candidates, not yet verified or
+repaired. Do not automatically merge, delete or re-pin these jobs. Shared API
+enforcement needs coordinated design before implementation. 56 targeted tests
+pass for this bounded fix; local/shared legacy mirroring remains best-effort.

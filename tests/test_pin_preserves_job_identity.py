@@ -7,6 +7,8 @@ import trello_client
 def test_pin_does_not_create_or_merge_job_from_provider_title(monkeypatch):
     state = {}
     effects = []
+    monkeypatch.setattr('division_cards.validate_pin', lambda card, division: card)
+    monkeypatch.setattr(ems_db, 'get_links', lambda *a: [{'link_value':'old'}])
     monkeypatch.setattr(persistence, '_load', lambda: state)
     monkeypatch.setattr(persistence, '_save', lambda value: None)
     monkeypatch.setattr(ems_db, 'resolve_and_link', lambda *a, **k: {'canon_key': 'durable-job'})
@@ -19,6 +21,6 @@ def test_pin_does_not_create_or_merge_job_from_provider_title(monkeypatch):
 
     persistence.set_trello_card_ids('Janette Patterson', ['card-1'])
 
-    assert effects == [('remove', ('durable-job', 'trello_card')),
+    assert effects == [('remove', ('durable-job', 'trello_card', 'old')),
                        ('link', ('durable-job', 'trello_card', 'card-1'))]
     assert persistence.get_trello_card_ids('Janette Patterson') == ['card-1']

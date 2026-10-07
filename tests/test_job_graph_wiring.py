@@ -17,6 +17,7 @@ import persistence
 
 @pytest.fixture(autouse=True)
 def fresh(tmp_path, monkeypatch):
+    monkeypatch.setattr('division_cards.validate_pin', lambda card, division: card)
     ems_db.reset_db_path(str(tmp_path / "jobs.db"))
     monkeypatch.setattr(persistence, "_CACHE", {}, raising=False)
     monkeypatch.setattr(persistence, "_CACHE_MTIME", None, raising=False)

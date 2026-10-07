@@ -1843,9 +1843,12 @@ def set_trello_card_ids(client, card_ids, *, mirror=True):
     key = _canon_pin_key(client)
     if not key:
         return
+    # Legacy pins are EMS, not an arbitrary cross-division card collection.
+    # Validate the whole request before touching either local or shared state.
+    from division_cards import validate_pin
+    cleaned = list(dict.fromkeys(validate_pin(c, 'EMS') for c in (card_ids or []) if c))
     state = _load()
     pins = state.setdefault("trello_card_ids", {})
-    cleaned = [c for c in (card_ids or []) if c]
     if cleaned:
         # Dedupe while preserving caller-supplied order (the picker order
         # is meaningful — first card is the primary / default for posts).
@@ -1879,10 +1882,22 @@ def set_trello_card_ids(client, card_ids, *, mirror=True):
                        else ems_db.upsert_job(
                            display_name=(client or "").strip() or key))
         # Mirror the full card list onto the resolved job (replace-set).
-        ems_db.remove_link(job_key, "trello_card")
-        for cid in cleaned:
+        # Preserve explicitly secondary WIP/Estimating representations.
+        for old in ems_db.get_links(job_key, 'trello_card') or []:
+            metadata = old.get('metadata')
+            if not isinstance(metadata, dict):
+                try:
+                    metadata = json.loads(old.get('metadata_json') or '{}')
+                except (ValueError, TypeError):
+                    metadata = {}
+            if metadata.get('primary') is False or metadata.get('purpose') not in (None, '', 'primary'):
+                continue
+            ems_db.remove_link(job_key, 'trello_card', old.get('link_value') or '')
+        for index, cid in enumerate(cleaned):
             ems_db.set_link(job_key, "trello_card", cid,
-                            added_by="persistence.set_trello_card_ids")
+                            added_by="persistence.set_trello_card_ids",
+                            metadata={'division':'EMS','primary':index == 0,
+                                      'purpose':'primary' if index == 0 else 'placement'})
         # The resolved app job owns its identity. A provider title is not
         # authority to create another job and perform a best-effort merge:
         # a timeout midway leaves two owners and splits saved log history.
@@ -1932,6 +1947,8 @@ def backfill_job_graph():
         if not (key and cid_list):
             continue
         try:
+            from division_cards import validate_pin
+            cid_list = [validate_pin(c, 'EMS') for c in cid_list]
             job = ems_db.resolve_and_link(key, trello_card=cid_list[0],
                                           create=True, source="backfill_trello")
             job_key = job["canon_key"] if job else ems_db.canon_key(key)
