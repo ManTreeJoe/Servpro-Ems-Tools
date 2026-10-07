@@ -19,6 +19,6 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
  await page.evaluate(()=>{const el=document.createElement('div');el.className='modal-scrim';el.innerHTML='<div class="modal-box audit-card">Job</div>';document.body.append(el);});
  assert.equal(await page.locator('.modal-scrim').evaluate(el=>getComputedStyle(el).animationName),'none');
  await page.emulateMedia({reducedMotion:'no-preference'});
- assert.equal(await page.locator('.audit-card').evaluate(el=>getComputedStyle(el).animationName),'none','Job content replacement must not reanimate');
+ assert.equal(await page.locator('.audit-card').evaluate(el=>getComputedStyle(el).animationName),'ui-surface-enter','Jobs must use the shared entrance');
  console.log('PASS: opening motion, immediate close, focus restore, reduced motion, no job-content replay');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1);});

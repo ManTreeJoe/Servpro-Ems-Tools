@@ -536,11 +536,11 @@ td.days.bad   { color: var(--red);   font-weight: 700; }
 /* ── Shared modal (board audit) ────────────────────────────────── */
 .modal-scrim { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; overscroll-behavior: contain; }
 .modal-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; width: min(520px,92vw); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
-/* Animate the job's outer shell once; loading-to-content replacement stays still. */
+/* Stable job panels enter once; background refresh patches their inner sections. */
 .modal-scrim { animation:ui-backdrop-enter 120ms ease-out; }
-.modal-scrim > .modal-box:not(.audit-card) { animation:ui-surface-enter 140ms ease-out; }
+.modal-scrim > .modal-box,.lane-popover { animation:ui-surface-enter 140ms ease-out; }
 @media(prefers-reduced-motion:reduce) {
-  .modal-scrim,.modal-scrim > .modal-box:not(.audit-card) { animation:none; }
+  .modal-scrim,.modal-scrim > .modal-box,.lane-popover { animation:none; }
 }
 .modal-head { padding: 16px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
 .modal-title { font-size: 15px; font-weight: 600; }

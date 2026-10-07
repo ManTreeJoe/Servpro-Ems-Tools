@@ -4,6 +4,11 @@ Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
 ## October 7 — Lightweight surface entrances (DEV)
 
+Follow-up: Jobs now includes the main job-card panel and lane menus in the same
+140 ms entrance. The incremental workspace browser test verifies exactly one
+panel entrance across fast/full/background refreshes, with draft and tab intact.
+Surface-motion/reduced-motion checks pass. No layout or persistence changes.
+
 Branch: `handoff/paperclip-source-20261003`. Shared dialogs, pipeline modal
 shells, the schedule editor and crew picker now use 120–140 ms CSS entrances.
 Closing remains immediate; no save or click is delayed. Job content replacement
