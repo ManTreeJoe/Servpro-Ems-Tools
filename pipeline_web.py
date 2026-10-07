@@ -182,27 +182,11 @@ def _detected_work_environments(crm: dict, summary: dict,
             })
     return merged
 
-# Lanes never shown on the board — spacers + admin/template columns that
-# aren't real jobs. (Per-CARD noise is handled by pipeline_stages.
-# is_pipeline_skip.)
-_NOISE_LANE_SUBSTRINGS = (
-    "spacer", "template", "templet",
-    "on call", "on-call", "collections process", "disposal",
-    "garments", "labels",
-)
-
 # Days-in-lane stall thresholds for the board chip — a cheap, lane-
 # agnostic proxy off last activity. (The Stages table keeps the precise
 # per-stage thresholds.)
 _BOARD_STALL_WARN = 7
 _BOARD_STALL_BAD = 14
-
-
-def _is_noise_lane(lane_name):
-    low = (lane_name or "").strip().lower()
-    if not low:
-        return True
-    return any(s in low for s in _NOISE_LANE_SUBSTRINGS)
 
 
 def _days_since_iso(iso):
@@ -308,8 +292,6 @@ def _build_board(tc, ps, key, bname, board_obj):
     lanes = []
     for l in lists:
         lname = (l.get("name") or "").strip()
-        if _is_noise_lane(lname):
-            continue
         if cards_by_list is not None:
             cards = cards_by_list.get(l.get("id"), [])
         else:
@@ -426,7 +408,7 @@ def _server_board_payload(specs=None):
         lanes = []
         for lane in sorted(row['lists'], key=lambda value: value.get('pos') or 0):
             lane_name = lane.get('name') or ''
-            if lane.get('closed') or _is_noise_lane(lane_name):
+            if lane.get('closed'):
                 continue
             cards = []
             for card in sorted(row['cards'], key=lambda value: value.get('pos') or 0):

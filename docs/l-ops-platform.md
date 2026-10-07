@@ -4,6 +4,12 @@ Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
 ## October 7 — Lane timing requirements and live lane audit
 
+User correction: show ALL open Trello lanes without name-based exclusions,
+including spacers, templates and On Call Teams. Both direct and mirrored read
+paths now retain them. Archived lanes remain outside the open-board view.
+This supersedes the exclusion policy below. Existing card-level filtering is
+unchanged; this change concerns lane visibility, not analytics eligibility.
+
 Branch: `handoff/paperclip-source-20261003`. Live Trello read verified WIP,
 Estimating and Contents open lists. MARKETING TEAM was incorrectly filtered as
 noise by the desktop; removed that exclusion. Spacers/templates stay excluded.
