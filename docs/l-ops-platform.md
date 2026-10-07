@@ -1228,8 +1228,12 @@ overview was rejected and removed. Its report form and PDF-generation contract
 remain unchanged. Comments use the actual Pipeline workspace in a dedicated
 embedded conversation mode, not another comment implementation. The pane stays
 open while editing a Snapshot; same-card refresh retains both frames and drafts.
-The left card's division selection updates the right conversation without
-changing the Snapshot report's original source identity. The hidden left
+Snapshot refinement: the entry card/division is now fixed for this report.
+No division-switch tabs or cross-division comment destinations. The duplicate
+Job Log tab is omitted because the report/job-log editor is already above.
+The top Add update action is removed from job-card headers; ordinary job cards
+still have their own Job Log editor. The Snapshot wrapper is flat and the
+embedded card sizes to content, leaving one outer report scrollbar. The hidden left
 conversation does not mount a second comment draft or threads controller.
 Nested API calls route to the Home shell, preserving existing Pipeline access
 checks. This embedding targets Snapshot inside the OneLoss hub. No schema or

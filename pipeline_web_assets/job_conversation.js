@@ -15,6 +15,10 @@ window.JobConversation = (() => {
       }
     }
     if (options.cardId) cards.set(current, String(options.cardId));
+    if (options.lockedCard) {
+      cards.clear();
+      if (options.cardId) cards.set(current, String(options.cardId));
+    }
     // One provider card must never appear twice under different divisions.
     for (const [division, id] of cards) {
       if (division !== current && id === cards.get(current)) cards.delete(division);
@@ -68,7 +72,7 @@ window.JobConversation = (() => {
     pills.setAttribute('role', 'group');
     pills.setAttribute('aria-label', 'Post comment to divisions');
     const postPills = new Map();
-    for (const division of divisions) {
+    for (const division of options.lockedCard ? [current] : divisions) {
       const button = document.createElement('button');
       button.type = 'button'; button.textContent = label(division);
       button.dataset.commentDestination = division;
@@ -90,7 +94,7 @@ window.JobConversation = (() => {
     destination.append(pills);
     (root.querySelector('.comment-send-row') || root.querySelector('.comment-compose')).prepend(destination);
     const primaryIds = new Set([...cards.values()]);
-    const extraPlacements = (options.placements || []).filter(row =>
+    const extraPlacements = (options.lockedCard ? [] : options.placements || []).filter(row =>
       row?.card_id && row.pinned !== false && !row.primary &&
       !primaryIds.has(String(row.card_id)));
     let placementPicker = null;
@@ -222,6 +226,7 @@ window.JobConversation = (() => {
       refresh,
       setThreadRecords(rows) { threadRecords = rows; paint(); },
       updateCards(rows) {
+        if (options.lockedCard) return;
         const hadCards = cards.size > 0;
         const next = new Map();
         for (const row of rows || []) {

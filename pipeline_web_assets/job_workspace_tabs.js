@@ -5,7 +5,8 @@ window.JobWorkspaceTabs = (() => {
     ['overview', 'Overview'], ['log', 'Job Log'],
     ['requirements', 'Requirements'], ['files', 'Files'], ['run', 'Card Details'],
   ];
-  function mount(root, identity) {
+  function mount(root, identity, options = {}) {
+    const excluded = new Set(options.excludeTabs || []);
     const layout = root.querySelector('.job-card-layout');
     const main = root.querySelector('.job-card-main');
     const activity = root.querySelector('.job-card-activity');
@@ -30,8 +31,7 @@ window.JobWorkspaceTabs = (() => {
       panel.setAttribute('aria-labelledby', button.id);
       panel.tabIndex = 0;
       panels.set(key, panel);
-      buttons.set(key, button);
-      nav.append(button);
+      if (!excluded.has(key)) { buttons.set(key, button); nav.append(button); }
       main.append(panel);
     }
     for (const section of sections) {
@@ -50,12 +50,14 @@ window.JobWorkspaceTabs = (() => {
     root.querySelector('.audit-card')?.classList.add('full-height-comments');
     root.querySelector('.modal-body').before(nav);
     function select(key, focus = false) {
-      if (!panels.has(key)) key = 'overview';
+      if (!panels.has(key) || excluded.has(key)) key = 'overview';
       for (const [name, panel] of panels) {
         panel.hidden = name !== key;
         const button = buttons.get(name);
-        button.setAttribute('aria-selected', String(name === key));
-        button.tabIndex = name === key ? 0 : -1;
+        if (button) {
+          button.setAttribute('aria-selected', String(name === key));
+          button.tabIndex = name === key ? 0 : -1;
+        }
       }
       remembered.set(identity, key);
       if (key === 'files') root.querySelector('.job-files-section')?._jobFiles?.activate();

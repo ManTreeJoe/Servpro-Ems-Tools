@@ -48,8 +48,8 @@ window.SnapshotJobWorkspace = (() => {
     const fromCard = event.source === cardFrame?.contentWindow;
     if (!fromCard && event.source !== commentsFrame?.contentWindow) return;
     const data = event.data || {};
-    if (fromCard && data.type === 'snapshot-job-overview' && data.cardId) {
-      showComments({cardId:data.cardId,client:data.client,division:data.division}).catch(() => {});
+    if (fromCard && data.type === 'snapshot-card-height' && Number.isFinite(data.height)) {
+      cardFrame.style.height = Math.max(320,Math.min(20000,data.height + 2)) + 'px';
     } else if (['linguar-open-job','ems-open-tool-modal','ems-nav','linguar-open-daily-run'].includes(data.type)) {
       window.parent.postMessage(data,location.origin);
     }

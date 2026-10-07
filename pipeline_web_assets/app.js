@@ -2167,6 +2167,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     }).join("")}
   </div>`;
   const workTypes = [["EMS", "💧", "Mitigation"], ["Contents", "▣", "Contents"], ["Recon", "🔨", "Reconstruction"]]
+    .filter(([name]) => !snapshotCardMode || name.toUpperCase() === selectedDivision.toUpperCase())
     .map(([name, icon, label]) => {
       const env = workTypeState[name.toLowerCase()] || {};
       const trello = divisionCards[name.toLowerCase()] || {};
@@ -2287,7 +2288,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       <section class="aud-section progress-section"><div class="section-title-row"><h3>Job requirements</h3>
         <span class="progress-label">${progress.counts?.overdue || 0} overdue · ${progress.counts?.blocked || 0} blocked · ${progress.percent_complete || 0}% complete</span></div>
         <div class="requirement-progress"><i style="width:${Math.max(0, Math.min(100, progress.percent_complete || 0))}%"></i></div>${profilePicker}${required}</section>
-      <section class="aud-section"><div class="section-title-row"><div><h3>Work on this job</h3><small>Choose every division involved; each one tracks its own status</small></div><span class="job-save-mode" data-job-save-state>Changes save automatically</span></div><div class="work-types">${workTypes}</div></section>
+      <section class="aud-section"><div class="section-title-row"><div><h3>${snapshotCardMode ? 'Division status' : 'Work on this job'}</h3><small>${snapshotCardMode ? 'Status for this Snapshot’s division' : 'Choose every division involved; each one tracks its own status'}</small></div><span class="job-save-mode" data-job-save-state>Changes save automatically</span></div><div class="work-types">${workTypes}</div></section>
       <section class="aud-section checklist-section"><div class="section-title-row"><div><h3>Checklists</h3><small>${escapeHtml(selectedDivision)} requirements</small></div>${checklistDivisionTabs}</div>${checklistGroups}</section>
       ${oldJobsSection}
       <section class="aud-section job-files-section"></section>
@@ -2317,11 +2318,10 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
         <div class="workspace-load-state" data-workspace-load-state>${data.deferred_loading ? "Checking details…" : data.refresh_pending ? "Saved details · checking for updates" : `<button class="btn compact" type="button" data-refresh-workspace>Refresh details</button>`}</div>
         </div>
         ${headerTagsHtml}
-        ${divisionDataTabs}
+        ${snapshotCardMode ? `<div class="snapshot-division-label">${escapeHtml(selectedDivision)} · Snapshot</div>` : divisionDataTabs}
         <div class="card-quick-actions" aria-label="Job actions">
           <div class="quick-main-actions">
           <div class="quick-primary-actions" aria-label="Work actions">
-            <button class="action-btn primary" data-add-job-log><span class="quick-action-icon">＋</span>Add update</button>
             <button class="action-btn" data-import-files title="Import downloaded or selected files into this job's OD folder">📥 Import files</button>
           </div>
           <div class="quick-destination-actions" aria-label="Connected tools">
@@ -2363,7 +2363,12 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   const previousFocus = preparation ? null : document.activeElement;
   window.JobFiles?.mount(w.querySelector('.job-files-section'), {client:data.client || res.client || '', attachments:data.attachments || []});
   window.SavedRunActivity?.mount(w.querySelector('.job-run-section'), data.client || res.client || '', selectedDivision, data.card_id || '');
-  const workspaceTabs = window.JobWorkspaceTabs.mount(w, `${state.department || ''}:${data.card_id || data.client || ''}`);
+  const workspaceTabs = window.JobWorkspaceTabs.mount(w, `${state.department || ''}:${data.card_id || data.client || ''}`, {excludeTabs:snapshotCardMode ? ['log'] : []});
+  if (snapshotCardMode && !preparation) {
+    const observer = new ResizeObserver(() => window.parent.postMessage({type:'snapshot-card-height',height:Math.ceil(w.querySelector('.audit-card').getBoundingClientRect().height)},location.origin));
+    observer.observe(w.querySelector('.audit-card'));
+    w._snapshotSizeObserver = observer;
+  }
   window.JobCardTiming?.mount(w, data.card_id, pywebview.api);
   if (!preparation && data.initial_workspace_tab) workspaceTabs.select(data.initial_workspace_tab);
   const dirtyDrafts = preparation?.dirtyDrafts || new Set();
@@ -2382,6 +2387,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       recoveredDrafts.forEach(draft => draft.clear());
     }
     recoveredDrafts.forEach(draft => draft.dispose());
+    w._snapshotSizeObserver?.disconnect();
     w.querySelector('[data-comment-input]')?._richEditor?.destroy();
     document.removeEventListener("keydown", keyClose);
     if (w._contentsListener) window.removeEventListener("pipeline:contents-card", w._contentsListener);
@@ -2460,7 +2466,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       loadSession: w._divisionLoadSession
     });
   }));
-  w.querySelector('.job-division-folder-tabs').addEventListener('keydown', event => {
+  w.querySelector('.job-division-folder-tabs')?.addEventListener('keydown', event => {
     const buttons = [...w.querySelectorAll('[data-division-data]:not(:disabled)')];
     const index = buttons.indexOf(event.target);
     if (index < 0 || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
@@ -3240,7 +3246,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     .filter(item => ['conflict', 'ambiguous'].includes(item.state))
     .map(item => String(item.division || '').toUpperCase()));
   const conversation = preparation?.conversation || window.JobConversation.mount(w, {
-    followWorkspace: !snapshotCommentsMode,
+    followWorkspace: true,
+    lockedCard: snapshotCommentsMode,
     cardId: data.card_id || '', division: selectedDivision,
     cards: workspaceDivisionCards.map(card => ({...card,
       conflict: conflictedDivisions.has(String(card.division || '').toUpperCase())})),

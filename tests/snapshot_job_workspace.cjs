@@ -1,5 +1,6 @@
 const {chromium}=require('playwright'), http=require('node:http'), fs=require('node:fs'), path=require('node:path'), assert=require('node:assert/strict');
 const fixture={ok:true,client:'Sample restoration job',card_id:'card1',selected_division:'EMS',audit:{found:true},crm:{},info_sections:[{name:'Customer Information',fields:[{id:'customer_name',label:'Customer name',value:'Sample customer'},{id:'address',label:'Address',value:'123 Sample St'}]}],comments:[{id:'c1',text:'Ready for review',member:'Sam',source:'trello'}],division_trello_cards:[{division:'EMS',card_id:'card1',pinned:true}]};
+fixture.division_trello_cards.push({division:'CONTENTS',card_id:'contents1',pinned:true},{division:'RECON',card_id:'recon1',pinned:true});
 const server=http.createServer((req,res)=>{
  const pathname=new URL(req.url,'http://local').pathname;
  if(pathname==='/shell'||pathname==='/snapshot_web_assets/fixture')res.setHeader('Content-Type','text/html');
@@ -17,8 +18,13 @@ const server=http.createServer((req,res)=>{
  try { await page.waitForFunction(()=>calls.some(n=>n==='pipeline_job_card_workspace'),null,{timeout:10000}); }
  catch(error) { console.log('Calls',await page.evaluate(()=>calls),'Errors',errors,'Frames',page.frames().map(f=>f.url())); if(comment())console.log(await comment().locator('body').innerText());throw error; }
  await card().waitForSelector('[data-edit-job-info]');
- await card().waitForFunction(()=>document.querySelector('.job-info-section').textContent.includes('Sample customer'));
- for(const name of ['Overview','Job Log','Requirements','Files','Card Details']) {
+ try { await card().waitForFunction(()=>document.querySelector('.job-info-section').textContent.includes('Sample customer'),null,{timeout:5000}); }
+ catch(error) {console.log('Workspace errors',errors,await card().locator('body').innerText());throw error;}
+ assert.equal(await card().getByRole('tab',{name:'Job Log',exact:true}).count(),0);
+ assert.equal(await card().locator('.job-division-folder-tabs').count(),0);
+ assert.equal(await card().locator('.card-quick-actions [data-add-job-log]').count(),0);
+ assert.equal(await card().locator('[data-work-type-card]').count(),1);
+ for(const name of ['Overview','Requirements','Files','Card Details']) {
    const tab=card().getByRole('tab',{name,exact:true});
    await tab.click();assert.equal(await tab.getAttribute('aria-selected'),'true');
  }
@@ -30,6 +36,10 @@ const server=http.createServer((req,res)=>{
  await card().locator('.more-quick-menu > .tool-menu-trigger').click();
  assert.equal(await card().locator('.job-card-activity').isVisible(),false);
  await comment().waitForSelector('[data-comment-input]',{state:'attached'});
+ assert.equal(await comment().locator('[data-comment-destination]').count(),1);
+ assert.equal(await comment().locator('[data-comment-destination]').getAttribute('data-comment-destination'),'EMS');
+ assert.equal(await comment().locator('[data-comment-division]').count(),0);
+ await card().waitForFunction(()=>document.querySelector('.job-card-main').scrollHeight<=document.querySelector('.job-card-main').clientHeight+2);
  await comment().locator('[contenteditable="true"]').first().fill('Unsent reply');
  await comment().locator('[contenteditable="true"]').first().press('Escape');
  assert.equal(await comment().locator('.audit-overlay').count(),1,'Escape must not close comments');
