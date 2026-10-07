@@ -19,6 +19,7 @@ window.JobCardTiming = (() => {
         ${result ? `<details><summary>Movement history & estimating time</summary><p class="job-timing-note">Available Trello events only · missing history stays unknown${result.complete ? '' : ' · partial retrieval'}. Separate cards are not combined.</p>
         ${(result.estimator_cycles || []).map(c => `<div class="job-timing-cycle"><b>${escape(c.first_lane)} → Logs · ${duration(c.seconds)}</b><span>${date(c.started)} → ${c.ended ? date(c.ended) : 'Logs arrival not recorded'}</span></div>`).join('')}
         <ol>${(result.periods || []).map(p => `<li><div><small>${escape(p.board)}</small><b>${escape(p.lane)}</b><span>${date(p.entered)} → ${p.current ? 'Current lane' : date(p.exited)}</span><small>Moved by ${escape(p.actor)}</small></div><strong>${duration(p.seconds)}</strong></li>`).join('') || '<li>No verified movements available.</li>'}</ol></details>` : ''}
+        ${result ? `<details><summary>Snapshot, waiting & Logs</summary>${window.LaneTimingSummary?.render(result) || ''}</details>` : ''}
         <button type="button" class="btn compact" ${busy ? 'disabled' : ''}>${busy ? 'Checking timing…' : result ? 'Refresh timing' : 'Retry timing'}</button>`;
       section.querySelector('button').onclick = load;
     }

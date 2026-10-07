@@ -24,5 +24,7 @@
 </main>
 <dialog id="review"><form method="dialog"><div class="section-head"><h2 id="review-title">Weekly review</h2><button value="cancel" aria-label="Close review">×</button></div><p>Review notes are saved on this PC for the current workspace.</p><label>Correction / review note<textarea id="review-note" rows="5"></textarea></label><div class="review-fields"><label>Owner<input id="review-owner"></label><label>Due date<input id="review-due" type="date"></label><label>Outcome<select id="review-outcome"><option value="reviewed">Reviewed</option><option value="follow_up">Follow-up required</option><option value="resolved">Correction resolved</option></select></label></div><p id="review-error" role="alert"></p><button type="button" class="primary" id="save-review">Save review</button></form></dialog>
 <script src="logs_audit.js?v=20260918release1821"></script>
-<script src="flow.js?v=20261007timeline"></script>
+<script src="../web_shared/lane_timing_summary.js?v=20261007"></script>
+<link rel="stylesheet" href="../web_shared/lane_timing_summary.css?v=20261007">
+<script src="flow.js?v=20261007metrics"></script>
 <script src="app.js?v=20261007flow"></script></body></html>

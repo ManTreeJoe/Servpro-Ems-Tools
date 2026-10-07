@@ -1144,6 +1144,29 @@ and real Trello reply test; automated tests do not post production comments.
 
 ## Retention contract: approved forward requirement, implementation underway
 
+Deployment status: migration `20261007210858_retained_card_observations` applied
+to Linguar Hub `oqwwapqnzzhefqxobadl` on 2026-10-07. Baseline: 3,943 saved card
+placements across six boards. After deployment the existing server worker
+retained 21 new changes and completed a poll with no error. Transactional
+service-role tests passed: no-op polls do not duplicate, moves/details/removal
+retain before/after records, clients cannot read, service role cannot delete.
+No Main desktop release. No L OPS database changes.
+
+Security advisor: intentional [RLS with no client policy](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
+for this service-only table; anonymous/authenticated grants are revoked. Existing
+unrelated [admin definer warnings](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
+and [password protection warning](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)
+remain unchanged. Append-only snapshots increase storage: add monitoring and
+scope-safe read/projection before opening history to clients. These observations
+do not yet feed Analytics. Exact event ingestion remains a required follow-up.
+
+DEV timing UI: shared `web_shared/lane_timing_summary.js` renders Snapshot cycles,
+waiting-lane totals (unknown intervals explicitly partial), every recorded Logs
+arrival, and current Logs age. Analytics card timing and job Overview reuse this
+renderer and `lane_timing_metrics.py`. Estimator timing remains Logs-entry based.
+Other Analytics pages still require shared history integration; do not claim
+their summary charts or weekly records contain these new metrics yet.
+
 OneLoss owns retention across every configured board and all Analytics consumers.
 First additive backend slice: service-only `hub_card_observations` stores changes
 observed in the existing server mirror: card payload, details, comments and

@@ -111,7 +111,12 @@ def timeline(actions, current, now=None):
             item = totals.setdefault(key, dict(board=period['board'],lane=period['lane'],seconds=0,visits=0))
             item['seconds'] += period['seconds']
             item['visits'] += 1
+    from lane_timing_metrics import summarize
+    metrics = summarize(periods, current, now, snapshot_id=IE_SNAPSHOT,
+                        estimator_ids=IE_ESTIMATOR_LANES, est_board=IE_EST_BOARD,
+                        logs_board=IE_LOGS_BOARD, parse=instant)
     return dict(periods=periods, totals=list(totals.values()), estimator_cycles=cycles(periods,current,now),
+                **metrics,
                 current_seconds=periods[-1]['seconds'] if periods and periods[-1]['current'] else None)
 
 
