@@ -2,6 +2,20 @@
 
 Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
+## October 7 — APA cleanup and shared contacts follow-up
+
+DEV removes the plain Paste toolbar button and Open in Word overflow action
+from APA; Paste & reconcile, Print, Contacts, and Show in Explorer remain.
+Removed the corresponding boot listeners and the print error's obsolete Word
+suggestion. No document or backend data changes.
+
+Next backend task requested by Nathan: APA contacts must be organization-wide,
+not per-PC. Before schema implementation, coordinate the organization boundary,
+authorized read/edit roles, contact identity and duplicate review, migration of
+existing local lists, change history, and the L OPS read/write contract here.
+Contacts are separate from scheduling people and authentication accounts.
+No shared contact schema or migration has been implemented in this cleanup.
+
 ## October 7 — Approved IE scheduling roster (DEV)
 
 Branch: `handoff/paperclip-source-20261003`. `scheduling_roster.py` records

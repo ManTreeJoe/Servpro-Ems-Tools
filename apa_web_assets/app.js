@@ -35,7 +35,6 @@ window.addEventListener("pywebviewready", async () => {
   attachMoreMenu();
   $("#manage-sections-btn").addEventListener("click", openManageSectionsModal);
   $("#manage-franchises-btn").addEventListener("click", openManageFranchisesModal);
-  $("#open-word-btn").addEventListener("click", openInWord);
   $("#print-btn").addEventListener("click", printAPA);
   $("#reveal-btn").addEventListener("click", revealInExplorer);
   $("#clear-all-btn").addEventListener("click", clearAllItems);
@@ -76,7 +75,6 @@ window.addEventListener("pywebviewready", async () => {
   });
   // Long-tooltip hint so users discover the right-click shortcut.
   $("#eod-btn").title = "Send the EOD email · Right-click to edit recipients";
-  $("#bulk-paste-btn").addEventListener("click", openBulkPasteModal);
   $("#contacts-btn").addEventListener("click", openContactsModal);
   document.addEventListener("keydown", onKeyDown);
 
@@ -952,7 +950,7 @@ async function printAPA() {
     if (!await saveDoc()) return;
     const result = await pywebview.api.print_preview(state.doc.doc_path);
     setStatus(result.ok ? 'Print preview opened in Word. Choose File → Print to select a printer.' : result.error, result.ok ? 'ok' : 'error');
-  } catch (_) { setStatus('Print preview could not open. Try Open in Word.', 'error'); }
+  } catch (_) { setStatus('Print preview could not open. Please retry.', 'error'); }
   finally { button.disabled = false; }
 }
 
@@ -1729,7 +1727,7 @@ async function attachFranchiseFilter() {
   });
 }
 
-// ── More menu (consolidated: Open in Word / Explorer / Contacts) ──
+// ── More menu (Explorer / Contacts / management actions) ──
 function attachMoreMenu() {
   const btn = document.getElementById("more-btn");
   const menu = document.getElementById("more-menu");
@@ -1743,7 +1741,7 @@ function attachMoreMenu() {
     if (!e.target.closest("#more-wrap")) hide();
   });
   // Close the menu after any item click (the existing click handlers
-  // on open-word-btn / reveal-btn / contacts-btn fire first because
+  // on reveal-btn / contacts-btn fire first because
   // they're attached at boot — this just collapses the dropdown).
   menu.querySelectorAll(".more-item").forEach((el) =>
     el.addEventListener("click", () => setTimeout(hide, 0)));
