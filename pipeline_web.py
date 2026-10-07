@@ -1736,6 +1736,21 @@ class Api(JobSettingsApi):
         except Exception:
             return {"ok": False, "error": "Card history could not load. Check your connection and retry."}
 
+    def job_card_timing(self, card_id: str) -> dict:
+        """Read verified timing only for cards in the current scoped Jobs cache."""
+        import lane_analytics
+        try:
+            scope = pipeline_store._cache_scope()
+            payload = pipeline_store.load_board_cache()
+            allowed = {str(c.get('card_id')) for b in payload.get('boards', [])
+                       for lane in b.get('lanes', []) for c in lane.get('cards', [])}
+            result = lane_analytics.read_history(str(card_id), allowed)
+            if pipeline_store._cache_scope() != scope:
+                return {'ok': False, 'error': 'Workspace changed. Reopen this job card.'}
+            return result
+        except Exception:
+            return {'ok': False, 'error': 'Timing could not load. Retry; no time was inferred.'}
+
     def saved_run_activity(self, client: str, division: str = "EMS") -> dict:
         # This backfill indexes the EMS run library, never another division.
         if str(division or 'EMS').upper() != 'EMS':

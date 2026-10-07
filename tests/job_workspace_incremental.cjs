@@ -7,7 +7,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.setContent('<div id="status-msg"></div><button id="fixture-card">Saved job</button>');
   for(const file of ['web_shared/theme.css','web_shared/modal.css','pipeline_web_assets/app.css','pipeline_web_assets/job_workspace_tabs.css'])await page.addStyleTag({path:path.resolve(file)});
-  for(const file of ['web_shared/modal.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(file)});
+  for(const file of ['web_shared/modal.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_card_timing.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(file)});
   await page.evaluate(()=>{
    window.copied=[];window.checked=[];
    window.pywebview={api:{job_card_workspace_fast:()=>new Promise(resolve=>window.finishFast=resolve),job_card_workspace:()=>new Promise(resolve=>window.finishFull=resolve),copy_to_clipboard:async value=>copied.push(value),set_job_check_item:async(...args)=>{checked.push(args);return {ok:true};}}};
@@ -25,6 +25,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
   await page.evaluate(()=>finishFast({ok:true,client:'Saved job',card_id:'card1',selected_division:'EMS',deferred_loading:true,audit:{found:true},crm:{},info_sections:[],comments:[]}));
   await page.waitForFunction(()=>!!window.finishFull);
   assert.equal(await page.evaluate(()=>originalRoot.isConnected),true,'DB response replaced the entire card');
+  assert.equal(await page.locator('.job-timing-section').count(),1,'Background update removed timing');
   assert.match(await page.locator('.job-info-section').textContent(),/555-0100/,'empty partial response erased saved facts');
   await page.locator('[data-comment-input]').fill('Keep my draft');
   await page.locator('#job-tab-files').click();

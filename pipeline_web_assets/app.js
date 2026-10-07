@@ -1945,6 +1945,7 @@ function patchWorkspaceSections(root, prepared, editedSections, refreshJobLog = 
       const old = existing.get(id);
       if (!old) { live.append(node); continue; }
       if (old.classList.contains('job-files-section')) continue;
+      if (old.classList.contains('job-timing-section') && old.dataset.timingCard === node.dataset.timingCard) continue;
       if (old.classList.contains('job-run-section') && old._runActivity) continue;
       const explicitLogRefresh = refreshJobLog && old.classList.contains('job-log-section');
       if ((!explicitLogRefresh && (editedSections.has(id) || old.contains(document.activeElement))) || old.querySelector('[data-job-log-editor]:not([hidden])')) continue;
@@ -1964,6 +1965,9 @@ function patchWorkspaceSections(root, prepared, editedSections, refreshJobLog = 
     else if (old && !node && selector === '.division-conflict-banner') old.remove();
   }
   for (const [node, top, left] of scrollPositions) { node.scrollTop = top; node.scrollLeft = left; }
+  for (const timing of root.querySelectorAll('.job-timing-section')) {
+    if (timing._timing && !timing.childElementCount) timing._timing.activate();
+  }
 }
 
 function openAuditModal(data, trelloUrl = "", preparation = null) {
@@ -2332,6 +2336,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   window.JobFiles?.mount(w.querySelector('.job-files-section'), {client:data.client || res.client || '', attachments:data.attachments || []});
   window.SavedRunActivity?.mount(w.querySelector('.job-run-section'), data.client || res.client || '', selectedDivision, data.card_id || '');
   const workspaceTabs = window.JobWorkspaceTabs.mount(w, `${state.department || ''}:${data.card_id || data.client || ''}`);
+  window.JobCardTiming?.mount(w, data.card_id, pywebview.api);
   if (!preparation && data.initial_workspace_tab) workspaceTabs.select(data.initial_workspace_tab);
   const dirtyDrafts = preparation?.dirtyDrafts || new Set();
   const recoveredDrafts = preparation?.recoveredDrafts || new Set();

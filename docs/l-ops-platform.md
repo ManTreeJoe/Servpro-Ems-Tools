@@ -1148,3 +1148,13 @@ and lane totals using the shared theme. UI only; Main and database unchanged.
 Next integration decision: [persistent movement ledger](movement-ledger-handoff.md).
 This records the all-job/Logs requirement for L OPS coordination before schema
 implementation. Existing on-demand Trello history is not guaranteed full history.
+
+Job-card timing follow-up: Overview now includes a compact current-lane duration
+and expandable movement/estimator history. It reads independently of workspace
+loading via `job_card_timing`, checks scoped saved card membership and rejects
+results after a workspace switch. Background card updates preserve the timing
+section; failed timing refresh keeps prior values with an error. No database
+changes or durable all-job tracking are introduced. L OPS can mirror this UI
+after the shared movement-ledger contract is implemented; do not infer entry
+times from last activity. Tests cover scoping, workspace changes, incremental
+card rendering, history expansion and narrow layout. Main remains unchanged.
