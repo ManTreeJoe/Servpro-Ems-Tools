@@ -15,7 +15,9 @@
 const pipelineQuery = new URLSearchParams(window.location.search);
 const jobWorkspaceMode = pipelineQuery.get("job_workspace") === "1";
 const snapshotCommentsMode = pipelineQuery.get('snapshot_comments') === '1';
+const snapshotCardMode = pipelineQuery.get('snapshot_card') === '1';
 if (snapshotCommentsMode) document.documentElement.classList.add('snapshot-comments-mode');
+if (snapshotCardMode) document.documentElement.classList.add('snapshot-card-mode');
 
 const state = {
   view: "board",            // "board" | "stages"
@@ -612,6 +614,7 @@ function updateBackgroundSyncIndicator() {
 }
 
 async function refreshOpenWorkspaceComments() {
+  if (snapshotCardMode) return; // The persistent right pane owns this conversation.
   const context = state.openWorkspace;
   if (!context?.cardId || !context.element?.isConnected || context.refreshing ||
       document.visibilityState !== "visible") return;
@@ -2388,7 +2391,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     previousFocus?.focus?.();
     return true;
   };
-  const requestClose = () => { if (!snapshotCommentsMode && close()) notifyJobWorkspaceClosed(); };
+  const requestClose = () => { if (!snapshotCommentsMode && !snapshotCardMode && close()) notifyJobWorkspaceClosed(); };
   w.querySelector("[data-close]").addEventListener("click", requestClose);
   const keyClose = (e) => {
     if (e.key !== "Escape") return;
@@ -3245,8 +3248,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     comments: data.comments || [], render: renderJobComment,
     initialComplete: !data.deferred_loading && !data.refresh_pending && !data.audit?.trello_error && Array.isArray(data.comments),
     initialError: data.audit?.trello_error || '',
-    fetchSaved: cardId => pywebview.api.saved_job_comments?.(cardId),
-    fetch: (cardId, force) => !force && w._divisionLoadSession?.comments(cardId) || pywebview.api.refresh_job_comments(cardId), onChange: filterComments,
+    fetchSaved: cardId => snapshotCardMode ? {ok:true,comments:[]} : pywebview.api.saved_job_comments?.(cardId),
+    fetch: (cardId, force) => snapshotCardMode ? {ok:true,comments:[]} : !force && w._divisionLoadSession?.comments(cardId) || pywebview.api.refresh_job_comments(cardId), onChange: filterComments,
   });
   workspaceContext = {
     element: w,
@@ -3257,15 +3260,17 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     conversation,
   };
   if (!preparation) state.openWorkspace = workspaceContext;
-  const commentDraft = preparation?.commentDraft || (!preparation && window.JobDrafts?.mount(w.querySelector('.comment-compose'), [data.card_id || '', selectedDivision, 'comment', ''], () =>
+  const commentDraft = preparation?.commentDraft || (!preparation && !snapshotCardMode && window.JobDrafts?.mount(w.querySelector('.comment-compose'), [data.card_id || '', selectedDivision, 'comment', ''], () =>
     commentInput.value.trim() ? {text:commentInput.value, targets:conversation.targets().map(target => target.cardId), reply:w._commentReply || null} : null,
     saved => { commentInput.value = saved.text || ''; w._commentReply = saved.reply || null; w.dispatchEvent(new Event('comment-reply-restored')); conversation.restoreTargets?.(saved.targets || []); markDraftDirty('comment', !!commentInput.value.trim()); }));
   if (commentDraft) recoveredDrafts.add(commentDraft);
   if (snapshotCommentsMode && !preparation) window.flushSnapshotCommentDraft = () => commentDraft?.flush();
   if (!preparation) {
     commentInput._mentionTargets = () => conversation.targets();
-    window.CommentMarkdown?.mount(commentInput);
-    window.CommentThreads?.mount(w, conversation, data.card_id || '');
+    if (!snapshotCardMode) {
+      window.CommentMarkdown?.mount(commentInput);
+      window.CommentThreads?.mount(w, conversation, data.card_id || '');
+    }
   }
   w.querySelector('.comment-compose')?.addEventListener('click', event => {
     if (event.target.closest('[data-comment-destination],[data-comment-placement]')) commentDraft?.capture();
@@ -3434,7 +3439,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     },
   };
   if (!preparation) workspaceContext.applyRefresh = controller.applyRefresh;
-  if (snapshotCommentsMode) window.parent.postMessage({type:'snapshot-job-overview',
+  if (snapshotCardMode) window.parent.postMessage({type:'snapshot-job-overview',
     cardId:data.card_id || '', client:data.client || res.client || '',
     sections:data.info_sections || [], placement:data.app_placement || {},
     division:selectedDivision, pending:!!data.deferred_loading}, location.origin);

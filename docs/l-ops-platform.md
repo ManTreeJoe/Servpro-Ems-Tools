@@ -1221,11 +1221,16 @@ pass for this bounded fix; local/shared legacy mirroring remains best-effort.
 
 ## Snapshot job-card presentation — DEV only
 
-Snapshot's audit subview is now a compact read-only job overview with copyable
-facts and an Open job card action. Its report form and PDF-generation contract
+Correction after user review: Snapshot's audit subview now embeds the FULL job
+card, including division tabs, Overview, Job Log, Requirements, Files, Card
+Details, Members, Edit and existing action menus. The stripped-down read-only
+overview was rejected and removed. Its report form and PDF-generation contract
 remain unchanged. Comments use the actual Pipeline workspace in a dedicated
 embedded conversation mode, not another comment implementation. The pane stays
-open while editing a Snapshot; same-card refresh retains the frame and draft.
+open while editing a Snapshot; same-card refresh retains both frames and drafts.
+The left card's division selection updates the right conversation without
+changing the Snapshot report's original source identity. The hidden left
+conversation does not mount a second comment draft or threads controller.
 Nested API calls route to the Home shell, preserving existing Pipeline access
 checks. This embedding targets Snapshot inside the OneLoss hub. No schema or
 L OPS changes required. Do not create another comments/thread store in L OPS.

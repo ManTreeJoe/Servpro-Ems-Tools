@@ -14,7 +14,8 @@
   if (window.parent === window) return;  // standalone — let pywebview do its thing
   // Snapshot hosts the existing Pipeline comments workspace one level deeper.
   // Route to HomeApi, not Snapshot's already-namespaced proxy.
-  const snapshotComments = new URLSearchParams(location.search).get('snapshot_comments') === '1';
+  const embedQuery = new URLSearchParams(location.search);
+  const snapshotComments = embedQuery.get('snapshot_comments') === '1' || embedQuery.get('snapshot_card') === '1';
   const parentWin = snapshotComments && /\/snapshot_web_assets\//.test(window.parent.location.pathname)
     && window.parent.parent !== window.parent ? window.parent.parent : window.parent;
   let alreadyFired = false;

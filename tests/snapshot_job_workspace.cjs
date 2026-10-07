@@ -13,10 +13,22 @@ const server=http.createServer((req,res)=>{
  await page.goto(`http://127.0.0.1:${server.address().port}/shell`);
  const snapshot=page.frames().find(f=>f.url().endsWith('/snapshot_web_assets/fixture'));
  const comment=()=>page.frames().find(f=>f.url().includes('snapshot_comments=1'));
+ const card=()=>page.frames().find(f=>f.url().includes('snapshot_card=1'));
  try { await page.waitForFunction(()=>calls.some(n=>n==='pipeline_job_card_workspace'),null,{timeout:10000}); }
  catch(error) { console.log('Calls',await page.evaluate(()=>calls),'Errors',errors,'Frames',page.frames().map(f=>f.url())); if(comment())console.log(await comment().locator('body').innerText());throw error; }
- await snapshot.waitForSelector('.snapshot-job-facts');
- assert.match(await snapshot.locator('#audit-result').textContent(),/Sample customer/);
+ await card().waitForSelector('[data-edit-job-info]');
+ await card().waitForFunction(()=>document.querySelector('.job-info-section').textContent.includes('Sample customer'));
+ for(const name of ['Overview','Job Log','Requirements','Files','Card Details']) {
+   const tab=card().getByRole('tab',{name,exact:true});
+   await tab.click();assert.equal(await tab.getAttribute('aria-selected'),'true');
+ }
+ await card().getByRole('tab',{name:'Overview',exact:true}).click();
+ assert.equal(await card().locator('[data-job-members]').isVisible(),true);
+ assert.equal(await card().locator('[data-edit-job-info]').isVisible(),true);
+ await card().locator('.more-quick-menu > .tool-menu-trigger').click();
+ assert.equal(await card().locator('[data-copy-summary]').isVisible(),true);
+ await card().locator('.more-quick-menu > .tool-menu-trigger').click();
+ assert.equal(await card().locator('.job-card-activity').isVisible(),false);
  await comment().waitForSelector('[data-comment-input]',{state:'attached'});
  await comment().locator('[contenteditable="true"]').first().fill('Unsent reply');
  await comment().locator('[contenteditable="true"]').first().press('Escape');
@@ -34,5 +46,5 @@ const server=http.createServer((req,res)=>{
  assert.ok(box && box.width>0 && box.y+box.height<950,'composer must stay reachable on narrow screens');
  await page.screenshot({path:require('node:os').tmpdir()+'/snapshot-job-workspace-narrow.png'});
  assert.deepEqual(errors,[]);
- console.log('PASS: nested Pipeline API routing, shared comments/pins, permanent dock, overview, draft retention');
+ console.log('PASS: full job-card tabs/actions, nested routing, permanent comments/pins, report and reply draft retention');
 }finally{await browser.close();server.close();}})().catch(e=>{console.error(e);server.close();process.exitCode=1;});

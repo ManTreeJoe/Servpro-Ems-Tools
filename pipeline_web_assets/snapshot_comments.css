@@ -1,4 +1,13 @@
 /* The real job-card conversation, hosted persistently by Snapshot. */
+.snapshot-card-mode .audit-overlay {padding:0;background:none;backdrop-filter:none}
+.snapshot-card-mode .audit-card,
+.snapshot-card-mode .audit-card.full-height-comments {display:flex;flex-direction:column;width:100%;height:100dvh;max-height:none;border:0;border-radius:0;box-shadow:none}
+.snapshot-card-mode .audit-card .modal-body {display:flex;flex:1;min-height:0;overflow:hidden}
+.snapshot-card-mode .audit-card .job-card-layout {display:flex;flex:1;min-height:0;overflow:hidden}
+.snapshot-card-mode .audit-card .job-card-main {flex:1;min-width:0;min-height:0;overflow:auto}
+.snapshot-card-mode .audit-card .job-card-activity,
+.snapshot-card-mode .audit-card > .workspace-corner-close {display:none!important}
+.snapshot-card-mode .audit-card .modal-head {padding-right:18px}
 .snapshot-comments-mode .audit-overlay {padding:0;background:none;backdrop-filter:none}
 .snapshot-comments-mode .audit-card,
 .snapshot-comments-mode .audit-card.full-height-comments {display:flex;flex-direction:column;width:100%;height:100dvh;max-height:none;border:0;border-radius:0;box-shadow:none}
