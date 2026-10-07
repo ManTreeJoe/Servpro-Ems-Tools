@@ -6,13 +6,18 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
  const html=fs.readFileSync('analytics_web_assets/index.html','utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,'').replace(/<link\b[^>]*>/g,'');
  await page.route('http://flow.test/**',r=>r.fulfill({contentType:'text/html',body:html}));await page.goto('http://flow.test');
  await page.addStyleTag({path:path.resolve('web_shared/theme.css')});
- for(const file of ['app.css','workspace_layout.css','flow.css','theme_controls.css'])await page.addStyleTag({path:path.resolve('analytics_web_assets',file)});
+ for(const file of ['app.css','workspace_layout.css','flow.css','theme_controls.css','charts.css'])await page.addStyleTag({path:path.resolve('analytics_web_assets',file)});
  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';window.messages=[];addEventListener('message',e=>messages.push(e.data));window.pywebview={api:{
  load_flow:async()=>{if(window.fail)return {ok:false,error:'Offline'};return {ok:true,location:'IE',source:'Test queues',lanes:['WORK IN PROGRESS','TBS NEW LOSS','TBS MITIGATION','TBS CONTENTS','TEST/CLEARANCE','PENDING APPROVALS','ON HOLD','SNAPSHOT','JUANTES','ZAC','KIM+ESTEBAN','AARON'].map((name,i)=>({id:String(i),board_id:i<7?'wip':'est',board:i<7?'WORK IN PROGRESS':'ESTIMATING',name,cards:[{id:'card'+i,name:'Sample job '+i}]}))};},
  flow_history:async()=>({ok:true,name:'Sample job',complete:true,current_seconds:null,periods:[],totals:[],estimator_cycles:[]})}};});
  for(const file of ['flow.js','app.js'])await page.addScriptTag({path:path.resolve('analytics_web_assets',file)});
  await page.evaluate(()=>dispatchEvent(new Event('pywebviewready')));await page.waitForSelector('[data-history]');
  assert.equal(await page.locator('#filters').isVisible(),false);
+ assert.equal(await page.locator('[data-chart-board="wip"] strong').textContent(),'7');
+ assert.equal(await page.locator('[data-chart-board="est"] strong').textContent(),'5');
+ assert.equal(await page.locator('[data-chart-board="wip"] i').evaluate(el=>el.style.height),'100%');
+ await page.locator('[data-chart-board="est"]').click();assert.equal(await page.locator('[data-history]').count(),5);
+ await page.locator('#flow-board').selectOption('');
  await page.locator('[data-lane="6"]').click();assert.equal(await page.locator('[data-history]').count(),1);
  await page.locator('[data-flow-open]').click();await page.waitForFunction(()=>messages.some(m=>m.cardId==='card6'));
  await page.locator('[data-history]').click();await page.waitForSelector('#flow-history h3');
@@ -21,11 +26,11 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
  await page.locator('#flow-all').click();await page.locator('#flow-search').fill('Sample job 2');assert.equal(await page.locator('[data-history]').count(),1);
  await page.locator('#flow-search').fill('');
  assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(23, 25, 28)');
- assert.equal(await page.locator('.flow-lane').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(32, 35, 40)');
+ assert.equal(await page.locator('.flow-chart').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(32, 35, 40)');
  await page.screenshot({path:path.join(os.tmpdir(),'oneloss-analytics-flow.png'),fullPage:true});
  await page.evaluate(()=>document.documentElement.dataset.theme='light');
  assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(245, 247, 244)');
- assert.equal(await page.locator('.flow-lane').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)');
+ assert.equal(await page.locator('.flow-chart').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)');
  await page.evaluate(()=>document.documentElement.dataset.theme='dark');
  await page.evaluate(()=>window.fail=true);await page.locator('#refresh').click();await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Offline'));
  assert.equal(await page.locator('[data-history]').count(),12);

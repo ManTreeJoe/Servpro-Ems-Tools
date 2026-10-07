@@ -1,0 +1,13 @@
+/* L OPS-style clickable charts, using OneLoss tokens and explicit baselines. */
+.flow-chart-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px}
+.flow-chart{min-width:0;padding:18px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.flow-chart h3{margin:0 0 8px;font-size:16px}.flow-chart p{font-size:12px;margin:0 0 16px}.flow-chart small{color:var(--text-muted)}
+.flow-chart-wide{grid-column:1/-1}.flow-bars{max-height:330px;overflow:auto;padding:2px}
+.flow-bar{width:100%;display:grid;grid-template-columns:minmax(130px,1fr) minmax(60px,1fr) 32px;gap:12px;align-items:center;border:0;border-radius:5px;background:transparent;text-align:left;padding:9px 7px}
+.flow-bar-label{font-size:12px;overflow-wrap:anywhere}.flow-bar-label small{display:block;font-size:10px;margin-top:3px}.flow-bar-track{height:14px;background:var(--surface-2);border-left:1px solid var(--border-strong)}.flow-bar-track i{display:block;height:100%;background:var(--cobalt);border-radius:0 3px 3px 0}.flow-bar.waiting i{background:var(--amber)}.flow-bar.hold i{background:var(--violet)}
+.flow-bar[aria-pressed=true],.flow-column[aria-pressed=true]{outline:2px solid var(--link);outline-offset:-2px;background:var(--row-active)}
+.flow-columns{display:flex;align-items:stretch;gap:12px;min-height:240px;border-bottom:1px solid var(--border-strong);margin-bottom:10px}
+.flow-column{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:8px;border:0;background:transparent;padding:8px 5px;font-size:11px;text-align:center;overflow-wrap:anywhere}
+.flow-column strong{font-size:21px}.flow-column-track{height:150px;width:min(54px,80%);display:flex;align-items:end;background:var(--surface-2)}.flow-column-track i{width:100%;display:block;border-radius:4px 4px 0 0}.flow-column>span:last-child{min-height:32px}
+@media(max-width:850px){.flow-chart-grid{grid-template-columns:minmax(0,1fr)}.flow-chart-wide{grid-column:auto}}
+@media(max-width:450px){.flow-chart{padding:12px}.flow-bar{grid-template-columns:minmax(95px,1fr) minmax(50px,1fr) 24px;gap:6px}.flow-columns{gap:4px}}

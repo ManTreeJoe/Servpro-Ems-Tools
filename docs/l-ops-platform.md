@@ -4,6 +4,19 @@ Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
 ## October 7 — Operations analytics first working slice (DEV)
 
+Chart follow-up: inspected the local L OPS checkout (`bac93c8`), especially
+app/analytics-chart.tsx and app/operations-analytics.tsx. Adopted its accessible
+clickable-bar/drill-down pattern without changing that repository or adding React.
+OneLoss Operations now has board columns, sorted lane bars, and estimating-queue
+bars. Board/search scope is explicit; clicks filter exact-card results. These
+are placement counts, not time, performance, unique-job, or revenue charts.
+Zero values render zero-length bars; numeric labels and keyboard buttons remain
+available. Uses shared theme colors and no count-up/decorative chart animation.
+UI-design guidance kept the comparison panels readable and mobile-stacked.
+Both Analytics browser suites pass, including board totals/proportions,
+drill-down, dark/light palette, narrow layout and existing weekly-review behavior.
+No schema or L OPS consumer changes required.
+
 Color follow-up: Analytics now imports shared theme.css and aliases its palette
 to the Jobs tokens instead of defining a separate green-tinted dark theme.
 Controls, lane accents and audit dialogs follow the same light/dark colors.
