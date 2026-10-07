@@ -54,6 +54,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <style>
 #editor{width:min(850px,calc(100% - 32px));padding:0;font-family:var(--font-body)}#visit-form{padding:20px;gap:18px}#visit-form header p{font-size:12px;color:var(--text-muted);margin:6px 0 0}#visit-form fieldset{border:1px solid var(--border);border-radius:6px;padding:14px;min-width:0}#visit-form legend{font-weight:600;font-size:13px;padding:0 6px}.edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.edit-wide{grid-column:1/-1}#visit-form label{font-size:12px;min-width:0}#visit-form input,#visit-form select,#visit-form textarea{width:100%;box-sizing:border-box;font:13px var(--font-body)}#visit-form textarea{background:var(--surface-2);color:var(--text);border:1px solid var(--border);padding:9px;border-radius:5px;resize:vertical}#visit-form footer{position:sticky;bottom:0;background:var(--surface);padding:12px 0;border-top:1px solid var(--border)}#activity-picker{position:relative;margin-bottom:12px}#activity-options{position:absolute;z-index:5;top:100%;left:0;width:min(450px,100%);background:var(--surface);padding:12px;border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow-1);display:flex;gap:8px;flex-wrap:wrap}#activity-options button{border-radius:16px}#activity-options [aria-pressed=true]{background:var(--green);color:white;border-color:var(--green-hover)}#activity-assignments{display:grid;grid-template-columns:1fr 1fr;gap:12px}#activity-error{color:var(--red);font-size:12px;margin:8px 0 0}@media(max-width:600px){.edit-grid,#activity-assignments{grid-template-columns:1fr}}
 </style>
+<link rel="stylesheet" href="schedule_editor.css?v=20261007pills">
 <script src="calendar_drag.js"></script>
 <script src="weekly_calendar.js"></script>
 <script src="../web_shared/iframe_shim.js?v=20261005schedule"></script>
@@ -62,7 +63,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <script src="schedule_document_import.js"></script>
 <script src="schedule_history.js"></script>
 <script src="schedule_confirmation.js"></script>
-<script src="schedule_crew.js?v=20261007"></script>
+<script src="schedule_crew.js?v=20261007pills"></script>
 <script>
 'use strict';
 const liveMode=new URLSearchParams(location.search).get('live')==='1';

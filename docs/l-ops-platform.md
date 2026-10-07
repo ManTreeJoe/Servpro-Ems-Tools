@@ -2,6 +2,18 @@
 
 Status: October 7, 2026. This file is the canonical cross-chat handoff.
 
+## October 7 — Schedule editor crew pills (DEV)
+
+Replaced calendar's repeated single-select dropdown with a searchable native
+popover: toggle multiple name pills without closing, search names/aliases,
+remove selected chips, and optionally copy this activity's crew to all activities.
+Each activity remains independently editable; manual names and offline fallback
+remain under Edit names manually. Two Joses remain distinct. Save contract is
+unchanged (`activities[].people` strings); no shared schema/Auth changes.
+Editor uses lighter section dividers and compact activity rows, preserving
+scrolling and sticky Save/Cancel. UI skills guided reuse of current tokens and
+native controls rather than a redesign. Main unchanged.
+
 ## October 7 — APA cleanup and shared contacts follow-up
 
 DEV removes the plain Paste toolbar button and Open in Word overflow action

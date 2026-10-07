@@ -51,7 +51,10 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   await page.locator('#activity-picker summary').click();
   await page.locator('[data-activity="Demo"]').click();
   await page.locator('#activity-picker summary').click();
+  await page.getByRole('button',{name:'Assign crew to Demo',exact:true}).click();
+  await page.locator('.crew-popover:popover-open summary').click();
   await page.getByLabel('Demo — assigned to',{exact:true}).fill('Jordan');
+  await page.locator('.crew-popover:popover-open').getByRole('button',{name:'Done',exact:true}).click();
   await page.getByRole('button',{name:'Apply sample edit',exact:true}).click();
   await page.locator(`[data-edit="${editId}"]`).click();
   assert.equal(await page.locator('#phone').inputValue(),'555-0100');
