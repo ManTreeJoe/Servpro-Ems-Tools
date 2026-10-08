@@ -32,7 +32,9 @@ class Trello:
         raise AssertionError(path)
 
 @pytest.fixture
-def env():
+def env(monkeypatch):
+    import job_saved_data
+    monkeypatch.setattr(job_saved_data, 'resolve', lambda client='', card_id='': ({}, ''))
     t,s=Trello(),Store();return LogsAudit(t,s,lambda:'IE'),t,s
 
 def fields():
@@ -40,6 +42,51 @@ def fields():
         initial_note='Yes',file_status='Closed',ems_estimator='Kim',decision='billed',
         billed_month='2026-06',destination='june',billing_evidence='June 8: Billed and uploaded',billing_status='Billed',ems_billed='2026-06-08',
         front_checked=True,field_checked=True,estimating_checked=True,billing_checked=True,identity_checked=True,all_confirmed=True)
+
+
+def test_received_uses_saved_job_info_not_description(env, monkeypatch):
+    import job_saved_data
+    a, t, _ = env
+    t.card['desc'] = 'Date Received: 01/01/26'
+    monkeypatch.setattr(job_saved_data, 'resolve', lambda client='', card_id='': (
+        {'canon_key': 'test', 'department': 'IE', 'date_received': '09/03/26'}, 'EMS'))
+    result = a.inspect('card1')
+    assert result['suggestions']['job_date']['value'] == '2026-09-03'
+    assert result['suggestions']['job_date']['sources'][0]['title'] == 'Job Info · Date received'
+
+
+def test_received_blank_job_info_does_not_revive_old_description(env, monkeypatch):
+    import job_saved_data
+    a, t, _ = env
+    t.card['desc'] = 'Date Received: 01/01/26'
+    monkeypatch.setattr(job_saved_data, 'resolve', lambda client='', card_id='': (
+        {'canon_key': 'test', 'department': 'IE', 'date_received': ''}, 'EMS'))
+    assert a.inspect('card1')['suggestions']['job_date']['value'] is None
+
+
+def test_received_date_change_invalidates_evidence_and_flags_saved_draft(env, monkeypatch):
+    import job_saved_data
+    a, _, _ = env
+    job = {'canon_key': 'test', 'department': 'IE', 'date_received': '09-03-26'}
+    monkeypatch.setattr(job_saved_data, 'resolve', lambda client='', card_id='': (job, 'EMS'))
+    inspected = a.inspect('card1')
+    assert inspected['suggestions']['job_date']['value'] == '2026-09-03'
+    a.save('card1', inspected['evidence']['revision'], {**fields(), 'job_date': '2026-09-03'})
+    job['date_received'] = ''
+    refreshed = a.inspect('card1')
+    assert refreshed['evidence']['revision'] != inspected['evidence']['revision']
+    assert refreshed['suggestions']['job_date']['differs_from_saved']
+    assert refreshed['draft']['fields']['job_date'] == '2026-09-03'
+    assert not refreshed['draft']['fields']['all_confirmed']
+
+
+def test_received_does_not_use_other_location_or_unlinked_job(env, monkeypatch):
+    import job_saved_data
+    a, t, _ = env
+    t.card['desc'] = 'Date Received: 01/01/26'
+    monkeypatch.setattr(job_saved_data, 'resolve', lambda client='', card_id='': (
+        {'department': 'OC', 'date_received': '09/03/26'}, 'EMS'))
+    assert a.inspect('card1')['suggestions']['job_date']['value'] is None
 
 def prepare(a,f=None):
     e=a.inspect('card1')['evidence'];a.save('card1',e['revision'],f or fields());return a.preview('card1')['operation']

@@ -45,7 +45,7 @@ def normalize(key, value):
     if key.endswith(('_start', '_ready', '_billed')) or key == 'job_date':
         try:
             if re.fullmatch(r'\d{4}-\d{2}-\d{2}', value): return date.fromisoformat(value).isoformat()
-            match = re.fullmatch(r'(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})', value)
+            match = re.fullmatch(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})', value)
             if match:
                 m,d,y = map(int, match.groups())
                 return date(y+2000 if y<100 else y,m,d).isoformat()
@@ -120,6 +120,16 @@ def suggest(evidence):
     for key in ('estimator_notes','billing_evidence'):
         refs=result[key]['sources']
         if refs: result[key]['value']='Source notes — verify applicability:\n\n'+'\n\n'.join(s['title']+'\n'+s['text'] for s in refs)
+    if 'job_info' in evidence:
+        info = evidence['job_info']
+        raw = str(info.get('date_received') or '')
+        value = normalize('job_date', raw) if info.get('state') == 'saved' else None
+        source = {'id': 'job_info:date_received', 'title': 'Job Info · Date received',
+                  'text': raw or ('Date received is blank.' if info.get('state') == 'saved'
+                                 else 'Job Info could not be resolved for this exact card. Open the job to verify.')}
+        result['job_date'] = {'value': value, 'conflict': False,
+                              'candidates': [{'value': value, 'source_id': source['id']}] if value else [],
+                              'sources': [source]}
     result['file_status']['value']=None
     result['file_status']['manual']=True
     scoped=division(evidence['card'])

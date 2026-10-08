@@ -42,6 +42,8 @@ def fingerprint(evidence):
     comments = [a for a in evidence['comments'] if not a['text'].endswith(evidence.get('ignore_marker', '\0'))]
     value = {k:evidence[k] for k in ('card','checklists')}
     value['comments'] = comments
+    if 'job_info' in evidence:
+        value['job_info'] = evidence['job_info']
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 class LogsAudit:
@@ -109,6 +111,20 @@ class LogsAudit:
         checklists=self.client._call(f'/cards/{card_id}/checklists',params={'checkItems':'all'})
         if not isinstance(checklists,list): raise ValueError('Checklists could not be read.')
         result={'card':card,'comments':comments,'checklists':checklists,'ignore_marker':marker}
+        # Same exact-card resolver and stored facts used by Job Info.
+        # Never borrow a similarly named job or a stale description date.
+        result['job_info'] = {'date_received': '', 'state': 'unlinked'}
+        try:
+            import job_saved_data
+            import job_settings
+            job, _ = job_saved_data.resolve(card_id=card_id)
+            if job and str(job.get('department') or '').upper() == self.location().upper():
+                result['job_info'] = {
+                    'date_received': str(job_settings.stored_values(job).get('date_received') or ''),
+                    'state': 'saved',
+                }
+        except Exception:
+            result['job_info']['state'] = 'unavailable'
         result['revision']=fingerprint(result)
         return result
 
@@ -168,7 +184,8 @@ class LogsAudit:
         for key,suggestion in suggestions.items():
             saved=(draft or {}).get('fields',{}).get(key)
             suggestion['differs_from_saved']=bool(saved and (suggestion.get('conflict') or
-                (suggestion.get('value') is not None and suggestion['value']!=saved)))
+                (suggestion.get('value') is not None and suggestion['value']!=saved) or
+                (key == 'job_date' and suggestion.get('value') != saved)))
         return {'ok':True, 'evidence':evidence, 'ar':ar, 'ar_comparison':compare(evidence,ar) if ar else None, 'changes':changes, 'carried_forward':carried, 'suggestions':suggestions, 'draft':draft,
                 'lanes':[dict(l,month=month_lane(l['name'])) for l in lanes
                          if month_lane(l['name']) or l['name'].strip().upper()=='QUESTIONS']}

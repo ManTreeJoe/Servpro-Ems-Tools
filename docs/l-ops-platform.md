@@ -2,6 +2,22 @@
 
 Status: October 8, 2026. This file is the canonical cross-chat handoff.
 
+## October 8 — Logs audit received date source (DEV)
+
+Fixed confirmed mismatch: Logs audit previously parsed Job Date from the
+Trello description, independently of saved Job Info. It now uses the same
+exact-card job_saved_data resolver and job_settings.stored_values as Job Info,
+limited to the active department. Blank/unlinked/unavailable facts remain
+unknown, with source explanation; no name-based or description fallback.
+The received-date evidence participates in the audit revision, so changed
+facts reset confirmations. Saved draft values remain reviewable and are
+flagged when different, including cleared dates. No schema or L OPS changes.
+
+Diagnosing-bugs regression reproduced 01/01/26 being selected instead of saved
+09/03/26 before the fix. 49 Python audit/suggestion/export tests pass.
+Browser audit suite currently fails its light-theme text contrast assertion;
+no styling is changed by this patch. Live job date not yet manually verified.
+
 ## October 8 — Simplified analytics navigation (DEV)
 
 Branch: `handoff/paperclip-source-20261003`. Three primary destinations:
