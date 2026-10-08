@@ -2,7 +2,7 @@ const {chromium}=require('playwright'),path=require('node:path'),assert=require(
 (async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
  const page=await browser.newPage({viewport:{width:1200,height:900},colorScheme:'dark'});
  await page.setContent('<div id="status-msg"></div>');
- for(const file of ['web_shared/theme.css','pipeline_web_assets/app.css','web_shared/modal.css','pipeline_web_assets/job_workspace_tabs.css','pipeline_web_assets/job_files.css'])await page.addStyleTag({path:path.resolve(file)});
+ for(const file of ['web_shared/theme.css','pipeline_web_assets/app.css','web_shared/modal.css','pipeline_web_assets/job_workspace_tabs.css','pipeline_web_assets/job_files.css','pipeline_web_assets/card_history.css'])await page.addStyleTag({path:path.resolve(file)});
  for(const file of ['web_shared/modal.js','pipeline_web_assets/run_activity.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(file)});
  await page.evaluate(()=>{
   window.calls=[];window.activityCalls=[];window.pywebview={api:{card_activity_history:async (...args)=>{activityCalls.push(args);return {ok:true,rows:[{actor:'Sam',actor_id:'user-sam',at:'2026-10-02T12:00:00Z',source:'OneLoss',action:'Moved from WIP / Demo to Estimating / Review'}]};},saved_run_activity:(...args)=>{calls.push(args);return new Promise(resolve=>window.finish=resolve)}}};
@@ -13,6 +13,10 @@ const {chromium}=require('playwright'),path=require('node:path'),assert=require(
  await page.getByRole('tab',{name:'Card Details',exact:true}).click();
  await page.locator('[data-card-activity-rows] .saved-run-row').waitFor();
  assert.deepEqual(await page.evaluate(()=>activityCalls),[['test-card']]);
+ assert.equal(await page.locator('.card-history-day h4').textContent(),'10/02/26');
+ assert.equal(await page.locator('.card-history-marker').textContent(),'S');
+ assert.equal(await page.locator('.card-history-meta time').getAttribute('datetime'),'2026-10-02T12:00:00.000Z');
+ assert.match(await page.locator('.card-history-action').textContent(),/Moved from WIP/);
  assert.equal(await page.evaluate(()=>calls.length),0,'Legacy history remains lazy');
  await page.getByText('Legacy Run history',{exact:true}).click();
  await page.waitForFunction(()=>calls.length===1);
@@ -32,6 +36,20 @@ const {chromium}=require('playwright'),path=require('node:path'),assert=require(
  await page.getByRole('button',{name:'Refresh activity',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('.job-run-section [role=status]').textContent.includes('Disconnected'));
  assert.equal(await page.locator('[data-card-activity-rows] .saved-run-row').count(),1,'Retain card events on refresh failure');
+ await page.evaluate(()=>{pywebview.api.card_activity_history=async()=>({ok:true,note:'Saved OneLoss movement history. Checklist and field edits are not included yet.',rows:[
+  {actor:'Nathan Bupte',at:'2026-10-02T19:45:00Z',source:'OneLoss',action:'Moved from Work in Progress / Demo to Estimating / Snapshot'},
+  {actor:'Sam',at:'2026-10-02T18:00:00Z',source:'OneLoss',action:'Changed this card’s order in its lane'},
+  {actor:'<b>Unknown</b>',at:'2026-09-30T18:00:00Z',source:'OneLoss',action:'Restored this card to Work in Progress / Pending approvals'},
+  {actor:'',at:'invalid',source:'OneLoss',action:'Updated this card'}
+ ]});});
+ await page.getByRole('button',{name:'Refresh activity',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelectorAll('.card-history-event').length===4);
+ assert.equal(await page.locator('.card-history-day').count(),3);
+ assert.equal(await page.locator('.card-history-marker').first().textContent(),'NB');
+ assert.equal(await page.locator('.card-history-meta b').count(),0,'Actor names must remain plain text');
+ assert.equal(await page.locator('.card-history-day h4').last().textContent(),'Date unavailable');
+ await page.getByText('Legacy Run history',{exact:true}).click();
+ await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-card-history.png')});
  await page.setViewportSize({width:390,height:800});
  await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-card-details-narrow.png')});
  console.log('PASS: run history lazy load, exact division, refresh preservation, failed refresh retains rows');

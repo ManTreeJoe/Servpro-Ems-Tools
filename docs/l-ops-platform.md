@@ -2,6 +2,16 @@
 
 Status: October 8, 2026. This file is the canonical cross-chat handoff.
 
+## October 8 — Card history presentation (DEV)
+
+Branch: `handoff/paperclip-source-20261003`. Card Details now presents saved
+movement history as a compact timeline grouped by MM/DD/YY, with the action
+first and actor/source/time below. Retains exact timestamps in time labels,
+the coverage note, lazy legacy Run history, and saved events on failed refresh.
+Shared theme colors only. No schema/API changes or L OPS update required.
+Verified desktop/narrow rendering and history tests including multiple days,
+unknown dates, escaped actor names, and refresh failures. Main not released.
+
 ## October 8 — Snapshot shared palette (DEV)
 
 Branch: `handoff/paperclip-source-20261003`. Removed Snapshot's obsolete

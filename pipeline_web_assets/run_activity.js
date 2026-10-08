@@ -10,8 +10,10 @@ window.SavedRunActivity = (() => {
     host.open = true;
     const summary = host.querySelector('summary'); if (summary) summary.style.display = 'none';
     const history = document.createElement('div');
-    history.innerHTML = '<div class="section-title-row"><h3>Card activity</h3><button type="button" class="btn compact">Refresh activity</button></div><p role="status">Open Card Details to load activity.</p><div data-card-activity-rows></div>';
+    history.className = 'card-history';
+    history.innerHTML = '<div class="section-title-row"><div><h3>Card history</h3><span class="card-history-caption">Movement & placement · newest first</span></div><button type="button" class="btn compact">Refresh activity</button></div><p class="card-history-status" role="status">Open Card Details to load activity.</p><div data-card-activity-rows></div>';
     const legacy = document.createElement('details');
+    legacy.className = 'card-history-legacy';
     const legacyLabel = document.createElement('summary'); legacyLabel.textContent = 'Legacy Run history';
     legacy.append(legacyLabel, section); host.append(history, legacy);
     const activityStatus = history.querySelector('[role=status]'), activityButton = history.querySelector('button'), activityRows = history.querySelector('[data-card-activity-rows]');
@@ -27,13 +29,27 @@ window.SavedRunActivity = (() => {
         activityLoaded = true; activityRows.replaceChildren();
         activityStatus.textContent = result.note || '';
         if (!result.rows?.length) activityStatus.textContent += ' No saved movement events for this card yet.';
+        let dayKey = '', dayList;
         for (const row of result.rows || []) {
-          const article = document.createElement('article'); article.className = 'saved-run-row';
-          const actor = document.createElement('strong'); actor.textContent = row.actor; actor.title = row.actor_id || '';
-          const meta = document.createElement('small');
-          const when = new Date(row.at); meta.textContent = `${Number.isNaN(when.getTime()) ? 'Date unavailable' : when.toLocaleString()} · ${row.source}`;
-          const action = document.createElement('p'); action.textContent = row.action;
-          article.append(actor, meta, action); activityRows.append(article);
+          const when = new Date(row.at), valid = !Number.isNaN(when.getTime());
+          const date = valid ? when.toLocaleDateString('en-US', {month:'2-digit',day:'2-digit',year:'2-digit'}) : 'Date unavailable';
+          if (date !== dayKey) {
+            dayKey = date;
+            const group = document.createElement('section'); group.className = 'card-history-day';
+            const heading = document.createElement('h4'); heading.textContent = date;
+            dayList = document.createElement('ol'); group.append(heading, dayList); activityRows.append(group);
+          }
+          const article = document.createElement('li'); article.className = 'saved-run-row card-history-event';
+          const marker = document.createElement('span'); marker.className = 'card-history-marker'; marker.setAttribute('aria-hidden','true');
+          marker.textContent = (row.actor || '?').trim().split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase();
+          const body = document.createElement('div'); body.className = 'card-history-event-body';
+          const action = document.createElement('p'); action.className = 'card-history-action'; action.textContent = row.action;
+          const meta = document.createElement('div'); meta.className = 'card-history-meta';
+          const actor = document.createElement('strong'); actor.textContent = row.actor || 'Unknown user'; actor.title = row.actor_id || '';
+          const source = document.createElement('span'); source.textContent = row.source || 'Source unavailable';
+          const time = document.createElement('time'); time.textContent = valid ? when.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : 'Time unavailable';
+          if (valid) {time.dateTime = when.toISOString();time.title = when.toLocaleString('en-US');}
+          meta.append(actor, source, time); body.append(action, meta); article.append(marker, body); dayList.append(article);
         }
       } catch (error) {
         if (host.isConnected) activityStatus.textContent = `${error.message || error} Use Refresh activity to retry.`;

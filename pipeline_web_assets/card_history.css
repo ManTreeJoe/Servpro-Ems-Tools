@@ -1,0 +1,25 @@
+/* Card movement history: shared palette, compact chronological groups. */
+.card-history .section-title-row {align-items:center;gap:12px}
+.card-history h3 {margin:0 0 4px}
+.card-history-caption,.card-history-status {color:var(--text-muted);font-size:12px;line-height:1.5}
+.card-history-status {margin:14px 0 20px;max-width:68ch}
+.card-history-day {margin:0 0 24px}
+.card-history-day h4 {display:flex;align-items:center;gap:12px;margin:0 0 12px;color:var(--text-muted);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+.card-history-day h4::after {content:"";height:1px;flex:1;background:var(--border);opacity:.55}
+.card-history-day ol {list-style:none;margin:0;padding:0}
+.card-history-event.saved-run-row {display:flex;gap:12px;position:relative;padding:0 0 20px;border:0}
+.card-history-event:not(:last-child)::before {content:"";position:absolute;left:15px;top:34px;bottom:4px;width:1px;background:var(--border)}
+.card-history-event:last-child {padding-bottom:0}
+.card-history-marker {flex:0 0 32px;height:32px;display:grid;place-items:center;border-radius:50%;background:var(--surface-3);color:var(--text-muted);font-size:10px;font-weight:700}
+.card-history-event-body {min-width:0;flex:1;padding-top:2px}
+.card-history-action {margin:0 0 6px;line-height:1.5;color:var(--text);font-weight:500}
+.card-history-meta {display:flex;align-items:baseline;flex-wrap:wrap;gap:5px 10px;color:var(--text-muted);font-size:11px;line-height:1.5}
+.card-history-meta strong {font-size:11px;font-weight:600}
+.card-history-meta time {margin-left:auto;font-variant-numeric:tabular-nums}
+.card-history-legacy {border-top:1px solid var(--border);padding-top:14px;margin-top:20px}
+.card-history-legacy>summary {cursor:pointer;color:var(--text-muted);font-size:12px;padding:4px 0}
+.card-history-legacy>summary:focus-visible {outline:2px solid var(--link);outline-offset:4px}
+@media(max-width:480px) {
+  .card-history .section-title-row {flex-wrap:wrap}
+  .card-history-meta time {margin-left:0}
+}
