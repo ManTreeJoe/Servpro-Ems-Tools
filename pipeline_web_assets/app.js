@@ -1750,6 +1750,11 @@ async function openJobInfoEditor(data, audit, onSaved) {
   const inherited = new Set(loaded.inherited || []);
   const fields = schema.fields || [];
   const renderFields = (items) => items.map((field) => {
+    if (field.id === 'loss_categories') {
+      const chosen = String(values[field.id] || '').split(',').map(x=>x.trim()).filter(Boolean);
+      const options = [...new Set(['Water','Fire','Smoke','Mold','Other',...chosen])];
+      return `<fieldset class="job-info-edit-field job-info-edit-wide loss-type-picker"><legend>Loss type</legend><small>Select all that apply. Carrier follows the job profile; cause of loss stays separate.</small><div class="loss-type-options">${options.map(option=>`<label><input type="checkbox" data-loss-type value="${escapeAttr(option)}" ${chosen.includes(option)?'checked':''}><span>${escapeHtml(option)}</span></label>`).join('')}</div><input type="hidden" data-job-info-input="loss_categories" value="${escapeAttr(values[field.id] || '')}"></fieldset>`;
+    }
     const listId = field.options?.length ? `pipeline-job-info-${field.id}` : "";
     return `<label class="job-info-edit-field ${field.multiline ? 'job-info-edit-wide' : ''}"><span>${escapeHtml(field.label)}${inherited.has(field.id) ? " · from client" : ""}</span>
       ${field.multiline ? `<textarea rows="5" data-job-info-input="${escapeAttr(field.id)}">${escapeHtml(values[field.id] || '')}</textarea>` : `<input data-job-info-input="${escapeAttr(field.id)}" value="${escapeAttr(values[field.id] || "")}" ${listId ? `list="${escapeAttr(listId)}"` : ""}>`}
@@ -1767,6 +1772,10 @@ async function openJobInfoEditor(data, audit, onSaved) {
     </div></div>`;
   document.body.appendChild(modal);
   let dirty = false;
+  modal.querySelectorAll('[data-loss-type]').forEach(input=>input.addEventListener('change',()=>{
+    modal.querySelector('[data-job-info-input="loss_categories"]').value=[...modal.querySelectorAll('[data-loss-type]:checked')].map(el=>el.value).join(', ');
+    dirty=true;
+  }));
   modal.querySelectorAll("[data-job-info-input]").forEach((input) =>
     input.addEventListener("input", () => { dirty = true; }));
   const closeEditor = () => {
@@ -2052,7 +2061,8 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   const copyFacts = (data.info_sections || []).flatMap((section) => section.fields || []);
   const copyField = (id) => (copyFacts.find((field) => field.id === id) || {}).value || "";
   const claimNumber = copyField("claim_number");
-  const headerTags = [...new Set([copyField('carrier'), ...String(copyField('loss_type') || '').split(',')]
+  const lossCategories = copyFacts.some(field=>field.id==='loss_categories') ? copyField('loss_categories') : copyField('loss_type');
+  const headerTags = [...new Set([copyField('carrier'), ...String(lossCategories || '').split(',')]
     .map(value => String(value || '').trim()).filter(Boolean))];
   const headerTagsHtml = headerTags.length ? `<div class="job-header-tags" aria-label="Insurance and loss types">${headerTags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : '';
   const activity = (res.activity || []).length

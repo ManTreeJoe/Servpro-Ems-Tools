@@ -2,6 +2,22 @@
 
 Status: October 8, 2026. This file is the canonical cross-chat handoff.
 
+## October 8 — Editable loss types on existing cards (DEV)
+
+Edit job info has multi-select Water / Fire / Smoke / Mold / Other loss types,
+preserving additional saved values. Separate `loss_categories` field in the
+existing job settings metadata; description key is PROPERTY DETAILS / LOSS TYPE.
+Do not reuse the legacy loss_type database column: it currently stores cause
+of loss text. Carrier/profile is not changed by selecting loss types.
+OneLoss header badges prefer this explicit selection, including an explicit
+empty value. This does not manage Trello colored labels or change their IDs.
+L OPS can read/write this same optional job-settings field; no schema migration.
+
+UI-design skill guided the existing-editor pills. Browser save test verifies
+only loss_categories changes and exact-card identity is passed. Job-settings
+tests cover description roundtrip and keeping cleared values explicit.
+Main unchanged; DEV restart needed.
+
 ## October 8 — Stronger schedule and chart color cues (DEV)
 
 Schedule activity meanings unchanged: 6px card stripes, tinted card backgrounds,

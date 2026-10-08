@@ -11,6 +11,23 @@ mailto link.
 import job_settings as js
 
 
+def test_loss_categories_roundtrip_without_changing_carrier_or_cause():
+    original = "**INSURANCE INFORMATION**\nInsurance Company: AAA\n\n**PROPERTY DETAILS**\nCause Of Loss: Burst pipe\n"
+    output = js.render_desc(original, {'loss_categories': 'Fire, Smoke'}, changed_ids=['loss_categories'])
+    values = js.from_card(output)
+    assert values['loss_categories'] == 'Fire, Smoke'
+    assert values['carrier'] == 'AAA'
+    assert values['cause_of_loss'] == 'Burst pipe'
+    assert 'loss_categories' not in js.COLUMN_FIELDS
+
+
+def test_cleared_loss_categories_remain_explicit_in_job_info():
+    from pipeline_web import _job_info_sections
+    sections = _job_info_sections({'metadata': {'settings': {'loss_categories': ''}}})
+    fields = [field for section in sections for field in section['fields']]
+    assert next(f for f in fields if f['id'] == 'loss_categories')['value'] == ''
+
+
 CARD = """**CUSTOMER INFORMATION**
 
 Customer Name: Brenda Washburn

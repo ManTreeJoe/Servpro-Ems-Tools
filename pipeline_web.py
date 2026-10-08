@@ -218,7 +218,8 @@ def _job_info_sections(job: dict | None = None) -> list:
     grouped, order = {}, []
     for fid, section, _key, label, core in job_settings.FIELDS:
         value = values.get(fid) or ""
-        if not value:
+        if not value and not (fid == 'loss_categories' and
+                              'loss_categories' in (job_settings._meta_of(job or {}).get('settings') or {})):
             continue
         if section not in grouped:
             grouped[section] = []

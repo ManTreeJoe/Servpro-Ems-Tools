@@ -78,6 +78,7 @@ FIELDS = [
     ("date_of_loss",    PROPERTY,  "DATE OF LOSS",        "Date of loss",    True),
     ("date_received",   PROPERTY,  "DATE RECEIVED",       "Date received",   True),
     ("cause_of_loss",   PROPERTY,  "CAUSE OF LOSS",       "Cause of loss",   True),
+    ("loss_categories", PROPERTY,  "LOSS TYPE",           "Loss type",       True),
     ("year_built",      PROPERTY,  "YEAR BUILT",          "Year built",      True),
 
     # Identifiers, kept beside the links they belong to — the card template
