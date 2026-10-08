@@ -1027,6 +1027,8 @@ _LOSS_LABEL_NAMES = {
     "water": "Water", "mold": "Mold", "fire": "Fire", "smoke": "Smoke",
     "bio": "Bio", "asbestos": "Asbestos", "lead": "Lead",
     "storm": "Storm", "vandalism": "Vandalism", "general": "General",
+    "cleaning": "Cleaning", "odor": "Odor", "board up": "Board Up",
+    "vehicle": "Vehicle", "other": "Other",
 }
 
 _logs_board_id_cache = None
@@ -1157,7 +1159,7 @@ def card_companycam_link(card):
 def card_loss_type(card):
     """Inspect a card's labels and return all matching loss types joined
     with ", ". Empty string when none of the labels look like a loss
-    type. Match is case-insensitive and substring-tolerant so labels
+    type. Match uses explicit aliases, not substrings, so labels
     like "Water Damage" or "Mold Job" still resolve to "Water" / "Mold".
 
     Multi-cause jobs (e.g. a card with both Water + Mold labels) come
@@ -1183,8 +1185,12 @@ def card_loss_type(card):
     if not labels_lower:
         return ""
     found = []
+    normalized = {" ".join(n.replace("-", " ").split()) for n in labels_lower}
     for key, display in _LOSS_LABEL_NAMES.items():
-        if any(key in nm for nm in labels_lower):
+        aliases = {key, f"{key} damage", f"{key} job", f"other {key}"}
+        if key == "bio":
+            aliases.update({"biohazard", "bio hazard", "bio cleaning", "biohazard cleaning"})
+        if normalized & aliases:
             found.append(display)
     return ", ".join(found)
 

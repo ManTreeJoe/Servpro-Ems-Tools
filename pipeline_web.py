@@ -201,7 +201,7 @@ def _days_since_iso(iso):
         return 0
 
 
-def _job_info_sections(job: dict | None = None) -> list:
+def _job_info_sections(job: dict | None = None, *, trello_card=None) -> list:
     """Build the shared Job facts shown by every Board Placement.
 
     A Trello card description is an inbound synchronization source, not a
@@ -211,6 +211,12 @@ def _job_info_sections(job: dict | None = None) -> list:
     import job_settings
 
     local = job_settings.stored_values(job or {})
+    # Labels are an exact-placement fallback only. An explicit OneLoss value,
+    # including an intentional clear, always wins. No name-based matching.
+    if trello_card and 'loss_categories' not in (job_settings._meta_of(job or {}).get('settings') or {}):
+        import trello_client
+        if not local.get('loss_categories'):
+            local['loss_categories'] = trello_client.card_loss_type(trello_card)
     values = {
         fid: str(local.get(fid) or "").strip()
         for fid in job_settings.BY_ID
@@ -1067,6 +1073,8 @@ class Api(JobSettingsApi):
             documents = document_future.result()
             try:
                 trello_card = trello_future.result() or {}
+                if trello_card.get('id') == cid:
+                    info_sections = _job_info_sections(job, trello_card=trello_card)
             except Exception as ex:
                 summary["trello_error"] = str(ex)
             try:

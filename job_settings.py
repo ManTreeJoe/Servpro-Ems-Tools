@@ -485,6 +485,7 @@ def load(canon_key, child_name="", *, refresh=True, exact_card_id="", initialize
     out = {"ok": True, "canon_key": canon_key, "child_name": child_name,
            "card_id": card_id, "values": mine, "conflicts": [],
            "synced": False, "error": ""}
+    out['loss_categories_explicit'] = 'loss_categories' in (_meta_of(rec).get(_META_SETTINGS) or {})
     first_load = bool(initialize_missing and exact_card_id and not child_name and _uninitialized(rec))
     if not refresh and not first_load:
         out.update(source='database', refresh_pending=bool(card_id),

@@ -1324,6 +1324,18 @@ repaired. Do not automatically merge, delete or re-pin these jobs. Shared API
 enforcement needs coordinated design before implementation. 56 targeted tests
 pass for this bounded fix; local/shared legacy mirroring remains best-effort.
 
+## Trello loss-label projection — DEV only (2026-10-08)
+
+Recognized Trello loss labels automatically populate unset loss types on the
+exact opened card. Includes OTHER - BIO, CLEANING, SMOKE, ODOR, BOARD UP and
+VEHICLE, alongside Water/Fire/Mold/Storm/Vandalism. Explicit saved
+metadata.settings.loss_categories (including an empty clear) takes precedence.
+This is a read projection, not a database backfill or a Trello-label mutation.
+The editor preselects the projected categories; saving an actual change uses
+the existing settings API. Carrier/profile and operational labels are excluded.
+Matching now uses explicit normalized aliases, not substrings (STILLWATER must
+not become Water). No schema change. Main is unchanged.
+
 ## Snapshot job-card presentation — DEV only
 
 Correction after user review: Snapshot's audit subview now embeds the FULL job

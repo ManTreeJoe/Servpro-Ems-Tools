@@ -1747,12 +1747,16 @@ async function openJobInfoEditor(data, audit, onSaved) {
     return;
   }
   const values = loaded.values || {};
+  if (!loaded.loss_categories_explicit && !values.loss_categories) {
+    const facts = (data.info_sections || []).flatMap(section => section.fields || []);
+    values.loss_categories = facts.find(field => field.id === 'loss_categories')?.value || '';
+  }
   const inherited = new Set(loaded.inherited || []);
   const fields = schema.fields || [];
   const renderFields = (items) => items.map((field) => {
     if (field.id === 'loss_categories') {
       const chosen = String(values[field.id] || '').split(',').map(x=>x.trim()).filter(Boolean);
-      const options = [...new Set(['Water','Fire','Smoke','Mold','Other',...chosen])];
+      const options = [...new Set(['Water','Fire','Smoke','Mold','Bio','Cleaning','Odor','Storm','Vandalism','Board Up','Vehicle','Asbestos','Lead','General','Other',...chosen])];
       return `<fieldset class="job-info-edit-field job-info-edit-wide loss-type-picker"><legend>Loss type</legend><small>Select all that apply. Carrier follows the job profile; cause of loss stays separate.</small><div class="loss-type-options">${options.map(option=>`<label><input type="checkbox" data-loss-type value="${escapeAttr(option)}" ${chosen.includes(option)?'checked':''}><span>${escapeHtml(option)}</span></label>`).join('')}</div><input type="hidden" data-job-info-input="loss_categories" value="${escapeAttr(values[field.id] || '')}"></fieldset>`;
     }
     const listId = field.options?.length ? `pipeline-job-info-${field.id}` : "";
