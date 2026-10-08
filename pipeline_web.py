@@ -211,12 +211,11 @@ def _job_info_sections(job: dict | None = None, *, trello_card=None) -> list:
     import job_settings
 
     local = job_settings.stored_values(job or {})
-    # Labels are an exact-placement fallback only. An explicit OneLoss value,
-    # including an intentional clear, always wins. No name-based matching.
-    if trello_card and 'loss_categories' not in (job_settings._meta_of(job or {}).get('settings') or {}):
-        import trello_client
-        if not local.get('loss_categories'):
-            local['loss_categories'] = trello_client.card_loss_type(trello_card)
+    # Labels belong to this exact placement. Pending intent is protected;
+    # enrolled, settled cards follow Trello (including intentional clears).
+    if trello_card:
+        import loss_label_sync
+        local['loss_categories'] = loss_label_sync.projected(job or {}, trello_card)
     values = {
         fid: str(local.get(fid) or "").strip()
         for fid in job_settings.BY_ID
@@ -225,7 +224,7 @@ def _job_info_sections(job: dict | None = None, *, trello_card=None) -> list:
     for fid, section, _key, label, core in job_settings.FIELDS:
         value = values.get(fid) or ""
         if not value and not (fid == 'loss_categories' and
-                              'loss_categories' in (job_settings._meta_of(job or {}).get('settings') or {})):
+                              (trello_card is not None or 'loss_categories' in (job_settings._meta_of(job or {}).get('settings') or {}))):
             continue
         if section not in grouped:
             grouped[section] = []

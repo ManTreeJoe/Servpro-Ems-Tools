@@ -1324,7 +1324,7 @@ repaired. Do not automatically merge, delete or re-pin these jobs. Shared API
 enforcement needs coordinated design before implementation. 56 targeted tests
 pass for this bounded fix; local/shared legacy mirroring remains best-effort.
 
-## Two-way loss-label contract — planned DEV (2026-10-08)
+## Two-way loss-label contract — implemented DEV (2026-10-08)
 
 Use existing job metadata `loss_label_sync`, keyed by exact Trello card ID,
 for desired categories, status, revision and verified/prospective label snapshots.
@@ -1339,6 +1339,22 @@ Other cards/divisions are not mutated. Do not use the old description Loss Type
 field as a second inbound authority. Existing persistence/auth boundaries remain.
 Trello offers no atomic compare-and-set for label edits: preflight, per-operation
 checks and postflight verification narrow, but cannot eliminate, remote races.
+
+Implemented in `loss_label_sync.py` and the exact-card JobSettingsApi/editor.
+`job_settings_save` accepts optional sixth argument `loss_label_context`;
+loss-type writes on a linked card require the context from `job_settings_load`.
+No label creation, background retry worker, or live customer-card test writes.
+Retry is explicit in the editor and survives reopen. Older static selections
+ask for a first save before pushing to Trello. Shared customer/insurance settings
+remain unchanged; per-card sync state does not alter sibling-division labels.
+Trello remains the inbound label authority after enrollment, with pending local
+intent protected. The description's historical Loss Type text is not rewritten
+by this pathway and must not override current label state. Main unchanged.
+Checks: mocked provider failure/conflict/idempotency tests, scratch SQLite
+durability test through existing metadata persistence, and desktop/mobile editor
+render plus retry/clear/offline browser tests. No Supabase schema/auth/RLS changes.
+References: https://developer.atlassian.com/cloud/trello/rest/api-group-cards/
+and https://supabase.com/docs/guides/database/json (verified 2026-10-08).
 
 ## Trello loss-label projection — DEV only (2026-10-08)
 

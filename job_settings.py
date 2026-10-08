@@ -634,6 +634,8 @@ def save(canon_key, values, child_name="", card_desc="", *, edited_only=False, e
         meta[_META_BASE] = dict(before)
     changed = [fid for fid, v in values.items() if v != before.get(fid, "")]
     settings = {fid: values.get(fid, before.get(fid, "")) for fid in BY_ID}
+    if edited_only and 'loss_categories' not in values and 'loss_categories' not in (meta.get(_META_SETTINGS) or {}):
+        settings.pop('loss_categories', None)
     meta[_META_SETTINGS] = settings
 
     # ── DB FIRST ──────────────────────────────────────────────────────

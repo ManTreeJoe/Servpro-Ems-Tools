@@ -1772,7 +1772,7 @@ async function openJobInfoEditor(data, audit, onSaved) {
     <header class="modal-head"><div><div class="modal-title">Edit job info</div><div class="modal-sub">${escapeHtml(client)}</div></div><button class="audit-close" data-close aria-label="Close">×</button></header>
     <div class="modal-body"><div class="job-info-edit-grid">${renderFields(core)}</div>
       ${more.length ? `<details class="job-info-more"><summary>More fields (${more.length})</summary><div class="job-info-edit-grid">${renderFields(more)}</div></details>` : ""}
-      <footer class="job-info-edit-actions"><span data-job-info-status></span><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-save>Save job info</button></footer>
+      <footer class="job-info-edit-actions"><span data-job-info-status role="status" aria-live="polite"></span><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-save>Save job info</button></footer>
     </div></div>`;
   document.body.appendChild(modal);
   let dirty = false;
@@ -1780,6 +1780,10 @@ async function openJobInfoEditor(data, audit, onSaved) {
     modal.querySelector('[data-job-info-input="loss_categories"]').value=[...modal.querySelectorAll('[data-loss-type]:checked')].map(el=>el.value).join(', ');
     dirty=true;
   }));
+  const labelStatus = modal.querySelector('[data-job-info-status]');
+  labelStatus.textContent = loaded.loss_label_error || loaded.loss_label_notice || (loaded.loss_labels_pending ? 'Loss types saved · Trello sync pending. Save to retry.' : '');
+  if (loaded.loss_label_error) modal.querySelectorAll('[data-loss-type]').forEach(input => { input.disabled = true; });
+  if (loaded.loss_labels_pending) modal.querySelector('[data-save]').textContent = 'Retry Trello sync';
   modal.querySelectorAll("[data-job-info-input]").forEach((input) =>
     input.addEventListener("input", () => { dirty = true; }));
   const closeEditor = () => {
@@ -1798,13 +1802,34 @@ async function openJobInfoEditor(data, audit, onSaved) {
     const status = modal.querySelector("[data-job-info-status]");
     button.disabled = true;
     status.textContent = "Saving…";
-    const result = await pywebview.api.job_settings_save(client, output, "", loaded.card_desc || "", data.card_id || "");
+    if (loaded.loss_labels_pending) output.loss_categories = modal.querySelector('[data-job-info-input="loss_categories"]').value;
+    let result;
+    try {
+      result = await pywebview.api.job_settings_save(client, output, "", loaded.card_desc || "", data.card_id || "", loaded.loss_label_context || null);
+    } catch (error) {
+      button.disabled = false;
+      status.textContent = 'Save could not be confirmed. Your edits are still here; retry or reopen to check.';
+      return;
+    }
+    if (result?.loss_label_context) {
+      loaded.loss_label_context = result.loss_label_context;
+      loaded.loss_labels_pending = !!result.loss_labels_pending;
+    }
     if (!result?.ok) {
       button.disabled = false;
       status.textContent = result?.error || "Job info could not be saved";
       return;
     }
     dirty = false;
+    if (result.loss_labels_pending) {
+      Object.assign(values, output);
+      loaded.loss_labels_pending = true;
+      loaded.loss_label_context = result.loss_label_context || loaded.loss_label_context;
+      button.disabled = false;
+      button.textContent = 'Retry Trello sync';
+      status.textContent = result.error || 'Loss types saved · Trello sync pending.';
+      return;
+    }
     modal.remove();
     setStatus(result.pending_push ? "Job info saved · Trello sync pending" : "Job info saved", result.pending_push ? "warn" : "ok");
     await onSaved?.();
@@ -1863,7 +1888,7 @@ function mergeWorkspaceRefresh(current, next, refreshJobLog = false) {
   }
   const sections = (current.info_sections || []).map(s => ({...s, fields: (s.fields || []).map(f => ({...f}))}));
   for (const section of next.info_sections || []) for (const field of section.fields || []) {
-    if (!String(field.value ?? '').trim()) continue;
+    if (!String(field.value ?? '').trim() && field.id !== 'loss_categories') continue;
     const owner = sections.find(s => s.fields.some(f => f.id === field.id));
     if (owner) Object.assign(owner.fields.find(f => f.id === field.id), field);
     else {

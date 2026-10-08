@@ -31,5 +31,37 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),path
    assert.equal(await page.locator('[data-loss-type][value="Cleaning"]').isChecked(),!explicit);
    await page.getByRole('button',{name:'Cancel',exact:true}).click();
  }
+ await page.evaluate(async()=>{
+   window.retryCount=0;
+   pywebview.api.job_settings_load=async()=>({ok:true,loss_categories_explicit:true,loss_label_context:{revision:'v1'},values:{loss_categories:'Water'}});
+   pywebview.api.job_settings_save=async(...args)=>{
+     saved.push(args);
+     return ++retryCount===1 ? {ok:true,loss_labels_pending:true,pending_push:true,loss_label_context:{revision:'v2'},error:'Loss types saved; Trello sync pending.'} : {ok:true};
+   };
+   await openJobInfoEditor({client:'Sample job',card_id:'card1'}, {}, ()=>{});
+ });
+ await page.locator('[data-loss-type][value="Fire"]').check();
+ await page.getByRole('button',{name:'Save job info',exact:true}).click();
+ await page.getByRole('button',{name:'Retry Trello sync',exact:true}).waitFor();
+ await page.screenshot({path:require('node:os').tmpdir()+'/oneloss-loss-label-retry.png'});
+ await page.setViewportSize({width:430,height:850});
+ await page.screenshot({path:require('node:os').tmpdir()+'/oneloss-loss-label-retry-mobile.png'});
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth <= window.innerWidth));
+ await page.setViewportSize({width:1000,height:850});
+ await page.getByRole('button',{name:'Retry Trello sync',exact:true}).click();
+ assert.equal(await page.locator('.job-info-edit-overlay').count(),0);
+ assert.deepEqual(await page.evaluate(()=>saved.at(-1)[5]),{revision:'v2'});
+ assert.equal(await page.evaluate(()=>saved.at(-1)[1].loss_categories),'Water, Fire');
+ assert.equal(await page.evaluate(()=>mergeWorkspaceRefresh(
+   {info_sections:[{name:'Property',fields:[{id:'loss_categories',value:'Water'}]}]},
+   {info_sections:[{name:'Property',fields:[{id:'loss_categories',value:''}]}]}
+ ).info_sections[0].fields[0].value),'');
+ await page.evaluate(async()=>{
+   pywebview.api.job_settings_load=async()=>({ok:true,values:{loss_categories:'Water'},loss_label_error:'Trello labels could not be verified.'});
+   await openJobInfoEditor({client:'Sample job',card_id:'card1'}, {}, ()=>{});
+ });
+ assert.equal(await page.locator('[data-loss-type][value="Fire"]').isDisabled(),true);
+ assert.equal(await page.locator('[data-job-info-input="carrier"]').isDisabled(),false);
+ await page.getByRole('button',{name:'Cancel',exact:true}).click();
  console.log('PASS: loss types save independently without changing carrier or cause, scoped to exact card');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1});

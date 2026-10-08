@@ -59,8 +59,22 @@ class JobSettingsApi:
                 key = _resolve(client)
             if not key:
                 return {"ok": False, "error": "This card is not linked to a saved job yet." if card_id else "no job name"}
-            return job_settings.load(key, child_name or "", refresh=False, exact_card_id=card_id,
-                                     initialize_missing=True)
+            result = job_settings.load(key, child_name or "", refresh=False, exact_card_id=card_id,
+                                       initialize_missing=True)
+            if result.get('ok') and card_id and not child_name:
+                try:
+                    import loss_label_sync
+                    labels = loss_label_sync.context(job_settings._record(key), card_id)
+                    result['values']['loss_categories'] = labels['value']
+                    result.update(loss_label_context=labels['context'], loss_labels_pending=labels['pending'],
+                                  loss_label_notice=labels['notice'], loss_categories_explicit=True)
+                except Exception:
+                    result['loss_label_error'] = 'Trello labels could not be verified. Reopen Job info to retry; other fields remain editable.'
+                    saved_labels = loss_label_sync.state(job_settings._record(key), card_id)
+                    if saved_labels:
+                        result['values']['loss_categories'] = saved_labels.get('desired', '')
+                        result['loss_categories_explicit'] = True
+            return result
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
@@ -85,7 +99,8 @@ class JobSettingsApi:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def job_settings_save(self, client: str, values: dict,
-                          child_name: str = "", card_desc: str = "", card_id: str = "") -> dict:
+                          child_name: str = "", card_desc: str = "", card_id: str = "",
+                          loss_label_context: dict = None) -> dict:
         """Save, and push only the fields that differ from the card.
 
         `card_desc` is the description the edit was based on, handed back
@@ -102,8 +117,27 @@ class JobSettingsApi:
                 key = _resolve(client)
             if not key:
                 return {"ok": False, "error": "This card is not linked to a saved job yet." if card_id else "no job name"}
-            res = job_settings.save(key, values or {}, child_name or "",
-                                    card_desc or "", edited_only=True, exact_card_id=card_id)
+            values = dict(values or {})
+            label_result = None
+            if 'loss_categories' in values and card_id and not child_name:
+                import loss_label_sync
+                label_result = loss_label_sync.save(key, card_id, values.pop('loss_categories'), loss_label_context)
+            if label_result and not label_result.get('ok'):
+                res = label_result
+            else:
+                try:
+                    res = job_settings.save(key, values, child_name or "",
+                                            card_desc or "", edited_only=True, exact_card_id=card_id)
+                except Exception as ex:
+                    res = {'ok': False, 'error': f'Other job-info fields could not be saved: {ex}'}
+            if label_result and label_result.get('ok'):
+                res['pending_push'] = bool(res.get('pending_push') or label_result.get('pending_push'))
+                res['loss_labels_pending'] = label_result.get('loss_labels_pending', False)
+                res['loss_label_context'] = label_result.get('loss_label_context')
+                if label_result.get('loss_labels_pending'):
+                    res['loss_label_context'] = label_result.get('loss_label_context')
+                    if res.get('ok'):
+                        res['error'] = label_result.get('error')
             # The shared save can succeed locally while its Trello mirror is
             # pending. Invalidate even then; never reopen an older read copy.
             import job_workspace_cache

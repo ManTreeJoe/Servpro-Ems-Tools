@@ -58,6 +58,12 @@ def _saved(key):
     return js.stored_values(ems_db.get_job(key))
 
 
+def test_unrelated_edit_does_not_create_an_explicit_loss_type_clear(job, trello):
+    import ems_db
+    assert js.save(job, {'phone': '555'}, edited_only=True)['ok']
+    assert 'loss_categories' not in ems_db.get_job(job)['metadata']['settings']
+
+
 @pytest.mark.parametrize('push_fails', [False, True])
 def test_cleared_insurance_stays_empty_on_reopen(job, trello, push_fails):
     assert js.save(job, {'carrier': 'AAA', 'claim_number': 'TEST-123'}, edited_only=True)['ok']
