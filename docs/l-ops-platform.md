@@ -2,6 +2,18 @@
 
 Status: October 8, 2026. This file is the canonical cross-chat handoff.
 
+## October 8 — Simplified analytics navigation (DEV)
+
+Branch: `handoff/paperclip-source-20261003`. Three primary destinations:
+Dashboard, Reviews, Billing. Dashboard's view selector retains Operations /
+lane timing, Summary and Trends without exposing separate top-level tabs.
+Reviews has All reviews / To review / Reviewed / Follow-ups filters. Reviewed
+uses the same Logs population and scoped review keys as weekly review.
+Data Quality remains accessible via the smaller Data needs attention action,
+with a Back to dashboard action. No reports removed or backend/schema changes.
+UI-design guidance preserved existing behavior and shared styles. Both browser
+suites pass; desktop and narrow rendering inspected. Main unchanged.
+
 ## October 8 — Analytics saved Requirements evidence (DEV, first slice)
 
 Branch: `handoff/paperclip-source-20261003`. Overview now reads existing

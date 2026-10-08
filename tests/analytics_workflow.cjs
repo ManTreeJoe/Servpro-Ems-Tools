@@ -13,6 +13,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.addStyleTag({path:path.resolve('analytics_web_assets/app.css')});
   await page.addStyleTag({path:path.resolve('analytics_web_assets/workspace_layout.css')});
   await page.addStyleTag({path:path.resolve('analytics_web_assets/theme_controls.css')});
+  await page.addStyleTag({path:path.resolve('analytics_web_assets/navigation.css')});
   await page.evaluate(()=>{
    window.savedReviews={};window.messages=[];
    window.addEventListener('message',e=>messages.push(e.data));
@@ -32,6 +33,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.addScriptTag({path:path.resolve('analytics_web_assets/flow.js')});
   await page.addScriptTag({path:path.resolve('analytics_web_assets/app.js')});
   await page.evaluate(()=>window.dispatchEvent(new Event('pywebviewready')));
+  assert.deepEqual(await page.locator('#tabs button').allTextContents(),['Dashboard','Reviews','Billing']);
+  assert.equal(await page.locator('#dashboard-view option').count(),3);
   await page.locator('[data-tab="weekly"]').click();
   await page.waitForFunction(()=>document.querySelector('#rows button'));
   assert.equal(await page.getByRole('button',{name:'Logs audit · To Be Preserved',exact:true}).count(),1);
@@ -50,6 +53,13 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   const exported=await page.evaluate(()=>exportedCSV);
   for(const value of ['Reviewer','Test Reviewer','2026-09-11T10:30:00','TO BE PRESERVED','front_ops','This PC only']) assert.ok(exported.includes(value),value);
   assert.equal(await page.locator('.review-progress progress').getAttribute('value'),'1');
+  await page.locator('#analytics-tools [data-tab="reviewed"]').click();
+  await page.waitForFunction(()=>document.querySelector('#view h2')?.textContent==='Reviewed jobs');
+  assert.equal(await page.locator('#record-count').textContent(),'1 records');
+  await page.locator('#analytics-tools [data-tab="jobs"]').click();
+  await page.waitForFunction(()=>document.querySelector('#record-count').textContent==='0 records');
+  await page.locator('#analytics-tools [data-tab="weekly"]').click();
+  await page.waitForFunction(()=>!!document.querySelector('.review-progress'));
   await page.locator('#result-search').fill('no matching record');
   assert.equal(await page.locator('#record-count').textContent(),'0 records');
   await page.locator('#export').click();

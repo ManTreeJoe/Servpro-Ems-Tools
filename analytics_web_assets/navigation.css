@@ -1,0 +1,8 @@
+.analytics-tools{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:16px 0}
+.analytics-tools label{display:flex;align-items:center;gap:10px;color:var(--text-muted);font-size:12px}
+.analytics-tools select{min-width:210px}
+.analytics-tools .quality-link{margin-left:auto;background:transparent;color:var(--text-muted);font-size:12px}
+.review-filters{display:flex;flex-wrap:wrap;gap:6px}
+.review-filters button{border-radius:999px;font-size:12px;padding:7px 13px}
+.review-filters button[aria-pressed="true"]{background:var(--green);color:var(--on-accent);border-color:var(--green)}
+@media(max-width:540px){.analytics-tools .quality-link{margin-left:0}.analytics-tools select{min-width:0;max-width:100%}}
