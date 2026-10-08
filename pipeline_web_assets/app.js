@@ -2350,7 +2350,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
           </div>
           <div class="quick-utility-actions"><div class="tool-quick-menu more-quick-menu"><button type="button" class="action-btn quiet tool-menu-trigger" aria-haspopup="menu" aria-expanded="false">More <small>⌄</small></button><div class="tool-menu-panel" role="menu" aria-label="More job actions">
             <button data-initial-notes ${data.card_id ? "" : "disabled"}>Initial notes</button>
-            <button data-dispatch-subcontractor>Dispatch subcontractor</button><button data-import-existing-initial-notes>Copy existing initial notes</button><button data-flag-job>Flag missing item</button><button type="button" data-copy-customer-info title="Copy customer, address and insurance details" ${customerInfoCopyText(data.info_sections) ? '' : 'disabled'}>Copy customer info</button><button data-copy-summary>Copy job summary</button>
+            <button data-dispatch-subcontractor>Dispatch subcontractor</button><button data-import-existing-initial-notes>Copy existing initial notes</button><button data-flag-job>Flag missing item</button><button type="button" data-copy-customer-info title="Copy formatted customer and insurance information" ${customerInfoCopyText(data.info_sections) ? '' : 'disabled'}>Copy info</button>
           </div></div></div>
         </div>
       </header>
@@ -2636,7 +2636,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     const button = event.currentTarget;
     button.disabled = true;
     try {
-      const text = customerInfoCopyText(data.info_sections);
+      const text = jobSummaryCopyText(data.info_sections);
       if (!text || !await pywebview.api.copy_to_clipboard(text)) throw new Error('Copy failed');
       button.textContent = 'Copied';
       setStatus('Copied customer, address and insurance info', 'ok');
@@ -2645,7 +2645,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       setStatus('Could not copy customer info. Please try again.', 'error');
     } finally {
       button.disabled = false;
-      window.setTimeout(() => { if (button.isConnected) button.textContent = 'Copy customer info'; }, 1500);
+      window.setTimeout(() => { if (button.isConnected) button.textContent = 'Copy info'; }, 1500);
     }
   });
   w.querySelector('.modal-title')?.addEventListener('contextmenu', event => window.OneLossPopout?.menu(event,'pipeline',{
@@ -2654,17 +2654,6 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     close(true);
     await onAuditCard(data.client || res.client || "", data.card_id || "", "", data.selected_division || "EMS");
   }));
-  w.querySelector("[data-copy-summary]")?.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    const summary = jobSummaryCopyText(data.info_sections);
-    try {
-      if (!await pywebview.api.copy_to_clipboard(summary)) throw new Error('Copy failed');
-      button.closest(".tool-quick-menu")?.classList.remove("is-open");
-      setStatus("Copied formatted job summary", "ok");
-    } catch (_) {
-      setStatus("Could not copy job summary. Please try again.", "error");
-    }
-  });
   w.querySelector("[data-dispatch-subcontractor]")?.addEventListener("click", () => {
     const fields = Object.fromEntries(copyFacts
       .filter((field) => field?.id)

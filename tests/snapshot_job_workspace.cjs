@@ -32,7 +32,7 @@ const server=http.createServer((req,res)=>{
  assert.equal(await card().locator('[data-job-members]').isVisible(),true);
  assert.equal(await card().locator('[data-edit-job-info]').isVisible(),true);
  await card().locator('.more-quick-menu > .tool-menu-trigger').click();
- assert.equal(await card().locator('[data-copy-summary]').isVisible(),true);
+ assert.equal(await card().locator('[data-copy-customer-info]').isVisible(),true);
  await card().locator('.more-quick-menu > .tool-menu-trigger').click();
  assert.equal(await card().locator('.job-card-activity').isVisible(),false);
  await comment().waitForSelector('[data-comment-input]',{state:'attached'});

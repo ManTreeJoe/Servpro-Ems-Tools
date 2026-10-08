@@ -67,11 +67,13 @@ def test_pipeline_keeps_primary_update_and_groups_shortcuts():
                           header_start)
     header = js[header_start:header_end]
     for marker in ("card-quick-actions", "tool-quick-menu",
-                   "data-copy-summary", "data-stage-xa",
-                   "data-add-job-log", "data-open-docs-folder",
+                   "data-copy-customer-info", "data-stage-xa",
+                   "data-open-docs-folder",
                    "data-open-trello"):
         assert marker in header
     assert "copy-quick-menu" not in header
+    assert "data-copy-summary" not in header
+    assert "data-add-job-log" not in header
 
 
 def test_job_workspace_owns_the_audit_and_keeps_daily_actions_visible():
@@ -83,7 +85,7 @@ def test_job_workspace_owns_the_audit_and_keeps_daily_actions_visible():
     header = js[header_start:header_end]
     assert "Open full audit" not in js
     for marker in ("data-open-xa", "data-xa-note", "data-initial-notes",
-                   "data-add-job-log", "data-open-trello",
+                   "data-open-trello",
                    "data-open-companycam"):
         assert marker in header
 
@@ -363,7 +365,7 @@ def test_job_workspace_visibly_separates_work_from_connected_tools():
     header = js[header_start:header_end]
     assert 'class="quick-primary-actions" aria-label="Work actions"' in header
     assert 'class="quick-destination-actions" aria-label="Connected tools"' in header
-    assert header.index("data-add-job-log") < header.index("quick-destination-actions")
+    assert "data-add-job-log" not in header
     # One-time setup belongs in More, not the permanent work-action row.
     assert header.index("data-initial-notes") > header.index("quick-destination-actions")
     assert 'Initial notes</button>' in header

@@ -2,6 +2,16 @@
 
 Status: October 8, 2026. This file is the canonical cross-chat handoff.
 
+## October 8 — Consolidated job-card copy action (DEV)
+
+More now has one Copy info action; removed Copy job summary. Copy info uses
+the full customer/insurance template (including multiline contacts and blank
+labels) previously supplied by job summary. Clipboard success/failure and
+delayed completion remain handled. Applies to the shared Snapshot card too.
+No schema or L OPS changes. Card duplication is proposed, not implemented:
+must distinguish another placement of the same job from a new job copied
+from existing details before choosing identity/history/link behavior.
+
 ## October 8 — Card history presentation (DEV)
 
 Branch: `handoff/paperclip-source-20261003`. Card Details now presents saved
