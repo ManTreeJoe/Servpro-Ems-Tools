@@ -1,6 +1,18 @@
 # L OPS platform / EMS Tools coordination
 
-Status: October 7, 2026. This file is the canonical cross-chat handoff.
+Status: October 8, 2026. This file is the canonical cross-chat handoff.
+
+## October 8 — Snapshot shared palette (DEV)
+
+Branch: `handoff/paperclip-source-20261003`. Removed Snapshot's obsolete
+copy of the shared theme; its report form now inherits the same palette as
+the embedded job card and comments. Kept Snapshot-specific layout and
+history controls. Table borders, loading indicators and toggles use shared
+tokens. No database/schema changes or L OPS updates required.
+
+Verified the real Snapshot markup against job-card theme tokens in dark and
+light modes (`tests/snapshot_theme.cjs`), plus embedded card/comment/scroll
+regressions (`tests/snapshot_job_workspace.cjs`). Main is not released.
 
 ## October 7 — Operations analytics first working slice (DEV)
 

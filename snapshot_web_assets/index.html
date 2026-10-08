@@ -3,7 +3,7 @@
 <head>
 <script src="../web_shared/job_activities.js?v=20261001popover"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="theme-color" content="#1A1A1A" />
+<meta name="theme-color" content="#17191C" />
 <script src="../web_shared/health_banner.js?v=20260820a"></script>
 <script src="../web_shared/loading_feedback.js?v=20261001dedup"></script>
 <script src="../web_shared/iframe_shim.js?v=20261001loading"></script>
@@ -30,7 +30,7 @@
 <link rel="stylesheet" href="../web_shared/umbrella_group.css?v=20260722a" />
 <script src="../web_shared/appearance.js?v=20260901a"></script>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260910a" />
-<link rel="stylesheet" href="theme.css?v=20260903a" />
+<link rel="stylesheet" href="theme.css?v=20261008shared" />
 <style>
   /* The scroller is full-width so its scrollbar sits at the WINDOW's
      right edge. Capping .wrap itself put the bar at the edge of an
@@ -67,7 +67,7 @@
     letter-spacing: 0.04em; text-transform: uppercase;
     padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border);
     background: var(--surface); }
-  .row-table td { padding: 4px 6px; border-bottom: 1px solid #2A2A2A; }
+  .row-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
   .row-table tr:last-child td { border-bottom: none; }
   .row-table input {
     width: 100%;
@@ -97,7 +97,7 @@
     background: transparent; color: var(--text-dim); border: none;
     cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: 3px;
   }
-  .row-table .rm-btn:hover { background: rgba(192,57,43,0.18); color: var(--red); }
+  .row-table .rm-btn:hover { background: var(--red-soft); color: var(--red); }
   .add-row-btn {
     width: 100%; margin-top: 4px;
     background: transparent; border: 1px dashed var(--border);
@@ -148,11 +148,11 @@
 
   .gen-foot { margin-top: 22px; display: flex; gap: 10px; align-items: center; }
   .snapshot-form-loading { display:flex;align-items:center;gap:10px;margin:0 0 14px;
-    padding:10px 12px;border:1px solid rgba(76,175,110,.32);border-radius:8px;
-    background:rgba(76,175,110,.07);color:var(--text-muted);font-size:12px; }
+    padding:10px 12px;border:1px solid var(--border);border-radius:8px;
+    background:var(--green-soft);color:var(--text-muted);font-size:12px; }
   .snapshot-form-loading.hidden { display:none; }
   .loading-ring { width:15px;height:15px;flex:0 0 auto;border-radius:50%;
-    border:2px solid rgba(125,205,151,.25);border-top-color:#7dcd97;
+    border:2px solid var(--border);border-top-color:var(--link);
     animation:snapshot-spin .7s linear infinite; }
   @keyframes snapshot-spin { to { transform:rotate(360deg); } }
   #snapshot-form-card.is-loading .form-row input,
@@ -162,7 +162,7 @@
   .snapshot-skeleton { display:grid;grid-template-columns:minmax(150px,1fr) 120px 70px;
     gap:12px;align-items:center;padding:12px;border-bottom:1px solid var(--border); }
   .snapshot-skeleton>* { display:block;height:10px;border-radius:99px;
-    background:linear-gradient(90deg,var(--surface-2),rgba(255,255,255,.07),var(--surface-2));
+    background:linear-gradient(90deg,var(--surface-2),var(--surface-3),var(--surface-2));
     background-size:220% 100%;animation:snapshot-shimmer 1.25s ease-in-out infinite; }
   .snapshot-skeleton span{width:88%}.snapshot-skeleton b{width:100%}
   .snapshot-skeleton.pdf{grid-template-columns:minmax(150px,1fr) 120px 55px}
@@ -298,7 +298,7 @@
     display: inline-flex; align-items: center; gap: 5px;
   }
   .action-btn:hover { background: var(--border); }
-  .action-btn:focus-visible { outline:2px solid #79b48d; outline-offset:2px; }
+  .action-btn:focus-visible { outline:2px solid var(--link); outline-offset:2px; }
   .action-btn.primary {
     background: var(--green); border-color: var(--green); color: #FFFFFF;
   }
