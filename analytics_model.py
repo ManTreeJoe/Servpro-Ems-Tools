@@ -10,7 +10,7 @@ INACTIVE_DIVISIONS = CLOSED | {'not_applicable', 'completed', 'complete'}
 def day(value):
     if not value:
         return None
-    for fmt in ('%Y-%m-%d', '%m-%d-%y', '%m/%d/%Y', '%m-%d-%Y'):
+    for fmt in ('%Y-%m-%d', '%m-%d-%y', '%m/%d/%Y', '%m/%d/%y', '%m-%d-%Y'):
         try:
             return datetime.strptime(str(value)[:10], fmt).date()
         except ValueError:
@@ -65,7 +65,36 @@ def records(graph, location):
         for req in item.get('requirements') or []:
             if isinstance(req, dict):
                 row['requirements'].append(req)
+        # Use the same saved decisions that drive the job's Requirements tab.
+        # No folder reads, provider calls, or inferred completion states here.
+        overrides = md.get('requirement_overrides')
+        if isinstance(overrides, dict):
+            for requirement_key, decision in overrides.items():
+                if not isinstance(decision, dict):
+                    continue
+                row['requirements'].append({
+                    'key': requirement_key, 'status': decision.get('state') or '',
+                    'due_at': decision.get('due_at') or '',
+                    'follow_up_at': decision.get('follow_up_at') or '',
+                    'blocked_reason': decision.get('blocked_reason') or '',
+                    'assignee': decision.get('assignee') or '',
+                    'actor': decision.get('actor') or '', 'at': decision.get('at') or '',
+                    'source': 'Saved requirement decision',
+                })
     return list(result.values())
+
+
+def requirement_flags(row, today):
+    """Known saved decisions only; completed items never retain overdue flags."""
+    decisions = [r for r in row.get('requirements', [])
+                 if r.get('status') in {'todo', 'in_progress', 'blocked', 'completed', 'not_applicable'}]
+    pending = [r for r in decisions if r['status'] not in {'completed', 'not_applicable'}]
+    overdue = [r for r in pending if (
+        (day(r.get('due_at')) and day(r['due_at']) < today) or
+        (r['status'] == 'blocked' and day(r.get('follow_up_at')) and day(r['follow_up_at']) < today))]
+    return {'overdue': overdue, 'blocked': [r for r in pending if r['status'] == 'blocked'],
+            'due_known': any(day(r.get('due_at')) or day(r.get('follow_up_at')) for r in decisions),
+            'known': bool(decisions)}
 
 
 def select(rows, filters, today=None):
@@ -116,15 +145,19 @@ def report(rows, filters, today=None):
     metric('active', 'Active Losses', active, sum(r['stage'].lower() not in UNKNOWN_STAGES for r in selected))
     for division in ('EMS', 'CONTENTS', 'RECON'):
         metric(division, f'Active {division} divisions', [r for r in selected if any(d['division'] == division and d['stage'].lower() not in INACTIVE_DIVISIONS | UNKNOWN_STAGES for d in r['divisions'])], unit='divisions')
-    metric('overdue', 'Overdue next actions', [r for r in active if day(r['due']) and day(r['due']) < today], sum(bool(day(r['due'])) for r in active))
+    flags = {r['id']: requirement_flags(r, today) for r in active}
+    metric('overdue', 'Overdue next actions', [r for r in active if
+           (day(r['due']) and day(r['due']) < today) or flags[r['id']]['overdue']],
+           sum(bool(day(r['due'])) or flags[r['id']]['due_known'] for r in active))
     metric('stale', 'No activity in 7 days', [r for r in active if day(r['activity']) and day(r['activity']) < today - timedelta(days=7)], sum(bool(day(r['activity'])) for r in active))
     metric('paperwork', 'Missing required paperwork', [r for r in active if r['paperwork_status'].lower() == 'missing'], sum(bool(r['paperwork_status']) for r in active))
     metric('estimate_new', 'Estimates not started', [r for r in active if r['estimate_status'].lower() in ('not_started', 'not started')], sum(bool(r['estimate_status']) for r in active))
     metric('estimate_wait', 'Estimates waiting', [r for r in active if r['estimate_status'].lower() in ('waiting', 'waiting_on_information', 'waiting_on_approval')], sum(bool(r['estimate_status']) for r in active))
     metric('ready', 'Ready to bill', [r for r in active if r['stage'] == 'ready_for_billing' or any(d['stage'] == 'ready_for_billing' for d in r['divisions'])])
     attention = {i for m in metrics if m['key'] in ('overdue', 'stale', 'paperwork', 'estimate_wait') for i in m['ids']}
+    attention.update(r['id'] for r in active if flags[r['id']]['blocked'])
     metric('attention', 'Known attention flags', [r for r in selected if r['id'] in attention],
-           sum(bool(r['due'] or r['activity'] or r['paperwork_status'] or r['estimate_status']) for r in active))
+           sum(bool(day(r['due']) or day(r['activity']) or r['paperwork_status'] or r['estimate_status']) or flags[r['id']]['known'] for r in active))
     quality = []
     for key, label in [('received','Missing intake date'), ('activity','Missing activity date'), ('due','Missing next-action due date'), ('paperwork_status','Paperwork not assessed'), ('estimate_status','Estimate status missing'), ('profile','Job Profile missing')]:
         quality.append({'label': label, 'ids': [r['id'] for r in selected if not r[key]]})

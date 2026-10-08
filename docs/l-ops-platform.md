@@ -2,6 +2,25 @@
 
 Status: October 8, 2026. This file is the canonical cross-chat handoff.
 
+## October 8 — Analytics saved Requirements evidence (DEV, first slice)
+
+Branch: `handoff/paperclip-source-20261003`. Overview now reads existing
+`metadata.requirement_overrides` into its inspectable records: state, due_at,
+follow_up_at, assignee, blocked_reason, actor and at. Overdue next actions
+includes unfinished requirement deadlines and blocked follow-ups. Completed
+and not-applicable decisions do not remain overdue. Known attention includes
+blocked requirements even before their due date. MM/DD/YY dates are accepted.
+
+No schema, backend writes, identity merges or L OPS changes. This reuses the
+existing requirement decision/history writer; it does not implement generic
+field-change history. Verified 10 analytics model tests with synthetic data;
+live record counts have not been verified. No additional provider requests.
+
+Remaining: connect verified paperwork audits; define estimator start/wait
+evidence; connect complete activity coverage without mistaking sync timestamps
+for work; reconcile legacy Loss IDs with explicit review, not name matching.
+Do not claim all dashboard metrics or historical field tracking are complete.
+
 ## October 8 — Consolidated job-card copy action (DEV)
 
 More now has one Copy info action; removed Copy job summary. Copy info uses
