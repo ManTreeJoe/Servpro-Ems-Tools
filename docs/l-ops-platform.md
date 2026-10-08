@@ -1324,6 +1324,22 @@ repaired. Do not automatically merge, delete or re-pin these jobs. Shared API
 enforcement needs coordinated design before implementation. 56 targeted tests
 pass for this bounded fix; local/shared legacy mirroring remains best-effort.
 
+## Two-way loss-label contract — planned DEV (2026-10-08)
+
+Use existing job metadata `loss_label_sync`, keyed by exact Trello card ID,
+for desired categories, status, revision and verified/prospective label snapshots.
+No SQL schema change. The editor gets a fresh loss-label snapshot and submits
+it with the save; stale edits must fail without overwriting newer Trello tags.
+Writes add/remove individual recognized loss-label IDs, never replace idLabels
+wholesale. Reuse board labels; missing board mappings require correction rather
+than silently creating labels. Pending operations survive reopen and have an
+explicit retry. After successful enrollment, fresh Trello labels (including
+an empty set) supersede the old static loss_categories override for that card.
+Other cards/divisions are not mutated. Do not use the old description Loss Type
+field as a second inbound authority. Existing persistence/auth boundaries remain.
+Trello offers no atomic compare-and-set for label edits: preflight, per-operation
+checks and postflight verification narrow, but cannot eliminate, remote races.
+
 ## Trello loss-label projection — DEV only (2026-10-08)
 
 Recognized Trello loss labels automatically populate unset loss types on the
