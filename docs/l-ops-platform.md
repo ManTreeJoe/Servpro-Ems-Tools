@@ -2,6 +2,16 @@
 
 Status: October 8, 2026. This file is the canonical cross-chat handoff.
 
+## October 8 — Stronger schedule and chart color cues (DEV)
+
+Schedule activity meanings unchanged: 6px card stripes, tinted card backgrounds,
+filled activity pills and an always-visible wrapping color key. Operations
+charts use brighter blue/amber/purple fills, 20px lane bars and a lane color key.
+Text labels and counts remain primary evidence; chart magnitudes and interactions
+are unchanged. UI-design skill guided shared-theme readability. Calendar and
+analytics browser tests passed; rendered dark schedule and charts inspected.
+No schema or L OPS changes; Main unchanged.
+
 ## October 8 — Logs audit received date source (DEV)
 
 Fixed confirmed mismatch: Logs audit previously parsed Job Date from the

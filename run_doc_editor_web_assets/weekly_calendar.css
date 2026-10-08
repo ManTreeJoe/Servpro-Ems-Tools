@@ -50,8 +50,11 @@
 .weekly-schedule [data-color="pending"] { --activity-color:var(--amber); }
 .weekly-schedule [data-color="hold"],.weekly-schedule [data-color="neutral"] { --activity-color:var(--text-muted); }
 .weekly-schedule [data-color="canceled"] { --activity-color:#ea8b82; }
-.weekly-schedule .wc-visit[data-color] { border-left:3px solid var(--activity-color); }
-.wc-activity { display:inline-block; border:1px solid var(--activity-color); border-radius:12px; padding:2px 7px; font-size:11px; color:var(--text); }
+.weekly-schedule .wc-visit[data-color] { border-left:6px solid var(--activity-color); background:linear-gradient(90deg,color-mix(in srgb,var(--activity-color) 18%,transparent),transparent 85%),var(--surface-2); }
+.wc-activity { display:inline-block; border:1px solid var(--activity-color); border-radius:12px; padding:3px 8px; font-size:11px; font-weight:600; color:var(--text); background:color-mix(in srgb,var(--activity-color) 22%,var(--surface)); }
+.wc-color-key{display:flex;flex-wrap:wrap;gap:8px 16px;margin:10px 0 14px;font-size:11px;color:var(--text-muted)}
+.wc-color-key span{display:inline-flex;align-items:center;gap:6px}
+.wc-color-key span::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--activity-color)}
 .wc-date input { width:110px; }
 .wc-filter-menu { position:relative; }
 .wc-filter-menu summary { cursor:pointer; }

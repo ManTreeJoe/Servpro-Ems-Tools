@@ -8,13 +8,15 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
  await page.addStyleTag({path:path.resolve('web_shared/theme.css')});
  await page.addStyleTag({path:path.resolve('web_shared/lane_timing_summary.css')});
  await page.addScriptTag({path:path.resolve('web_shared/lane_timing_summary.js')});
- for(const file of ['app.css','workspace_layout.css','flow.css','theme_controls.css','charts.css'])await page.addStyleTag({path:path.resolve('analytics_web_assets',file)});
+ for(const file of ['app.css','workspace_layout.css','flow.css','theme_controls.css','charts.css','navigation.css'])await page.addStyleTag({path:path.resolve('analytics_web_assets',file)});
  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';window.messages=[];addEventListener('message',e=>messages.push(e.data));window.pywebview={api:{
  load_flow:async()=>{if(window.fail)return {ok:false,error:'Offline'};return {ok:true,location:'IE',source:'Test queues',lanes:['WORK IN PROGRESS','TBS NEW LOSS','TBS MITIGATION','TBS CONTENTS','TEST/CLEARANCE','PENDING APPROVALS','ON HOLD','SNAPSHOT','JUANTES','ZAC','KIM+ESTEBAN','AARON'].map((name,i)=>({id:String(i),board_id:i<7?'wip':'est',board:i<7?'WORK IN PROGRESS':'ESTIMATING',name,cards:[{id:'card'+i,name:'Sample job '+i}]}))};},
  flow_history:async()=>({ok:true,name:'Sample job',complete:true,current_seconds:null,periods:[],totals:[],estimator_cycles:[]})}};});
  for(const file of ['flow.js','app.js'])await page.addScriptTag({path:path.resolve('analytics_web_assets',file)});
  await page.evaluate(()=>dispatchEvent(new Event('pywebviewready')));await page.waitForSelector('[data-history]');
  assert.equal(await page.locator('#filters').isVisible(),false);
+ assert.equal(await page.locator('.flow-color-key span').count(),3);
+ assert.equal(await page.locator('.flow-bar-track').first().evaluate(el=>getComputedStyle(el).height),'20px');
  assert.equal(await page.locator('.flow-bar-track i').first().evaluate(el=>getComputedStyle(el).animationName),'chart-bar-enter');
  assert.equal(await page.locator('.flow-column-track i').first().evaluate(el=>getComputedStyle(el).animationName),'chart-column-enter');
  await page.emulateMedia({reducedMotion:'reduce'});
