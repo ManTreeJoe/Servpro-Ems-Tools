@@ -41,7 +41,8 @@ def test_all_open_lanes_survive_both_read_paths(monkeypatch):
     tc = SimpleNamespace(_call=lambda path, **kwargs: lists if path.endswith('/lists') else [])
     direct = pipeline_web._build_board(tc, None, 'wip', board['name'], board)
     assert [lane['name'] for lane in direct['lanes']] == list(names)
-    monkeypatch.setattr(trello_mirror_reader, 'boards', lambda: [dict(
+    monkeypatch.setattr(trello_mirror_reader, 'catalog', lambda: [board])
+    monkeypatch.setattr(trello_mirror_reader, 'boards', lambda ids: [dict(
         board=board, lists=lists + [dict(id='closed', name='Archived', closed=True)],
         cards=[], saved_at='2026-10-07T18:00:00Z')])
     mirrored = pipeline_web._server_board_payload([('wip', board['name'])])

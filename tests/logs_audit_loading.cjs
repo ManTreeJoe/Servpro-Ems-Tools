@@ -1,0 +1,26 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict'),path=require('node:path');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage();await page.setContent('<body></body>');
+ await page.evaluate(()=>{window.pywebview={api:{logs_queue:()=>new Promise(resolve=>window.resolveQueue=resolve),logs_inspect:()=>new Promise(resolve=>window.resolveInspect=resolve)}};});
+ for(const file of ['logs_review_workspace.js','logs_audit.js'])await page.addScriptTag({path:path.resolve('analytics_web_assets',file)});
+ for(const file of ['web_shared/theme.css','analytics_web_assets/app.css','analytics_web_assets/logs_review_workspace.css'])await page.addStyleTag({path:path.resolve(file)});
+ await page.evaluate(()=>document.documentElement.dataset.theme='dark');
+ await page.evaluate(()=>{window.opening=LogsAuditUI.open({start:'2026-10-05',end:'2026-10-11'});});
+ assert.match(await page.locator('[data-status]').textContent(),/loading|opening/i,'immediate visible queue loading feedback');
+ assert.equal(await page.locator('.logs-review-workspace').count(),1,'layout visible before queue resolves');
+ await page.evaluate(()=>resolveQueue({ok:true,cards:[{id:'a',name:'First job'}],drafts:{},operations:[]}));
+ await page.waitForFunction(()=>typeof resolveInspect==='function');
+ assert.match(await page.locator('.logs-review-queue').textContent(),/First job/,'queue visible while evidence is pending');
+ assert.match(await page.locator('[data-status]').textContent(),/First job/,'selected loading job identified');
+ assert.equal(await page.locator('[data-audit]').count(),0,'no editable unverified form');
+ await page.screenshot({path:path.join(require('node:os').tmpdir(),'logs-loading-preview.png')});
+ await page.evaluate(()=>resolveInspect({ok:false,error:'Evidence unavailable'}));await page.evaluate(()=>opening);
+ assert.match(await page.locator('[data-status]').textContent(),/Evidence unavailable/);
+ await page.locator('[data-close]').click();
+ await page.evaluate(()=>{window.pywebview.api.logs_queue=async()=>({ok:false,error:'Queue unavailable'});});
+ await page.evaluate(()=>LogsAuditUI.open({}));
+ assert.equal(await page.locator('[data-queue-retry]').isVisible(),true);
+ assert.equal(await page.locator('[data-status]').getAttribute('aria-busy'),'false');
+ console.log('PASS: immediate shell, queue before evidence, explicit pending job, failure recovery');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

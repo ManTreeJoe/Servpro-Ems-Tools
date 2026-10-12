@@ -8,10 +8,12 @@ import urllib.parse
 import urllib.request
 
 import config
+import job_settings
 import schedule_records
 import supabase_client as sb
 
-JOB_FIELDS = 'job_id,canon_key,display_name,address,phone,email,carrier,claim_number'
+JOB_FIELDS = ','.join(['job_id', 'canon_key', 'display_name', 'metadata_json',
+                      *dict.fromkeys(job_settings.COLUMN_FIELDS.values())])
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -89,11 +91,28 @@ class ScheduleStore:
 
     @staticmethod
     def job(row):
+        facts = job_settings.stored_values(row)
+        sections = {}
+        for fid, section, _key, label, _core in job_settings.FIELDS:
+            value = str(facts.get(fid) or '').strip()
+            if value:
+                sections.setdefault(section.title(), []).append({'id': fid, 'label': label, 'value': value})
         return {'id': row['job_id'], 'job_id': row['job_id'],
                 'title': row.get('display_name') or 'Unnamed job',
-                'address': row.get('address') or '', 'phone': row.get('phone') or '',
-                'contact': '', 'insurance': row.get('carrier') or '',
-                'claim': row.get('claim_number') or '', 'activities': []}
+                'address': facts['address'], 'phone': facts['phone'],
+                'contact': facts['customer_name'], 'insurance': facts['carrier'],
+                'email': facts['email'], 'claim': facts['claim_number'], 'activities': [],
+                'info_sections': [{'name': name, 'fields': fields} for name, fields in sections.items()]}
+
+    def job_detail(self, job_id):
+        job_id = schedule_records.identifier(job_id)
+        rows = self.request('jobs', params={'department': 'eq.' + self.department,
+            'job_id': 'eq.' + job_id, 'select': JOB_FIELDS, 'limit': 1})
+        if not rows:
+            raise ValueError('This job is no longer available in this office.')
+        result = self.job(rows[0])
+        result['trello_cards'] = self.trello_links(rows).get(rows[0]['canon_key'], [])
+        return result
 
     @classmethod
     def row(cls, row):
@@ -143,7 +162,10 @@ class ScheduleStore:
         rows = self.request('jobs', params={'department': 'eq.' + self.department,
             'select': JOB_FIELDS, 'or': f'(display_name.ilike.{pattern},address.ilike.{pattern})',
             'order': 'display_name.asc,job_id.asc', 'limit': 30})
-        return [self.job(row) for row in rows]
+        jobs = [self.job(row) for row in rows]
+        # Keep legacy placeholders available, but don't lead with an empty
+        # record when the actual job has saved customer/property information.
+        return sorted(jobs, key=lambda job: not bool(job['info_sections']))
 
     def save(self, command):
         if not isinstance(command, dict) or command.get('department') != self.department:
@@ -170,7 +192,7 @@ def failure(error):
         if code == '40001':
             return {'ok': False, 'conflict': True, 'error': 'This visit changed elsewhere. Your edit is still open. Cancel and reopen it to use the latest details.'}
         if code == '23505':
-            return {'ok': False, 'conflict': True, 'error': 'This job already has an active visit. Cancel and open that visit instead.'}
+            return {'ok': False, 'conflict': True, 'error': 'This visit or imported source already exists. Your edit is still open. Reload Schedule to check the existing entry.'}
         if error.status in (401, 403):
             return {'ok': False, 'error': 'Sign in with access to this office before using Schedule.'}
         return {'ok': False, 'error': 'Schedule could not confirm the request. Retry the same save safely, or cancel and reload to check it.'}

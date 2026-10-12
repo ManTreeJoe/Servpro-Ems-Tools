@@ -21,9 +21,13 @@ export async function handle(request, env, fetcher = fetch) {
     }
     const user = await read('/auth/v1/user');
     if (!user?.id) return response({ok:false,error:'Sign in required'},401);
-    // User JWT + existing mirror RLS establishes all required franchise access.
-    const cards = await read(`/rest/v1/hub_trello_mirror_cards?card_id=eq.${card}&select=board_id&limit=1`);
-    if (!cards.length) return response({ok:false,error:'Card access unavailable'},403);
+    // The same placement-aware guard as thread reads, using the caller's JWT.
+    // An archived card deliberately disappears from the active mirror feed.
+    const access = await fetcher(env.SUPABASE_URL+'/rest/v1/rpc/job_comment_threads', {
+      method:'POST',headers:{...userHeaders,'Content-Type':'application/json'},
+      body:JSON.stringify({p_action:'read',p_card:card,p_data:{}}),signal:AbortSignal.timeout(8000)
+    });
+    if (!access.ok || !(await access.json()).ok) return response({ok:false,error:'Card access unavailable'},403);
     const saved = await read(`/rest/v1/job_comment_threads?card_id=eq.${card}&or=(id.eq.${parent},provider_id.eq.${parent})&limit=1`);
     const provider = saved[0]?.provider_id || (parent.startsWith('oneloss:') ? '' : parent);
     if (!provider) return response({ok:false,error:'The original reply is still awaiting Trello delivery. Your draft is kept.'});
@@ -39,8 +43,13 @@ export async function handle(request, env, fetcher = fetch) {
       trello('/cards/'+card, {fields:'id,idBoard'})
     ]);
     if (action.id !== provider || action.type !== 'commentCard' || action.data?.card?.id !== card ||
-        liveCard.id !== card || liveCard.idBoard !== cards[0].board_id)
+        liveCard.id !== card || !/^[a-f0-9]{24}$/.test(liveCard.idBoard || ''))
       return response({ok:false,error:'The comment no longer belongs to this accessible card.'},409);
+    // A real provider move must also stay within the caller's current scope.
+    // Source RLS enforces every required office, including mixed-office boards.
+    const sources = await read(`/rest/v1/hub_trello_sync_sources?board_id=eq.${liveCard.idBoard}&select=board_id&limit=1`);
+    if (!sources.some(source=>source.board_id===liveCard.idBoard))
+      return response({ok:false,error:'The card moved outside your accessible boards.'},403);
     if (typeof action.data.text !== 'string' || action.data.text.length > 20000 || !Number.isFinite(Date.parse(action.date)))
       return response({ok:false,error:'Invalid provider comment'},502);
     if (!saved.length) {

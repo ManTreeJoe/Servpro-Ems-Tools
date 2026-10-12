@@ -3,10 +3,12 @@ const assert=require('node:assert/strict');
  const {handle}=await import('../supabase/functions/comment-parent/core.mjs');
  const card='a'.repeat(24),parent='b'.repeat(24),board='c'.repeat(24);
  const env={SUPABASE_URL:'https://db.test',SUPABASE_ANON_KEY:'anon',SUPABASE_SERVICE_ROLE_KEY:'service',TRELLO_SYNC_API_KEY:'key',TRELLO_SYNC_TOKEN:'secret'};
- let writes=[],providerReads=0,authorized=true,wrongCard=false,saved=[];
+ let writes=[],providerReads=0,authorized=true,wrongCard=false,saved=[],liveAllowed=true;
  const fetcher=async(url,options={})=>{
   url=String(url);let value;
   if(url.includes('/auth/v1/user')) value={id:'user'};
+  else if(url.includes('/rpc/job_comment_threads')) {assert.equal(options.headers.Authorization,'Bearer user');value={ok:authorized};}
+  else if(url.includes('hub_trello_sync_sources')) value=liveAllowed?[{board_id:board}]:[];
   else if(url.includes('hub_trello_mirror_cards')) {assert.equal(options.headers.Authorization,'Bearer user');value=authorized?[{board_id:board}]:[];}
   else if(url.includes('/rest/v1/job_comment_threads')) {
    if(options.method==='POST'){writes.push(JSON.parse(options.body));assert.equal(options.headers.Authorization,'Bearer service');value={};}
@@ -26,5 +28,7 @@ const assert=require('node:assert/strict');
  result=await(await handle(request(),env,fetcher)).json();assert.equal(result.ok,false);assert.equal(providerReads,0);
  authorized=true;wrongCard=false;saved=[{id:'oneloss:existing',provider_id:parent}];
  result=await(await handle(request(),env,fetcher)).json();assert.equal(result.parent_id,'oneloss:existing');assert.equal(writes.length,0);
+ liveAllowed=false;
+ result=await(await handle(request(),env,fetcher)).json();assert.equal(result.ok,false);assert.equal(writes.length,0);
  console.log('PASS: immediate verified import, caller RLS, wrong-card rejection, no client body trust, native identity preservation.');
 })().catch(e=>{console.error(e);process.exitCode=1});

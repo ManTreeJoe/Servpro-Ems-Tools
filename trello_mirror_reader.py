@@ -91,7 +91,7 @@ def _barrier():
         return row[0] if row else 0
 
 
-def _read(card_id=None):
+def _read(card_id=None, board_ids=None, catalog=False):
     failure_key = None
     try:
         if not sb.current_user():
@@ -108,7 +108,18 @@ def _read(card_id=None):
         if not _read_allowed(failure_key):
             return None
         barrier = _barrier()
-        result = _shared_read(scope, department, workspace, card_id)
+        if catalog:
+            sources = sb.rest('GET', 'hub_trello_sync_sources', params={
+                'select': 'board_json', 'enabled': 'eq.true',
+                'reader_department': f'eq.{department}',
+                'reader_workspace': f'eq.{workspace}',
+            })
+            result = {'catalog': [s['board_json'] for s in sources]}
+        elif board_ids is not None:
+            import mirror_board_transfer
+            result = mirror_board_transfer.read(scope, department, workspace, board_ids)
+        else:
+            result = _shared_read(scope, department, workspace, card_id)
         if scope != cache.scope() or not isinstance(result, dict):
             return None
         with _FAILURE_LOCK:
@@ -124,8 +135,13 @@ def _read(card_id=None):
         return None
 
 
-def boards():
-    read = _read()
+def catalog():
+    read = _read(catalog=True)
+    return read[0].get('catalog') if read else None
+
+
+def boards(board_ids=None):
+    read = _read(board_ids=board_ids)
     if not read:
         return None
     result, barrier = read

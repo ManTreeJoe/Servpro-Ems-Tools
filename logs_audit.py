@@ -1,6 +1,6 @@
 """Exact-card Logs audit drafts and explicitly confirmed Trello publication.
 
-Local drafts are not shared. Never infer an audit pass or billing month from
+Production drafts use shared storage. Never infer an audit pass or billing month from
 an invoice/payment keyword. Trello identity, comments and checks are evidence.
 """
 from copy import deepcopy
@@ -13,16 +13,18 @@ import uuid
 
 from weekly_review_sources import BOARD, _one
 from logs_audit_suggestions import suggest
-from logs_audit_evidence import AR_BOARD, timing, candidates, compare
+from logs_audit_evidence import AR_BOARD, timing, field_delay, candidates, compare
 
 LOCK = threading.RLock()
-FIELDS = ('ems_start', 'contents_start', 'job_date', 'ems_estimator', 'contents_estimator', 'initial_note',
+UNSPECIFIED_VERSION = object()
+FIELDS = ('ems_start', 'contents_start', 'ems_completed', 'contents_completed', 'job_date', 'ems_estimator', 'contents_estimator', 'initial_note',
           'missed_by', 'file_status', 'ems_ready', 'ems_billed', 'contents_ready',
           'contents_billed', 'estimator_notes', 'audit_notes', 'billing_evidence',
           'payment_notes', 'billed_month', 'destination', 'decision', 'period_start',
           'period_end', 'scope', 'field_notes', 'billing_status', 'billing_conflict',
           'other_billed', 'inspection_completed_at', 'initial_note_sent_at',
-          'timing_source', 'ar_resolution')
+          'timing_source', 'ar_resolution', 'inspection_at', 'field_note_posted_at',
+          'incoming_loss_at', 'insured_contacted_at', 'on_site_at')
 CHECKS = ('front_checked', 'estimating_checked', 'field_checked', 'billing_checked',
           'identity_checked', 'all_confirmed')
 MONTHS = {name: i for i, names in enumerate(
@@ -56,9 +58,15 @@ class LogsAudit:
         return 'logs_audit_form_v1_IE'
 
     def _store(self):
+        self._key()
+        if hasattr(self.storage, 'load_store'):
+            return self.storage.load_store()
         return deepcopy(self.storage.get(self._key()) or {'drafts':{}, 'operations':{}})
 
     def _save(self, store):
+        if hasattr(self.storage, 'save_store'):
+            self.storage.save_store(store)
+            return
         key = self._key()
         self.storage.set_value(key, store)
         # Legacy persistence logs some disk errors instead of raising. Never
@@ -85,7 +93,7 @@ class LogsAudit:
             if c.get('idBoard') != board['id'] or c.get('idList') != source['id'] or c.get('closed'):
                 raise ValueError('Queue changed while reading. Refresh it.')
         store = self._store()
-        return {'ok':True, 'cards':cards, 'drafts':{k:{'fields':v['fields'],'saved_at':v['saved_at']} for k,v in store['drafts'].items()},
+        return {'ok':True, 'cards':cards, 'drafts':{k:{'fields':v['fields'],'saved_at':v['saved_at'],'version':v.get('version')} for k,v in store['drafts'].items()},
                 'operations':list(store['operations'].values()), 'source':source['name']}
 
     def _evidence(self, card_id, board_id, allowed_lanes, marker='\0', allow_closed=False):
@@ -163,7 +171,9 @@ class LogsAudit:
     def inspect(self, card_id, period_start=None, period_end=None):
         board, source, lanes=self._source()
         evidence=self._evidence(card_id,board['id'],{source['id']})
-        draft=self._store()['drafts'].get(card_id)
+        stored=self._store()
+        draft=stored['drafts'].get(card_id)
+        links=stored.get('links',{}).get(card_id) or {'version':None,'items':{}}
         previous=(draft or {}).get('evidence',{})
         old_comments={a['id']:a for a in previous.get('comments',[])}
         changes={'comments':[a['id'] for a in evidence['comments'] if old_comments.get(a['id'])!=a],
@@ -186,16 +196,23 @@ class LogsAudit:
             suggestion['differs_from_saved']=bool(saved and (suggestion.get('conflict') or
                 (suggestion.get('value') is not None and suggestion['value']!=saved) or
                 (key == 'job_date' and suggestion.get('value') != saved)))
-        return {'ok':True, 'evidence':evidence, 'ar':ar, 'ar_comparison':compare(evidence,ar) if ar else None, 'changes':changes, 'carried_forward':carried, 'suggestions':suggestions, 'draft':draft,
+        return {'ok':True, 'links':links, 'evidence':evidence, 'ar':ar, 'ar_comparison':compare(evidence,ar) if ar else None, 'changes':changes, 'carried_forward':carried, 'suggestions':suggestions, 'draft':draft,
                 'lanes':[dict(l,month=month_lane(l['name'])) for l in lanes
                          if month_lane(l['name']) or l['name'].strip().upper()=='QUESTIONS']}
 
-    def save(self, card_id, revision, fields):
+    def save(self, card_id, revision, fields, expected_version=UNSPECIFIED_VERSION, link_version=None):
         with LOCK:
             board, source, _=self._source()
             evidence=self._evidence(card_id,board['id'],{source['id']})
             if evidence['revision']!=revision: raise ValueError('Trello evidence changed. Reopen and review the latest notes.')
             store=self._store()
+            links=store.get('links',{}).get(card_id) or {'version':None,'items':{}}
+            if links['version']!=link_version:
+                raise ValueError('Comment evidence links changed. Reopen the audit before saving.')
+            from audit_comment_links import apply_links
+            fields=apply_links(fields,links)
+            if expected_version is not UNSPECIFIED_VERSION and (store['drafts'].get(card_id) or {}).get('version') != expected_version:
+                raise ValueError('Another reviewer saved this audit. Reopen the job before saving; your current form has not been cleared.')
             ar=self._linked_ar(card_id)
             for op in store['operations'].values():
                 if op['card_id']!=card_id or op['status'] in ('done','superseded'):
@@ -213,31 +230,41 @@ class LogsAudit:
                           superseded_reason='Fresh review of changed evidence; prior comment retained without moving.')
             clean={k:str(fields.get(k,'')).strip()[:10000] for k in FIELDS}
             clean.update({k:fields.get(k) is True for k in CHECKS})
-            clock=timing(clean['inspection_completed_at'],clean['initial_note_sent_at'])
+            clock=timing(clean['field_note_posted_at'],clean['initial_note_sent_at'])
             clean['initial_note']=clock['status'] if clock['status'] in ('Yes','No') else ''
-            for key in ('ems_start','contents_start','job_date','ems_ready','ems_billed','contents_ready','contents_billed','other_billed','period_start','period_end'):
+            for key in ('ems_start','contents_start','ems_completed','contents_completed','job_date','ems_ready','ems_billed','contents_ready','contents_billed','other_billed','period_start','period_end'):
                 if clean[key]: date.fromisoformat(clean[key])
             for prefix in ('ems','contents'):
                 a,b=clean[prefix+'_ready'],clean[prefix+'_billed']
                 if a and b and a>b: raise ValueError('Billing completion cannot precede ready-for-billing date.')
                 start=clean[prefix+'_start']
+                completed=clean[prefix+'_completed']
+                if start and completed and completed<start:
+                    raise ValueError('Work completion cannot precede work started.')
                 if start and b and start>b: raise ValueError('Billing completion cannot precede the work/card start date.')
                 clean[prefix+'_days']=(date.fromisoformat(b)-date.fromisoformat(start)).days if start and b else None
             if clean['period_start'] and clean['period_end'] and clean['period_start']>clean['period_end']:
                 raise ValueError('Invalid review period.')
             prior=store['drafts'].get(card_id)
-            draft={'fields':clean,'revision':revision,'evidence':evidence,'ar':ar,'timing':clock,'suggestions':suggest(evidence),
+            draft={'fields':clean,'revision':revision,'evidence':evidence,'ar':ar,'timing':clock,'timing_basis':'field_note_posted_v1','field_delay':field_delay(clean['inspection_at'],clean['field_note_posted_at']),'suggestions':suggest(evidence),
                    'saved_at':datetime.now(timezone.utc).isoformat(), 'version':str(uuid.uuid4()),
                    'history':[*((prior or {}).get('history',[])), *([{k:v for k,v in prior.items() if k!='history'}] if prior else [])]}
+            draft['links']=links
             store['drafts'][card_id]=draft
             self._save(store)
             return {'ok':True,'draft':draft}
 
-    def preview(self,card_id):
+    def preview(self,card_id,expected_version=UNSPECIFIED_VERSION):
         with LOCK:
             board, source, lanes=self._source()
             store=self._store(); draft=store['drafts'].get(card_id)
             if not draft: raise ValueError('Save the audit form first.')
+            if (draft.get('links') or {}).get('version')!=(store.get('links',{}).get(card_id) or {}).get('version'):
+                raise ValueError('Comment links changed. Reopen and save the audit before previewing.')
+            if hasattr(self.storage, 'load_store') and draft.get('timing_basis') != 'field_note_posted_v1':
+                raise ValueError('Reopen and save this audit using the field-note posting time before previewing.')
+            if expected_version is not UNSPECIFIED_VERSION and draft.get('version') != expected_version:
+                raise ValueError('Another reviewer saved this audit. Reopen and review it before previewing.')
             f=draft['fields']
             if not all(f.get(k) for k in CHECKS): raise ValueError('Confirm identity and each department review, then confirm the full form.')
             if not f['period_start'] or not f['period_end'] or f['scope'] not in ('EMS','Contents','EMS + Contents','Recon','Service call / no charge'):
@@ -277,21 +304,21 @@ class LogsAudit:
             comment='\n'.join([
                 f"Logs audit reviewed {date.today().isoformat()} — {actor.get('fullName') or actor['username']}",
                 f"Period: {f['period_start']} through {f['period_end']}; scope: {f['scope']}",
-                f"Front: initial note on time: {f['initial_note'] or 'Unknown'}; missed by: {f['missed_by'] or 'Not recorded'}; WC/file: {f['file_status'] or 'Unknown'}",
+                f"Front: initial note on time: {f['initial_note'] or 'Unknown'}; initial note coordinator: {f['missed_by'] or 'Not recorded'}; WC/file: {f['file_status'] or 'Unknown'}",
                 f"EMS estimator: {f['ems_estimator'] or 'Not recorded'}; ready: {f['ems_ready'] or 'Not recorded'}; billed: {f['ems_billed'] or 'Not recorded'}; days: {f['ems_days'] if f['ems_days'] is not None else 'Unknown'}",
                 f"Contents estimator: {f['contents_estimator'] or 'Not applicable / not recorded'}; ready: {f['contents_ready'] or 'Not recorded'}; billed: {f['contents_billed'] or 'Not recorded'}; days: {f['contents_days'] if f['contents_days'] is not None else 'Unknown'}",
-                f"Field review: {f['field_notes'] or 'Reviewed by user'}",
+                f"Field review: {f['field_notes'] or 'Reviewed by user'}; EMS work completed: {f.get('ems_completed') or 'Not recorded'}; Contents work completed: {f.get('contents_completed') or 'Not recorded'}",
                 f"Estimator findings: {f['estimator_notes'] or 'None recorded'}",
                 f"Billing evidence: {f['billing_evidence'] or 'Unresolved'}",
                 f"Billing status: {f.get('billing_status') or 'Unknown'}; conflict: {f.get('billing_conflict') or 'None recorded'}; other scope billed: {f.get('other_billed') or 'N/A'}",
-                f"Initial note timing: {draft.get('timing',{}).get('status','Unverified')}; inspection completed: {f.get('inspection_completed_at') or 'Unknown'}; note sent: {f.get('initial_note_sent_at') or 'Unknown'}; source: {f.get('timing_source') or 'Not recorded'}",
+                f"Coordinator note within 1 hour of field-note posting: {draft.get('timing',{}).get('status','Unverified')}; inspection occurred: {f.get('inspection_at') or 'Unknown'}; field note posted: {f.get('field_note_posted_at') or 'Unknown'}; coordinator note sent: {f.get('initial_note_sent_at') or 'Unknown'}; source: {f.get('timing_source') or 'Not recorded'}",
                 f"AR card: {(draft.get('ar') or {}).get('card',{}).get('shortUrl') or 'No confirmed AR link'}; resolution: {f.get('ar_resolution') or 'None recorded'}",
                 f"Payment: {f['payment_notes'] or 'Not verified; payment is not required for billed-month filing'}",
                 f"Open actions: {f['audit_notes'] or 'None confirmed by reviewer'}",
                 f"User confirmed review. Destination: {lane['name']}",marker])
             operation={'id':op_id,'card_id':card_id,'name':current['card']['name'],'board_id':board['id'],
                 'source':source['id'],'destination':lane['id'],'destination_name':lane['name'],
-                'revision':draft['revision'],'actor_id':actor['id'],'comment':comment,'marker':marker,'status':'preview',
+                'revision':draft['revision'],'actor_id':actor['id'],'comment':comment,'marker':marker,'status':'preview','timing_basis':draft.get('timing_basis'),'link_version':(draft.get('links') or {}).get('version'),
                 'period_start':f['period_start'],'period_end':f['period_end'],'decision':f['decision'],'ar':draft.get('ar')}
             store['operations'][op_id]=operation; self._save(store)
             return {'ok':True,'operation':operation}
@@ -301,9 +328,13 @@ class LogsAudit:
         with LOCK:
             store=self._store(); op=store['operations'].get(op_id)
             if not op: raise ValueError('Preview not found in this workspace.')
+            if hasattr(self.storage, 'load_store') and op['status']=='preview' and op.get('timing_basis')!='field_note_posted_v1':
+                raise ValueError('Discard this older preview and review the field-note posting time before publishing.')
             if op['status']=='superseded':
                 raise ValueError('This audit was superseded by a fresh review. Preview and confirm the new review instead.')
             if op['status']=='done': return {'ok':True,'operation':op}
+            if op.get('link_version')!=(store.get('links',{}).get(op['card_id']) or {}).get('version'):
+                raise ValueError('Comment links changed since preview. Re-review the audit before publishing.')
             self._verify_ar(op.get('ar'),op['card_id'])
             actor=self.client._call('/members/me',params={'fields':'id'})
             if actor.get('id')!=op['actor_id']: raise ValueError('Connected Trello account changed. Review again.')

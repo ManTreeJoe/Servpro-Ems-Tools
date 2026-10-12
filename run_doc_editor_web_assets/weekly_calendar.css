@@ -44,6 +44,8 @@
 .wc-other-month { background:var(--bg); }
 .weekly-schedule [data-color="monitor"] { --activity-color:#83b7e4; }
 .weekly-schedule [data-color="initial"] { --activity-color:#87c79d; }
+.weekly-schedule [data-color="reinspection"] { --activity-color:#79c8bf; }
+.weekly-schedule [data-color="review"] { --activity-color:#e6c37a; }
 .weekly-schedule [data-color="demo"] { --activity-color:#eeb078; }
 .weekly-schedule [data-color="contents"] { --activity-color:#be9cdf; }
 .weekly-schedule [data-color="equipment"] { --activity-color:#79c8bf; }
@@ -81,7 +83,7 @@
 [data-layout="dispatch"] .wc-waiting-group { border:0; border-radius:0; }
 [data-layout="dispatch"] .wc-waiting-group h3 { position:sticky; top:0; z-index:1; font-size:12px; padding:10px; }
 [data-layout="dispatch"] .wc-queue-scroll { max-height:none; overflow:visible; padding:6px; }
-[data-layout="dispatch"] .wc-queue-scroll .wc-visit { border:0; border-bottom:1px solid var(--border); margin:0; border-radius:0; background:transparent; }
+[data-layout="dispatch"] .wc-queue-scroll .wc-visit { border-top:0; border-right:0; border-bottom:1px solid var(--border); margin:0 0 6px; border-radius:4px; }
 [data-layout="dispatch"][data-period="week"] .wc-week { min-width:0; }
 @media(max-width:1050px) {
  [data-layout="dispatch"][data-mode="calendar"] .wc-content { display:block; overflow-x:auto; }

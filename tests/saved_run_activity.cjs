@@ -1,56 +1,38 @@
 const {chromium}=require('playwright'),path=require('node:path'),assert=require('node:assert/strict');
 (async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
- const page=await browser.newPage({viewport:{width:1200,height:900},colorScheme:'dark'});
- await page.setContent('<div id="status-msg"></div>');
- for(const file of ['web_shared/theme.css','pipeline_web_assets/app.css','web_shared/modal.css','pipeline_web_assets/job_workspace_tabs.css','pipeline_web_assets/job_files.css','pipeline_web_assets/card_history.css'])await page.addStyleTag({path:path.resolve(file)});
- for(const file of ['web_shared/modal.js','pipeline_web_assets/run_activity.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(file)});
+ const page=await browser.newPage({viewport:{width:1000,height:800},colorScheme:'dark'});
+ await page.setContent('<details id="history"></details>');
+ for(const file of ['web_shared/theme.css','pipeline_web_assets/app.css','pipeline_web_assets/card_history.css'])await page.addStyleTag({path:path.resolve(file)});
+ await page.addScriptTag({path:path.resolve('pipeline_web_assets/run_activity.js')});
  await page.evaluate(()=>{
-  window.calls=[];window.activityCalls=[];window.pywebview={api:{card_activity_history:async (...args)=>{activityCalls.push(args);return {ok:true,rows:[{actor:'Sam',actor_id:'user-sam',at:'2026-10-02T12:00:00Z',source:'OneLoss',action:'Moved from WIP / Demo to Estimating / Review'}]};},saved_run_activity:(...args)=>{calls.push(args);return new Promise(resolve=>window.finish=resolve)}}};
-  window.fixture={ok:true,client:'Fixture customer',card_id:'test-card',selected_division:'EMS',audit:{found:true},crm:{job_log:[]},comments:[]};
-  window.job=openAuditModal(fixture);
+  window.calls=[];window.pywebview={api:{
+   card_activity_history:async()=>({ok:true,rows:[{at:'2026-10-02T12:00:00Z',actor:'Sam',source:'OneLoss',action:'Moved to Estimating'}]}),
+   card_provider_activity:async()=>({ok:true,rows:[{id:'t',at:'2026-10-01T19:00:00Z',actor:'<b>Sam</b>',source:'Trello',action:'Checklist completed'}]}),
+   saved_run_activity:(...args)=>{calls.push(args);return new Promise(resolve=>window.finish=resolve);}
+  }};
+  SavedRunActivity.mount(document.querySelector('#history'),'David Beal','EMS','card');
  });
  assert.equal(await page.evaluate(()=>calls.length),0);
- await page.getByRole('tab',{name:'Card Details',exact:true}).click();
- await page.locator('[data-card-activity-rows] .saved-run-row').waitFor();
- assert.deepEqual(await page.evaluate(()=>activityCalls),[['test-card']]);
- assert.equal(await page.locator('.card-history-day h4').textContent(),'10/02/26');
- assert.equal(await page.locator('.card-history-marker').textContent(),'S');
- assert.equal(await page.locator('.card-history-meta time').getAttribute('datetime'),'2026-10-02T12:00:00.000Z');
- assert.match(await page.locator('.card-history-action').textContent(),/Moved from WIP/);
- assert.equal(await page.evaluate(()=>calls.length),0,'Legacy history remains lazy');
- await page.getByText('Legacy Run history',{exact:true}).click();
- await page.waitForFunction(()=>calls.length===1);
- assert.deepEqual(await page.evaluate(()=>calls),[['Fixture customer','EMS']]);
- assert.doesNotMatch(await page.locator('.job-run-section').textContent(),/No activity/);
- await page.evaluate(()=>finish({ok:true,note:'Saved on this PC · Scheduled work',rows:[{iso:'2026-09-01',labels:['Demo'],raw:'Fixture customer: Demo scheduled',techs:['Crew A'],source:'fixture.docx'}]}));
- await page.locator('[data-run-history-rows] .saved-run-row').waitFor();
- await page.evaluate(()=>{window.originalRun=document.querySelector('.job-run-section');job.applyRefresh(fixture);});
- assert.equal(await page.evaluate(()=>originalRun===document.querySelector('.job-run-section')),true);
- assert.equal(await page.evaluate(()=>calls.length),1);
- await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-run-history.png')});
- await page.getByRole('button',{name:'Refresh saved history'}).click();
- await page.evaluate(()=>finish({ok:false,error:'Read failed'}));
- await page.waitForFunction(()=>[...document.querySelectorAll('.job-run-section [role=status]')].some(el=>el.textContent.includes('Read failed')));
- assert.equal(await page.locator('[data-run-history-rows] .saved-run-row').count(),1,'Keep saved rows on failed refresh');
- await page.evaluate(()=>{pywebview.api.card_activity_history=async()=>({ok:false,error:'Disconnected'});});
- await page.getByRole('button',{name:'Refresh activity',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.job-run-section [role=status]').textContent.includes('Disconnected'));
- assert.equal(await page.locator('[data-card-activity-rows] .saved-run-row').count(),1,'Retain card events on refresh failure');
- await page.evaluate(()=>{pywebview.api.card_activity_history=async()=>({ok:true,note:'Saved OneLoss movement history. Checklist and field edits are not included yet.',rows:[
-  {actor:'Nathan Bupte',at:'2026-10-02T19:45:00Z',source:'OneLoss',action:'Moved from Work in Progress / Demo to Estimating / Snapshot'},
-  {actor:'Sam',at:'2026-10-02T18:00:00Z',source:'OneLoss',action:'Changed this card’s order in its lane'},
-  {actor:'<b>Unknown</b>',at:'2026-09-30T18:00:00Z',source:'OneLoss',action:'Restored this card to Work in Progress / Pending approvals'},
-  {actor:'',at:'invalid',source:'OneLoss',action:'Updated this card'}
- ]});});
- await page.getByRole('button',{name:'Refresh activity',exact:true}).click();
- await page.waitForFunction(()=>document.querySelectorAll('.card-history-event').length===4);
- assert.equal(await page.locator('.card-history-day').count(),3);
- assert.equal(await page.locator('.card-history-marker').first().textContent(),'NB');
- assert.equal(await page.locator('.card-history-meta b').count(),0,'Actor names must remain plain text');
- assert.equal(await page.locator('.card-history-day h4').last().textContent(),'Date unavailable');
- await page.getByText('Legacy Run history',{exact:true}).click();
- await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-card-history.png')});
+ await page.evaluate(()=>document.querySelector('#history')._runActivity.activate());
+ await page.waitForFunction(()=>document.querySelectorAll('.card-history-event').length===2);
+ assert.deepEqual(await page.evaluate(()=>calls),[['David Beal','EMS']]);
+ await page.evaluate(()=>finish({ok:true,rows:[{iso:'2026-09-24',labels:['Monitor'],techs:['Mark'],raw:'Scheduled work',source:'fixture.docx'}]}));
+ await page.waitForFunction(()=>document.querySelector('[role=status]').textContent.includes('3 events'));
+ assert.equal(await page.locator('.card-history-event').count(),3);
+ assert.equal(await page.locator('.card-history-day h4').first().textContent(),'10/02/2026');
+ assert.equal(await page.locator('.card-history-day h4').last().textContent(),'09/24/2026');
+ assert.equal(await page.locator('.card-history-meta b').count(),0);
+ assert.match(await page.locator('#history').textContent(),/not proof of completion/);
+ assert.equal(await page.getByText('Legacy Run history',{exact:true}).count(),0);
+ await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-combined-history.png')});
+ await page.evaluate(()=>{
+   pywebview.api.card_provider_activity=async()=>({ok:false,error:'Disconnected'});
+   pywebview.api.saved_run_activity=async()=>({ok:true,rows:[]});
+ });
+ await page.getByRole('button',{name:'Refresh activity'}).click();
+ await page.waitForFunction(()=>document.querySelector('[role=status]').textContent.includes('Showing previously loaded'));
+ assert.equal(await page.locator('.card-history-event').count(),2);
  await page.setViewportSize({width:390,height:800});
- await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-card-details-narrow.png')});
- console.log('PASS: run history lazy load, exact division, refresh preservation, failed refresh retains rows');
+ await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-combined-history-narrow.png')});
+ console.log('PASS: combined history, partial loading, exact division, Pacific dates, failure retains prior events');
 }finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1});

@@ -104,7 +104,8 @@ def test_board_cache_not_shared_across_users(monkeypatch):
 def test_board_shapes_saved_snapshot_without_trello(monkeypatch):
     import pipeline_web as p
     monkeypatch.setattr(p, 'BOARD_SPECS', [('wip','WORK IN PROGRESS')])
-    monkeypatch.setattr(reader, 'boards', lambda: [{
+    monkeypatch.setattr(reader, 'catalog', lambda: [{'id':'board','name':'WORK IN PROGRESS'}])
+    monkeypatch.setattr(reader, 'boards', lambda ids: [{
         'board': {'id':'board','name':'WORK IN PROGRESS'}, 'saved_at':'2026-09-18',
         'lists':[{'id':'lane','name':'Active','pos':1}],
         'cards':[{'id':'card','name':'Synthetic job','idList':'lane','pos':1,

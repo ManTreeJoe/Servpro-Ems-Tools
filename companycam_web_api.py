@@ -708,6 +708,7 @@ class CompanyCamApi:
                     return {'ok': False, 'error': f'No existing CompanyCam default tag matches {selected}. No tags or photos were changed.'}
         pulled = skipped = tagged = 0
         errors = []
+        listing_failed = False
         contents = self._cc_contents_dir(client, pics)
         docs = self._cc_docs_dir(client, pics)
         operation = {'record_photo': photo_result_cb} if photo_result_cb else {}
@@ -762,6 +763,7 @@ class CompanyCamApi:
                 pulled += r.get("downloaded", 0)
                 skipped += r.get("skipped", 0)
                 if r.get("ok") is False:
+                    listing_failed = bool(r.get('listing_failed'))
                     errors.append(f"{stage or 'untagged'}: "
                                   f"{r.get('error') or 'photo request failed'}")
                     # Failed listing is not a successful empty shoot. Avoid
@@ -779,6 +781,7 @@ class CompanyCamApi:
                 progress_cb(group_index, len(groups), stage or "untagged",
                             completed_photos, total_photos)
         return {"ok": not bool(errors), "pulled": pulled, "skipped": skipped,
+                "listing_failed": listing_failed,
                 "tagged": tagged,
                 "pics": pics, "error": "; ".join(errors)}
 
@@ -877,7 +880,14 @@ class CompanyCamApi:
                     unresolved = [row for row in operations.photo_receipts(operation_id) if row.get('state') in ('pending', 'downloading')]
                     if unresolved:
                         res['ok'] = False
-                        res['error'] = (res.get('error') or '') + f' {len(unresolved)} selected photo(s) have no confirmed outcome. Check the import before retrying.'
+                        if (res.get('listing_failed') and not res.get('pulled')
+                                and not res.get('skipped')
+                                and all(row.get('state') == 'pending' for row in unresolved)):
+                            res['error'] = ('Could not load the CompanyCam photo list. '
+                                            f'Downloads have not started; {len(unresolved)} photo(s) remain pending. '
+                                            'Any tag changes already made are retained. ' + (res.get('error') or ''))
+                        else:
+                            res['error'] = (res.get('error') or '') + f' {len(unresolved)} selected photo(s) have no confirmed outcome. Check the import before retrying.'
             except Exception as ex:
                 res = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
             res["client"] = client

@@ -399,10 +399,17 @@ def _trello_board_payload():
 def _server_board_payload(specs=None):
     """Shape authorized server snapshots through the same card formatter."""
     import trello_mirror_reader
-    rows = trello_mirror_reader.boards()
+    specs = BOARD_SPECS if specs is None else specs
+    catalog = trello_mirror_reader.catalog()
+    if not catalog:
+        return None
+    requested = [_resolve_board(catalog, name, BOARD_SHORTLINKS.get(key, ''))
+                 for key, name in specs]
+    if any(board is None for board in requested):
+        return None
+    rows = trello_mirror_reader.boards([board['id'] for board in requested])
     if not rows:
         return None
-    specs = BOARD_SPECS if specs is None else specs
     by_id = {row['board']['id']: row for row in rows}
     available = [row['board'] for row in rows]
     boards = []
@@ -1744,6 +1751,13 @@ class Api(JobSettingsApi):
         except Exception:
             return {"ok": False, "error": "Card history could not load. Check your connection and retry."}
 
+    def card_provider_activity(self, card_id: str) -> dict:
+        import card_provider_activity
+        try:
+            return card_provider_activity.history(card_id)
+        except Exception:
+            return {'ok': False, 'error': 'Trello history unavailable. Check card access and connection, then refresh.'}
+
     def job_card_timing(self, card_id: str) -> dict:
         """Read verified timing only for cards in the current scoped Jobs cache."""
         import lane_analytics
@@ -1956,6 +1970,10 @@ class Api(JobSettingsApi):
         if result.get("ok"):
             self._invalidate_workspace(client=client)
         return result
+
+    def audit_comment_links(self, card_id, command=None):
+        from audit_comment_links import call
+        return call(card_id, command)
 
     def job_comment_members(self, card_id: str) -> dict:
         from job_comment_mentions import members

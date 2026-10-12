@@ -1,0 +1,63 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict'),path=require('node:path');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1350,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('http://oneloss.test/**',r=>r.fulfill({contentType:'text/html',body:'<html data-theme="dark"><body><main><section id="audit-timing"></section></main></body></html>'}));await page.goto('http://oneloss.test/');
+ for(const f of ['web_shared/theme.css','analytics_web_assets/app.css','analytics_web_assets/audit_timing.css'])await page.addStyleTag({path:path.resolve(f)});
+ for(const f of ['analytics_web_assets/audit_field_controls.js','analytics_web_assets/audit_timing.js'])await page.addScriptTag({path:path.resolve(f)});
+ await page.evaluate(()=>{
+  const definitions=[['field','Inspection → field note posted','timestamp',120],['coordinator','Field note posted → coordinator sent','timestamp',60],['ems_work','EMS work started → completed','date',4320],['contents_work','Contents work started → completed','date',null],['ems_billing','EMS ready → billed','date',1440],['contents_billing','Contents ready → billed','date',null]];
+  window.result={ok:true,location:'IE',total:4,response:{on_time:2,late:1,unknown:1},metrics:definitions.map(([id,label,precision,median])=>({id,label,precision,median,known:median==null?0:3,unknown:median==null?4:1})),cards:[{id:'a',name:'Morgan residence',values:{coordinator:240},response:'late',endpoints:{coordinator:{start:'2026-10-01T22:14:00Z',end:'2026-10-02T02:14:00Z'}}},{id:'b',name:'Cedar Grove',values:{coordinator:60},response:'on_time'},{id:'c',name:'<img src=x onerror=alert(1)>',values:{coordinator:10},response:'on_time'},{id:'d',name:'Unknown dates',values:{},response:'unknown'}]};
+  window.pywebview={api:{load_audit_timing:()=>new Promise(resolve=>{window.finish=()=>resolve(result);})}};
+  window.opens=[];window.addEventListener('message',e=>{if(e.data.type==='linguar-open-job')opens.push(e.data.cardId);});AuditTimingDashboard.load();
+ });
+ assert.match(await page.locator('#audit-timing').textContent(),/Loading shared timing/);await page.evaluate(()=>finish());await page.locator('[data-timing-task=coordinator]').waitFor();
+ assert.equal(await page.locator('[data-timing-task]').count(),6);assert.equal(await page.locator('[data-timing-card]').count(),0);
+ assert.equal(await page.locator('.audit-time-rate>strong').count(),0);
+ assert.match(await page.locator('.audit-time-response').textContent(),/Explore a task/);
+ await page.screenshot({path:path.join(process.env.TEMP,'audit-task-overview.png')});
+ for(const id of ['field','ems_work','contents_work','ems_billing','contents_billing']){
+  await page.locator(`[data-timing-task=${id}]`).click();
+  assert.equal(await page.locator('.audit-time-response .audit-time-stack').count(),1);
+  assert.equal(await page.locator('.audit-time-response .audit-time-rate').count(),1);
+  assert.equal(await page.locator('[data-timing-card]').count(),0);
+  assert.equal(await page.locator('dialog').count(),0);
+  assert.equal(await page.locator('[data-task-outcome=recorded]').count(),1);
+ }
+ await page.locator('[data-timing-task=field]').click();
+ await page.screenshot({path:path.join(process.env.TEMP,'audit-task-field-summary.png')});
+ await page.locator('[data-timing-task=coordinator]').click();assert.equal(await page.locator('[data-timing-card]').count(),0);
+ assert.equal(await page.locator('.audit-time-rate>strong').textContent(),'2 of 3');
+ assert.equal(await page.locator('[data-timing-task=coordinator]').getAttribute('aria-pressed'),'true');
+ await page.locator('[data-task-outcome=late]').click();
+ assert.match(await page.locator('dialog').textContent(),/10\/01\/2026, 3:14 PM PDT/);assert.match(await page.locator('dialog').textContent(),/10\/01\/2026, 7:14 PM PDT/);
+ assert.equal(await page.locator('dialog img').count(),0);
+ await page.locator('[data-task-filter]').selectOption('unknown');assert.equal(await page.locator('[data-timing-card]').count(),1);
+ await page.locator('[data-task-filter]').selectOption('all');await page.locator('[data-task-query]').fill('Morgan');assert.equal(await page.locator('[data-timing-card]').count(),1);
+ await page.locator('[data-timing-card=a]').click();await page.waitForFunction(()=>opens.length===1);assert.equal(await page.locator('dialog').count(),0);
+ await page.locator('[data-task-outcome=late]').click();assert.equal(await page.locator('[data-task-filter]').inputValue(),'late');assert.equal(await page.locator('[data-timing-card]').count(),1);
+ await page.screenshot({path:path.join(process.env.TEMP,'audit-task-breakdown.png')});await page.keyboard.press('Escape');
+ await page.locator('[data-timing-task=contents_work]').click();
+ assert.equal(await page.locator('.audit-time-rate>strong').textContent(),'0 of 4');
+ await page.locator('[data-task-outcome=recorded]').click();assert.match(await page.locator('dialog').textContent(),/No cards in this breakdown/);await page.keyboard.press('Escape');
+ assert.equal(await page.locator('[data-timing-task=coordinator]').getAttribute('aria-pressed'),'false');
+ await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ await page.locator('[data-timing-task=coordinator]').click();assert.equal(await page.locator('.audit-time-response').evaluate(e=>e.scrollWidth<=e.clientWidth),true);
+ await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.audit-time-track i').first().evaluate(e=>getComputedStyle(e).animationName),'none');
+ await page.evaluate(()=>{pywebview.api.load_audit_timing=async()=>({ok:false,error:'Unavailable'});return AuditTimingDashboard.load();});await page.locator('[data-timing-retry]').waitFor();
+ await page.evaluate(()=>{pywebview.api.load_audit_timing=async()=>result;});await page.locator('[data-timing-retry]').click();await page.locator('[data-timing-task=coordinator]').waitFor();
+ await page.evaluate(()=>{
+  result.metrics.unshift({id:'arrival',label:'Insured contacted → on-site arrival',precision:'timestamp',median:240,known:1,unknown:3,target_minutes:240,outcomes:{on_time:1,late:0,unknown:3}});
+  result.cards[0].values.arrival=240;result.cards[0].outcomes={arrival:'on_time'};
+  return AuditTimingDashboard.load();
+ });
+ await page.locator('[data-timing-task=arrival]').click();
+ assert.match(await page.locator('.audit-time-response').textContent(),/within 4 hours/);
+ await page.locator('[data-task-outcome=on_time]').click();
+ assert.equal(await page.locator('[data-timing-card]').count(),1);
+ assert.match(await page.locator('dialog').textContent(),/Within 4 hours/);
+ await page.keyboard.press('Escape');
+ await page.setViewportSize({width:1350,height:900});
+ await page.screenshot({path:path.join(process.env.TEMP,'audit-arrival-target.png')});
+ assert.deepEqual(errors,[]);console.log('PASS: task overview, sequential target drilldowns, Pacific endpoints, filters, exact card, empty/error, mobile, reduced motion');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

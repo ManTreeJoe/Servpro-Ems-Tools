@@ -9,6 +9,17 @@ L OPS web/mobile adoption remains a separate handoff. No Main release is authori
 
 ## First implementation contract (supersedes provisional names below)
 
+October 9 lifecycle fix: migration `20261009214930_comment_threads_follow_placement.sql`
+keeps thread access on the exact card's active or archived OneLoss placement.
+Placement and destination-board required offices must all remain authorized;
+disabled boards and deleted placements fail closed. Cards without a placement
+retain the existing active-mirror authorization. Thread IDs, parent/root links,
+pins and delivery receipts are unchanged. The comment-parent gateway uses this
+same guard and independently verifies the provider's current board through
+user-scoped source RLS. It no longer requires an archived card to appear in the
+active mirror. Nathan Bupte–State Farm's five saved records and existing parent
+verification were checked live without posting a test reply or restoring the card.
+
 Migration `20261006224224_shared_comment_threads.sql` adds shared annotations
 and native replies to the existing exact-card feed. RPC `job_comment_threads`
 takes `p_action`, `p_card`, `p_data`. Actions: read (200-row pages, `after`/`next`),

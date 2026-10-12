@@ -44,6 +44,33 @@ def fields():
         front_checked=True,field_checked=True,estimating_checked=True,billing_checked=True,identity_checked=True,all_confirmed=True)
 
 
+def test_stale_review_cannot_overwrite_or_preview_newer_draft(env):
+    a, t, _ = env
+    revision = a.inspect('card1')['evidence']['revision']
+    first = a.save('card1', revision, fields(), None)['draft']
+    with pytest.raises(ValueError, match='Another reviewer'):
+        a.save('card1', revision, fields(), None)
+    second = a.save('card1', revision, fields(), first['version'])['draft']
+    with pytest.raises(ValueError, match='Another reviewer'):
+        a.preview('card1', first['version'])
+    assert a.inspect('card1')['draft']['version'] == second['version']
+    assert not t.writes
+
+
+def test_field_completion_dates_persist_and_validate(env):
+    a, t, _ = env
+    revision = a.inspect('card1')['evidence']['revision']
+    values = dict(fields(), ems_start='2026-06-01', ems_completed='2026-06-06')
+    result = a.save('card1', revision, values)['draft']
+    assert result['fields']['ems_completed'] == '2026-06-06'
+    assert a.inspect('card1')['draft']['fields']['ems_completed'] == '2026-06-06'
+    with pytest.raises(ValueError, match='Work completion'):
+        a.save('card1', revision, dict(values, ems_completed='2026-05-31'))
+    with pytest.raises(ValueError):
+        a.save('card1', revision, dict(values, ems_completed='2026-02-30'))
+    assert not t.writes
+
+
 def test_received_uses_saved_job_info_not_description(env, monkeypatch):
     import job_saved_data
     a, t, _ = env
@@ -298,7 +325,21 @@ def test_ar_read_link_conflict_and_changed_evidence(env):
     assert not t.writes
 
 def test_timing_is_calculated_on_server_not_checkbox(env):
-    a,t,s=env;f=fields();f.update(initial_note='Yes',inspection_completed_at='2026-09-17T10:00-07:00',initial_note_sent_at='2026-09-17T12:00-07:00')
+    a,t,s=env;f=fields();f.update(initial_note='Yes',field_note_posted_at='2026-09-17T10:00-07:00',initial_note_sent_at='2026-09-17T12:00-07:00')
     ev=a.inspect('card1')['evidence'];r=a.save('card1',ev['revision'],f)
     assert r['draft']['fields']['initial_note']=='No'
     assert r['draft']['timing']['minutes']==120
+
+
+def test_coordinator_clock_starts_at_field_post_not_inspection(env):
+    a, _, _ = env
+    f = dict(fields(), inspection_at='2026-04-08T11:00-07:00',
+             field_note_posted_at='2026-04-08T13:14-07:00', initial_note_sent_at='2026-04-08T14:00-07:00')
+    revision = a.inspect('card1')['evidence']['revision']
+    draft = a.save('card1',revision,f)['draft']
+    assert draft['timing']['status'] == 'Yes'
+    assert draft['timing']['minutes'] == 46
+    assert draft['field_delay'] == {'minutes':134, 'status':'Recorded'}
+    f.pop('field_note_posted_at')
+    f['inspection_completed_at'] = f['inspection_at']
+    assert a.save('card1',revision,f)['draft']['timing']['status'] == 'Unverified'

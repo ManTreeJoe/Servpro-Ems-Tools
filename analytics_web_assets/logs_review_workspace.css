@@ -1,0 +1,61 @@
+/* Same surfaces as Jobs; separate scroll regions keep the queue and comments present. */
+#logs-audit:not([open]){display:none!important}
+#logs-audit .audit-clock-field,#logs-audit .audit-field:has(.audit-clock-field){grid-column:1/-1;min-width:0}
+#logs-audit .audit-clock-controls{display:grid;grid-template-columns:1fr 1fr 1.3fr;align-items:start;gap:12px;margin:8px 0 18px;min-width:0}
+#logs-audit .audit-calendar-native{position:absolute;width:1px!important;height:1px;min-height:0!important;opacity:0;pointer-events:none}
+#logs-audit .audit-date-field{min-width:0;position:relative;display:flex;flex-direction:column;gap:6px}
+#logs-audit .audit-date-field>button{align-self:flex-start;min-height:28px;padding:3px 8px;font-size:11px}
+#logs-audit .audit-clock-controls>small{grid-column:1/-1}
+#logs-audit .audit-clock-controls label{min-width:0}
+#logs-audit .audit-clock-controls input[type=date]{max-width:100%}
+@media(max-width:600px){#logs-audit .audit-clock-controls{grid-template-columns:1fr}}
+#logs-audit .logs-loading-line{height:18px;border-radius:4px;background:var(--soft);margin:22px 0;max-width:90%}
+#logs-audit .logs-loading-line:nth-of-type(even){max-width:65%}
+#logs-audit [data-status][aria-busy=true]::before{content:"";display:inline-block;width:10px;height:10px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;margin-right:8px;animation:logs-loading-spin .8s linear infinite}
+@keyframes logs-loading-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#logs-audit [data-status][aria-busy=true]::before{animation:none}}
+#logs-audit .logs-more{margin-left:auto;position:relative;padding:0}
+#logs-audit .logs-more>summary{border:1px solid var(--line);border-radius:6px;padding:9px 14px;font-size:14px}
+#logs-audit [data-audit-tools]{position:absolute;right:0;top:calc(100% + 8px);width:min(390px,75vw);max-height:65vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 12px 30px #0006;z-index:10}
+#logs-audit [data-audit-tools] .actions{flex-direction:column;align-items:stretch}
+#logs-audit .logs-review-empty{padding:24px}
+#logs-audit [data-load-recovery]{display:flex;flex-direction:column;gap:8px}
+:root #logs-audit:has(.logs-review-workspace){width:min(1700px,98vw);height:94vh;max-height:94vh;padding:0;overflow:hidden;display:flex;flex-direction:column}
+#logs-audit:has(.logs-review-workspace)>.section-head{padding:16px 22px;border-bottom:1px solid var(--line);flex:none}
+#logs-audit:has(.logs-review-workspace)>.section-head h2{margin:0}
+#logs-audit:has(.logs-review-workspace)>[data-status]{padding:8px 22px;margin:0;font-size:12px;border-bottom:1px solid var(--line);flex:none}
+#logs-audit:has(.logs-review-workspace)>[data-body]{flex:1;min-height:0}
+#logs-audit .logs-review-workspace{display:grid;grid-template-columns:250px minmax(0,1fr) 320px;height:100%;min-height:0;font-size:14px}
+#logs-audit .logs-review-queue,#logs-audit .logs-review-detail,#logs-audit .logs-review-comments{min-width:0;overflow-y:auto;scrollbar-gutter:stable;overscroll-behavior:contain;padding:22px 16px}
+#logs-audit .logs-review-queue{border-right:1px solid var(--line)}
+#logs-audit .logs-review-detail{background:var(--bg);padding:24px}
+#logs-audit .logs-review-comments{border-left:1px solid var(--line)}
+#logs-audit .logs-review-sticky-head{position:sticky;top:-22px;z-index:2;background:var(--panel);margin:-22px -16px 0;padding:22px 16px 12px;border-bottom:1px solid var(--line)}
+#logs-audit .logs-review-sticky-head label{margin:16px 0 0}
+#logs-audit .logs-review-sticky-head [data-review-count]{margin-bottom:0}
+#logs-audit .logs-review-workspace h3{margin:0 0 14px;font-size:15px}
+#logs-audit .logs-review-workspace small,#logs-audit [data-review-count],#logs-audit .logs-review-comment-help,#logs-audit .logs-review-save-note{font-size:12px;color:var(--muted)}
+#logs-audit .logs-review-job{display:flex;flex-direction:column;gap:9px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:17px 12px;background:transparent;overflow-wrap:anywhere;font-size:13px}
+#logs-audit .logs-review-job[aria-current=true]{background:var(--green-soft);box-shadow:inset 3px 0 var(--green-hover)}
+#logs-audit .logs-review-job:hover{background:var(--soft)}
+#logs-audit [data-review-tools]{margin-top:20px}
+#logs-audit .logs-review-title{display:flex;justify-content:space-between;align-items:start;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+#logs-audit .logs-review-title h2{font:600 25px var(--font-display);margin:8px 0 0;overflow-wrap:anywhere}
+#logs-audit .logs-review-facts{display:flex;gap:28px;border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:22px;flex-wrap:wrap}
+#logs-audit .logs-review-facts strong{display:block;margin-top:7px;font-size:13px}
+#logs-audit .logs-review-workspace input:not([type=checkbox]),#logs-audit .logs-review-workspace select,#logs-audit .logs-review-workspace textarea{font-size:14px}
+#logs-audit .logs-review-workspace label{font-size:13px}
+#logs-audit .logs-review-workspace .review-fields{gap:18px}
+#logs-audit .logs-review-workspace .audit-tabs{gap:3px;margin-bottom:22px}
+#logs-audit .logs-review-workspace .audit-tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;font-size:13px;padding:8px}
+#logs-audit .logs-review-workspace .audit-tabs [aria-selected=true]{border-bottom-color:var(--accent);background:transparent}
+#logs-audit .logs-review-comments>label{margin:18px 0}
+#logs-audit .logs-review-comment{padding:16px 0;border-bottom:1px solid var(--line)}
+#logs-audit .logs-review-comment>div{display:flex;flex-direction:column;gap:5px;font-size:13px}
+#logs-audit .logs-review-comment time{font-size:11px;color:var(--muted)}
+#logs-audit .logs-review-comment p{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--soft);border-radius:6px;padding:12px;color:var(--ink);font-size:13px}
+#logs-audit .logs-review-comment button{background:transparent;border:0;color:var(--accent);padding:4px 0;font-size:12px;min-height:32px}
+#logs-audit [data-review-next]{margin-left:auto}
+@media(max-width:1200px){#logs-audit .logs-review-workspace{grid-template-columns:210px minmax(0,1fr) 260px}#logs-audit .logs-review-workspace .review-fields{grid-template-columns:1fr}}
+@media(max-width:950px){:root #logs-audit:has(.logs-review-workspace){overflow:auto;display:block;height:auto}#logs-audit .logs-review-workspace{grid-template-columns:190px minmax(0,1fr);height:auto}#logs-audit .logs-review-comments{grid-column:1/-1;border-left:0;border-top:1px solid var(--line);max-height:55vh}#logs-audit .logs-review-queue{max-height:70vh;position:sticky;top:0}}
+@media(max-width:600px){#logs-audit .logs-review-workspace{display:block}#logs-audit .logs-review-queue{position:static;max-height:300px;border-right:0;border-bottom:1px solid var(--line)}#logs-audit .logs-review-detail{padding:18px 14px}#logs-audit .logs-review-comments{max-height:65vh}#logs-audit .logs-review-title h2{font-size:22px}}

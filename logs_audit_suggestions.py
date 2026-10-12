@@ -11,8 +11,10 @@ LABELS = {
     'ems_estimator': r'ems estimator',
     'contents_estimator': r'contents estimator',
     'inspection_completed_at': r'inspection (?:completed|finished)(?: at)?',
+    'inspection_at': r'inspection occurred(?: at)?',
+    'field_note_posted_at': r'field (?:inspection )?note posted(?: at)?',
     'initial_note_sent_at': r'initial note sent(?: at)?',
-    'missed_by': r'coordinator who missed it',
+    'missed_by': r'(?:coordinator who sent the initial note|initial note coordinator)',
     'ems_ready': r'ems ready for billing',
     'ems_billed': r'ems billed|ems billing completed',
     'contents_ready': r'contents ready for billing',
@@ -34,7 +36,7 @@ TOPICS = {
 
 def normalize(key, value):
     value = value.strip().strip('*').strip()
-    if key in ('inspection_completed_at','initial_note_sent_at'):
+    if key in ('inspection_completed_at','initial_note_sent_at','inspection_at','field_note_posted_at'):
         from datetime import datetime
         try:
             # Require explicit date and clock time, never a comment timestamp.
@@ -143,7 +145,7 @@ def suggest(evidence):
         if source and source not in target['sources']:target['sources'].append(source)
         values={c['value'] for c in target['candidates']}
         target.update(value=next(iter(values)) if len(values)==1 else None,conflict=len(values)>1)
-    clock=timing(result['inspection_completed_at']['value'],result['initial_note_sent_at']['value'])
+    clock=timing(result['field_note_posted_at']['value'],result['initial_note_sent_at']['value'])
     result['initial_note'].update(value=clock['status'] if clock['status'] in ('Yes','No') else None,
-        sources=result['inspection_completed_at']['sources']+result['initial_note_sent_at']['sources']+result['initial_note']['sources'])
+        sources=result['field_note_posted_at']['sources']+result['initial_note_sent_at']['sources']+result['initial_note']['sources'])
     return result

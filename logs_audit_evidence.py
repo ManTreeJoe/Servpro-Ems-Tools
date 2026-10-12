@@ -6,18 +6,26 @@ AR_BOARD = '63c6ea7513fb8f018df6b605'  # Existing IE AR board used by office rev
 
 def timing(completed, sent):
     if not completed or not sent:
-        return {'status':'Unverified','minutes':None,'reason':'Inspection completion and initial-note sent times are required.'}
+        return {'status':'Unverified','minutes':None,'reason':'Field-note posted and coordinator-note sent times are required.'}
     try:
         if not all(re.match(r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}',v) for v in (completed,sent)):
             raise ValueError('Explicit clock times required')
         start=datetime.fromisoformat(completed.replace('Z','+00:00'))
         end=datetime.fromisoformat(sent.replace('Z','+00:00'))
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError('Explicit timezones required')
         minutes=(end-start).total_seconds()/60
     except (ValueError,TypeError):
         return {'status':'Unverified','minutes':None,'reason':'Use comparable timestamps with the same timezone basis.'}
     if minutes<0:
-        return {'status':'Unverified','minutes':minutes,'reason':'Note precedes inspection completion; review the evidence.'}
-    return {'status':'Yes' if minutes<=60 else 'No','minutes':round(minutes,1),'reason':'Due within 60 minutes after inspection completion.'}
+        return {'status':'Unverified','minutes':minutes,'reason':'Coordinator note precedes field-note posting; review the evidence.'}
+    return {'status':'Yes' if minutes<=60 else 'No','minutes':round(minutes,1),'reason':'Due within 60 minutes after the field inspection note was posted.'}
+
+
+def field_delay(inspected, posted):
+    result = timing(inspected, posted)
+    return {'minutes': result['minutes'] if result['status'] in ('Yes','No') else None,
+            'status': 'Recorded' if result['status'] in ('Yes','No') else 'Unverified'}
 
 def identifiers(card):
     text=card.get('desc','').replace('**','')

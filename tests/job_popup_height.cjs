@@ -9,7 +9,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  }
  for(const file of ['web_shared/modal.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/app.js'])await page.addScriptTag({path:path.resolve(file)});
  await page.evaluate(()=>{window.pywebview={api:{}};openAuditModal({ok:true,client:'Popup height test',card_id:'ems-card',selected_division:'EMS',audit:{found:true},crm:{},info_sections:[{name:'Customer',fields:[{id:'customer_name',label:'Name',value:'Example customer'}]},{name:'Scope of work',fields:[{id:'scope_initial',label:'Initial scope',value:'Inspect kitchen\nDry affected walls'}]}],comments:[]});});
- assert.deepEqual(await page.locator('.job-info-group h4').allTextContents(),['App location','Scope of work','Customer']);
+ assert.deepEqual(await page.locator('.job-info-group h4').allTextContents(),['App location','Customer','Scope of work']);
  assert.equal(await page.locator('.job-scope-field strong').evaluate(el=>getComputedStyle(el).whiteSpace),'pre-wrap');
  const inactive=page.locator('.inactive-division-tools').first();
  assert.equal(await inactive.locator('input').isVisible(),false);

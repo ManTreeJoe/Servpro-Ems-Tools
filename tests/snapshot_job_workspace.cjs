@@ -4,7 +4,7 @@ fixture.division_trello_cards.push({division:'CONTENTS',card_id:'contents1',pinn
 const server=http.createServer((req,res)=>{
  const pathname=new URL(req.url,'http://local').pathname;
  if(pathname==='/shell'||pathname==='/snapshot_web_assets/fixture')res.setHeader('Content-Type','text/html');
- if(pathname==='/shell')return res.end(`<iframe src="/snapshot_web_assets/fixture" style="width:100%;height:96vh;border:0"></iframe><script>window.calls=[];window.pywebview={api:new Proxy({}, {get:(_,name)=>(...args)=>{calls.push(name);if(name.includes('job_card_workspace'))return Promise.resolve(${JSON.stringify(fixture)});if(name.includes('refresh_job_comments')||name.includes('saved_job_comments'))return Promise.resolve({ok:true,comments:${JSON.stringify(fixture.comments)}});if(name.includes('comment_thread_state'))return Promise.resolve({ok:true,comments:[],pins:[],threads:[]});return Promise.resolve({ok:true});}})};</script>`);
+ if(pathname==='/shell')return res.end(`<iframe src="/snapshot_web_assets/fixture" style="width:100%;height:96vh;border:0"></iframe><script>window.calls=[];window.pywebview={api:new Proxy({}, {get:(_,name)=>(...args)=>{calls.push(name);if(name.includes('job_card_workspace'))return Promise.resolve(${JSON.stringify(fixture)});if(name.includes('refresh_job_comments')||name.includes('saved_job_comments'))return Promise.resolve({ok:true,comments:${JSON.stringify(fixture.comments)}});if(name.includes('comment_thread_state'))return Promise.resolve({ok:true,comments:[],pins:[],threads:[]});if(name.includes('audit_comment_links'))return Promise.resolve({ok:true,links:{items:{},version:null},targets:{}});return Promise.resolve({ok:true});}})};</script>`);
  if(pathname==='/snapshot_web_assets/fixture')return res.end(`<link rel="stylesheet" href="/web_shared/theme.css"><link rel="stylesheet" href="/snapshot_web_assets/job_workspace.css"><body class="snapshot-panel"><h2>Snapshot report</h2><textarea id="report">Report draft stays here</textarea><main id="view-gen" style="height:650px;overflow-y:auto"><div id="audit-subview"><span id="audit-summary"></span><div id="audit-result"></div></div><div style="height:500px"></div></main><script src="/snapshot_web_assets/job_workspace.js"></script><script>SnapshotJobWorkspace.select({cardId:'card1',client:'Sample restoration job',division:'EMS'});</script></body>`);
  const file=path.resolve('.'+pathname);if(!file.startsWith(process.cwd()+path.sep)){res.statusCode=403;return res.end();}
  try{res.setHeader('Content-Type',pathname.endsWith('.js')?'application/javascript':pathname.endsWith('.css')?'text/css':pathname.endsWith('.html')?'text/html':'application/octet-stream');res.end(fs.readFileSync(file));}catch{res.statusCode=404;res.end();}
@@ -67,6 +67,21 @@ const server=http.createServer((req,res)=>{
  await card().locator('#scroll-test-editor').evaluate(el=>el.remove());
  await comment().locator('.comment-stream').hover();await page.mouse.wheel(0,200);await page.waitForTimeout(150);
  assert.equal(await snapshot.evaluate(()=>document.querySelector('#view-gen').scrollTop),0,'comment wheel must not move report');
+ await card().evaluate(()=>document.querySelector('[data-pull-companycam]').click());
+ await card().waitForSelector('.cc-pull-overlay');
+ const popup=await card().evaluate(()=>{
+  const el=document.querySelector('.cc-pull-overlay'),r=el.getBoundingClientRect();
+  return {position:getComputedStyle(el).position,top:r.top,bottom:r.bottom,height:innerHeight};
+ });
+ assert.equal(popup.position,'fixed','CompanyCam popup must not inherit embedded-card positioning');
+ assert.ok(popup.top>=0 && popup.bottom<=popup.height+1,'CompanyCam popup must fit the embedded viewport');
+ await page.screenshot({path:require('node:os').tmpdir()+'/snapshot-companycam-popup.png'});
+ await card().locator('.cc-pull-overlay [data-close]').click();
+ await card().locator('[data-edit-job-info]').click();
+ await card().waitForSelector('.job-info-edit-overlay');
+ assert.equal(await card().locator('.job-info-edit-overlay').evaluate(el=>getComputedStyle(el).position),'fixed','Job info editor also stays a popup');
+ await card().locator('.job-info-edit-overlay [data-close]').click();
+ assert.equal(await snapshot.locator('#report').inputValue(),'Report draft stays here');
  await page.screenshot({path:require('node:os').tmpdir()+'/snapshot-job-workspace.png'});
  await page.setViewportSize({width:760,height:950});
  await page.waitForTimeout(100);

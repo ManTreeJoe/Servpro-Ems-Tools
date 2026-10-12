@@ -590,7 +590,8 @@ async function onBackgroundSyncDone(event) {
   state.backgroundSync.queueReason = detail.queue_reason || "";
   if (detail.ok) {
     state.backgroundSync.lastSuccessAt = detail.at || new Date().toISOString();
-    await refreshSavedBoardInBackground(true);
+    // The sync already fetched and saved the board. The regular conditional
+    // refresh paints changes without a second immediate network download.
     await refreshOpenWorkspaceComments();
   }
   updateBackgroundSyncIndicator();
@@ -2064,7 +2065,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
   ]};
   const detailSections = (data.info_sections || []).filter(section => !['Pipeline','App location'].includes(section.name));
   const isScopeSection = section => (section.fields || []).some(field => ['scope_initial','scope_additional'].includes(field.id));
-  const populatedInfoSections = [locationSection, ...detailSections.filter(isScopeSection), ...detailSections.filter(section => !isScopeSection(section))].map((section) => ({
+  const populatedInfoSections = [locationSection, ...detailSections.filter(section => !isScopeSection(section)), ...detailSections.filter(isScopeSection)].map((section) => ({
     ...section,
     fields: (section.fields || []).filter((field) => String(field.value || "").trim()),
   })).filter((section) => section.fields.length);
@@ -3255,6 +3256,11 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     setStatus(result.pending_sync ? "Removed from this PC · shared sync pending. Trello comment unchanged." : "Job Log entry deleted · Trello comment unchanged", "ok");
   }));
   const commentInput = w.querySelector("[data-comment-input]");
+  window.AuditCommentLinks?.bind(w,target=>{
+    const row=target.closest('[data-comment-id]');if(!row)return null;
+    return {row,card:row.dataset.commentCardId||data.card_id,comment:{id:row.dataset.commentExternalId||row.dataset.commentId,
+      text:row.querySelector('[data-comment-raw]')?.dataset.commentRaw||'',author:row.dataset.auditAuthor||'',date:row.dataset.auditAt||''}};
+  });
   const commentSearch = w.querySelector("[data-comment-search]");
   const filterComments = () => {
     const query = String(commentSearch?.value || "").trim().toLocaleLowerCase();
@@ -3978,7 +3984,7 @@ function renderJobComment(comment) {
   const source = comment?.source === "trello" ? "trello" : "linguar";
   const thread = comment?.thread;
   const key = thread?.id || comment?.external_id || comment?.id || '';
-  return `<article class="job-comment" data-thread-key="${escapeAttr(key)}" data-thread-root="${escapeAttr(thread?.root_id || key)}" data-comment-pinned="${!!thread?.pinned}" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-card-id="${escapeAttr(comment?.card_id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar" style="background:${avatarColor};color:#fff" title="${escapeAttr(actor)}">${escapeHtml(initial)}</div>
+  return `<article class="job-comment" data-audit-at="${escapeAttr(comment?.at || '')}" data-audit-author="${escapeAttr(actor)}" data-thread-key="${escapeAttr(key)}" data-thread-root="${escapeAttr(thread?.root_id || key)}" data-comment-pinned="${!!thread?.pinned}" data-comment-id="${escapeAttr(comment?.id || "")}" data-comment-card-id="${escapeAttr(comment?.card_id || "")}" data-comment-source="${source}" data-comment-external-id="${escapeAttr(comment?.external_id || "")}"><div class="comment-avatar" style="background:${avatarColor};color:#fff" title="${escapeAttr(actor)}">${escapeHtml(initial)}</div>
     <div><header><strong>${escapeHtml(actor)}</strong><time>${escapeHtml(formatCommentDate(comment?.at || ""))}</time></header>
     ${thread?.parent_id ? '<button class="text-btn comment-reply-reference" data-open-thread>↳ Reply · View thread</button>' : ''}
     <div class="comment-markdown" data-comment-raw="${escapeAttr(comment?.text || '')}">${window.CommentMarkdown ? window.CommentMarkdown.display(comment?.text) : `<p>${escapeHtml(comment?.text || '')}</p>`}</div><footer><small>${escapeHtml(comment?.division ? comment.division + ' · ' : '')}${source === "trello" ? "Trello" : "OneLoss"}${thread?.native && thread.delivery !== 'sent' ? ' · Trello delivery unconfirmed' : ''}</small>

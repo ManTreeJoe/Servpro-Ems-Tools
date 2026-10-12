@@ -3,18 +3,22 @@
  'use strict';
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  let dialog, body, status, filters={}, queue, selected, activeForm, savedForm='', busy=false, operation;
+ let reviewQuery='';
+ let toolsMenu,toolsPanel;
+ const canLeave=()=>!hasUnsavedChanges()||confirm('Leave this audit? Unsaved changes will be lost.');
  function formFields(){const fields=Object.fromEntries(new FormData(activeForm));for(const input of activeForm.querySelectorAll('[type=checkbox]'))fields[input.name]=input.checked;return fields;}
  const hasUnsavedChanges=()=>Boolean(activeForm)&&JSON.stringify(formFields())!==savedForm;
  const scanned=new Set();
  const filingDivisions=['EMS','Contents','EMS + Contents','Recon','Service call / no charge'];
  const api=async(name,...args)=>{const r=await window.pywebview.api[name](...args);if(!r?.ok)throw Error(r?.error||'Request did not complete.');return r;};
  function error(e){status.textContent=e.message||String(e);}
- async function run(fn){if(busy)return;busy=true;body.inert=true;try{await fn();}catch(e){error(e);}finally{busy=false;body.inert=false;}}
+ async function run(fn){if(busy)return;busy=true;body.inert=true;status.setAttribute('aria-busy','true');try{await fn();}catch(e){error(e);}finally{busy=false;body.inert=false;status.setAttribute('aria-busy','false');}}
  function init(){
   if(dialog)return;
   dialog=document.createElement('dialog');dialog.id='logs-audit';dialog.setAttribute('aria-label','Weekly Logs audit');
-  dialog.innerHTML='<div class="section-head"><h2>Logs audit</h2><button type="button" data-close aria-label="Close Logs audit">×</button></div><p data-status role="status"></p><div data-body></div>';
+  dialog.innerHTML='<div class="section-head"><h2>Logs audit</h2><details class="logs-more"><summary>More</summary><div data-audit-tools></div></details><button type="button" data-close aria-label="Close Logs audit">×</button></div><p data-status role="status"></p><div data-body></div>';
   document.body.append(dialog);body=dialog.querySelector('[data-body]');status=dialog.querySelector('[data-status]');
+  toolsMenu=dialog.querySelector('.logs-more');toolsPanel=dialog.querySelector('[data-audit-tools]');
   dialog.querySelector('[data-close]').onclick=()=>{if(busy)return;if(hasUnsavedChanges()&&!confirm('Close this form? Unsaved changes will be lost.'))return;dialog.close();};
   dialog.addEventListener('cancel',e=>{if(busy||activeForm){e.preventDefault();dialog.querySelector('[data-close]').click();}});
  }
@@ -27,44 +31,62 @@
  function note(label,key,value=''){return `<label>${esc(label)}<textarea name="${key}" rows="3">${esc(value)}</textarea></label>`;}
  function checked(label,key,value){return `<label class="audit-check"><input type="checkbox" name="${key}" ${value?'checked':''}>${esc(label)}</label>`;}
  async function showQueue(){
-  queue=await api('logs_queue');activeForm=null;selected=null;operation=null;
-  status.textContent=`${queue.cards.length} current cards · To Be Preserved only · Drafts saved on this PC. No automatic moves.`;
-  body.innerHTML='<div class="actions"><input type="search" data-search placeholder="Find a job" aria-label="Find audit job"><button data-refresh>Refresh queue</button><button data-scan>Gather evidence for all</button></div><p data-progress></p><div class="table-wrap"><table><thead><tr><th>Job</th><th>Audit draft</th><th></th></tr></thead><tbody data-cards></tbody></table></div><details><summary>Publication history / recovery</summary><div data-history></div></details>';
-  const rows=()=>{const q=body.querySelector('[data-search]').value.toLowerCase();body.querySelector('[data-cards]').innerHTML=queue.cards.filter(c=>c.name.toLowerCase().includes(q)).map(c=>`<tr><td>${esc(c.name)}</td><td>${queue.drafts[c.id]?'Draft saved':scanned.has(c.id)?'Evidence gathered — not audited':'Not reviewed'}</td><td><button data-card="${esc(c.id)}">Audit job</button></td></tr>`).join('')||'<tr><td colspan="3">No matching cards.</td></tr>';};
-  rows();body.querySelector('[data-search]').oninput=rows;
+  const previous=selected?.evidence?.card?.id;
+  status.textContent='Loading Logs review queue…';
+  if(!activeForm)window.LogsReviewWorkspace?.loading(body,null,null);
+  try{queue=await api('logs_queue');}catch(e){
+   if(!activeForm){body.innerHTML='<div class="logs-review-empty"><h3>Could not load the review queue</h3><p>Check your connection, then try again. No jobs were changed.</p><button data-queue-retry>Retry loading queue</button></div>';body.querySelector('[data-queue-retry]').onclick=()=>run(showQueue);}
+   throw e;
+  }
+  activeForm=null;selected=null;operation=null;
+  toolsMenu.open=false;
+  status.textContent=`${queue.cards.length} current cards · To Be Preserved only · Shared database drafts. No automatic moves.`;
+  toolsPanel.innerHTML='<div class="actions"><button data-refresh>Refresh queue</button><button data-scan>Gather evidence for all</button></div><p data-progress role="status"></p><details><summary>Publication history / recovery</summary><div data-history></div></details>';
   const excel=document.createElement('button');excel.textContent='Export weekly Excel copy';
   excel.title='Exports saved forms for this review period, including moved cards. Choose your template, then a new filename.';
-  body.querySelector('.actions').append(excel);
+  toolsPanel.querySelector('.actions').append(excel);
   excel.onclick=()=>run(async()=>{status.textContent='Choose the original Weekly Audit template, then where to save the filled copy.';const r=await api('logs_export_excel',filters.start,filters.end);status.textContent=r.cancelled?'Export cancelled.':`Exported ${r.count} saved reviews. Draft status and sources are included; no Trello changes.`;});
-  const batch=document.createElement('button');batch.textContent='Review saved drafts for this period';body.querySelector('.actions').append(batch);
-  batch.onclick=()=>run(async()=>{
+  const batch=document.createElement('button');batch.textContent='Review saved drafts for this period';toolsPanel.querySelector('.actions').append(batch);
+  batch.onclick=()=>{if(busy||!canLeave())return;run(async()=>{
    const prepared=[],failures=[];
    for(const card of queue.cards){
     const f=queue.drafts[card.id]?.fields;
     if(!f || f.period_start!==filters.start || f.period_end!==filters.end)continue;
-    try{prepared.push((await api('logs_preview',card.id)).operation);}catch(e){failures.push(card.name+': '+e.message);}
+    try{prepared.push((await api('logs_preview',card.id,queue.drafts[card.id]?.version??null)).operation);}catch(e){failures.push(card.name+': '+e.message);}
    }
-   showBatch(prepared,failures);
-  });
-  body.querySelector('[data-refresh]').onclick=()=>run(showQueue);
-  body.querySelector('[data-cards]').onclick=e=>{const b=e.target.closest('[data-card]');if(b)run(()=>openCard(b.dataset.card));};
-  body.querySelector('[data-scan]').onclick=()=>run(async()=>{
+   toolsMenu.open=false;showBatch(prepared,failures);
+  });};
+  toolsPanel.querySelector('[data-refresh]').onclick=()=>{if(!busy&&canLeave())run(showQueue);};
+  toolsPanel.querySelector('[data-scan]').onclick=()=>run(async()=>{
    let failed=0;const issues=[];
    for(let i=0;i<queue.cards.length;i++){
-    const c=queue.cards[i];body.querySelector('[data-progress]').textContent=`Reading ${i+1}/${queue.cards.length}: ${c.name}`;
+    const c=queue.cards[i];toolsPanel.querySelector('[data-progress]').textContent=`Reading ${i+1}/${queue.cards.length}: ${c.name}`;
     try{await api('logs_inspect',c.id);scanned.add(c.id);}catch(e){failed++;issues.push(`${c.name}: ${e.message}`);}
    }
-   body.querySelector('[data-progress]').textContent=`Evidence read for ${queue.cards.length-failed} cards; ${failed} failed. Each still needs the form and user confirmation. ${issues.join(' • ')}`;rows();
+   toolsPanel.querySelector('[data-progress]').textContent=`Evidence read for ${queue.cards.length-failed} cards; ${failed} failed. Each still needs the form and user confirmation. ${issues.join(' • ')}`;
   });
-  body.querySelector('[data-history]').innerHTML=queue.operations.slice().reverse().map(o=>`<p>${esc(o.name)} → ${esc(o.destination_name)} · ${esc(o.status)} ${!['done','superseded'].includes(o.status)?`<button data-retry="${esc(o.id)}">Review / retry</button>`:''}</p>`).join('')||'<p>No publications yet.</p>';
-  body.querySelector('[data-history]').onclick=e=>{const b=e.target.closest('[data-retry]');if(b)showPreview(queue.operations.find(o=>o.id===b.dataset.retry));};
+  toolsPanel.querySelector('[data-history]').innerHTML=queue.operations.slice().reverse().map(o=>`<p>${esc(o.name)} → ${esc(o.destination_name)} · ${esc(o.status)} ${!['done','superseded'].includes(o.status)?`<button data-retry="${esc(o.id)}">Review / retry</button>`:''}</p>`).join('')||'<p>No publications yet.</p>';
+  toolsPanel.querySelector('[data-history]').onclick=e=>{const b=e.target.closest('[data-retry]');if(b&&!busy&&canLeave()){toolsMenu.open=false;showPreview(queue.operations.find(o=>o.id===b.dataset.retry));}};
+  if(!queue.cards.length){body.innerHTML='<div class="logs-review-empty"><h3>No jobs waiting for audit</h3><p>There are no cards in To Be Preserved. Export and publication history are still available under More.</p></div>';return;}
+  const first=queue.cards.find(c=>c.id===previous)||queue.cards[0];
+  try{await openCard(first.id);}catch(e){
+   body.innerHTML='<div class="logs-review-empty"><h3>Could not open the job</h3><p>The queue loaded, but its evidence did not. Retry a job below, or refresh under More.</p><div data-load-recovery></div></div>';
+   body.querySelector('[data-load-recovery]').innerHTML=queue.cards.map(c=>`<button data-card="${esc(c.id)}">${esc(c.name)}</button>`).join('');
+   body.querySelector('[data-load-recovery]').onclick=event=>{const b=event.target.closest('[data-card]');if(b)run(()=>openCard(b.dataset.card));};
+   throw e;
+  }
  }
  async function openCard(id){
+  const loadingCard=queue.cards.find(c=>c.id===id);
+  status.textContent=`Loading ${loadingCard?.name||'job'} · checking job information, checklists and comments…`;
+  if(!activeForm)window.LogsReviewWorkspace?.loading(body,queue,loadingCard);
   const r=await api('logs_inspect',id,filters.start,filters.end);selected=r;scanned.add(id);const ev=r.evidence;
   const f={period_start:filters.start,period_end:filters.end,decision:'hold',...r.draft?.fields};
+  for(const [key,link] of Object.entries(r.links?.items||{})){f[key]=link?.value||'';if(key==='initial_note_sent_at')f.missed_by=link?.comment?.author||'';}
+  if(r.links?.version!==r.draft?.links?.version){f.front_checked=false;f.field_checked=false;f.estimating_checked=false;f.billing_checked=false;f.all_confirmed=false;}
   if(r.ar?.revision!==r.draft?.ar?.revision){f.ar_resolution='';f.billing_checked=false;f.all_confirmed=false;}
   const suggestions=r.suggestions||{};
-  for(const [key,s] of Object.entries(suggestions))if(s.value!=null && !Object.prototype.hasOwnProperty.call(r.draft?.fields||{},key))f[key]=s.value;
+  for(const [key,s] of Object.entries(suggestions))if(s.value!=null && !Object.prototype.hasOwnProperty.call(r.draft?.fields||{},key)&&!Object.prototype.hasOwnProperty.call(r.links?.items||{},key))f[key]=s.value;
   const reviewFiling=!filingDivisions.includes(f.scope)||suggestions.scope?.conflict;
   // Confirmation is tied to the currently inspected evidence, never carried over after a change.
   if(r.draft?.revision!==ev.revision)for(const k of ['front_checked','field_checked','estimating_checked','billing_checked','identity_checked','all_confirmed'])f[k]=false;
@@ -77,9 +99,14 @@
    ${field('Period from','period_start',f.period_start,'date')}${field('Through','period_end',f.period_end,'date')}
    ${field('Job Date (received)','job_date',f.job_date,'date')}<input type="hidden" name="scope" value="${esc(f.scope||'')}">
    ${field('EMS estimator (or N/A)','ems_estimator',f.ems_estimator)}${field('Contents estimator (if applicable)','contents_estimator',f.contents_estimator)}
-   ${pick('Initial note sent on time?','initial_note',['Yes','No','N/A'],f.initial_note)}${field('Coordinator who missed it','missed_by',f.missed_by)}
-   ${field('Inspection completed (date, time, timezone)','inspection_completed_at',f.inspection_completed_at)}
-   ${field('Initial note sent (date, time, timezone)','initial_note_sent_at',f.initial_note_sent_at)}
+   ${pick('Initial note sent on time?','initial_note',['Yes','No','N/A'],f.initial_note)}${field('Coordinator who sent the initial note','missed_by',f.missed_by)}
+   <input type="hidden" name="inspection_completed_at" value="${esc(f.inspection_completed_at||'')}">
+   ${field('Inspection occurred (from the field note)','inspection_at',f.inspection_at)}
+   ${field('Incoming loss received','incoming_loss_at',f.incoming_loss_at)}
+   ${field('Insured contacted','insured_contacted_at',f.insured_contacted_at)}
+   ${field('On-site arrival','on_site_at',f.on_site_at)}
+   ${field('Field inspection note posted','field_note_posted_at',f.field_note_posted_at)}
+   ${field('Coordinator initial note sent','initial_note_sent_at',f.initial_note_sent_at)}
    ${field('Timing source / comment reference','timing_source',f.timing_source)}
    ${pick('WC / file status','file_status',['Closed','Open','Needs Merge','N/A'],f.file_status)}
    </div>${checked('Front checks reviewed','front_checked',f.front_checked)}
@@ -96,28 +123,33 @@
    ${checked('Billing / applicable AR evidence reviewed','billing_checked',f.billing_checked)}
    ${note('Audit Notes / Open Action Needed','audit_notes',f.audit_notes)}
    ${reviewFiling?`<section data-filing-review><p>The source does not identify one clear division for filing. Review the card before choosing which billing dates apply.</p><label>Division for filing<select data-filing-division aria-label="Division for filing"><option value="">Choose division for filing</option>${filingDivisions.map(value=>`<option ${value===f.scope?'selected':''}>${esc(value)}</option>`).join('')}</select></label></section>`:''}
-   <div class="review-fields">${pick('Disposition','decision',['hold','billed','questions'],f.decision)}${field('Confirmed billed month','billed_month',f.billed_month,'month')}
+   <div class="review-fields">${pick('Next step','decision',['hold','billed','questions'],f.decision)}${field('Confirmed billed month','billed_month',f.billed_month,'month')}
    <label>Destination lane<select name="destination"><option value="">Leave in place</option>${r.lanes.map(l=>`<option value="${esc(l.id)}" ${l.id===f.destination?'selected':''}>${esc(l.name)}</option>`).join('')}</select></label></div>
    ${checked('Correct card, claim and scope confirmed','identity_checked',f.identity_checked)}${checked('I reviewed the full form and confirm the recorded findings','all_confirmed',f.all_confirmed)}
-   <div class="actions"><button type="button" data-save>Save draft</button><button type="button" class="primary" data-preview>Preview audit & disposition</button></div></form></div>`;
+   <div class="actions"><button type="button" data-save>Save draft</button><button type="button" class="primary" data-preview>Preview audit & next step</button></div></form></div>`;
   activeForm=body.querySelector('[data-audit]');activeForm.onsubmit=e=>e.preventDefault();
   activeForm.elements.initial_note.disabled=true;
   const timingHint=document.createElement('small');activeForm.elements.initial_note.closest('label').append(timingHint);
+  const fieldTimingHint=document.createElement('p');fieldTimingHint.setAttribute('role','status');
   const updateTiming=()=>{
-   const a=activeForm.elements.inspection_completed_at.value,b=activeForm.elements.initial_note_sent_at.value;
+   const a=activeForm.elements.field_note_posted_at.value,b=activeForm.elements.initial_note_sent_at.value;
    const pattern=/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/;
    const minutes=pattern.test(a)&&pattern.test(b)?(new Date(b)-new Date(a))/60000:NaN;
-   const valid=Number.isFinite(minutes)&&minutes>=0;
+   const valid=Number.isFinite(minutes)&&minutes>=0&&[a,b].every(v=>/(Z|[+-]\d{2}:\d{2})$/.test(v));
    activeForm.elements.initial_note.value=valid?(minutes<=60?'Yes':'No'):'';
-   timingHint.textContent=valid?`${Math.round(minutes)} minutes after completion · limit 60 minutes`:'Unverified — completion and sent timestamps required. Example: 2026-09-17T14:30:00-07:00';
+   const inspection=activeForm.elements.inspection_at.value;
+   const delay=(new Date(a)-new Date(inspection))/60000;
+   const fieldKnown=Number.isFinite(delay)&&delay>=0&&[inspection,a].every(v=>pattern.test(v)&&/(Z|[+-]\d{2}:\d{2})$/.test(v));
+   fieldTimingHint.textContent=fieldKnown?`Inspection → field note posted: ${window.AuditFieldControls.elapsed(delay)}. No field posting deadline has been set.`:'Inspection → field note: unverified. Confirm both times and timezones.';
+   timingHint.textContent=(fieldKnown?`Inspection → field note: ${window.AuditFieldControls.elapsed(delay)}. `:'Inspection → field note: unverified. ')+(valid?`Field note → coordinator: ${window.AuditFieldControls.elapsed(minutes)} · limit 1 hour`:'Coordinator timing unverified — field-note posting and coordinator sent times with timezones are required.');
   };
-  for(const key of ['inspection_completed_at','initial_note_sent_at'])activeForm.elements[key].addEventListener('input',updateTiming);
+  for(const key of ['inspection_at','field_note_posted_at','initial_note_sent_at'])activeForm.elements[key].addEventListener('input',updateTiming);
   updateTiming();
   const renderAR=(ar,comparison,confirmed)=>{
    const area=body.querySelector('[data-ar-results]');area.replaceChildren();
    body.querySelector('[data-ar-status]').textContent=(confirmed?'Confirmed: ':'Candidate: ')+ar.card.name+' · '+comparison.summary;
    const description=document.createElement('pre');description.textContent=ar.card.desc||'No description';area.append(description);
-   for(const comment of ar.comments){const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('pre');summary.textContent=comment.date.slice(0,10)+' · '+comment.author;text.textContent=comment.text;details.append(summary,text);area.append(details);}
+   for(const comment of ar.comments){const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('pre');summary.textContent=window.AuditFieldControls.date(comment.date)+' · '+comment.author;text.textContent=comment.text;details.append(summary,text);area.append(details);}
    if(!confirmed){const button=document.createElement('button');button.type='button';button.textContent='Confirm this AR card (same job, division and unit)';button.onclick=()=>run(async()=>{const review=await api('logs_ar_review',id,ar.card.id,true);activeForm.elements.billing_checked.checked=false;activeForm.elements.all_confirmed.checked=false;activeForm.elements.ar_resolution.value='';if(review.comparison.conflicts.length){activeForm.elements.billing_conflict.value=review.comparison.summary;activeForm.elements.decision.value='questions';}renderAR(review.evidence,review.comparison,true);});area.prepend(button);}
   };
   if(r.ar)renderAR(r.ar,r.ar_comparison,true);
@@ -152,8 +184,27 @@
    for(const n of nodes.slice(boundaries[i],i+1<titles.length?boundaries[i+1]:nodes.length))panel.append(n);
    activeForm.append(panel);panels.push(panel);
    const button=document.createElement('button');button.type='button';button.id='audit-tab-'+i;button.textContent=titles[i];button.setAttribute('role','tab');button.setAttribute('aria-controls',panel.id);button.setAttribute('aria-selected',String(i===0));button.tabIndex=i===0?0:-1;
-   button.onclick=()=>{panels.forEach((p,j)=>p.hidden=j!==i);Array.from(nav.children).forEach((b,j)=>{b.setAttribute('aria-selected',String(j===i));b.tabIndex=j===i?0:-1;});dialog.scrollTop=0;};nav.append(button);
+   button.onclick=()=>{panels.forEach((p,j)=>p.hidden=j!==i);Array.from(nav.children).forEach((b,j)=>{b.setAttribute('aria-selected',String(j===i));b.tabIndex=j===i?0:-1;});dialog.scrollTop=0;body.querySelector('.logs-review-detail')?.scrollTo(0,0);};nav.append(button);
   }
+  // Keep stage-specific facts with the person reviewing that stage.
+  const fieldDates=document.createElement('div');fieldDates.className='review-fields';
+  panels[2].querySelector('h3').after(fieldDates);
+  const billingDates=document.createElement('div');billingDates.className='review-fields';
+  panels[3].querySelector('h3').after(billingDates);
+  for(const [prefix,title] of [['ems','EMS'],['contents','Contents']]){
+   const start=activeForm.elements[prefix+'_start'].closest('label');start.firstChild.textContent=title+' work started';fieldDates.append(start);
+   fieldDates.insertAdjacentHTML('beforeend',field(title+' work completed',prefix+'_completed',f[prefix+'_completed'],'date'));
+   const billed=activeForm.elements[prefix+'_billed'].closest('label');billed.firstChild.textContent=title+' billing completed';billingDates.append(billed);
+  }
+  panels[1].querySelectorAll('h4').forEach(h=>h.textContent=h.textContent.startsWith('EMS')?'EMS handoff':'Contents handoff (if applicable)');
+  const orderedPanels=[panels[0],panels[2],panels[1],panels[3]];
+  const orderedTabs=[nav.children[0],nav.children[2],nav.children[1],nav.children[3]];
+  nav.replaceChildren(...orderedTabs);activeForm.append(...orderedPanels);
+  orderedTabs.forEach((button,index)=>button.onclick=()=>{
+   orderedPanels.forEach((p,j)=>p.hidden=j!==index);
+   orderedTabs.forEach((b,j)=>{b.setAttribute('aria-selected',String(j===index));b.tabIndex=j===index?0:-1;});
+   body.querySelector('.logs-review-detail')?.scrollTo(0,0);
+  });
   nav.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const buttons=Array.from(nav.children),index=buttons.indexOf(document.activeElement);const next=e.key==='Home'?0:e.key==='End'?3:(index+(e.key==='ArrowRight'?1:3))%4;buttons[next].click();buttons[next].focus();};
   activeForm.prepend(nav);activeForm.append(actionBar);
   for(const [key,s] of Object.entries(suggestions)){
@@ -164,7 +215,7 @@
    label.append(badge);input.addEventListener('input',()=>{badge.textContent='Edited by you — sources retained';});
    if(saved && s.value!=null && input.value!==s.value){
     const use=document.createElement('button');use.type='button';use.textContent='Use source suggestion';
-    use.onclick=()=>{input.value=s.value;input.dispatchEvent(new Event('input',{bubbles:true}));badge.textContent='Source suggestion applied — confirm';use.remove();};label.after(use);
+    use.onclick=()=>{input.value=s.value;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));badge.textContent='Source suggestion applied — confirm';use.remove();};label.after(use);
    }
    if(s.sources.length){
     const details=document.createElement('details');details.className='audit-source';
@@ -176,13 +227,16 @@
   const timingDetails=document.createElement('details');timingDetails.className='audit-timing';
   timingDetails.innerHTML='<summary>Initial note timing evidence</summary><div class="review-fields"></div>';
   const timingFields=timingDetails.querySelector('div');
-  for(const key of ['inspection_completed_at','initial_note_sent_at','timing_source']){const input=activeForm.elements[key];timingFields.append(input.closest('.audit-field')||input.closest('label'));}
+  const fieldTimeline=document.createElement('section');fieldTimeline.innerHTML='<h4>Inspection & field note</h4><p>The actual inspection time and the comment posting time are separate. Field-note posting starts the coordinator’s one-hour clock.</p><div class="review-fields"></div>';
+  for(const key of ['inspection_at','field_note_posted_at']){const input=activeForm.elements[key];fieldTimeline.querySelector('div').append(input.closest('.audit-field')||input.closest('label'));}
+  fieldTimeline.append(fieldTimingHint);panels[2].querySelector('h3').after(fieldTimeline);
+  for(const key of ['initial_note_sent_at','timing_source']){const input=activeForm.elements[key];timingFields.append(input.closest('.audit-field')||input.closest('label'));}
   (activeForm.elements.initial_note.closest('.audit-field')||activeForm.elements.initial_note.closest('label')).after(timingDetails);
   dialog.scrollTop=0;
   const changes=r.changes;
   if(changes){const summary=document.createElement('p');summary.textContent=`Since prior saved review: ${changes.comments.length} new/edited notes${changes.removed_comments?.length?' · '+changes.removed_comments.length+' removed notes':''}${changes.description?' · description changed':''}${changes.checklists?' · checklists changed':''}.`;library.prepend(summary);}
   const newIds=new Set(changes?.comments||[]);
-  const notes=()=>{const q=body.querySelector('[data-note-search]').value.toLowerCase();body.querySelector('[data-notes]').innerHTML=ev.comments.filter(a=>a.text.toLowerCase().includes(q)).map(a=>`<details><summary>${newIds.has(a.id)?'New/edited · ':''}${a.date.slice(0,10)>=f.period_start&&a.date.slice(0,10)<=f.period_end?'This period · ':''}${esc(a.date.slice(0,10))} · ${esc(a.author)} · ${esc(a.text.replace(/\s+/g,' ').slice(0,85))}</summary><pre>${esc(a.text)}</pre></details>`).join('')||'<p>No matching notes.</p>';};notes();body.querySelector('[data-note-search]').oninput=notes;
+  const notes=()=>{const q=body.querySelector('[data-note-search]').value.toLowerCase();body.querySelector('[data-notes]').innerHTML=ev.comments.filter(a=>a.text.toLowerCase().includes(q)).map(a=>`<details><summary>${newIds.has(a.id)?'New/edited · ':''}${a.date.slice(0,10)>=f.period_start&&a.date.slice(0,10)<=f.period_end?'This period · ':''}${esc(window.AuditFieldControls?.stamp(a.date)||a.date)} · ${esc(a.author)} · ${esc(a.text.replace(/\s+/g,' ').slice(0,85))}</summary><pre>${esc(a.text)}</pre></details>`).join('')||'<p>No matching notes.</p>';};notes();body.querySelector('[data-note-search]').oninput=notes;
   const days=()=>{for(const p of ['ems','contents']){const a=activeForm.elements[p+'_start'].value,b=activeForm.elements[p+'_billed'].value;body.querySelector('[data-'+p+'-days]').textContent=a&&b?`${Math.round((new Date(b)-new Date(a))/86400000)} days from start to billed`:'Days: unknown — start and billed dates required';}};days();activeForm.addEventListener('input',days);
   const propose=()=>{
    const el=activeForm.elements,scope=el.scope.value;
@@ -196,7 +250,7 @@
    el.decision.value=decision;
    const lane=decision==='billed'?r.lanes.find(l=>l.month===el.billed_month.value):decision==='questions'?r.lanes.find(l=>l.name.trim().toUpperCase()==='QUESTIONS'):null;
    el.destination.value=lane?.id||'';
-   status.textContent=`Proposed disposition: ${decision==='hold'?'leave in place':decision==='questions'?'Questions':'billed month '+el.billed_month.value}. Review before confirming.`;
+   status.textContent=`Proposed next step: ${decision==='hold'?'leave in place':decision==='questions'?'Questions':'billed month '+el.billed_month.value}. Review before confirming.`;
   };
   for(const key of ['billing_status','billing_conflict','scope','ems_billed','contents_billed','other_billed'])activeForm.elements[key].addEventListener('change',propose);
   body.querySelector('[data-filing-division]')?.addEventListener('change',event=>{
@@ -204,23 +258,47 @@
    for(const key of ['billing_checked','identity_checked','all_confirmed'])activeForm.elements[key].checked=false;
    propose();
   });
-  body.querySelector('[data-back]').onclick=()=>{if(!hasUnsavedChanges()||confirm('Return to queue? Unsaved changes will be lost.'))run(showQueue);};
+  body.querySelector('[data-back]').onclick=()=>{toolsMenu.open=!toolsMenu.open;};
   body.querySelector('[data-open]').onclick=()=>parent.postMessage({type:'linguar-open-job',focus:ev.card.name,cardId:ev.card.id},location.origin);
+  body.querySelector('[data-open]').oncontextmenu=event=>window.OneLossPopout.menu(event,'pipeline',{cardId:ev.card.id,client:ev.card.name});
+  window.AuditFieldControls?.attach(activeForm,ev.comments);
+  window.AuditCommentLinks?.protectForm(activeForm,r.links);
+  const linkedChanged=links=>{
+   selected.links=links;
+   window.AuditCommentLinks?.protectForm(activeForm,links);
+   for(const [key,link] of Object.entries(links.items||{})){
+    const input=activeForm.elements[key];if(!input)continue;input.value=link?.value||'';
+    input.dispatchEvent(new Event('change',{bubbles:true}));input.dispatchEvent(new Event('input',{bubbles:true}));
+    if(key==='initial_note_sent_at')activeForm.elements.missed_by.value=link?.comment?.author||'';
+   }
+   for(const key of ['front_checked','field_checked','estimating_checked','billing_checked','all_confirmed'])activeForm.elements[key].checked=false;
+   status.textContent='Comment links saved to the shared database. Review the updated values, then save your audit draft. Trello unchanged.';
+  };
   savedForm=JSON.stringify(formFields());
-  const save=async()=>{const fields=formFields();const saved=await api('logs_save',ev.card.id,ev.revision,fields);selected.draft=saved.draft;savedForm=JSON.stringify(fields);status.textContent='Audit draft saved on this PC. Trello unchanged.';};
+  let workspace;
+  const save=async()=>{const invalid=activeForm.querySelector(':invalid');if(invalid){const panel=invalid.closest('[role=tabpanel]');if(panel)document.getElementById(panel.getAttribute('aria-labelledby')).click();for(let p=invalid.parentElement;p&&p!==activeForm;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;invalid.reportValidity();throw Error('Check the highlighted date or time before saving.');}const fields=formFields();const saved=await api('logs_save',ev.card.id,ev.revision,fields,selected.draft?.version??null,selected.links?.version??null);selected.draft=saved.draft;queue.drafts[ev.card.id]=saved.draft;savedForm=JSON.stringify(fields);workspace?.refreshQueue();status.textContent='Audit draft saved to the shared database. Trello unchanged.';};
   body.querySelector('[data-save]').onclick=()=>run(save);
   body.querySelector('[data-preview]').onclick=()=>run(async()=>{
    if(!filingDivisions.includes(activeForm.elements.scope.value)){
     nav.lastElementChild.click();body.querySelector('[data-filing-division]')?.focus();
     status.textContent='Choose the division for filing before previewing this audit.';return;
    }
-   await save();const p=await api('logs_preview',ev.card.id);showPreview(p.operation);
+   await save();const p=await api('logs_preview',ev.card.id,selected.draft?.version??null);showPreview(p.operation);
   });
+  if(window.LogsReviewWorkspace){
+   const openButton=body.querySelector('[data-open]'),backButton=body.querySelector('[data-back]');
+   // Original evidence stays available; comments additionally remain visible beside the form.
+   library.querySelector('summary').textContent='Original description, checklists & source notes';
+   workspace=LogsReviewWorkspace.mount({host:body,queue,current:id,form:activeForm,library,evidence:ev,comments:ev.comments,onAuditLinks:linkedChanged,links:r.links,
+    openButton,backButton,query:reviewQuery,onQuery:value=>{reviewQuery=value;},
+    onSelect:next=>{if(!hasUnsavedChanges()||confirm('Switch jobs? Unsaved audit changes will be lost.'))run(()=>openCard(next));},
+    onOpenComment:commentId=>parent.postMessage({type:'linguar-open-job',focus:ev.card.name,cardId:ev.card.id,commentId},location.origin)});
+  }
  }
  function showPreview(op){
   operation=op;activeForm=null;
   status.textContent=op.status==='done'?'Publication completed.':op.status==='superseded'?'Replaced by a newly reviewed audit.':`Review before publishing · ${op.status}`;
-  body.innerHTML=`<h3>${esc(op.name)} → ${esc(op.destination_name)}</h3><pre>${esc(op.comment)}</pre><p>${op.decision==='hold'?'Posts the audit note and leaves the card in place.':'Posts the audit note, then moves this exact card.'} Payment is recorded separately.</p><div class="actions"><button data-publish class="primary" ${['done','superseded'].includes(op.status)?'disabled':''}>${op.status==='preview'?'Confirm audit & disposition':'Retry / verify publication'}</button>${op.status==='preview'?'<button data-discard>Discard preview</button>':''}<button data-queue>Queue</button></div>`;
+  body.innerHTML=`<h3>${esc(op.name)} → ${esc(op.destination_name)}</h3><pre>${esc(op.comment)}</pre><p>${op.decision==='hold'?'Posts the audit note and leaves the card in place.':'Posts the audit note, then moves this exact card.'} Payment is recorded separately.</p><div class="actions"><button data-publish class="primary" ${['done','superseded'].includes(op.status)?'disabled':''}>${op.status==='preview'?'Confirm audit & next step':'Retry / verify publication'}</button>${op.status==='preview'?'<button data-discard>Discard preview</button>':''}<button data-queue>Queue</button></div>`;
   body.querySelector('[data-publish]').onclick=()=>run(async()=>{const r=await api('logs_publish',op.id,true);showPreview(r.operation);});
   body.querySelector('[data-discard]')?.addEventListener('click',()=>run(async()=>{await api('logs_cancel_preview',op.id);await openCard(op.card_id);}));
   body.querySelector('[data-queue]').onclick=()=>run(showQueue);

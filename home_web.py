@@ -220,7 +220,7 @@ def _asset_folder_for(key: str) -> str:
         return "../audit_web_assets/index.html?surface=daily"
     if key == "operations":
         return "../operations_web_assets/index.html?embedded=1"
-    if key == "run_doc_editor" and _is_dev_runtime():
+    if key == "run_doc_editor":
         return "../run_doc_editor_web_assets/calendar_preview.html?live=1"
     folder = ASSET_FOLDER.get(key, f"{key}_web_assets")
     return f"../{folder}/index.html"

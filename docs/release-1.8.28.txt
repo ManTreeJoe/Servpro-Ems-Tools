@@ -1,0 +1,15 @@
+OneLoss 1.8.28
+
+- Shared Logs audit with guided fields, comment-linked evidence, Pacific timestamps, and editable event dates.
+- Task timing summaries and drill-downs for incoming loss, insured contact, on-site arrival, field notes, coordinator response, work and billing.
+- Approved Schedule calendar in Main, with the shared roster, linked-job previews, imported job information, and multiple-visit fixes.
+- Floating comment threads, archived-card thread access, and combined OneLoss/Trello/saved Run history.
+- Snapshot embedded job-card actions and photo-pull popup fixes.
+- Safer CompanyCam photo-list transport recovery; uncertain imports are not automatically replayed.
+- Independent loss-type editing and guarded Trello synchronization.
+- Conditional, board-scoped downloads and removal of redundant post-sync refreshes to reduce database bandwidth.
+
+The new PDF/photo document editor is not included. Historical data is retained.
+The shared backend changes are already deployed; this installer does not run database migrations.
+All desktops need this update to benefit from the lower-bandwidth board reader.
+Previously consumed bandwidth cannot be reversed. The installer is not code-signed.

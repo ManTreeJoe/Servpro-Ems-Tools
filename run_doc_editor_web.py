@@ -56,6 +56,14 @@ class Api:
                 result['error'] = 'This history link changed elsewhere. Close this Run and reopen it before correcting the link.'
             return result
 
+    def schedule_job_detail(self, job_id, expected_context):
+        import schedule_store
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            return {'ok': True, 'job': store.job_detail(job_id)}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
     def schedule_search(self, query, expected_context):
         import schedule_store
         try:

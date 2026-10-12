@@ -45,8 +45,9 @@ def test_apa_toolbar_uses_short_labels_without_squashing_buttons():
     html = (root / "apa_web_assets" / "index.html").read_text(encoding="utf-8")
     css = (root / "apa_web_assets" / "app.css").read_text(encoding="utf-8")
 
-    for label in (">Sync Lanes<", ">Teams<", ">EOD<", ">Paste<", ">Refresh<"):
+    for label in (">Sync Lanes<", ">Teams<", ">EOD<", ">Refresh<"):
         assert label in html
+    assert '>Paste<' not in html
     for verbose in ("Refresh lanes from Trello", "Send Teams (all)",
                     "Send EOD email", "Bulk paste"):
         assert f">{verbose}<" not in html

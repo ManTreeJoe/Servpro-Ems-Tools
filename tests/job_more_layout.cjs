@@ -11,7 +11,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
   for(const width of [1440,1280,900,600]){
    await page.setViewportSize({width,height:1000});
    const more=await page.locator('.more-quick-menu .tool-menu-trigger').boundingBox();
-   const first=await page.locator('.quick-primary-actions [data-add-job-log]').boundingBox();
+   const first=await page.locator('.quick-primary-actions [data-import-files]').boundingBox();
    assert.equal(await page.locator('[data-initial-notes]').isVisible(),false,'One-time notes stay in More');
    assert.ok(Math.abs(more.y-first.y)<3,`More should remain on first action row at ${width}px; got ${more.y} vs ${first.y}`);
    await page.locator('.more-quick-menu .tool-menu-trigger').click();

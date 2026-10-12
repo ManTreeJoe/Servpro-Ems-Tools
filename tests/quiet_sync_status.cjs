@@ -8,7 +8,8 @@ const assert = require('node:assert/strict');
     await page.setContent('<div id="background-sync-state"><span></span></div>');
     await page.addScriptTag({path: path.resolve('pipeline_web_assets/app.js')});
     await page.evaluate(() => {
-      refreshSavedBoardInBackground = async () => {};
+      window.extraBoardReads = 0;
+      refreshSavedBoardInBackground = async () => { window.extraBoardReads++; };
       refreshOpenWorkspaceComments = async () => {};
       updateBackgroundSyncIndicator();
     });
@@ -24,6 +25,8 @@ const assert = require('node:assert/strict');
     assert.match(await badge.getAttribute('title'), /Trello timed out/);
     await page.evaluate(() => onBackgroundSyncDone({detail: {ok: true, mode: 'shared'}}));
     assert.equal(await badge.innerText(), 'Hub current');
+    assert.equal(await page.evaluate(() => window.extraBoardReads), 0,
+      'Sync completion must not repeat the board download');
     console.log('PASS: direct mode, shared mode and genuine sync failures are distinguished.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

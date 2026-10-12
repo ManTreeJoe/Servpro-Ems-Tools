@@ -28,6 +28,7 @@ def test_deferred_pin_returns_without_pulling_job_info(monkeypatch):
 
 
 def test_local_pin_mirror_does_not_repeat_shared_writes(monkeypatch):
+    monkeypatch.setattr('division_cards.validate_pin', lambda card, division: card)
     state = {}
     monkeypatch.setattr(persistence, '_load', lambda: state)
     monkeypatch.setattr(persistence, '_save', lambda s: None)

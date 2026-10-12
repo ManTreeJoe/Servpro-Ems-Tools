@@ -70,7 +70,7 @@ def test_contents_activity_not_default_employee():
     assert s['ems_estimator']['value'] is None
 
 def test_explicit_timestamps_only_for_timing():
-    s=suggest(evidence('Inspection completed: 2026-09-17T10:00:00-07:00\nInitial note sent: 2026-09-17T11:10:00-07:00'))
+    s=suggest(evidence('Field note posted: 2026-09-17T10:00:00-07:00\nInitial note sent: 2026-09-17T11:10:00-07:00'))
     assert s['initial_note']['value']=='No'
     s=suggest(evidence('Arrival Time: 10:00\nInitial note sent on time: Yes'))
     assert s['initial_note']['value'] is None

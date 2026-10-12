@@ -7,6 +7,7 @@ def test_timing_boundary_missing_and_timezone():
     assert timing('2026-09-17','2026-09-17')['status']=='Unverified'
     assert timing('2026-09-17T10:00','2026-09-17T09:00')['status']=='Unverified'
     assert timing('2026-09-17T10:00','2026-09-17T11:00Z')['status']=='Unverified'
+    assert timing('2026-09-17T10:00','2026-09-17T11:00')['status']=='Unverified'
 
 def test_matching_claim_division_unit_and_names():
     card={'name':'EMS - Example Unit 101','desc':'Claim #: ABC123\nDivision: EMS'}

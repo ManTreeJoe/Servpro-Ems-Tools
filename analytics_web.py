@@ -45,6 +45,21 @@ class Api:
         except Exception:
             return {'ok':False, 'error':'Jobs queues could not load. Retry or check your connection.'}
 
+    def load_audit_timing(self):
+        """Office-scoped shared facts; no imports, writes, or Trello requests."""
+        from logs_audit_storage import SharedAuditStorage
+        from audit_timing_dashboard import report, card_names
+        department = config.active_department()
+        try:
+            store = SharedAuditStorage(persistence, department).read_store()
+            ids = set(store.get('drafts', {})) | set(store.get('links', {}))
+            result = report(store, card_names(ids, department))
+            if config.active_department() != department:
+                raise ValueError('Workspace changed')
+            return {**result, 'location': department}
+        except Exception:
+            return {'ok': False, 'error': 'Shared timing unavailable. Check your connection and office access, then retry.'}
+
     def flow_history(self, card_id):
         import lane_analytics
         import pipeline_store
@@ -64,26 +79,32 @@ class Api:
 
     def _logs_call(self, method, *args):
         from logs_audit import LogsAudit
+        from logs_audit_storage import SharedAuditStorage
         import trello_client
         try:
-            return getattr(LogsAudit(trello_client, persistence, config.active_department), method)(*args)
+            storage = SharedAuditStorage(persistence, config.active_department())
+            return getattr(LogsAudit(trello_client, storage, config.active_department), method)(*args)
         except ValueError as ex:
             return {'ok': False, 'error': str(ex)}
         except Exception:
             # Transport errors may contain credential-bearing URLs.
-            return {'ok': False, 'error': 'Trello or local storage could not complete the request. Refresh and check publication status before retrying.'}
+            return {'ok': False, 'error': 'Trello or shared audit storage could not complete the request. Refresh and check publication status before retrying.'}
 
     def logs_queue(self):
         return self._logs_call('queue')
 
+    def audit_comment_links(self, card_id, command=None):
+        from audit_comment_links import call
+        return call(card_id, command)
+
     def logs_inspect(self, card_id, period_start=None, period_end=None):
         return self._logs_call('inspect', card_id, period_start, period_end)
 
-    def logs_save(self, card_id, revision, fields):
-        return self._logs_call('save', card_id, revision, fields)
+    def logs_save(self, card_id, revision, fields, expected_version=None, link_version=None):
+        return self._logs_call('save', card_id, revision, fields, expected_version, link_version)
 
-    def logs_preview(self, card_id):
-        return self._logs_call('preview', card_id)
+    def logs_preview(self, card_id, expected_version=None):
+        return self._logs_call('preview', card_id, expected_version)
 
     def logs_publish(self, operation_id, confirmed=False):
         return self._logs_call('publish', operation_id, confirmed)
@@ -106,12 +127,13 @@ class Api:
             return {'ok':False,'error':'Open Analytics in the desktop app to export Excel.'}
         import webview
         from logs_audit import LogsAudit, LOCK
+        from logs_audit_storage import SharedAuditStorage
         from logs_audit_excel import records_for_period, save_new_copy
         import trello_client
         try:
             location=config.active_department()
             with LOCK:
-                store=LogsAudit(trello_client,persistence,config.active_department)._store()
+                store=LogsAudit(trello_client,SharedAuditStorage(persistence,location),config.active_department)._store()
                 records=records_for_period(store,start,end)
             if not records:
                 return {'ok':False,'error':'No saved audit forms for this period. Save the reviews first; exporting does not mark them audited.'}

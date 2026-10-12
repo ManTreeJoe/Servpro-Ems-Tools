@@ -9,6 +9,7 @@ window.OneLossScheduleLive = function ({render, notice}) {
     return result;
   };
   return {
+    async jobDetail(id){return (await call('schedule_job_detail',id,context)).job;},
     confirmationPreview(day){return call('schedule_confirmation_preview',day,context);},
     confirmDay(command){return call('schedule_confirm_day',command,context);},
     history(start,end){return call('schedule_history',start,end,context);},

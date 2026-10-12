@@ -19,6 +19,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
     schedule_load:async()=>({ok:true,context:'ctx',department:'IE',records:window.rows}),
     schedule_realtime:async()=>({ok:true,url:'https://example.supabase.co',key:'public',token:'user-token',department:'IE'}),
     schedule_search:async()=>({ok:true,jobs:[window.searchJob||{id:'job1',job_id:'job1',title:'Test real job',address:'123 Test Street',insurance:'AAA',activities:[]}]}),
+    schedule_job_detail:async(id)=>({ok:true,job:{id,job_id:id,title:id==='job2'?'Second job':'Test real job',address:'123 Test Street',contact:'Actual customer',email:'customer@example.com',trello_cards:['aaaaaaaaaaaaaaaaaaaaaaaa'],info_sections:[{name:'Customer Information',fields:[{id:'customer_name',label:'Customer name',value:'Actual customer'}]},{name:'Property Details',fields:[{id:'date_received',label:'Date received',value:'2026-10-09'}]}]}}),
     schedule_pick_document:async()=>({ok:true,preview:{import_key:'batch',bulk_entries:[{entry_title:'Second job',visit:{job_id:null,notes:'Second job: Demo needed',group:'TBS Mitigation',date:null}}],skipped:[{}],source_filename:'Monday Run.docx',section_labels:{tbs_mitigation:'TBS Mitigation',monitor:'Monitor'},visits:[
       {draft_id:'50000000-0000-4000-8000-000000000001',raw_text:'Second job: Demo needed',section:'tbs_mitigation',queue:'tbs',group:'TBS Mitigation',proposed_date:null,skip_reason:''},
       {draft_id:'skip',raw_text:'Crossed-out work',section:'monitor',skip_reason:'Crossed out in document'}],tables:[],blockers:[]}}),
@@ -120,7 +121,23 @@ const assert=require('node:assert/strict'),path=require('node:path'),os=require(
   assert.equal(await page.locator('#run-group').inputValue(),'TBS Mitigation');
   assert.match(await page.locator('#notes').inputValue(),/Second job: Demo needed/);
   await page.locator('#schedule-link-search').fill('Second');
-  await page.locator('#schedule-link-results button').click();
+  const linkResult=page.locator('#schedule-link-results .schedule-job-result').first();
+  await linkResult.locator('button').first().click({button:'right'});
+  await page.getByRole('dialog',{name:'Job preview',exact:true}).getByText('Actual customer',{exact:true}).waitFor();
+  await page.getByRole('dialog',{name:'Job preview',exact:true}).getByText('10/09/2026',{exact:true}).waitFor();
+  assert.equal(await page.locator('#job').inputValue(),'Second job');
+  await page.screenshot({path:path.join(os.tmpdir(),'schedule-job-preview.png')});
+  await page.setViewportSize({width:390,height:844});
+  const previewBounds=await page.getByRole('dialog',{name:'Job preview',exact:true}).boundingBox();
+  assert.ok(previewBounds.x>=0&&previewBounds.x+previewBounds.width<=390,'Preview fits narrow screens');
+  await page.setViewportSize({width:1400,height:950});
+  await page.getByRole('button',{name:'Close preview',exact:true}).click();
+  await linkResult.getByRole('button',{name:'Preview Second job',exact:true}).click();
+  await page.getByRole('button',{name:'Use this job',exact:true}).click();
+  assert.equal(await page.locator('#contact').inputValue(),'Actual customer');
+  assert.equal(await page.locator('#email').inputValue(),'customer@example.com');
+  await page.locator('#linked-job-details summary').click();
+  await page.locator('#linked-job-details').getByText('Actual customer',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Save draft',exact:true}).click();
   await page.locator('#editor').waitFor({state:'hidden'});
   const imported=await page.evaluate(()=>window.savedCommands.at(-1));

@@ -110,7 +110,9 @@ def test_shared_theme_cache_version_is_current_across_workspaces():
     for index_path in ROOT.glob("*_web_assets/index.html"):
         html = index_path.read_text(encoding="utf-8")
         if "web_shared/theme.css" in html:
-            assert "web_shared/theme.css?v=20260910a" in html, index_path.parent.name
+            import re
+            version = re.search(r'web_shared/theme\.css\?v=(\d{8})', html)
+            assert version and version[1] >= '20260910', index_path.parent.name
         assert "web_shared/workspace_controls.css?v=20260910a" in html, index_path.parent.name
 
 

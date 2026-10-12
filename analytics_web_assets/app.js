@@ -55,9 +55,11 @@ async function load(force=false){
  const token=++state.request;$('#status').textContent='Loading current records…';
  const flow=state.view==='flow';
  $('#flow').hidden=!flow;
+ $('#audit-timing').hidden=!flow;
  for(const id of ['filters','records','view','coverage'])$('#'+id).hidden=flow;
  renderNavigation();
- if(flow){$('#export').disabled=true;return window.AnalyticsFlow.load(force);}
+ if(flow){$('#export').disabled=true;window.AuditTimingDashboard?.load();return window.AnalyticsFlow.load(force);}
+ window.AuditTimingDashboard?.cancel();
  window.AnalyticsFlow?.cancel();
  const queue=reviewViews.includes(state.view),statusFilter=$('#filters [name=status]');
  statusFilter.disabled=queue;

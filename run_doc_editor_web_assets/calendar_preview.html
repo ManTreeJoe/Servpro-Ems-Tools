@@ -31,7 +31,8 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <label>Site address<input id="address"></label>
 <label>Contact name<input id="contact"></label><label>Contact phone<input id="phone" type="tel"></label>
 <label>Insurance carrier<input id="insurance"></label><label>Claim number<input id="claim"></label>
-</div></fieldset>
+<label>Email<input id="email" readonly></label>
+</div><div id="linked-job-details"></div></fieldset>
 <fieldset id="schedule-link-controls" hidden><legend>Job / Trello link</legend><p id="schedule-link-status"></p><label>Find or change linked job<input id="schedule-link-search" type="search" placeholder="Search name or address"></label><div id="schedule-link-results"></div><button type="button" class="btn" id="schedule-unlink">Remove link</button></fieldset>
 <fieldset><legend>Schedule</legend><div class="edit-grid">
 <label>Section<select id="queue"><option value="scheduled">Scheduled</option><option value="tbs">To be scheduled</option><option value="pending">Pending</option><option value="hold">On hold</option></select></label>
@@ -55,6 +56,8 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 #editor{width:min(850px,calc(100% - 32px));padding:0;font-family:var(--font-body)}#visit-form{padding:20px;gap:18px}#visit-form header p{font-size:12px;color:var(--text-muted);margin:6px 0 0}#visit-form fieldset{border:1px solid var(--border);border-radius:6px;padding:14px;min-width:0}#visit-form legend{font-weight:600;font-size:13px;padding:0 6px}.edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.edit-wide{grid-column:1/-1}#visit-form label{font-size:12px;min-width:0}#visit-form input,#visit-form select,#visit-form textarea{width:100%;box-sizing:border-box;font:13px var(--font-body)}#visit-form textarea{background:var(--surface-2);color:var(--text);border:1px solid var(--border);padding:9px;border-radius:5px;resize:vertical}#visit-form footer{position:sticky;bottom:0;background:var(--surface);padding:12px 0;border-top:1px solid var(--border)}#activity-picker{position:relative;margin-bottom:12px}#activity-options{position:absolute;z-index:5;top:100%;left:0;width:min(450px,100%);background:var(--surface);padding:12px;border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow-1);display:flex;gap:8px;flex-wrap:wrap}#activity-options button{border-radius:16px}#activity-options [aria-pressed=true]{background:var(--green);color:white;border-color:var(--green-hover)}#activity-assignments{display:grid;grid-template-columns:1fr 1fr;gap:12px}#activity-error{color:var(--red);font-size:12px;margin:8px 0 0}@media(max-width:600px){.edit-grid,#activity-assignments{grid-template-columns:1fr}}
 </style>
 <link rel="stylesheet" href="schedule_editor.css?v=20261007surfaces">
+<link rel="stylesheet" href="schedule_job_preview.css">
+<script src="schedule_job_preview.js"></script>
 <script src="calendar_drag.js"></script>
 <script src="weekly_calendar.js?v=20261007return"></script>
 <script src="../web_shared/iframe_shim.js?v=20261005schedule"></script>
@@ -194,20 +197,31 @@ async function moveVisit(id,day,placement={}){
  field('sync-status').textContent=failure?'Move not saved':'Move saved';
  if(failure){const notice=document.querySelector('.preview-note');notice.textContent=`Move not saved. ${failure} The previous position was restored while checking the server. Review the current position before retrying.`;notice.setAttribute('role','alert');}
 }
-const extraFields=['address','contact','phone','insurance','claim','equipment','access','notes'];
+const extraFields=['address','contact','phone','insurance','claim','email','equipment','access','notes'];
+const jobFactFields=['address','contact','phone','insurance','claim','email'];
+function fillJobFacts(job){jobFactFields.forEach(key=>field(key).value=job?.[key]||'');ScheduleJobPreview.selected(field('linked-job-details'),job);}
+function selectLinkedJob(job){
+ if(!field('editor').open||saving)return;
+ linkSequence++;editingRow.job_id=job.job_id;editingRow.trello_cards=job.trello_cards||[];
+ field('job').value=job.title;field('job').readOnly=true;fillJobFacts(job);
+ field('schedule-link-status').textContent='Selected '+job.title+' — link changes when you save. Saved Trello links follow this job.';field('schedule-link-results').textContent='';
+}
 let linkSequence=0;
 field('schedule-link-search').oninput=async()=>{
  const sequence=++linkSequence,query=field('schedule-link-search').value.trim(),results=field('schedule-link-results');
  if(query.length<2){results.textContent='';return;}results.textContent='Searching jobs…';
  try{const jobs=await live.search(query);if(sequence!==linkSequence)return;
-   results.replaceChildren(...jobs.map(job=>{const button=document.createElement('button');button.type='button';button.className='btn';button.textContent=job.title+' · '+(job.address||'');button.onclick=()=>{
-     editingRow.job_id=job.job_id;field('job').value=job.title;field('job').readOnly=true;
-     ['address','contact','phone','insurance','claim'].forEach(key=>field(key).value=job[key]||'');
-     field('schedule-link-status').textContent='Selected '+job.title+' — link changes when you save. Saved Trello links follow this job.';results.textContent='';
-   };return button;}));if(!jobs.length)results.textContent='No matching jobs.';
+   results.replaceChildren(...jobs.map(job=>{const row=document.createElement('div');row.className='schedule-job-result';
+     const button=document.createElement('button');button.type='button';button.className='btn';button.textContent=job.title;
+     const detail=document.createElement('small');detail.textContent=[job.address,job.insurance,job.claim].filter(Boolean).join(' · ')||'No saved address or insurance — check Preview before linking';button.append(detail);
+     button.onclick=async()=>{const version=++linkSequence;button.disabled=true;try{const current=await live.jobDetail(job.job_id);if(version===linkSequence)selectLinkedJob(current);}catch(error){if(version===linkSequence)field('schedule-link-status').textContent=error.message;}finally{button.disabled=false;}};
+     const preview=document.createElement('button');preview.type='button';preview.className='btn';preview.textContent='Preview';preview.setAttribute('aria-label','Preview '+job.title);
+     const show=()=>ScheduleJobPreview.open(job,id=>live.jobDetail(id),selectLinkedJob);
+     preview.onclick=show;button.oncontextmenu=event=>{event.preventDefault();show();};row.append(button,preview);return row;
+   }));if(!jobs.length)results.textContent='No matching jobs.';
  }catch(error){if(sequence===linkSequence)results.textContent=error.message;}
 };
-field('schedule-unlink').onclick=()=>{editingRow.job_id=null;field('job').readOnly=false;field('schedule-link-status').textContent='Needs link — save to keep this as an unlinked schedule entry.';['address','contact','phone','insurance','claim'].forEach(key=>field(key).value='');};
+field('schedule-unlink').onclick=()=>{linkSequence++;editingRow.job_id=null;field('job').readOnly=false;field('schedule-link-status').textContent='Needs link — save to keep this as an unlinked schedule entry.';fillJobFacts(null);};
 function renderGroups(chosen){field('run-group').innerHTML=runGroups[field('queue').value].map(g=>`<option>${safe(g)}</option>`).join('');if(runGroups[field('queue').value].includes(chosen))field('run-group').value=chosen;else if(field('queue').value==='scheduled')field('run-group').value='Work To Be Performed';field('date').required=field('queue').value==='scheduled';}
 field('queue').onchange=()=>renderGroups();
 function renderActivities(){
@@ -228,8 +242,10 @@ function openEditor(id,day,schedule=false,placement=null){
  field('job').value=row?.title||'';field('queue').value=placement?.queue||(schedule?'scheduled':row?.queue||'scheduled');field('date').value=OneLossWeeklyCalendar.displayDate(schedule?day:row?.date||day||today);field('date').setCustomValidity('');
  field('time').value=row?.time||'';
  extraFields.forEach(key=>field(key).value=row?.[key]||'');
+ ScheduleJobPreview.selected(field('linked-job-details'),row?.job_id?row:null);
  activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(placement?.group||row?.group);field('activity-picker').open=false;field('activity-error').textContent='';
  field('editor').showModal();field('job').focus();
+ if(liveMode&&row?.job_id){const version=linkSequence;live.jobDetail(row.job_id).then(job=>{if(version===linkSequence&&field('editor').open&&editingRow?.job_id===job.job_id)fillJobFacts(job);}).catch(error=>{if(version===linkSequence&&field('editor').open)field('schedule-link-status').textContent='Could not refresh job details: '+error.message;});}
  ScheduleCrew.load();
 }
 field('cancel').onclick=()=>{if(!saving)field('editor').close();};

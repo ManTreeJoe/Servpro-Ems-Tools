@@ -1,6 +1,6 @@
 /* The real job-card conversation, hosted persistently by Snapshot. */
 .snapshot-card-mode,.snapshot-card-mode body {height:auto;min-height:0;overflow:hidden}
-.snapshot-card-mode .audit-overlay {position:relative;inset:auto;display:block;padding:0;background:none;backdrop-filter:none;height:auto;min-height:0}
+.snapshot-card-mode .audit-overlay:has(> .audit-card) {position:relative;inset:auto;display:block;padding:0;background:none;backdrop-filter:none;height:auto;min-height:0}
 .snapshot-card-mode .audit-card,
 .snapshot-card-mode .audit-card.full-height-comments {display:flex;flex-direction:column;width:100%;height:auto;max-height:none;min-height:0;border:0;border-radius:0;box-shadow:none}
 .snapshot-card-mode .audit-card .modal-body {display:block;flex:none;min-height:0;overflow:visible}

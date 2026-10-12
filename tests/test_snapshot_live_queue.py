@@ -29,6 +29,6 @@ def test_snapshot_form_has_visible_comments_button():
 
     assert 'id="snapshot-comments-btn"' in html
     assert "function toggleSnapshotComments" in js
-    assert "AuditDetail.syncCommentsDrawer" in js
-    assert "AuditDetail.toggleCommentsDrawer" in js
+    assert "SnapshotJobWorkspace?.select" in js
+    assert 'job_workspace.js' in html
     assert "refreshSnapshotCommentsButton()" in js

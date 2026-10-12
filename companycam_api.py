@@ -99,7 +99,19 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
     # Session identity wins over stale machine credentials. Do not fall back
     # to the PC key after a gateway failure: that would change who owns a write.
     if cloud_gateway_available():
-        return _cloud_call(path, params=params, method=method, data=data)
+        from supabase_client import SupabaseError
+        # The gateway uses HTTP POST even for provider reads. Retry only this
+        # semantic GET on transport failure, never replay the enclosing import
+        # (which may already have changed tags), or fall back to another actor.
+        listing = method.upper() == 'GET' and re.fullmatch(r'/projects/[^/]+/photos', path)
+        retries = min(2, max(0, _max_retries)) if listing else 0
+        for attempt in range(retries + 1):
+            try:
+                return _cloud_call(path, params=params, method=method, data=data)
+            except SupabaseError as ex:
+                if ex.status != 0 or attempt >= retries:
+                    raise
+                time.sleep(2 ** attempt)
 
     qs = urllib.parse.urlencode(params or {}, doseq=True)
     url = f"{API_BASE}{path}" + (f"?{qs}" if qs else "")
@@ -1743,10 +1755,10 @@ def pull_new_photos(project_id, dest_dir, *, since_epoch="auto", job="",
                 _operation[snapshot_key] = photos
     except urllib.request.HTTPError as ex:
         return {"ok": False, "error": f"HTTP {ex.code}", "downloaded": 0,
-                "skipped": 0, "files": [], "latest": None}
+                "skipped": 0, "files": [], "latest": None, "listing_failed": True}
     except Exception as ex:
         return {"ok": False, "error": str(ex), "downloaded": 0,
-                "skipped": 0, "files": [], "latest": None}
+                "skipped": 0, "files": [], "latest": None, "listing_failed": True}
 
     if only_ids is not None:
         # Pulling a chosen subset (see plan_pull): the user picked which
