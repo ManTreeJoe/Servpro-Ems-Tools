@@ -1,0 +1,7 @@
+OneLoss 1.8.30 — board sync hotfix
+
+- Completed OneLoss moves no longer pin cards to old locations after a later Trello move. Shared reconciliation adopts fresh Trello locations and ordering without queuing an outbound move.
+- Pending OneLoss moves, archived/deleted placements, ambiguous provider locations, and cross-workplace boundaries remain protected. Snapshots started before a move acknowledgement cannot roll it back.
+- Conflicting-position errors name the moving card, destination lane, and affected neighboring cards, distinguishing missing positions from conflicting positions.
+
+The shared backend fix is deployed separately; the installer does not run migrations. Updates appear after the next successful server sync and Jobs refresh, not instantaneously. The new Dev-only board system is excluded. Existing jobs, files, and history are retained. Installer is not code-signed.

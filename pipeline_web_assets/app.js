@@ -1203,7 +1203,20 @@ async function onLaneDrop(ev) {
       targetCards = (lane.cards || []).filter(c => c.card_id !== drag.cardId);
       insertIndex = before ? targetCards.findIndex(c => c.card_id === before.dataset.cardId) : targetCards.length;
       position = positionForSlot();
-      if (position === null) throw Error('This lane has conflicting saved positions. Your card was not moved.');
+      if (position === null) {
+        const label = card => `“${card.name || card.client || card.card_id || 'Unnamed card'}”`;
+        const neighbors = [targetCards[insertIndex-1], targetCards[insertIndex]].filter(Boolean);
+        const invalid = neighbors.filter(c => !Number.isFinite(c.pos) || c.pos <= 0);
+        let reason;
+        if (insertIndex < 0) {
+          reason = `The drop-target card (${before?.dataset.cardId || 'unknown'}) is no longer in this lane.`;
+        } else if (invalid.length) {
+          reason = `Missing or invalid saved position for ${invalid.map(label).join(' and ')}.`;
+        } else {
+          reason = `Conflicting saved positions between ${neighbors.map(label).join(' and ')}; no safe space is available at this drop point.`;
+        }
+        throw Error(`Could not move ${label({name:drag.name,card_id:drag.cardId})} to “${lane.name || toLane || toListId}”. ${reason} Your card was not moved.`);
+      }
     } catch (error) {
       renderBoard(); setStatus(error.message || 'Connection unavailable. Your card was not moved.', 'warn'); return;
     } finally { recoveringCardOrder = false; }

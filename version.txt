@@ -1,6 +1,6 @@
 {
-  "version": "1.8.29",
-  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.29",
-  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.29/Linguar-Hub-Setup-1.8.29.exe",
-  "notes": "Prefilled unsigned forms with preview and download; client ownership transfers; Windows and Trello notification fixes and filters; improved Operations statistics; cleaner settings and update notices; unified thread scrolling. Board-system redesign is not included."
+  "version": "1.8.30",
+  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.30",
+  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.30/Linguar-Hub-Setup-1.8.30.exe",
+  "notes": "Board sync hotfix: completed OneLoss moves no longer override newer Trello locations or ordering. Pending moves and archived cards remain protected. Move errors identify the affected cards and lane. New Dev boards are not included."
 }

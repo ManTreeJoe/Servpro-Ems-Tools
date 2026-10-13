@@ -36,5 +36,19 @@ const path=require('node:path'),assert=require('node:assert/strict');
   const bounds=await page.locator('#placement-action .overlay-panel').boundingBox();
   assert.ok(bounds.width<=480 && bounds.x>=0,'Narrow dialog must fit');
   console.log('PASS move destination, conflict retention, archived-only delete confirmation, narrow layout');
+  const diagnostic = await page.evaluate(async()=>{
+    const cards=[{card_id:'first',name:'Neighbor One',pos:100},{card_id:'second',name:'Neighbor Two',pos:100}];
+    const fresh={ok:true,boards:[{lanes:[{list_id:'dest',name:'Review',cards}]}]};
+    state.board=fresh;state.drag={cardId:'moving',name:'Cannon Management',fromListId:'source'};
+    window.pywebview.api.board_view_shared_refresh=async()=>fresh;
+    window.pywebview.api.move_card=async()=>{throw Error('Must not save conflicting move');};
+    renderBoard=()=>{};setStatus=message=>{window.diagnostic=message;};
+    const lane=document.createElement('div');lane.dataset.listId='dest';lane.dataset.laneName='Review';
+    const before=document.createElement('div');before.className='kcard';before.dataset.cardId='second';lane.append(before);
+    await onLaneDrop({preventDefault(){},currentTarget:lane,clientY:-1});
+    return window.diagnostic;
+  });
+  for(const name of ['Cannon Management','Review','Neighbor One','Neighbor Two'])assert.ok(diagnostic.includes(name),diagnostic);
+  console.log('PASS conflicting drop names moved card, lane, and adjacent cards');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
