@@ -11,7 +11,10 @@ import re
 from datetime import datetime
 
 
-class Api:
+from client_ownership import ClientOwnershipApi
+
+
+class Api(ClientOwnershipApi):
     def __init__(self):
         self._window = None
 
@@ -58,7 +61,45 @@ class Api:
         add(re.sub(r"\s+\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\s*$", "", raw))
         return hints
 
-    def list_clients(self, query: str = "", division: str = "all",
+    def _shared_data(self):
+        import config, supabase_client as sb
+        from operations_data import OperationsData
+        scope = (config.active_department(), (sb.current_user() or {}).get('id'))
+        if getattr(self, '_client_scope', None) != scope or not getattr(self, '_client_data', None):
+            self._client_data, self._client_scope = OperationsData(department=scope[0]), scope
+        return self._client_data
+
+    def list_clients(self, query='', division='all', limit=250, force=False):
+        result = self._shared_data().snapshot(bool(force))
+        if not result.get('ok'):
+            return dict(ok=False, clients=[], error=result.get('error') or 'Shared client records unavailable.')
+        rows = [r for r in result['clients'] if str(query).casefold() in r['name'].casefold()
+                and (division.lower()=='all' or division.upper() in r.get('divisions', []))]
+        if not rows and query:
+            linked = self._shared_data().account(query, snapshot=result)
+            if linked.get('ok'):
+                key = linked['client']['key']
+                key = key if key.startswith('client:') else 'job:'+key
+                rows = [r for r in result['clients'] if r['key']==key
+                        and (division.lower()=='all' or division.upper() in r.get('divisions', []))]
+        return dict(ok=True, clients=rows[:int(limit)], count=len(rows))
+
+    def client_account(self, client):
+        result = self._shared_data().account(client)
+        if result.get('ok'):
+            import ems_db, persistence
+            for job in result['jobs']:
+                # Existing folder pins remain locators, never the ownership source.
+                job['path'] = persistence.get_folder_path(job['name']) or ''
+                job['folder_exists'] = bool(job['path'] and os.path.isdir(job['path']))
+                try:
+                    job['job_log'] = list(ems_db.list_job_log_entries(job.get('canon_key') or '') or [])
+                except Exception:
+                    job['job_log'] = []
+                    job['log_error'] = 'Job history unavailable. Refresh to retry.'
+        return result
+
+    def _folder_clients(self, query: str = "", division: str = "all",
                      limit: int = 250) -> dict:
         """Return a light client directory from the configured OD root."""
         try:
@@ -119,7 +160,7 @@ class Api:
             return {"ok": False, "clients": [],
                     "error": f"{type(ex).__name__}: {ex}"}
 
-    def client_account(self, client: str) -> dict:
+    def _folder_account(self, client: str) -> dict:
         """Return one Client -> Job -> Division hierarchy.
 
         OD is the hierarchy authority. The shared/local job index contributes

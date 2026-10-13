@@ -33,6 +33,9 @@ def create(*args, **kwargs):
             print('FAIL: desktop shell layout is not ready', flush=True)
         else:
             print('PASS: desktop shell layout is ready', flush=True)
+        if '--test-notification' in sys.argv:
+            import desktop_notifications
+            print('Desktop test:', desktop_notifications.test_notification(), flush=True)
     window.events.loaded += lambda: threading.Thread(target=inspect, daemon=True).start()
     return window
 

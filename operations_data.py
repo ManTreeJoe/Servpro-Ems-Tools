@@ -66,7 +66,7 @@ def _card_key(value) -> str:
 class OperationsData:
     """Return Client -> Job/Claim -> Division projections from one interface."""
 
-    def __init__(self, db=None, supabase=None, *, ttl: int = 30):
+    def __init__(self, db=None, supabase=None, *, ttl: int = 30, department=None):
         if db is None:
             import ems_db
             db = ems_db
@@ -74,6 +74,7 @@ class OperationsData:
             import supabase_client
             supabase = supabase_client
         self._db = db
+        self._department = department
         self._sb = supabase
         self._ttl = max(5, int(ttl))
         self._cache = None
@@ -139,6 +140,12 @@ class OperationsData:
                 self._cache = (time.monotonic(), result)
             return result
 
+        if self._department:
+            crm_clients = [c for c in crm_clients if c.get('department') == self._department]
+            client_ids = {c['client_id'] for c in crm_clients}
+            jobs = [j for j in jobs if j.get('department') in (None, '', self._department)
+                    and (not j.get('client_id') or j['client_id'] in client_ids)]
+            children = [c for c in children if c.get('department') in (None, '', self._department)]
         result = self._shape(
             jobs, children, aliases, environments,
             crm_clients if clients_ready else [],
@@ -243,7 +250,7 @@ class OperationsData:
                     "Shared client data is unavailable.",
                     "data_state": data.get("state") or {}}
         key = canon_key(requested)
-        account_key = data["_reference_to_account"].get(key)
+        account_key = requested if requested in data['_accounts_by_key'] else data["_reference_to_account"].get(key)
         if not account_key:
             account_key = data["_reference_to_account"].get(requested.casefold())
         account = data["_accounts_by_key"].get(account_key or "")
@@ -382,6 +389,8 @@ class OperationsData:
         reference_to_account = {}
         if crm_clients:
             for raw in crm_clients:
+                if raw.get('active') is False:
+                    continue
                 client_id = str(raw.get("client_id") or "")
                 related = jobs_by_client.get(client_id, [])
                 payloads = [self._job_payload(
@@ -407,6 +416,8 @@ class OperationsData:
                 for row in related:
                     row["_account_key"] = account_key
                     reference_to_account[row.get("canon_key") or ""] = account_key
+                    reference_to_account[str(row.get('display_name') or '').casefold()] = account_key
+                    reference_to_account[str(row.get('job_id') or '')] = account_key
 
         # v9 rows without a v11 client remain first-class shared records.  This
         # is also the whole model until migration 011 is installed.
@@ -430,6 +441,7 @@ class OperationsData:
             }
             accounts[account_key] = account
             row["_account_key"] = account_key
+            reference_to_account[str(row.get('job_id') or '')] = account_key
             for ref in (name, row.get("display_name"), row_key):
                 if ref:
                     reference_to_account[str(ref).casefold()] = account_key
@@ -454,6 +466,9 @@ class OperationsData:
                     if division not in divisions:
                         divisions.append(division)
             directory.append({
+                'ownership': 'assigned' if account.get('client_id') else 'unassigned',
+                'key': 'client:'+account['client_id'] if account.get('client_id') else 'job:'+account['key'],
+                'job_count_known': True,
                 "name": account.get("name") or "Client",
                 "path": account.get("folder") or "",
                 "job_count": len(jobs_payload), "divisions": divisions,
@@ -521,6 +536,7 @@ class OperationsData:
         return {
             "key": row.get("job_id") or row.get("canon_key") or "",
             "job_id": row.get("job_id") or "", "name": name,
+            'canon_key': row.get('canon_key') or '',
             "path": "", "folder_exists": False,
             "divisions": list(row.get("_divisions") or []),
             "division_states": list(row.get("_division_states") or []),

@@ -2113,6 +2113,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       <span class="paperwork-mark" aria-hidden="true">${state[0]}</span>
       <span><strong>${escapeHtml(item.label || "")}</strong><small>${escapeHtml(item.source || "Stored job data")}</small></span>
       <b>${state[1]}</b>
+      ${jobFormAction(item.label, item.status)}
     </div>`;
   }).join("");
   const paperworkSummary = paperwork.audit_complete
@@ -2136,6 +2137,7 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
       <span class="requirement-flags">${item.importance === "mandatory" ? `<b class="req-flag mandatory">Mandatory</b>` : item.importance === "recommended" ? `<b class="req-flag recommended">Recommended</b>` : ""}${item.overdue ? `<b class="req-flag overdue">Overdue</b>` : ""}${item.carried_forward ? `<b class="req-flag carried">Carried forward</b>` : ""}${item.status === "blocked" && item.follow_up_at ? `<b class="req-flag blocked">Follow up ${escapeHtml(formatCommentDate(item.follow_up_at))}</b>` : ""}</span>
       ${item.manual_actor ? `<small class="requirement-manual">Updated by ${escapeHtml(item.manual_actor)}${item.manual_at ? " · " + escapeHtml(formatCommentDate(item.manual_at)) : ""}${item.manual_note ? " · " + escapeHtml(item.manual_note) : ""}</small>` : ""}</span>
       <button type="button" class="requirement-edit" data-requirement-key="${escapeAttr(item.key || "")}">Update</button>
+      ${jobFormAction(item.label, item.status)}
     </div>`;
   }).join("");
   const requirementGroups = {attention: [], completed: [], not_applicable: [], recommended: []};
@@ -2495,6 +2497,11 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     notifyJobWorkspaceClosed();
     if (window.emsNavigateTo) window.emsNavigateTo("clients", client);
   });
+  if(window.ClientTransfer){
+    const transfer=document.createElement('button');transfer.type='button';transfer.className='client-page-link';transfer.textContent='Change client';
+    transfer.onclick=()=>window.ClientTransfer.open(data.client||res.client||'',data.card_id||res.card_id||'',()=>setStatus('Client relationship saved. Folders and job history unchanged.','ok'));
+    w.querySelector('[data-open-client-page]')?.after(transfer);
+  }
   w.querySelectorAll("[data-division-data]").forEach((button) => button.addEventListener("click", async () => {
     if (button.dataset.divisionData === selectedDivision) return;
     const target = divisionTargets[button.dataset.divisionData];
@@ -2672,6 +2679,12 @@ function openAuditModal(data, trelloUrl = "", preparation = null) {
     });
   }));
   w.querySelector('[data-job-members]')?.addEventListener('click', () => openJobMembers(data.card_id || ''));
+  const formsButton = document.createElement('button');
+  formsButton.type = 'button'; formsButton.className = 'btn compact'; formsButton.textContent = 'Forms';
+  formsButton.onclick = () => openJobForms(data.client || res.client || '', data.card_id || res.card_id || '');
+  w.querySelector('.job-info-actions')?.prepend(formsButton);
+  w.querySelectorAll('[data-prepare-form]').forEach(button => button.addEventListener('click', () =>
+    openJobForms(data.client || res.client || '', data.card_id || res.card_id || '', button.dataset.prepareForm)));
   w.querySelector('[data-copy-customer-info]')?.addEventListener('click', async (event) => {
     const button = event.currentTarget;
     button.disabled = true;

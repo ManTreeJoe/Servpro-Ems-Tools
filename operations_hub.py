@@ -17,7 +17,7 @@ class OperationsHub:
     """Build compact JSON-only projections for the Operations UI."""
 
     def __init__(self, pipeline=None, clients=None, data=None, *, dispatch=None,
-                 ttl: int = 30):
+                 schedule=None, attention=None, ttl: int = 30):
         if pipeline is None:
             from pipeline_web import Api as PipelineApi
             pipeline = PipelineApi()
@@ -34,6 +34,14 @@ class OperationsHub:
         self._clients = clients
         self._data = data
         self._dispatch_schedule = dispatch
+        if schedule is None:
+            from operations_schedule import OperationsSchedule
+            schedule = OperationsSchedule()
+        self._schedule = schedule
+        if attention is None:
+            from operations_attention import OperationsAttention
+            attention = OperationsAttention()
+        self._attention = attention
         self._ttl = max(5, int(ttl))
         self._cache = None
         self._lock = threading.RLock()
@@ -68,7 +76,7 @@ class OperationsHub:
             for client in clients:
                 client.setdefault("source", "folder_fallback")
         refresh_warning = ""
-        if not boards and prior:
+        if not board_result.get('ok') and prior:
             boards = list(prior.get("boards") or [])
             refresh_warning = (board_result.get("error") or
                                "Live refresh failed; showing the last operating picture")
@@ -80,9 +88,14 @@ class OperationsHub:
         data_state = dict(data_result.get("state") or {})
         if not data_result.get("ok") and clients:
             data_state["fallback"] = "folders"
-        dispatch = self._dispatch_schedule.load(jobs)
+        schedule = self._schedule.load()
+        attention = self._attention.load(jobs, schedule) if board_result.get('ok') else dict(
+            ok=False, items=schedule.get('issues', []), error='Refresh job data to check timing and billing.',
+            schedule_ok=bool(schedule.get('ok')))
         overview = self._overview(jobs, clients)
-        overview["due_today"] = len((dispatch.get("days") or [{}])[0].get("jobs") or [])
+        if not board_result.get('ok') and not prior:
+            overview.update({key: None for key in ('active_jobs', 'overdue', 'stalled', 'due_today', 'needs_attention')})
+            overview['divisions'] = dict.fromkeys(('EMS', 'CONTENTS', 'RECON'))
         result = {
             "ok": bool(board_result.get("ok") or client_result.get("ok")),
             "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -90,17 +103,20 @@ class OperationsHub:
             "source": (data_state.get("source") if data_result.get("ok") else
                        board_result.get("source") or "local"),
             "pipeline_source": board_result.get("source") or "local",
+            "board_status": 'current' if board_result.get('ok') else 'stale' if prior else 'unavailable',
             "data_state": data_state,
             "warnings": [message for message in (
                 board_result.get("warning"), board_result.get("error"),
                 data_result.get("error"), client_result.get("error"),
                 refresh_warning,
+                schedule.get('error'),
                 *(data_result.get("warnings") or []),
             ) if message],
             "overview": overview,
             "boards": boards,
             "jobs": jobs,
-            "dispatch": dispatch,
+            "schedule": schedule,
+            "attention": attention,
             "clients": clients,
             "reports": self._reports(jobs),
             "tool_routes": __import__("operations_tools").browser_routes(),
@@ -355,7 +371,7 @@ class OperationsHub:
     def _flatten_jobs(boards: list[dict]) -> list[dict]:
         jobs = []
         seen = set()
-        division_by_board = {"contents": "CONTENTS", "logs": "EMS"}
+        division_by_board = {"contents": "CONTENTS", "recon": "RECON", "logs": "EMS"}
         for board in boards:
             board_key = str(board.get("key") or "")
             if board_key == "logs":
@@ -377,7 +393,7 @@ class OperationsHub:
                         "lane": lane.get("name") or "Unassigned",
                         "division": division,
                         "divisions": [division],
-                        "due": card.get("due") or "",
+                        "due": str(card.get("due") or "")[:10],
                         "overdue": bool(card.get("overdue")),
                         "days_in_lane": int(card.get("days_in_lane") or 0),
                         "stall": card.get("stall") or "none",
@@ -401,7 +417,7 @@ class OperationsHub:
         return {
             "active_jobs": len(jobs), "clients": len(clients),
             "due_today": due_today, "overdue": overdue, "stalled": stalled,
-            "needs_attention": overdue + stalled,
+            "needs_attention": sum(1 for job in jobs if job.get('overdue') or job.get('stall') in {'warn', 'bad'}),
             "divisions": {
                 division: sum(1 for job in jobs if job.get("division") == division)
                 for division in ("EMS", "CONTENTS", "RECON")
@@ -415,7 +431,9 @@ class OperationsHub:
         The mobile gateway must supply identity from its validated access
         token; clients must never choose the email they want to query.
         """
-        schedule = self.bootstrap(force).get("dispatch") or {}
+        # Keep the separate legacy mobile API intact; Operations itself never
+        # loads Run Docs or uses their assignments as dashboard statistics.
+        schedule = self._dispatch_schedule.load(self.bootstrap(force).get('jobs') or [])
         filtered = self._dispatch_schedule.for_user(
             schedule, email=email, display_name=display_name)
         return {

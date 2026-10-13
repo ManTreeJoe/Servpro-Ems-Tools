@@ -3,6 +3,25 @@ from types import SimpleNamespace
 import desktop_notifications as dn
 
 
+def test_delivery_uses_registered_shell_identity(monkeypatch):
+    import windows_toasts
+    import windows_app_identity
+    calls = []
+    monkeypatch.setattr(windows_app_identity, 'register_notifications', windows_app_identity.app_id)
+    monkeypatch.setattr(windows_toasts, 'InteractableWindowsToaster',
+                        lambda name, notifierAUMID: calls.append(notifierAUMID))
+    dn.WindowsDelivery('Dev')
+    assert calls == ['Servpro.LinguarHub.Dev.2026.2']
+
+
+def test_channel_identities_remain_distinct():
+    from windows_app_identity import app_id
+    import pytest
+    assert len({app_id(c) for c in ('Dev', 'Main', 'Trial')}) == 3
+    with pytest.raises(ValueError):
+        app_id('unknown')
+
+
 def item(n, now, **extra):
     return dict(id=str(n), created_at=now.isoformat(), kind='mention', **extra)
 

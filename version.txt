@@ -1,6 +1,6 @@
 {
-  "version": "1.8.28",
-  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.28",
-  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.28/Linguar-Hub-Setup-1.8.28.exe",
-  "notes": "Shared Logs audit and comment-linked timing; task timing dashboard; schedule roster, job previews and linking fixes; persistent archived-card threads and combined history; Snapshot popup and CompanyCam recovery fixes; loss-type synchronization; substantially smaller unchanged board refreshes. New PDF/photo document editor not included."
+  "version": "1.8.29",
+  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.29",
+  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.29/Linguar-Hub-Setup-1.8.29.exe",
+  "notes": "Prefilled unsigned forms with preview and download; client ownership transfers; Windows and Trello notification fixes and filters; improved Operations statistics; cleaner settings and update notices; unified thread scrolling. Board-system redesign is not included."
 }

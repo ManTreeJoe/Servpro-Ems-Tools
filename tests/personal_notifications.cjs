@@ -8,11 +8,14 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   for(const f of ['web_shared/theme.css','pipeline_web_assets/job_members.css'])await page.addStyleTag({path:path.resolve(f)});
   await page.evaluate(()=>{
    document.documentElement.dataset.theme='dark';window.calls=[];window.fail=false;
-   window.pywebview={api:{personal_job_members:async()=>({ok:true,people:[{id:'sam',name:'Sam Example',username:'ol.sam.abcdef12',member:false},{id:'jo',name:'Jo Manager',username:'ol.jo.abc12345',member:true}],muted:false}),
+   window.pywebview={api:{personal_job_members:async()=>({ok:true,people:[{id:'sam',name:'Sam Example',username:'ol.sam.abcdef12',member:false},{id:'jo',name:'Jo Manager',username:'ol.jo.abc12345',member:true,source:'Trello'}],unmatched:[{id:'external',name:'Pat External',username:'pat.external'}],muted:false}),
     set_personal_job_member:async(...args)=>{calls.push(args);return {ok:!fail,error:'Not confirmed. Refresh and retry.'};},mute_personal_job:async()=>({ok:true})}};
   });
   await page.addScriptTag({path:path.resolve('pipeline_web_assets/job_members.js')});
   await page.evaluate(()=>openJobMembers('exact-card'));
+  await page.getByText('@ol.jo.abc12345 · Trello',{exact:true}).waitFor();
+  await page.getByText('@pat.external · From Trello · Needs account match',{exact:true}).waitFor();
+  assert.equal(await page.locator('.member-person').filter({hasText:'Pat External'}).locator('input').count(),0,'Unmatched Trello people are read-only');
   await page.getByLabel('Sam Example').check();assert.deepEqual(await page.evaluate(()=>calls[0]),['exact-card','sam',true]);
   await page.evaluate(()=>fail=true);await page.getByLabel('Jo Manager').click();await page.getByText('Not confirmed. Refresh and retry.').waitFor();assert(await page.getByLabel('Jo Manager').isChecked());
   await page.screenshot({path:path.join(process.env.TEMP,'oneloss-job-members.png')});

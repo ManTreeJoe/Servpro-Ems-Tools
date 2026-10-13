@@ -49,6 +49,7 @@ datas = []
 for d in sorted(glob.glob(os.path.join(base, '*_web_assets'))):
     datas.append((d, os.path.basename(d)))
 datas.append((os.path.join(base, 'web_shared'), 'web_shared'))
+datas.append((os.path.join(base, 'form_templates'), 'form_templates'))
 
 # Sanitized default config + root redirect shim (safety net; home_web also
 # rewrites the shim at startup).

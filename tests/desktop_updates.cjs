@@ -1,0 +1,65 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs'),os=require('node:os');
+(async()=>{
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try {
+  const page=await browser.newPage({viewport:{width:1280,height:800}});
+  await page.setContent('<div class="shell"><aside class="sidebar">OneLoss</aside><section class="pane"><div class="pane-content">Jobs workspace</div></section></div>');
+  for(const file of ['web_shared/theme.css','home_web_assets/app.css','home_web_assets/updates.css'])await page.addStyleTag({path:path.resolve(file)});
+  await page.evaluate(()=>{
+   window.info={ok:true,current:'1.8.27',latest:'1.8.28',update_available:true,notes:'<img src=x onerror="window.injected=true">\n'+('Long release details. '.repeat(100)),installer:'https://example.test/setup.exe',url:'https://example.test/release'};
+   window.calls=0;window.installs=0;
+   window.pywebview={api:{check_update:async()=>{window.calls++;return window.info;},install_update:async()=>{window.installs++;return window.result;},open_url:async()=>true}};
+  });
+  await page.addScriptTag({path:path.resolve('home_web_assets/updates.js')});
+  await page.evaluate(()=>Promise.all([OneLossUpdates.check(),OneLossUpdates.check()]));
+  assert.equal(await page.evaluate(()=>calls),1);
+  assert.ok((await page.locator('#update-bar').boundingBox()).height<70);
+  assert.ok(!(await page.locator('#update-bar').innerText()).includes('Long release'));
+  await page.getByText('Review update',{exact:true}).click();
+  assert.equal(await page.locator('dialog[open]').count(),1);
+  await page.getByText('What’s new',{exact:true}).click();
+  assert.equal(await page.locator('.update-notes img').count(),0);
+  await page.setViewportSize({width:390,height:700});
+  const narrow=await page.locator('dialog').boundingBox();
+  assert.ok(narrow.x>=0 && narrow.x+narrow.width<=390);
+  assert.ok(await page.getByText('Update now',{exact:true}).isVisible());
+  await page.setViewportSize({width:1280,height:800});
+  await page.screenshot({path:path.join(os.tmpdir(),'oneloss-updates-cleanup.png')});
+  await page.evaluate(()=>window.result={ok:false,error:'Offline <b>retry</b>'});
+  await page.getByText('Update now',{exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Update failed'}).waitFor();
+  assert.equal(await page.locator('[role=status] b').count(),0);
+  await page.evaluate(()=>window.result={ok:true,launched:true});
+  await page.getByText('Update now',{exact:true}).click();
+  await page.getByText('Installer opened',{exact:true}).waitFor();
+  assert.equal(await page.getByText('Installer opened',{exact:true}).isDisabled(),true);
+  await page.getByText('Close',{exact:true}).click();
+  await page.getByLabel('Dismiss update notice').click();
+  await page.evaluate(()=>OneLossUpdates.open());
+  assert.equal(await page.locator('dialog[open]').count(),1,'Can reopen after dismissing banner');
+  await page.getByText('Close',{exact:true}).click();
+  // A fresh page for check failures, no-update and narrow layout.
+  await page.reload();
+  await page.setContent('<section class="pane"></section>');
+  await page.addScriptTag({path:path.resolve('home_web_assets/updates.js')});
+  await page.evaluate(()=>{window.pywebview={api:{check_update:async()=>({ok:false})}};OneLossUpdates.open();});
+  await page.getByRole('status').filter({hasText:'Could not check'}).waitFor();
+  await page.evaluate(()=>window.pywebview.api.check_update=async()=>({ok:true,current:'1.8.28',update_available:false}));
+  await page.getByText('Check again',{exact:true}).click();
+  await page.getByRole('status').filter({hasText:'up to date'}).waitFor();
+  assert.equal(await page.locator('#update-bar').count(),0);
+  await page.evaluate(()=>{window.__LINGUAR_BROWSER_TOOLS__=true;window.pywebview.api.check_update=()=>{throw new Error('Browser must not call desktop updater');};});
+  await page.evaluate(()=>OneLossUpdates.check());
+  const settings=fs.readFileSync('settings_web_assets/index.html','utf8').replace(/\r\n/g,'\n');
+  assert.ok(settings.includes("!['audit_base', 'runs_dir'].includes(f.key)"));
+  assert.ok(settings.includes('card.style.display = status.all_done ? "none" : "block"'));
+  assert.ok(settings.includes('data-src="../health_web_assets/index.html?embedded=1"'));
+  await page.setContent('<section data-settings-scope="both"></section><section data-settings-scope="personal"></section><section class="health-settings" data-settings-scope="health"><iframe data-src="about:blank"></iframe></section>');
+  await page.addScriptTag({content:'let SETTINGS_SCOPE="personal";'+settings.slice(settings.indexOf('function showSettingsScope(scope)'),settings.indexOf('document.querySelectorAll("[data-scope-tab]").forEach((button) =>\n  button.addEventListener'))});
+  await page.evaluate(()=>showSettingsScope('health'));
+  assert.ok(await page.locator('[data-settings-scope=both]').evaluate(el=>el.classList.contains('scope-hidden')));
+  assert.equal(await page.locator('iframe').getAttribute('src'),'about:blank');
+  console.log('PASS: compact notice, shared update dialog, safe notes, retry, success, dismissed recovery, check error, up to date, Settings consolidation');
+ } finally {await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1)});

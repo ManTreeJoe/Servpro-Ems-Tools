@@ -1,4 +1,4 @@
-const state={data:null,view:"home",board:"wip",jobFilter:"all",query:"",selectedClient:"",clientAccount:null,selectedJob:null,jobContext:null,connections:[],fieldNoteTemplates:{},toolRoutes:{},accessKey:"",dispatchEditStarted:0};
+const state={data:null,view:"home",board:"wip",jobFilter:"all",query:"",selectedClient:"",clientAccount:null,selectedJob:null,jobContext:null,connections:[],fieldNoteTemplates:{},toolRoutes:{},accessKey:""};
 if(new URLSearchParams(location.search).get("embedded")==="1")document.documentElement.classList.add("embedded-shell");
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=(v)=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -8,11 +8,14 @@ let transportMode="",transportProbe=null;
 document.addEventListener("DOMContentLoaded",()=>{bind();tick();setInterval(tick,30000);boot();});
 
 function bind(){
+  $('[data-followup-filter]').addEventListener('change',renderFollowups);
   $$("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
   $("[data-refresh]").addEventListener("click",()=>boot(true));
   $("[data-go-jobs]").addEventListener("click",()=>showView("jobs"));
-  $("[data-go-dispatch]").addEventListener("click",()=>showView("dispatch"));
-  $("[data-edit-dispatch]")?.addEventListener("click",event=>{state.dispatchEditStarted=Date.now();launchTool("run_doc_editor_web",event.currentTarget);});
+  $$("[data-open-schedule]").forEach(button=>button.addEventListener("click",()=>{
+    if(window.parent!==window)window.parent.postMessage({type:'ems-navigate',key:'run_doc_editor'},location.origin);
+    else launchTool('run_doc_editor_web',button);
+  }));
   $("[data-job-filter]").addEventListener("change",e=>{state.jobFilter=e.target.value;renderJobs();});
   $(".global-search input").addEventListener("input",e=>{state.query=e.target.value.trim().toLowerCase();if(state.view==="clients")renderClientList();else{showView("jobs");renderJobs();}});
   $("[data-client-search]").addEventListener("input",e=>{state.query=e.target.value.trim().toLowerCase();renderClientList();});
@@ -29,7 +32,6 @@ function bind(){
   $('[data-account-modal]')?.addEventListener("click",event=>{if(event.target===event.currentTarget)closeAccountModal();});
   $('[data-account-form]')?.addEventListener("submit",submitAccountSignIn);
   document.addEventListener("click",e=>{if(!e.target.closest(".tools-anchor"))closeTools();});
-  window.addEventListener("focus",()=>{if(state.dispatchEditStarted&&Date.now()-state.dispatchEditStarted>1000){state.dispatchEditStarted=0;boot(true);}});
   document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();$(".global-search input").focus();}if(e.key==="Escape"){closeTools();if(!$('[data-account-modal]')?.hidden)closeAccountModal();else{const editor=$("[data-requirement-editor]");if(editor)editor.remove();else closeDrawer();}}});
   $(".new-loss").addEventListener("click",e=>launchTool("new_job",e.currentTarget));
   const queryKey=new URLSearchParams(location.search).get("key")||sessionStorage.getItem("operations-key")||"";
@@ -98,12 +100,27 @@ async function boot(force=false){
   finally{button.disabled=false;}
 }
 
-function renderAll(){renderSignals();renderHome();renderBoardTabs();renderJobs();renderDispatch();renderClientList();renderReports();}
+function renderAll(){renderSignals();renderHome();renderFollowups();renderBoardTabs();renderJobs();renderClientList();renderReports();}
+function renderFollowups(){
+  const data=state.data?.attention||{ok:false,items:[],error:'Follow-ups unavailable. Refresh to retry.'};
+  const filter=$('[data-followup-filter]').value;
+  const rows=(data.items||[]).filter(row=>filter==='All'||row.category===filter);
+  $('[data-followup-status]').textContent=data.ok
+    ? `${rows.length} follow-ups · saved audit facts cover ${data.covered_cards} of ${data.active_cards} active cards. Missing records are not an all-clear.${data.schedule_ok?'':' Schedule checks unavailable.'}${data.invalid_dates?' Invalid dates need review.':''}`
+    : data.error;
+  const host=$('[data-followups]');
+  host.innerHTML=rows.map(row=>`<button type="button" class="priority-row" ${row.card_id?`data-open-job="${attr(row.card_id)}"`:'data-followup-schedule'}><i aria-hidden="true"></i><span><strong>${esc(row.title)} · ${esc(row.action)}</strong><small>${esc(row.detail)}</small></span><b>${esc(row.category)} →</b></button>`).join('')||`<p class="muted">${data.ok?'No follow-ups found in the available records.':'Checks incomplete—not an all-clear.'}</p>`;
+  wireJobs(host);
+  $$('[data-followup-schedule]',host).forEach(button=>button.addEventListener('click',()=>{
+    if(window.parent!==window)window.parent.postMessage({type:'ems-navigate',key:'run_doc_editor'},location.origin);
+    else launchTool('run_doc_editor_web',button);
+  }));
+}
 function renderSignals(){
   const d=state.data, o=d.overview;
-  ["EMS","CONTENTS","RECON"].forEach(x=>$( `[data-signal="${x}"]`).textContent=o.divisions[x]||0);
-  $$('[data-metric]').forEach(el=>el.textContent=o[el.dataset.metric]??0);
-  $("[data-job-count]").textContent=o.active_jobs;$("[data-updated]").textContent=`Updated ${fmtTime(d.generated_at)} · ${d.source}`;$("[data-source]").textContent=`${o.active_jobs} active · ${o.clients} clients`;
+  ["EMS","CONTENTS","RECON"].forEach(x=>$( `[data-signal="${x}"]`).textContent=o.divisions[x]??'—');
+  $$('[data-metric]').forEach(el=>el.textContent=o[el.dataset.metric]??'—');
+  $("[data-job-count]").textContent=o.active_jobs??'—';$("[data-updated]").textContent=d.board_status==='stale'?'Last known board counts · refresh failed':d.board_status==='unavailable'?'Job counts unavailable':`Updated ${fmtTime(d.generated_at)} · ${d.source}`;$("[data-source]").textContent=`${o.active_jobs??'—'} active cards · ${o.clients} clients`;
 }
 
 function renderHome(){
@@ -111,10 +128,13 @@ function renderHome(){
   const priority=d.jobs.filter(j=>j.overdue||j.stall==="bad"||j.stall==="warn").sort((a,b)=>Number(b.overdue)-Number(a.overdue)||b.days_in_lane-a.days_in_lane).slice(0,7);
   $("[data-priority-feed]").innerHTML=priority.length?priority.map(j=>`<button type="button" class="priority-row" data-open-job="${attr(j.card_id)}"><i aria-hidden="true"></i><span><strong>${esc(j.client)}</strong><small>${esc(j.board)} · ${esc(j.lane)}</small></span><b>${j.overdue?"OVERDUE":j.days_in_lane+"D"}</b></button>`).join(""):`<div class="dispatch-empty">No jobs currently need escalation.</div>`;
   wireJobs($("[data-priority-feed]"));
-  const today=d.dispatch.days[0]?.jobs||[];$("[data-today-scheduled]").textContent=today.length;$("[data-unscheduled]").textContent=d.dispatch.unscheduled_count;$("[data-today]").textContent=new Date().toLocaleDateString([], {month:"short",day:"numeric"});
-  $("[data-day-meter]").style.width=`${Math.min(100,Math.round(today.length/Math.max(1,today.length+d.dispatch.unscheduled_count)*100))}%`;
-  const top=d.reports.lane_counts.slice(0,8), max=Math.max(1,...top.map(x=>x.value));
-  $("[data-lane-summary]").innerHTML=top.map(x=>`<div class="lane-summary-card"><strong>${x.value}</strong><span>${esc(x.label)}</span><small>${Math.round(x.value/max*100)}% of busiest lane</small></div>`).join("");
+  if(d.board_status==='unavailable') $('[data-priority-feed]').textContent='Job data unavailable. Refresh to retry.';
+  const schedule=d.schedule||{};
+  $$('[data-schedule-count]').forEach(el=>el.textContent=schedule.ok?(schedule[el.dataset.scheduleCount]??'—'):'—');
+  $('[data-schedule-status]').textContent=schedule.ok?'Shared Schedule · saved active entries':'Schedule unavailable. Refresh to retry; no zero counts assumed.';
+  $('[data-today]').textContent=schedule.date||'—';
+  const top=d.reports.lane_counts.slice(0,8);
+  $("[data-lane-summary]").innerHTML=top.map(x=>`<div class="lane-summary-card"><strong>${x.value}</strong><span>${esc(x.label)}</span><small>${x.value} of ${o.active_jobs} active cards</small></div>`).join("");
 }
 
 function renderBoardTabs(){
@@ -129,19 +149,6 @@ function renderJobs(){
 }
 function jobMatches(j){const q=state.query,haystack=`${j.client} ${j.job_name||""} ${j.account_client||""} ${j.claim_number||""} ${j.carrier||""} ${(j.loss_types||[]).join(" ")}`.toLowerCase(),matchQ=!q||haystack.includes(q);const f=state.jobFilter;return matchQ&&(f==="all"||f==="attention"&&(j.overdue||j.stall==="warn"||j.stall==="bad")||f==="overdue"&&j.overdue||f==="stalled"&&(j.stall==="warn"||j.stall==="bad")||f==="today"&&j.due===todayIso());}
 function jobCard(j,boardKey=j.board_key){const division=boardKey==="contents"?"CONTENTS":"EMS",title=j.job_name||j.client,account=j.account_client&&j.account_client!==title?`<small>${esc(j.account_client)}</small>`:"";return `<button type="button" class="job-card ${j.overdue||j.stall==="bad"?"attention":""}" data-open-job="${attr(j.card_id)}"><strong>${esc(title)}</strong>${account}<span class="job-card-meta"><span class="pill ${division.toLowerCase()}">${division}</span>${j.overdue?"<span class='pill overdue'>Overdue</span>":""}${j.days_in_lane?`<span class="pill stall">${j.days_in_lane}d in lane</span>`:""}${j.carrier?`<span class="pill">${esc(j.carrier)}</span>`:(j.loss_types||[]).slice(0,1).map(x=>`<span class="pill">${esc(x)}</span>`).join("")}${j.identity_state==="unlinked"?"<span class='pill overdue'>Needs link</span>":""}</span></button>`;}
-
-function renderDispatch(){
-  const d=state.data.dispatch,grid=$("[data-dispatch-grid]");
-  grid.innerHTML=d.days.map((day,i)=>`<section class="dispatch-day ${i===0?"today":""}"><header><div><strong>${esc(day.label)}</strong><small>${fmtDate(day.date)}</small></div><b>${day.jobs.length}</b></header><div class="dispatch-day-list">${day.jobs.map(j=>dispatchCard(j)).join("")||(day.exists?"<div class='dispatch-empty'>No assignments</div>":"<div class='dispatch-empty'>No Run Doc found</div>")}</div></section>`).join("");
-  $("[data-unscheduled-count]").textContent=d.unscheduled_count;
-  $("[data-unscheduled-list]").innerHTML=d.unscheduled.slice(0,20).map(j=>jobCard(j,j.board_key)).join("")||"<div class='dispatch-empty'>Every active job is scheduled.</div>";
-  wireJobs($("[data-panel='dispatch']"));enableHorizontalGrab(grid);
-}
-function dispatchCard(j){
-  const meta=[j.time_slot,j.section==="monitor"?"Monitor":"Work"].filter(Boolean).join(" · "),techs=(j.technicians||[]).join(", ")||"Technician not assigned",warning=!j.matched?"Not linked to a job":j.match_conflict?"Multiple job matches — review link":"";
-  const open=j.card_id?` data-open-job="${attr(j.card_id)}"`:"";
-  return `<button type="button" class="dispatch-job ${j.division==="CONTENTS"?"contents":""} ${!j.matched||j.match_conflict?"unlinked":""}"${open}><strong>${esc(j.client)}</strong><small>${esc(meta)}</small><small class="dispatch-techs">${esc(techs)}</small>${warning?`<small class="dispatch-warning">${esc(warning)}</small>`:""}</button>`;
-}
 
 function renderClientList(){if(!state.data)return;const q=state.query;const rows=state.data.clients.filter(c=>!q||c.name.toLowerCase().includes(q)).slice(0,300);$("[data-client-list]").innerHTML=rows.map(c=>`<button class="client-row ${state.selectedClient===c.name?"active":""}" data-client="${attr(c.name)}"><span class="client-initial">${esc(initials(c.name))}</span><div><strong>${esc(c.name)}</strong><small>${c.job_count||0} job${c.job_count===1?"":"s"} · ${(c.divisions||[]).map(shortDivision).join(" · ")||"Unclassified"}</small></div></button>`).join("")||"<div class='dispatch-empty'>No clients found.</div>";$$('[data-client]').forEach(b=>b.addEventListener("click",()=>openClient(b.dataset.client)));}
 async function openClient(name){state.selectedClient=name;state.clientAccount=null;renderClientList();const host=$("[data-client-record]");host.innerHTML="<div class='empty-record'><span>◌</span><h2>Opening client…</h2><p>Resolving the referenced job to its client account.</p></div>";try{const r=await transport("client_account",name);if(!r?.ok)throw new Error(r?.error||"Client unavailable");state.clientAccount=r;const account=clientIdentity(r);state.selectedClient=account.name||name;renderClientList();host.innerHTML=clientRecord(r);$$('[data-open-folder]',host).forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();desktopAction("open_folder",b.dataset.openFolder);}));$$('[data-client-job]',host).forEach(b=>{b.addEventListener("click",()=>openClientJob(b.dataset.clientJob));b.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openClientJob(b.dataset.clientJob);}});});}catch(e){host.innerHTML=`<div class="empty-record"><span>!</span><h2>Client could not open</h2><p>${esc(e instanceof Error?e.message:e)}</p></div>`;}}

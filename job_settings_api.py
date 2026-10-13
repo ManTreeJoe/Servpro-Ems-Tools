@@ -36,7 +36,11 @@ def _resolve(client):
     return ems_db.canon_key(name)
 
 
-class JobSettingsApi:
+from client_ownership import ClientOwnershipApi
+from job_forms import JobFormsApi
+
+
+class JobSettingsApi(ClientOwnershipApi, JobFormsApi):
     """Mix into a panel's `Api` class. pywebview exposes inherited methods
     exactly like defined ones."""
 

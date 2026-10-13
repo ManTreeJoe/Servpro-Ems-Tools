@@ -25,6 +25,10 @@ window.CommentThreads = (() => {
     thread.setAttribute('aria-label', 'Comment thread');
     thread.innerHTML = '<header class="comment-thread-head"><div><strong>Thread</strong><small data-thread-count></small></div><button class="text-btn" type="button" aria-label="Close thread">×</button></header><div class="comment-thread-original"></div><div class="comment-thread-messages"></div><form class="comment-thread-compose"><label>Reply to thread<textarea rows="3" data-thread-input placeholder="Write a reply…"></textarea></label><div><small role="status" data-thread-status></small><button type="submit" class="btn btn-primary">Send reply</button></div></form>';
     root.append(thread);
+    const threadScroll = document.createElement('div');
+    threadScroll.className = 'comment-thread-scroll';
+    thread.querySelector('.comment-thread-original').before(threadScroll);
+    threadScroll.append(thread.querySelector('.comment-thread-original'), thread.querySelector('.comment-thread-messages'));
     const threadInput = thread.querySelector('[data-thread-input]');
     const threadStatus = thread.querySelector('[data-thread-status]');
     const threadSend = thread.querySelector('[type="submit"]');
@@ -109,7 +113,7 @@ window.CommentThreads = (() => {
     function paintThread() {
       if (!threadRoot) return;
       const list = thread.querySelector('.comment-thread-messages'), original = thread.querySelector('.comment-thread-original');
-      const scroll = list.scrollTop;
+      const scroll = threadScroll.scrollTop;
       list.replaceChildren(); original.replaceChildren();
       const rows = records.filter(row => row.root_id === threadRoot).sort((a,b) => (Date.parse(b.created_at)||0)-(Date.parse(a.created_at)||0));
       const replies = rows.filter(row => row.id !== threadRoot);
@@ -135,7 +139,7 @@ window.CommentThreads = (() => {
         if (row.id === draft().parent) draft().actor = row.actor;
       }
       if (!original.children.length) original.textContent = 'Original message is not available in the saved thread.';
-      list.scrollTop = scroll; paintComposer();
+      threadScroll.scrollTop = scroll; paintComposer();
     }
     function apply() {
       conversation.setThreadRecords(records); filter(); paintThread();

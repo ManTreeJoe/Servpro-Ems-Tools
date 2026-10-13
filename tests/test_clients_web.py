@@ -64,7 +64,7 @@ def test_management_job_title_resolves_to_real_parent_client(monkeypatch):
     monkeypatch.setattr(job_folders, "search_clients", search)
     monkeypatch.setattr(clients_web.Api, "_divisions", staticmethod(lambda _path: ["EMS"]))
 
-    result = clients_web.Api().list_clients(
+    result = clients_web.Api()._folder_clients(
         "PCM - (Kellogg Terrace) - Cruz, Sarah 8/28")
 
     assert result["ok"] is True
@@ -87,7 +87,7 @@ def test_property_job_title_resolves_parent_before_parentheses(monkeypatch):
     monkeypatch.setattr(job_folders, "search_clients", search)
     monkeypatch.setattr(clients_web.Api, "_divisions", staticmethod(lambda _path: ["EMS"]))
 
-    result = clients_web.Api().list_clients(
+    result = clients_web.Api()._folder_clients(
         "Rainey Property Management (Creekside Unit #1021) - 9/1/26")
 
     assert result["ok"] is True
@@ -112,7 +112,7 @@ def test_unfiltered_client_directory_does_not_scan_every_client_division(monkeyp
     monkeypatch.setattr(api, "_divisions", lambda _path: (_ for _ in ()).throw(
         AssertionError("the unfiltered directory must stay lightweight")))
 
-    result = api.list_clients("", "all", 300)
+    result = api._folder_clients("", "all", 300)
 
     assert result["ok"] is True
     assert [row["name"] for row in result["clients"]] == ["Client One", "Client Two"]

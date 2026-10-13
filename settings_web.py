@@ -29,8 +29,6 @@ FIELDS = [
     ("workcenter_url",      "Workcenter URL",             "url"),
     ("enable_workcenter_alpha", "Enable WorkCenter tools", "bool"),
     ("snapshot_auto_reconcile", "Auto-reconcile snapshot tracking", "bool"),
-    ("show_sort_files",     "Show Sort Files in toolbar", "bool"),
-    ("show_new_job",        "Show New EMS Job in toolbar","bool"),
     ("trello_api_key",      "Trello API key",             "secret"),
     ("trello_token",        "Trello token (per-user)",    "secret"),
     ("trello_workspace_id", "Trello workspace ID",        "text"),
@@ -70,7 +68,7 @@ _PERSONAL_FIELDS = {
     "appearance", "ui_scale", "ui_density", "pipeline_default_view",
     "job_workspace_default_open", "reduce_motion",
     "global_hotkey_enabled", "global_hotkey",
-    "preferred_browser", "show_sort_files", "show_new_job",
+    "preferred_browser",
     # These are paths as THIS Windows machine reaches the shared storage.
     # That may be a mapped drive, a UNC server share, or a locally synced
     # OneDrive/SharePoint library. Regular users must be able to select
@@ -89,8 +87,7 @@ _FIELD_GROUPS = {
     "job_workspace_default_open": "Appearance & shortcuts",
     "reduce_motion": "Appearance & shortcuts",
     "global_hotkey_enabled": "Appearance & shortcuts", "global_hotkey": "Appearance & shortcuts",
-    "preferred_browser": "Appearance & shortcuts", "show_sort_files": "Appearance & shortcuts",
-    "show_new_job": "Appearance & shortcuts",
+    "preferred_browser": "Appearance & shortcuts",
     "audit_base": "Folders & documents", "runs_dir": "Folders & documents",
     "photos_root": "Folders & documents", "photos_extra_roots": "Folders & documents",
     "snapshot_template": "Folders & documents", "snapshot_output": "Folders & documents",

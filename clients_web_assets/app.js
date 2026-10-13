@@ -9,7 +9,7 @@ window.addEventListener("pywebviewready", async () => {
     state.query = $("#search").value.trim();
     loadClients();
   }, 180));
-  $("#refresh").addEventListener("click", loadClients);
+  $("#refresh").addEventListener("click", () => loadClients('',true));
   document.querySelectorAll("[data-division]").forEach((button) => button.addEventListener("click", () => {
     state.division = button.dataset.division || "all";
     document.querySelectorAll("[data-division]").forEach((item) => item.classList.toggle("active", item === button));
@@ -20,11 +20,11 @@ window.addEventListener("pywebviewready", async () => {
   await loadClients(focus);
 });
 
-async function loadClients(preferred = "") {
+async function loadClients(preferred = "", force = false) {
   const request = ++state.request;
   $("#client-list").innerHTML = `<div class="loading-card"><span class="spinner"></span>Loading clients…</div>`;
   let result;
-  try { result = await withTimeout(pywebview.api.list_clients(state.query, state.division, 300), 8000); }
+  try { result = await withTimeout(pywebview.api.list_clients(state.query, state.division, 300, force), 15000); }
   catch (error) { result = {ok:false, error:String(error), clients:[]}; }
   if (request !== state.request) return;
   state.clients = result?.clients || [];
@@ -36,8 +36,8 @@ async function loadClients(preferred = "") {
   }
   renderDirectory();
   const target = preferred || state.selected || state.clients[0]?.name || "";
-  const match = state.clients.find((item) => item.name.toLowerCase() === target.toLowerCase()) || state.clients[0];
-  if (match) openClient(match.name);
+  const match = state.clients.find((item) => item.key === target || item.name.toLowerCase() === target.toLowerCase()) || state.clients[0];
+  if (match) openClient(match.key || match.name);
   else $("#account").innerHTML = `<div class="account-empty"><div class="empty-mark">0</div><h2>No clients found</h2><p>Try another name or division.</p></div>`;
 }
 
@@ -51,7 +51,7 @@ function withTimeout(promise, milliseconds) {
 
 function renderDirectory() {
   $("#client-list").innerHTML = state.clients.map((client) => `
-    <button class="client-row ${client.name === state.selected ? "active" : ""}" data-client="${escapeHtml(client.name)}">
+    <button class="client-row ${(client.key || client.name) === state.selected ? "active" : ""}" data-client="${escapeHtml(client.key || client.name)}">
       <span class="client-monogram">${escapeHtml(initials(client.name))}</span>
       <span class="client-row-copy"><strong>${escapeHtml(client.name)}</strong><small>${clientCountText(client)}</small></span>
       <span class="mini-divisions">${(client.divisions || []).map((division) => `<i class="${division.toLowerCase()}">${division === "CONTENTS" ? "C" : division === "RECON" ? "R" : "E"}</i>`).join("")}</span>
@@ -72,7 +72,7 @@ async function openClient(name) {
     $("#account").innerHTML = `<div class="account-empty"><div class="empty-mark">!</div><h2>Client unavailable</h2><p>${escapeHtml(result?.error || "The client could not be opened.")}</p></div>`;
     return;
   }
-  const directoryClient = state.clients.find((item) => item.name === name);
+  const directoryClient = state.clients.find((item) => (item.key || item.name) === name);
   if (directoryClient) {
     directoryClient.job_count = Number(result.job_count || 0);
     directoryClient.job_count_known = true;
@@ -101,6 +101,12 @@ function renderAccount(result) {
       </section>
     </article>`;
   $("#open-client-folder")?.addEventListener("click", async () => showResult(await pywebview.api.open_folder(client.folder || "")));
+  document.querySelectorAll('[data-job-panel]').forEach((panel,index)=>{
+    const job=jobs[index];if(!job.job_id)return;
+    const button=document.createElement('button');button.className='btn';button.textContent='Transfer to client';button.type='button';
+    button.onclick=()=>ClientTransfer.open(job.job_id,'',r=>{state.query='';$('#search').value='';return loadClients(r.client_id?'client:'+r.client_id:'',true);});
+    panel.querySelector('.job-actions').prepend(button);
+  });
   document.querySelectorAll("[data-job-tab]").forEach((tab) => tab.addEventListener("click", () => selectJob(Number(tab.dataset.jobTab))));
   document.querySelectorAll("[data-open-job]").forEach((button) => button.addEventListener("click", () => {
     const job = jobs[Number(button.dataset.openJob)] || {};
@@ -120,7 +126,7 @@ function jobPanel(job, index, clientLog = []) {
     ["Adjuster email", job.adjuster_email], ["Status", job.status],
     ["OD location", job.path],
   ];
-  const logs = clientLog.slice().reverse().slice(0, 50);
+  const logs = (job.job_log || clientLog).slice().reverse().slice(0, 50);
   return `<section class="job-panel ${index ? "hidden" : ""}" data-job-panel="${index}">
     <div class="job-panel-head"><div><span class="job-kind">${escapeHtml(String(job.kind || "job").replaceAll("_", " "))}</span><h4>${escapeHtml(job.name || "Job")}</h4></div><div class="job-actions"><button class="btn" data-open-folder="${index}" ${job.folder_exists ? "" : "disabled"}>Folder</button><button class="btn btn-primary" data-open-job="${index}">Open Job Card</button></div></div>
     <div class="division-cards">${["EMS","CONTENTS","RECON"].map((division) => `<div class="division-card ${job.divisions?.includes(division) ? "present" : "absent"}"><span>${division === "EMS" ? "💧" : division === "CONTENTS" ? "📦" : "🔨"}</span><strong>${division === "CONTENTS" ? "Contents" : division === "RECON" ? "Recon" : "EMS"}</strong><small>${job.divisions?.includes(division) ? "On this job" : "Not linked"}</small></div>`).join("")}</div>
@@ -149,7 +155,7 @@ function initials(name) { const parts = String(name || "C").replace(/[,()\-]/g, 
 function clientCountText(client) {
   if (!client?.job_count_known) return "Open to view jobs";
   const count = Number(client.job_count || 0);
-  return `${count} job${count === 1 ? "" : "s"}`;
+  return `${count} job${count === 1 ? "" : "s"}${client.ownership==='unassigned'?' · Client not assigned':''}`;
 }
 function showResult(result) { if (!result?.ok) setStatus(result?.error || "That could not be opened."); }
 function setStatus(message) { $("#status").textContent = message || ""; clearTimeout(setStatus.timer); setStatus.timer = setTimeout(() => $("#status").textContent = "", 4500); }

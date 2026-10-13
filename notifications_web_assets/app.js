@@ -4,6 +4,7 @@
 
 const $ = (s) => document.querySelector(s);
 const state = { groups: [], unreadOnly: false, activeBoard: null };
+let typeFilter;
 
 function esc(s) {
   return String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -35,7 +36,7 @@ function render() {
   window.parent.postMessage({type:'oneloss-notifications-changed'},'*');
   const feed = $("#feed");
   const groups = state.groups.map(g => {
-    const items = state.unreadOnly ? g.items.filter(it => it.unread) : g.items;
+    const items = g.items.filter(it => (!state.unreadOnly || it.unread) && (!typeFilter || typeFilter.matches(it)));
     return {...g, items, total:items.length, unread:items.filter(it => it.unread).length};
   });
   const totalUnread = groups.reduce((n, g) => n + g.unread, 0);
@@ -93,7 +94,7 @@ function render() {
       </li>`).join("");
     return `
       <section class="board-group" data-board="${esc(g.board)}">
-        ${g.items.length ? `<ul class="notif-list">${rows}</ul>` : '<div class="empty">No unread notifications for this board.</div>'}
+        ${g.items.length ? `<ul class="notif-list">${rows}</ul>` : `<div class="empty">${typeFilter?.active()?'No notifications match these types on this board. Change Types or select all.':'No unread notifications for this board.'}</div>`}
       </section>`;
   }).join("");
 
@@ -176,6 +177,8 @@ window.addEventListener("pywebviewready", async () => {
   await PanelState.init("notifications");
   state.unreadOnly = !!PanelState.get("unreadOnly", false);
   state.activeBoard = PanelState.get('activeBoard', null);
+  typeFilter = window.NotificationTypes?.mount($('#trello-panel .topbar-actions'), render);
+  $('#mark-all-btn').title='Marks all Trello notifications read, including those hidden by filters.';
   const _uo = $("#unread-only"); if (_uo) _uo.checked = state.unreadOnly;
 
   $("#refresh-btn").addEventListener("click", load);
@@ -198,4 +201,5 @@ window.addEventListener("pywebviewready", async () => {
     } finally { btn.disabled = false; btn.textContent = "✓ Mark all read"; }
   });
   window.addEventListener('trello-notifications-open', load);
+  setInterval(()=>{if(document.visibilityState==='visible' && !document.getElementById('trello-panel').hidden)void load();},30000);
 });

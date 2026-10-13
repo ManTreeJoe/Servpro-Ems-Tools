@@ -44,13 +44,17 @@ def test_running_window_receives_channel_taskbar_icon():
 
 
 def test_taskbar_identity_is_separate_and_matches_installer_shortcuts():
+    from windows_app_identity import app_id as channel_app_id
     shell = (ROOT / "home_web.py").read_text(encoding="utf-8")
     iss = (ROOT / "Linguar_Hub.iss").read_text(encoding="utf-8")
 
-    for app_id in ("Servpro.LinguarHub.Main.2026.2",
-                   "Servpro.LinguarHub.Trial.2026.2"):
-        assert app_id in shell
+    assert 'from windows_app_identity import app_id as windows_app_id' in shell
+    assert 'app_id = windows_app_id(channel)' in shell
+    for channel in ('Main', 'Trial'):
+        app_id = channel_app_id(channel)
+        assert app_id == f'Servpro.LinguarHub.{channel}.2026.2'
         assert app_id in iss
+    assert channel_app_id('Dev') not in {channel_app_id('Main'), channel_app_id('Trial')}
     assert "SetCurrentProcessExplicitAppUserModelID(app_id)" in shell
     assert 'AppUserModelID: "{#AppUserModelId}"' in iss
 

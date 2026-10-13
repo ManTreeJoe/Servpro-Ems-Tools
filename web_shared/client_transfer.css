@@ -1,0 +1,10 @@
+.client-transfer-dialog { width:min(500px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); overflow:auto; box-sizing:border-box; border:1px solid var(--border,#48515d); border-radius:11px; padding:22px; background:var(--surface,#202328); color:var(--text,#f2f4f7); font:13px/1.5 var(--font-body,Segoe UI,sans-serif); }
+.client-transfer-dialog::backdrop { background:#0008; }
+.client-transfer-dialog h2 { margin:0 0 12px; font:600 20px/1.3 var(--font-body,Segoe UI,sans-serif); }
+.client-transfer-dialog label { display:block; margin:12px 0; }
+.client-transfer-dialog input,.client-transfer-dialog select { display:block; width:100%; box-sizing:border-box; padding:10px; margin-top:5px; background:var(--surface-2,#292d33); color:inherit; border:1px solid var(--border,#48515d); border-radius:6px; font:inherit; }
+.client-transfer-dialog button { padding:9px 13px; border:1px solid var(--border,#48515d); border-radius:6px; background:var(--surface-2,#292d33); color:inherit; font:inherit; cursor:pointer; }
+.client-transfer-dialog [data-save] { background:var(--green,#1c5541); color:white; }
+.client-transfer-dialog button:disabled { opacity:.5; cursor:default; }
+.client-transfer-dialog footer { display:flex; gap:10px; justify-content:flex-end; }
+.client-transfer-dialog :focus-visible { outline:2px solid var(--link,#8dafce); outline-offset:2px; }

@@ -78,12 +78,8 @@ def _set_windows_app_identity(is_trial=False):
         # briefly shipped while the executable still carried wrench.ico;
         # Windows keeps that association even after the EXE icon changes.
         channel = _runtime_channel()
-        app_ids = {
-            "Main": "Servpro.LinguarHub.Main.2026.2",
-            "Trial": "Servpro.LinguarHub.Trial.2026.2",
-            "Dev": "Servpro.LinguarHub.Dev.2026.2",
-        }
-        app_id = app_ids[channel]
+        from windows_app_identity import app_id as windows_app_id
+        app_id = windows_app_id(channel)
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
     except Exception:
         pass
@@ -754,6 +750,10 @@ class HomeApi:
             return True   # Settings is pinned in the sidebar — never hideable.
         try:
             import persistence as _per
+            if key in {'job_notes', 'photo_folders', 'spreadsheet'}:
+                # One-time navigation cleanup: old visibility overrides must
+                # not keep retired shortcuts around. Settings can restore them.
+                return bool(_per.get(f'optional_tool_enabled_{key}'))
             val = _per.get(f"panel_hidden_{key}")
             if val is None:
                 # No explicit setting — fall back to the default
@@ -787,6 +787,8 @@ class HomeApi:
             return {"ok": False, "error": "Settings is pinned and can't be hidden"}
         try:
             import persistence as _per
+            if key in {'job_notes', 'photo_folders', 'spreadsheet'}:
+                _per.set_value(f'optional_tool_enabled_{key}', bool(visible))
             _per.set_value(f"panel_hidden_{key}", not bool(visible))
             return {"ok": True, "key": key, "visible": bool(visible)}
         except Exception as ex:

@@ -163,7 +163,7 @@
     <button class="settings-tab" type="button" data-scope-tab="health">System health</button>
   </nav>
   <section class="health-settings" data-settings-scope="health">
-    <iframe title="System health" loading="lazy" src="../health_web_assets/index.html?embedded=1"></iframe>
+    <iframe title="System health" loading="lazy" data-src="../health_web_assets/index.html?embedded=1"></iframe>
   </section>
   <!-- First-run wizard — only renders when not every critical
        field is set. JS fetches first_run_status() on load + hides
@@ -467,6 +467,12 @@
   </details>
 
   <div id="form-fields"></div>
+  <section data-settings-scope="personal" class="settings-card">
+    <h2>App updates</h2>
+    <p class="muted">Check your version, review release notes, or install an update.</p>
+    <button class="btn" type="button" id="open-app-updates">Open updates</button>
+    <p id="app-updates-help" class="muted" role="status"></p>
+  </section>
 </main>
 <footer class="footer">
   <span class="status" id="status"></span>
@@ -482,9 +488,13 @@ let SETTINGS_ACCESS = {is_admin:false, email:""};
 function showSettingsScope(scope) {
   SETTINGS_SCOPE = scope === "admin" || scope === "health" ? scope : "personal";
   document.body.classList.toggle("showing-health", SETTINGS_SCOPE === "health");
+  if (SETTINGS_SCOPE === "health") {
+    const frame = document.querySelector('.health-settings iframe');
+    if (!frame.getAttribute('src')) frame.src = frame.dataset.src;
+  }
   document.querySelectorAll("[data-settings-scope]").forEach((el) =>
     el.classList.toggle("scope-hidden",
-      el.dataset.settingsScope !== "both" && el.dataset.settingsScope !== SETTINGS_SCOPE));
+      el.dataset.settingsScope === "both" ? SETTINGS_SCOPE === "health" : el.dataset.settingsScope !== SETTINGS_SCOPE));
   document.querySelectorAll("[data-scope-tab]").forEach((button) => {
     const active = button.dataset.scopeTab === SETTINGS_SCOPE;
     button.classList.toggle("active", active);
@@ -495,6 +505,11 @@ function showSettingsScope(scope) {
 document.querySelectorAll("[data-scope-tab]").forEach((button) =>
   button.addEventListener("click", () => showSettingsScope(button.dataset.scopeTab)));
 showSettingsScope("personal");
+document.getElementById('open-app-updates').addEventListener('click', () => {
+  const updater = window.parent?.OneLossUpdates;
+  if (updater && !window.parent.__LINGUAR_BROWSER_TOOLS__) updater.open();
+  else document.getElementById('app-updates-help').textContent = 'Open the OneLoss desktop app to check for desktop updates.';
+});
 
 function myFolderField(key, label, value, connected) {
   return `<div class="my-folder-field" style="margin-top:8px;">
@@ -1727,7 +1742,9 @@ function render() {
     </div>`;
   }
   const grouped = {};
-  SCHEMA.filter((f) => !f.managed_connection).forEach((f) => {
+  // These paths already have a franchise-aware editor above. Do not expose
+  // a second, base-config editor that appears to change the same setting.
+  SCHEMA.filter((f) => !f.managed_connection && !['audit_base', 'runs_dir'].includes(f.key)).forEach((f) => {
     const scope = f.scope || "admin";
     const group = f.group || "Other";
     (((grouped[scope] ||= {})[group]) ||= []).push(f);
@@ -1809,7 +1826,7 @@ async function renderFirstRunWizard() {
   if (!status) return;
   const card = document.getElementById("first-run-card");
   if (!card) return;
-  card.style.display = "block";
+  card.style.display = status.all_done ? "none" : "block";
   document.getElementById("fr-progress").textContent =
     `${status.done} of ${status.total}`;
   const actions = {

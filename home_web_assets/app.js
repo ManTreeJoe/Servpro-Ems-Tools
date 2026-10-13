@@ -420,45 +420,13 @@ function renderSidebar() {
     }));
 }
 
-// Update banner — polls the repo's version.txt; shows a bar when newer.
+// The shell and Settings use one update controller.
 async function maybeCheckUpdate() {
   // Browser pages are deployed/served by the Hub and do not install the
   // Windows application.  Only the native pywebview shell owns the desktop
   // release checker and installer flow.
   if (window.__LINGUAR_BROWSER_TOOLS__) return;
-  let r;
-  try { r = await pywebview.api.check_update(); } catch (e) { return; }
-  if (!r || !r.ok || !r.update_available) return;
-  if (document.getElementById("update-bar")) return;
-  const bar = document.createElement("div");
-  bar.id = "update-bar";
-  bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--accent,#58B77D);color:#101713;padding:8px 14px;font-size:13px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.35);";
-  bar.innerHTML =
-    `<span>⬆️ Update available — <b>v${r.latest}</b> (you have v${r.current})${r.notes ? " · " + r.notes : ""}</span>
-     <span style="flex:1;"></span>
-     <button id="update-dl" style="background:#101713;color:#F0EEE8;border:none;border-radius:5px;padding:5px 12px;font-weight:700;cursor:pointer;">Update now</button>
-     <button id="update-x" style="background:transparent;color:#101713;border:1px solid rgba(16,23,19,.4);border-radius:5px;padding:5px 10px;cursor:pointer;">✕</button>`;
-  document.body.appendChild(bar);
-  const msg = bar.querySelector("span");
-  const dl = document.getElementById("update-dl");
-  dl.addEventListener("click", async () => {
-    dl.disabled = true; dl.style.cursor = "default"; dl.textContent = "Downloading…";
-    let res;
-    try { res = await pywebview.api.install_update(r.installer || r.url || ""); }
-    catch (e) { res = { ok: false, error: String(e) }; }
-    if (res && res.ok && res.launched) {
-      dl.textContent = "Installer opened ✓";
-      if (msg) msg.innerHTML = "⬇️ Installer downloaded — follow the setup prompts. OneLoss will close and reopen on the new version.";
-    } else if (res && res.opened_page) {
-      dl.textContent = "Opened page";
-      if (msg) msg.innerHTML = "🌐 Opened the download page in your browser — run the setup from there.";
-    } else {
-      dl.disabled = false; dl.style.cursor = "pointer"; dl.textContent = "Retry";
-      if (msg) msg.innerHTML = "⚠️ Update failed: " + ((res && res.error) || "unknown") + " — try again or open the release page.";
-      try { pywebview.api.open_url(r.url || ""); } catch (_) {}
-    }
-  });
-  document.getElementById("update-x").addEventListener("click", () => bar.remove());
+  await window.OneLossUpdates?.check();
 }
 
 function renderNavItem(it) {

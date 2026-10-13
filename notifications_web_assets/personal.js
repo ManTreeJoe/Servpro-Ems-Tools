@@ -1,5 +1,5 @@
 (()=>{'use strict';
-  const get=id=>document.getElementById(id);let items=[],generation=0;
+  const get=id=>document.getElementById(id);let items=[],generation=0,typeFilter;
   const status=text=>get('personal-status').textContent=text;
   const pendingReads=new Map();
   async function setRead(item,read){
@@ -33,7 +33,8 @@
     }catch(e){status(e.message||'The job link is unavailable.');return false;}
   }
   function render(){const feed=get('personal-feed');const scroll=feed.scrollTop;feed.replaceChildren();
-    const visible=get('personal-unread').checked?items.filter(item=>!item.read_at):items;
+    const visible=items.filter(item=>(!get('personal-unread').checked||!item.read_at)&&(!typeFilter||typeFilter.matches(item)));
+    if(!visible.length&&typeFilter?.active()){const empty=document.createElement('p');empty.className='personal-empty';empty.textContent='No notifications match these types. Change Types or select all.';feed.append(empty);return;}
     if(!visible.length){const empty=document.createElement('p');empty.className='personal-empty';empty.textContent=get('personal-unread').checked?'No unread notifications. Turn off Only show unread to see earlier messages.':'No notifications in this view. Add members from a job’s Members button. New OneLoss comments and @mentions appear here.';feed.append(empty);return;}
     for(const item of visible){const row=document.createElement('article');row.className='personal-notification'+(!item.read_at?' unread':'');
       const content=document.createElement('div'),title=document.createElement('strong'),meta=document.createElement('small'),body=document.createElement('p'),actions=document.createElement('div');actions.className='personal-actions';
@@ -52,9 +53,11 @@
     catch(e){if(token===generation)status(e.message);}finally{if(token===generation)get('personal-refresh').disabled=false;}
   }
   window.addEventListener('pywebviewready',()=>{
+    typeFilter=window.NotificationTypes?.mount(document.querySelector('#personal-panel .topbar-actions'),render);
     get('personal-refresh').onclick=load;get('personal-filter').onchange=load;get('personal-unread').onchange=render;
     get('personal-source').onclick=()=>{get('personal-panel').hidden=false;get('trello-panel').hidden=true;get('personal-source').setAttribute('aria-pressed','true');get('trello-source').setAttribute('aria-pressed','false');};
     get('trello-source').onclick=()=>{get('personal-panel').hidden=true;get('trello-panel').hidden=false;get('personal-source').setAttribute('aria-pressed','false');get('trello-source').setAttribute('aria-pressed','true');window.dispatchEvent(new Event('trello-notifications-open'));};
     load();
+    setInterval(()=>{if(document.visibilityState==='visible' && !get('personal-panel').hidden && !get('personal-refresh').disabled)void load();},30000);
   });
 })();

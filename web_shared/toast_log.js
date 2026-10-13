@@ -57,7 +57,7 @@
   }
 
   function present(entry) {
-    if (!['error','warn'].includes(entry.kind)) return;
+    if (!['error','warn','notification'].includes(entry.kind)) return;
     if (!document.body) {
       document.addEventListener('DOMContentLoaded', () => present(entry), {once:true});
       return;
@@ -115,6 +115,12 @@
       catch (_) { copy.textContent = 'Copy unavailable'; details.open = true; }
     };
     actions.append(copy);
+    if (entry.kind === 'notification') {
+      details.hidden = true; copy.hidden = true;
+      const open = document.createElement('button'); open.textContent = 'Open notifications';
+      open.onclick = () => { window.postMessage({type:'ems-navigate',key:'notifications'},location.origin); close.click(); };
+      actions.append(open);
+    }
     if (typeof entry.retry === 'function') {
       const retry = document.createElement('button'); retry.textContent = 'Retry';
       retry.onclick = async () => {

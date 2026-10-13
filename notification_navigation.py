@@ -22,7 +22,7 @@ def _card_aliases(card):
     return aliases
 
 
-def resolve(card_id):
+def _authorized_card(card_id):
     if not re.fullmatch(r'[0-9a-fA-F]{24}|[A-Za-z0-9]{8}', str(card_id or '')):
         raise ValueError('This notification has no valid job card.')
     with sb.interactive_requests(seconds=8):
@@ -31,10 +31,32 @@ def resolve(card_id):
             filters.extend((f'payload->>shortUrl.eq.https://trello.com/c/{card_id}',
                             f'payload->>url.like.https://trello.com/c/{card_id}/*'))
         cards = sb.rest('GET', 'hub_trello_mirror_cards', params={
-            'select':'card_id,payload', 'or':'(' + ','.join(filters) + ')', 'limit':'2'}) or []
+            'select':'card_id,board_id,payload', 'or':'(' + ','.join(filters) + ')', 'limit':'2'}) or []
         if len(cards) != 1:
             raise ValueError('This card is not available in your OneLoss workspace. Open it in Trello instead.')
-        card=cards[0]; aliases=_card_aliases(card)
+        return cards[0]
+
+
+def resolve_card(card_id):
+    """Open an authorized exact card, independent of CRM indexing/ownership."""
+    from division_cards import board_division
+    card = _authorized_card(card_id)
+    payload = card.get('payload') or {}
+    division = ''
+    if card.get('board_id'):
+        import trello_client as tc
+        board = tc._call('/boards/'+card['board_id'], params={'fields':'name'},
+                         _timeout=8, _max_retries=0) or {}
+        division = board_division(board.get('name'))
+    return dict(ok=True, client=payload.get('name') or 'Job', cardId=card['card_id'],
+                division={'CONTENTS':'Contents','RECON':'Recon'}.get(division,'EMS'))
+
+
+def resolve(card_id):
+    """Legacy strict CRM lookup; not required for opening a card."""
+    card = _authorized_card(card_id)
+    with sb.interactive_requests(seconds=8):
+        aliases=_card_aliases(card)
         links=sb.rest('GET','job_links',params={'select':'canon_key,link_type',
             'link_type':'in.(trello_card,trello_card_contents,trello_card_recon)',
             'link_value':'in.('+','.join(sorted(aliases))+')'}) or []
@@ -52,7 +74,7 @@ def resolve(card_id):
 def comment(card_id, comment_id):
     if not re.fullmatch(r'[0-9a-fA-F]{24}', str(comment_id or '')):
         return {'ok':False,'error':'The notification has no exact comment ID.'}
-    context=resolve(card_id)
+    context=resolve_card(card_id)
     import trello_client as tc
     action=tc._call('/actions/'+comment_id,params={'memberCreator':'true'},_timeout=8,_max_retries=0) or {}
     data=action.get('data') or {}

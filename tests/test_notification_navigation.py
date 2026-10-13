@@ -6,6 +6,21 @@ CARD='a'*24
 COMMENT='b'*24
 
 
+def test_notification_opens_exact_card_without_job_link(monkeypatch):
+    from notifications_web import Api
+    import trello_client
+    monkeypatch.setattr(trello_client,'_call',lambda *a,**k:{'name':'CONTENTS'})
+    def rest(method, table, **kwargs):
+        assert method == 'GET'
+        if table == 'hub_trello_mirror_cards':
+            return [{'card_id':CARD,'board_id':'board','payload':{'name':'Born, Barbara - Mercury','closed':True}}]
+        pytest.fail('Opening a card must not depend on job_links or jobs')
+    monkeypatch.setattr(nav.sb,'rest',rest)
+    result = Api().notification_job(CARD, COMMENT)
+    assert result == dict(ok=True,client='Born, Barbara - Mercury',cardId=CARD,
+                         division='Contents',commentId=COMMENT)
+
+
 @pytest.fixture
 def linked(monkeypatch):
     def rest(method,table,**kwargs):

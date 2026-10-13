@@ -6,6 +6,8 @@ const {chromium}=require('playwright');
  await page.route('http://localhost:8765/**',route=>route.fulfill({body:'<html></html>',contentType:'text/html'}));
  await page.goto('http://localhost:8765/');
  await page.setContent('<div id="status-msg"></div>');
+ await page.addScriptTag({path:path.resolve('web_shared/client_transfer.js')});
+ await page.addStyleTag({path:path.resolve('web_shared/client_transfer.css')});
  for(const file of ['web_shared/theme.css','pipeline_web_assets/app.css','pipeline_web_assets/job_workspace_tabs.css','pipeline_web_assets/comment_editor.css','pipeline_web_assets/comment_threads.css']) await page.addStyleTag({path:path.resolve(file)});
  for(const file of ['web_shared/modal.js','pipeline_web_assets/job_workspace_tabs.js','pipeline_web_assets/job_conversation.js','pipeline_web_assets/job_drafts.js','web_shared/vendor/markdown-it/markdown-it.min.js','pipeline_web_assets/comment_markdown.js','web_shared/vendor/comment-editor.js','pipeline_web_assets/comment_threads.js','pipeline_web_assets/app.js']) await page.addScriptTag({path:path.resolve(file)});
  await page.evaluate(()=>{
@@ -54,6 +56,23 @@ const {chromium}=require('playwright');
  assert.equal(await page.locator('.comment-thread-messages article').count(),1);
  assert.match(await page.locator('.comment-thread-original').innerText(),/Original message/);
  assert.equal(await page.locator('dialog.comment-thread-panel').evaluate(el=>el.open),true);
+ // Long originals and replies must share one scroll owner, not two message panes.
+ await page.locator('.comment-thread-original p').evaluate(el=>el.textContent='Long original message\n'.repeat(60));
+ const scrollLayout=await page.locator('.comment-thread-panel').evaluate(panel=>{
+   const original=panel.querySelector('.comment-thread-original'), replies=panel.querySelector('.comment-thread-messages');
+   const owner=el=>{for(let p=el;p&&p!==panel;p=p.parentElement)if(/auto|scroll/.test(getComputedStyle(p).overflowY))return p;return null;};
+   return {shared:!!owner(original)&&owner(original)===owner(replies),originalScroll:/auto|scroll/.test(getComputedStyle(original).overflowY)};
+ });
+ assert.equal(scrollLayout.originalScroll,false,'Original message must not have its own scrollbar');
+ assert.equal(scrollLayout.shared,true,'Original and replies must scroll together');
+ const movement=await page.locator('.comment-thread-scroll').evaluate(el=>{
+   const original=el.querySelector('.comment-thread-original'),reply=el.querySelector('.comment-thread-messages');
+   const before=[original.getBoundingClientRect().top,reply.getBoundingClientRect().top];
+   el.scrollTop=150;
+   return [before[0]-original.getBoundingClientRect().top,before[1]-reply.getBoundingClientRect().top];
+ });
+ assert.ok(movement.every(value=>Math.abs(value-150)<1),'Both message sections move by the same scroll distance');
+ await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-thread-unified-scroll.png')});
  await page.locator('[data-thread-input]').fill('Separate thread draft');
  assert.equal(await page.locator('[data-comment-input]').inputValue(),'Unsent regular draft');
  await page.keyboard.press('Escape');
@@ -103,5 +122,9 @@ const {chromium}=require('playwright');
  assert.equal(await page.locator('[data-comment-stream] article').count(),3);
  await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-comment-threads.png')});
  assert.deepEqual(errors,[]);
+ await page.evaluate(()=>{window.transferContext=[];pywebview.api.client_ownership_context=async(...args)=>{transferContext.push(args);return {ok:false,error:'Fixture: no saved mapping'};};});
+ await page.getByRole('button',{name:'Change client',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>transferContext),[['Thread check','card']]);
+ await page.locator('.client-transfer-dialog [data-cancel]').click();
  console.log('PASS: shared pins, unchanged order, reply retry identity, no ordinary fallback, thread view, draft preservation, echo deduplication.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

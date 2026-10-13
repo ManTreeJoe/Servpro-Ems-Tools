@@ -62,20 +62,6 @@ FIELDS = [
      "Turns on the in-development Playwright-driven Workcenter "
      "integration (search, form/photo download). Off = main behavior.",
      "bool"),
-    ("show_sort_files",
-     "Show Sort Files in toolbar",
-     "Off by default — most users already have the Desktop "
-     "'Sort Files.bat' shortcut. Turn on to put a Sort Files button "
-     "back in the launcher's top tool strip. Restart the launcher "
-     "for this to take effect.",
-     "bool"),
-    ("show_new_job",
-     "Show New EMS Job in toolbar",
-     "Off by default — New Job is reachable as a button inside the "
-     "Audit and Snapshot tools where job-creation actually happens. "
-     "Turn on to also put a top-level launcher button back. Restart "
-     "the launcher for this to take effect.",
-     "bool"),
     ("trello_token",
      "Trello token (per-user)",
      "Your personal Trello token. Click Generate to authorize EMS "

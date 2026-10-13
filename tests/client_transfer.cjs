@@ -1,0 +1,31 @@
+const {chromium}=require('playwright'),assert=require('assert/strict'),path=require('path');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1000,height:800}});
+ await page.setContent('<html data-theme="dark"><body></body></html>');
+ await page.addStyleTag({path:path.resolve('web_shared/theme.css')});await page.addStyleTag({path:path.resolve('web_shared/client_transfer.css')});
+ await page.addScriptTag({path:path.resolve('web_shared/client_transfer.js')});
+ await page.evaluate(()=>{window.calls=[];window.saved=false;window.fail=true;
+  window.pywebview={api:{client_ownership_context:async()=>({ok:true,department:'IE',job:{job_id:'job',display_name:'Everhome · DOL 10/11/26',client_id:null,client_revision:4},clients:[{client_id:'c',display_name:'Everhome Suites'}]}),
+  transfer_job_client:async(...args)=>{calls.push(args);return fail?{ok:false,error:'Client changed elsewhere. Reopen and review.'}:{ok:true,client_id:'c'};}}};
+  ClientTransfer.open('job','',()=>saved=true);
+ });
+ await page.waitForFunction(()=>document.querySelector('[data-status]').textContent==='');
+ assert(await page.locator('[data-save]').isDisabled());
+ await page.locator('[data-clients]').selectOption('c');
+ assert.match(await page.locator('[data-confirm]').innerText(),/Everhome Suites/);
+ await page.locator('[data-save]').click();assert.match(await page.locator('[data-status]').innerText(),/changed elsewhere/);
+ assert.deepEqual(await page.evaluate(()=>calls),[['job','c',4]]);
+ await page.screenshot({path:path.join(require('os').tmpdir(),'oneloss-client-transfer.png')});
+ await page.evaluate(()=>fail=false);await page.locator('[data-save]').click();assert(await page.evaluate(()=>saved));
+ assert.equal(await page.locator('dialog').count(),0);
+ await page.evaluate(()=>{pywebview.api.client_ownership_context=async()=>({ok:false,error:'Exact saved job not found'});ClientTransfer.open('unknown');});
+ await page.waitForFunction(()=>document.querySelector('[data-status]').textContent.includes('not found'));
+ assert(await page.locator('[data-save]').isDisabled());await page.locator('[data-cancel]').click();
+ await page.evaluate(()=>{document.body.innerHTML='<div id="client-list"></div><div id="account"></div><div id="status"></div>';window.contextCalls=[];pywebview.api.client_ownership_context=async(...args)=>{contextCalls.push(args);return {ok:false,error:'Fixture unavailable'};};});
+ await page.addScriptTag({path:path.resolve('clients_web_assets/app.js')});
+ await page.evaluate(()=>renderAccount({client:{name:'Everhome Suites'},job_count:1,jobs:[{job_id:'exact-job-id',name:'October loss',divisions:[]}]}));
+ await page.getByRole('button',{name:'Transfer to client',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>contextCalls),[['exact-job-id','']]);
+ await page.locator('[data-cancel]').click();
+ console.log('PASS: transfer confirmation, revision, failure recovery, exact identity failure, and close');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

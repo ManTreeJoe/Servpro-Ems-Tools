@@ -1,0 +1,12 @@
+OneLoss 1.8.29
+
+- Prefilled, editable unsigned ATP, CIF, COS, CER and State Farm Authorization to Pay PDFs, with preview and download from Jobs and Snapshot paperwork items.
+- Form details use the exact linked job/card and configured office identity. Signatures, signing dates and customer responses remain blank. State Farm Authorization to Repair still requires an unsigned template.
+- Client ownership transfers from job details and Clients, without moving folders or deleting history.
+- Exact-card navigation from Trello notifications, multi-select notification filters, Trello member matching and card memberships.
+- Repaired Windows notification identity and bounded Trello comment/mention alerts while the app is running.
+- Operations uses the Schedule calendar and clearer attention statistics instead of the legacy dispatch board; refreshed typography.
+- Compact update notices, clearer settings, retired toolbar options and optional older tools hidden by default.
+- One continuous scroll for thread messages.
+
+The board-system identity redesign is not included. Main and Dev remain separate applications. This installer does not run database migrations. Existing data and folders are retained. Review supplied form editions and filled details before sending through DocuSign; no forms are sent automatically. The installer is not code-signed.

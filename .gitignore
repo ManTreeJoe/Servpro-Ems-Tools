@@ -77,3 +77,7 @@ Output/
 
 # Node test dependencies
 node_modules/
+
+# Reviewed unsigned WC templates are application assets, not job documents.
+!/form_templates/
+!/form_templates/*.pdf

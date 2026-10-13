@@ -69,11 +69,8 @@ class FreshItems:
 class WindowsDelivery:
     def __init__(self, channel):
         from windows_toasts import InteractableWindowsToaster
-        import winreg
-        app_id = 'OneLoss.Desktop.' + channel
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, 'Software\\Classes\\AppUserModelId\\' + app_id) as key:
-            winreg.SetValueEx(key, 'DisplayName', 0, winreg.REG_SZ, 'OneLoss' + (' — DEV' if channel == 'Dev' else ''))
-            winreg.SetValueEx(key, 'IconUri', 0, winreg.REG_SZ, paths.resource('linguar_hub.ico'))
+        from windows_app_identity import register_notifications
+        app_id = register_notifications(channel)
         self.toaster = InteractableWindowsToaster('OneLoss', notifierAUMID=app_id)
 
     def show(self, title, body, clicked, failed=lambda: None):
@@ -89,8 +86,10 @@ class Manager:
         self.api, self.channel = api, channel
         self.stop_event = threading.Event()
         self.fresh = FreshItems()
+        self.trello_fresh = FreshItems()
         self.delivery = None
         self.error = ''
+        self.trello_error = ''
         self.lock = threading.Lock()
         self.started = False
 
@@ -117,6 +116,22 @@ class Manager:
         if self.stop_event.is_set() or identity() != scope:
             return
         from personal_notifications import call
+        if item.get('source') == 'trello':
+            import trello_alerts
+            if trello_alerts.account_key() != item.get('account_key'):
+                return
+            current = next((i for i in trello_alerts.fetch() if i['id']==item['id']), None)
+            if not current or identity() != scope:
+                return
+            context = self.api._subs['notifications'].notification_job(current['card_id'], current.get('comment_id',''))
+            if context.get('ok') and identity() == scope and trello_alerts.account_key() == item['account_key']:
+                self.api._window.evaluate_js('window.postMessage(' + json.dumps({'type':'linguar-open-job', **context}) + ',location.origin)')
+                self.api.focus_window()
+                import trello_client as tc
+                tc.mark_notification_read(current['notification_id'], True)
+            else:
+                self.open_inbox()
+            return
         result = call('inbox', filter='all', unread=False)
         # Recheck account and access before navigating from a possibly stale OS toast.
         if identity() != scope or not result.get('ok'):
@@ -144,7 +159,9 @@ class Manager:
         mode = preferences(scope)
         if mode == 'off' or not scope:
             self.fresh = FreshItems()
+            self.trello_fresh = FreshItems()
             return
+        self.poll_trello(scope, mode)
         from personal_notifications import call
         result = call('inbox', filter='all', unread=False)
         if not result.get('ok'):
@@ -161,6 +178,38 @@ class Manager:
             title = ('You were mentioned · ' if item['kind'] == 'mention' else 'New job comment · ') + item.get('client', 'OneLoss')
             self.send(title, item.get('actor', 'Teammate') + ': ' + item.get('body', ''),
                       lambda item=item: self.open_item(scope, item))
+
+    def poll_trello(self, scope, mode):
+        if self.api is None:
+            return
+        import trello_alerts
+        from personal_notifications import call
+        try:
+            account = trello_alerts.account_key()
+            rows = trello_alerts.fetch()
+            if identity()!=scope or preferences(scope)!=mode or trello_alerts.account_key()!=account:
+                return
+            fresh = self.trello_fresh.take((*scope, account, mode), rows)
+            self.trello_error = ''
+            for item in fresh[:3]:
+                # Reuse the account-access and mute boundary; Trello membership
+                # never grants access to a OneLoss card.
+                access = call('members', card_id=item['card_id'])
+                if not access.get('ok') or access.get('muted'):
+                    continue
+                if identity()!=scope or preferences(scope)!=mode or trello_alerts.account_key()!=account:
+                    return
+                item['account_key'] = account
+                title = ('Trello mention · ' if item['kind']=='mention' else 'Trello comment · ') + item['client']
+                body = item['actor'] + ': ' + item['body']
+                self.api._window.evaluate_js('window.OneLossNotice?.show(' + json.dumps({
+                    'kind':'notification','panel':'Connected Trello account',
+                    'title':title,'msg':body[:240]}) + ')')
+                self.send(title, body, lambda item=item:self.open_item(scope,item))
+        except Exception:
+            # Independent of the native inbox: a provider failure must not
+            # reset the baseline or block native delivery.
+            self.trello_error = 'Trello alerts could not refresh. They will retry.'
 
     def run(self):
         while not self.stop_event.is_set():
@@ -183,7 +232,7 @@ def settings(mode=None):
         if not scope:
             return {'ok': False, 'error': 'Sign in to OneLoss to configure your desktop alerts.'}
         return {'ok': True, 'mode': preferences(scope, mode), 'available': os.name == 'nt' and _manager is not None,
-                'error': _manager.error if _manager else ''}
+                'error': (_manager.error or _manager.trello_error) if _manager else ''}
     except Exception:
         return {'ok': False, 'error': 'Desktop alert settings could not be saved. Try again.'}
 
@@ -192,7 +241,7 @@ def test_notification():
     if _manager is None or os.name != 'nt':
         return {'ok': False, 'error': 'Open Notifications in the main Windows app to test desktop alerts.'}
     try:
-        _manager.send('OneLoss test notification', 'Desktop alerts are connected. Click to open your inbox.', _manager.open_inbox)
+        _manager.send('OneLoss test notification', 'Test alert from OneLoss. Click to open your inbox.', _manager.open_inbox)
         return {'ok': True}
     except Exception:
         return {'ok': False, 'error': 'Windows could not send the test. Check notification permissions and Do not disturb.'}

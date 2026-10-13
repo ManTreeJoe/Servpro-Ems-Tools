@@ -17,7 +17,7 @@ _TOOLS = {
         "desktop_args": ("--new-loss",),
     },
     "audit_web": {"label": "Full Job Audit", "browser_url": "/tools/?panel=daily_run", "desktop_tool": "audit_web"},
-    "run_doc_editor_web": {"label": "Edit Dispatch", "browser_url": "/tools/?panel=run_doc_editor", "desktop_tool": "run_doc_editor_web"},
+    "run_doc_editor_web": {"label": "Schedule", "browser_url": "/tools/?panel=run_doc_editor", "desktop_tool": "run_doc_editor_web"},
     "snapshot_web": {"label": "Snapshot", "browser_url": "/tools/?panel=snapshot", "desktop_tool": "snapshot_web"},
     "job_notes_web": {"label": "Job Notes", "browser_url": "/tools/?panel=job_notes", "desktop_tool": "job_notes_web"},
     "apa_web": {"label": "APA", "browser_url": "/tools/?panel=apa", "desktop_tool": "apa_web"},

@@ -199,7 +199,7 @@ def test_browser_and_desktop_use_the_same_responsive_assets():
     html = (ROOT / "operations_web_assets" / "index.html").read_text(encoding="utf-8")
     css = (ROOT / "operations_web_assets" / "app.css").read_text(encoding="utf-8")
     js = (ROOT / "operations_web_assets" / "app.js").read_text(encoding="utf-8")
-    for panel in ("home", "jobs", "dispatch", "clients", "reports", "settings"):
+    for panel in ("home", "jobs", "clients", "reports", "settings"):
         assert f'data-panel="{panel}"' in html
     assert "@media(max-width:720px)" in css
     assert "window.pywebview" in js and "/api/bootstrap" in js
@@ -217,7 +217,7 @@ def test_browser_and_desktop_use_the_same_responsive_assets():
                    '"/api/requirement"', "Referenced job matched to this client"):
         assert marker in js
     for marker in ("data-job-backdrop", "linguar_hub.png",
-                   "app.js?v=20260918sharedintake", "data-edit-dispatch"):
+                   "app.js?v=20261012schedule", "data-open-schedule"):
         assert marker in html
     for marker in ("enableHorizontalGrab", "serviceIcon", "web_shared/trello.png",
                    "web_shared/xactanalysis.png", "web_shared/companycam.png",
@@ -243,7 +243,8 @@ def test_operations_shell_has_no_fake_dashboard_controls_or_copy():
                          "Jobs by lane", "Current jobs"):
         assert direct_label in html
     assert '<button type="button" class="job-card' in js
-    assert '<button type="button" class="dispatch-job' in js
+    assert 'data-panel="dispatch"' not in html
+    assert 'state.data.dispatch' not in js
     assert '<button type="button" class="priority-row' in js
 
 

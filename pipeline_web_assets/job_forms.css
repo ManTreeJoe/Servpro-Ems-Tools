@@ -1,0 +1,22 @@
+.job-forms-dialog { width: min(780px, calc(100vw - 40px)); }
+.job-forms-dialog label { display: grid; gap: 6px; }
+.job-forms-dialog select, .job-forms-dialog input { width: 100%; box-sizing: border-box; font: inherit; padding: 9px; color: inherit; background: #262c32; border: 1px solid #4b5561; border-radius: 5px; }
+.job-form-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.job-forms-dialog footer { display: flex; justify-content: flex-end; gap: 10px; }
+.job-forms-dialog [data-status] { overflow-wrap: anywhere; }
+.job-forms-dialog [data-preview] img { display: block; width: 100%; height: auto; margin: 16px 0; background: white; }
+/* A form action is the fourth grid child, not another 24px status icon. */
+.paperwork-row > [data-prepare-form],
+.requirement-row > [data-prepare-form] {
+  grid-column: 2 / -1;
+  justify-self: start;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  padding: 7px 10px;
+  line-height: 1.35;
+}
+@media (max-width: 600px) { .job-form-fields { grid-template-columns: 1fr; } }

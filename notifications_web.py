@@ -67,6 +67,7 @@ def _shape(n):
     return {
         "id":        n.get("id") or "",
         "type":      ntype,
+        "is_move": bool(data.get("listBefore") or data.get("listAfter") or data.get("boardBefore") or data.get("boardAfter")),
         "icon":      emoji,
         "type_label": label,
         "unread":    bool(n.get("unread")),
@@ -103,8 +104,8 @@ class Api:
 
     def notification_job(self, card_id, comment_id=''):
         try:
-            from notification_navigation import resolve
-            result = resolve(card_id)
+            from notification_navigation import resolve_card
+            result = resolve_card(card_id)
             import re
             result['commentId'] = comment_id if re.fullmatch(r'[0-9a-fA-F]{24}', str(comment_id or '')) else ''
             return result

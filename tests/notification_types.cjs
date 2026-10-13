@@ -1,0 +1,24 @@
+const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1100,height:780}});
+ await page.setContent(fs.readFileSync('notifications_web_assets/index.html','utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace(/<link\b[^>]*>/gi,''));
+ for(const f of ['web_shared/theme.css','notifications_web_assets/theme.css','notifications_web_assets/inbox.css','notifications_web_assets/type_filter.css'])await page.addStyleTag({path:path.resolve(f)});
+ await page.evaluate(()=>{document.documentElement.dataset.theme='dark';window.PanelState={init:async()=>{},get:(k,v)=>v,set:()=>{}};window.reads=0;window.pywebview={api:{list_notifications:async()=>({ok:true,total:5,unread:5,groups:[{board:'EMS',items:[{type:'changeCard',is_move:true},{type:'reactionAdded'},{type:'commentCard'},{type:'mentionedOnCard'},{type:'changeCard'}].map((x,i)=>({...x,id:String(i),card_name:'Job '+i,icon:'•',unread:true}))}]}),mark_all_read:async()=>{reads++;return {ok:true};}}};document.querySelector('#personal-panel').hidden=true;document.querySelector('#trello-panel').hidden=false;});
+ for(const f of ['type_filter.js','app.js'])await page.addScriptTag({path:path.resolve('notifications_web_assets',f)});
+ await page.evaluate(()=>dispatchEvent(new Event('pywebviewready')));
+ await page.waitForSelector('#trello-panel summary');
+ await page.evaluate(()=>dispatchEvent(new Event('trello-notifications-open')));
+ await page.locator('.notif').first().waitFor();assert.equal(await page.locator('.notif').count(),5);
+ await page.locator('#trello-panel summary').click();
+ for(const label of ['Moves','Reactions','Other activity'])await page.getByLabel(label,{exact:true}).uncheck();
+ assert.equal(await page.locator('.notif').count(),2,'OR selection shows messages and mentions');
+ assert.equal(await page.evaluate(()=>reads),0);
+ await page.getByLabel('Messages',{exact:true}).uncheck();await page.getByLabel('Tags / mentions',{exact:true}).uncheck();
+ assert.equal(await page.locator('.notif').count(),0);assert.match(await page.locator('#feed').innerText(),/No notifications match/);
+ await page.getByRole('button',{name:'Select all',exact:true}).click();assert.equal(await page.locator('.notif').count(),5);
+ await page.screenshot({path:path.join(process.env.TEMP,'notification-types.png')});
+ await page.keyboard.press('Escape');assert.equal(await page.locator('#trello-panel details').evaluate(e=>e.open),false);
+ await page.setViewportSize({width:390,height:780});await page.locator('#trello-panel summary').click();
+ assert(await page.locator('.notification-types-menu').evaluate(e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}));
+ console.log('PASS notification types: OR, unknown activity, empty, reset, no writes, keyboard, narrow layout');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});
