@@ -13,6 +13,20 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),path
  });
  assert.deepEqual(await p.evaluate(()=>calls),['refresh',['x','b',0,150]]);
  assert.doesNotMatch(await p.locator('#status-msg').textContent(),/Refresh Jobs/);
+ // Same-lane reorder from an old desktop cache with fabricated equal ranks.
+ await p.evaluate(async()=>{
+  calls=[];
+  const payload=old=>({ok:true,boards:[{lanes:[{list_id:'b',name:'TBS MITIGATION',cards:[
+   {card_id:'x',name:'Tapia, Mario',pos:old?65536:100},
+   {card_id:'one',name:'PCM - Kellogg',pos:old?65536:129024},
+   {card_id:'two',name:'JLA - Mountain Cove',pos:old?65536:147456}]}]}]});
+  state.board=payload(true);state.drag={cardId:'x',fromListId:'b',name:'Tapia, Mario'};
+  pywebview.api.board_view_shared_refresh=async()=>{calls.push('refresh');return payload(false);};
+  const lane=document.querySelector('[data-list-id="b"]');
+  await onLaneDrop({preventDefault(){},currentTarget:lane,clientY:lane.children[1].getBoundingClientRect().top+1});
+ });
+ assert.deepEqual(await p.evaluate(()=>calls),['refresh',['x','b',0,138240]]);
+ assert.deepEqual(await p.evaluate(()=>state.board.boards[0].lanes[0].cards.map(c=>c.card_id)),['one','x','two']);
  await p.evaluate(async()=>{window.calls=[];state.drag={cardId:'x'};await refreshSavedBoardInBackground(true);});
  assert.equal(await p.evaluate(()=>calls.length),0,'No background refresh during drag');
  console.log('PASS: stale ordering automatically refreshes and retries exact slot; active drag is protected');

@@ -1,6 +1,7 @@
 """Pipeline board-source coverage."""
 
 import pipeline_web
+import pytest
 
 
 def test_pipeline_includes_all_division_boards():
@@ -47,3 +48,34 @@ def test_all_open_lanes_survive_both_read_paths(monkeypatch):
         cards=[], saved_at='2026-10-07T18:00:00Z')])
     mirrored = pipeline_web._server_board_payload([('wip', board['name'])])
     assert [lane['name'] for lane in mirrored['boards'][0]['lanes']] == list(names)
+
+
+@pytest.mark.parametrize('fallback', [False, True])
+def test_direct_board_requests_and_preserves_real_card_order(fallback):
+    from types import SimpleNamespace
+    cards = [dict(id='jla', name='JLA - Mountain Cove', idList='lane', pos=147456),
+             dict(id='pcm', name='PCM - Kellogg', idList='lane', pos=129024),
+             dict(id='mario', name='Tapia, Mario - Farmers', idList='lane', pos=135168)]
+
+    def call(path, **kwargs):
+        if path.endswith('/lists'):
+            return [dict(id='lane', name='TBS MITIGATION', pos=100)]
+        assert 'pos' in kwargs['params']['fields'].split(',')
+        if fallback:
+            raise RuntimeError('board endpoint unavailable')
+        return cards
+
+    def in_list(list_id, fields):
+        assert list_id == 'lane'
+        assert 'pos' in fields.split(',')
+        return cards
+
+    tc = SimpleNamespace(_call=call, cards_in_list_with_checklists=in_list)
+    result = pipeline_web._build_board(tc, None, 'wip', 'WORK IN PROGRESS', {'id': 'board'})
+    saved = result['lanes'][0]['cards']
+    assert [(c['card_id'], c['pos']) for c in saved] == [
+        ('pcm', 129024), ('mario', 135168), ('jla', 147456)]
+
+
+def test_missing_card_position_is_not_fabricated():
+    assert pipeline_web._card_to_board_dict({'id': 'card', 'name': 'Job'}, 'Lane')['pos'] is None

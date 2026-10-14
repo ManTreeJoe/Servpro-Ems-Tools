@@ -283,7 +283,7 @@ def _job_log_placement_scope(card_id, primary, placements, division, provider_ca
     return scope
 
 
-_CARD_FIELDS = ("name,desc,shortUrl,idBoard,idList,labels,due,"
+_CARD_FIELDS = ("name,desc,shortUrl,idBoard,idList,pos,labels,due,"
                 "dueComplete,dateLastActivity,closed")
 
 
@@ -333,7 +333,7 @@ def _build_board(tc, ps, key, bname, board_obj):
             except Exception as ex:
                 raise RuntimeError(f"Could not refresh {bname} / {lname}: {ex}") from ex
         shaped = []
-        for c in cards:
+        for c in sorted(cards, key=lambda card: card.get('pos') or 0):
             try:
                 if ps.is_pipeline_skip(c.get("name") or "", lname):
                     continue
@@ -383,7 +383,10 @@ def _card_to_board_dict(card, lane_name):
             overdue = False
     return {
         "card_id":      card.get("id") or "",
-        "pos":          card.get("pos") or 65536,
+        # Unknown is not a rank. A fabricated shared default makes unrelated
+        # cards collide and prevents dropping between them. The UI recovers
+        # missing positions from a fresh board read before submitting a move.
+        "pos":          card.get("pos"),
         "name":         name,
         "client":       name,
         "url":          card.get("shortUrl") or "",

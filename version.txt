@@ -1,6 +1,6 @@
 {
-  "version": "1.8.31",
-  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.31",
-  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.31/Linguar-Hub-Setup-1.8.31.exe",
-  "notes": "Job Log and notification hotfix: eligible new Trello posts send when optional board queue tables are unavailable. Saved logs retain scoped visibility during unresolved refreshes. Side popups fade after 8 seconds; warnings/errors after 12 seconds, pausing during interaction. Historical unscoped posts remain held for review. Unfinished Dev features are excluded."
+  "version": "1.8.32",
+  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.32",
+  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.32/Linguar-Hub-Setup-1.8.32.exe",
+  "notes": "Board ordering hotfix: direct Trello reads request and preserve actual card positions instead of assigning identical defaults. Reordering from an old cache refreshes positions and retains the selected drop slot. Includes the 1.8.31 Job Log delivery, history and popup fixes."
 }

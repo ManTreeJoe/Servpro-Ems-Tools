@@ -1,0 +1,8 @@
+OneLoss 1.8.32 — Board ordering hotfix
+
+- Both direct Trello board-loading paths request actual card positions and sort by them.
+- Missing positions no longer become identical fabricated positions. The existing drop recovery refreshes saved order before submitting the chosen slot.
+- Verified same-lane reordering from an old cache keeps the card between the selected neighbors. Real unresolved conflicts still stop safely rather than moving to an arbitrary position.
+- Includes the 1.8.31 Job Log delivery/history and fading-popup fixes.
+
+No database migration, bulk reordering, or historical post replay. The immediate Job Log comments-feed enhancement is not part of this release. Unfinished Dev features are excluded. Installer is not code-signed.
