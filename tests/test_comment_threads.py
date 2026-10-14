@@ -78,3 +78,22 @@ def test_reply_reference_and_confirmed_mapping(monkeypatch):
     assert result['ok'] and not result['warning']
     assert sent[0] == 'Body'
     assert calls[-1] == ('finish', {'id': 'native', 'provider_id': 'external'})
+
+
+def test_edit_denied_never_contacts_trello(monkeypatch):
+    import trello_client
+    monkeypatch.setattr(threads.sb, 'rpc', lambda *a: {'ok':False,'error':'Changed'})
+    monkeypatch.setattr(trello_client, 'update_comment', lambda *a: pytest.fail('Denied edit reached Trello'))
+    assert not threads.edit('card','reply','new','old')['ok']
+
+
+def test_edit_preserves_reply_identity_and_reports_sync_failure(monkeypatch):
+    import trello_client
+    row = {'card_id':'card','id':'reply','root_id':'root','parent_id':'parent','provider_id':'provider','body':'new'}
+    monkeypatch.setattr(threads.sb, 'rpc', lambda *a: {'ok':True,'comment':row})
+    calls=[]
+    monkeypatch.setattr(trello_client, 'update_comment', lambda *a: calls.append(a) or False)
+    result=threads.edit('card','reply','new','old')
+    assert result['ok'] and result['warning']
+    assert result['comment']['parent_id']=='parent'
+    assert calls==[('provider','new')]

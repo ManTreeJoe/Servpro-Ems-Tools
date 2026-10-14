@@ -28,8 +28,24 @@ export function mentions(editor, source, box) {
       else if(bottom>list.scrollTop+list.clientHeight)list.scrollTop=bottom-list.clientHeight;
     }
   }
-  function insert(row){
+  async function insert(row){
     const now=token();if(!now||key(now)!==key(current))return hide();
+    if(row.group){
+      const signature=key(now),request=++serial;
+      status.textContent='Checking assigned members…';
+      try {
+        const targets=source._mentionTargets?.()||[];
+        if(targets.length!==1)throw Error('Choose one card to mention its members.');
+        const result=await window.pywebview.api.job_comment_card_members(targets[0].cardId);
+        if(disposed||request!==serial||signature!==key(token()))return;
+        if(!result?.ok)throw Error(result?.error||'Assigned members could not be loaded.');
+        const users=[...new Set((result.members||[]).map(p=>p.username).filter(u=>/^[A-Za-z0-9_.-]+$/.test(u||'')))];
+        if(!users.length)throw Error('No assigned members were found for this card.');
+        const range={from:now.from,to:now.to};hide();
+        editor.chain().focus().insertContentAt(range,[{type:'text',text:users.map(u=>'@'+u).join(' ')+' '}]).run();
+      } catch(error){if(!disposed&&signature===key(token()))status.textContent=error.message;}
+      return;
+    }
     const range={from:now.from,to:now.to};hide();
     editor.chain().focus().insertContentAt(range,[{type:'text',text:`@${row.username} `}]).run();
   }
@@ -70,12 +86,14 @@ export function mentions(editor, source, box) {
         if(!people.has(id))people.set(id,{...member,boards:new Set()});people.get(id).boards.add(label);
       }
       hits=[...people.values()].filter(row=>`${row.name} ${row.username}`.toLowerCase().includes(next.term)).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,8);index=0;
+      if(targets.length===1&&'members'.startsWith(next.term))hits.unshift({group:true,name:'Members of this card',username:'members'});
+      if(targets.length===1&&'card'.startsWith(next.term))hits.unshift({name:'Trello card members',username:'card',nativeCard:true});
       status.textContent=hits.length?'People on selected boards':'No matching people on the selected boards.';
       if(rows.some(row=>row.rows.missing))status.textContent+=' Some people could not load. Reopen suggestions to retry.';
       for(const [i,row]of hits.entries()){
         const button=document.createElement('button');button.type='button';button.setAttribute('role','option');button.id=`${list.id}-${i}`;button.tabIndex=-1;
         const name=document.createElement('strong');name.textContent=row.name||row.username;
-        const detail=document.createElement('small');detail.textContent=`${row.source} · @${row.username} · ${[...row.boards].join(', ')}`;
+        const detail=document.createElement('small');detail.textContent=row.nativeCard?'@card · notify this card’s members in Trello':row.group?'@members · insert assigned people, not the whole board':`${row.source} · @${row.username} · ${[...row.boards].join(', ')}`;
         button.append(name,detail);button.addEventListener('mousedown',event=>event.preventDefault());button.onclick=()=>insert(row);list.append(button);
       }
       highlight();

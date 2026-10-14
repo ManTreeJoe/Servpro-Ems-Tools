@@ -36,8 +36,13 @@ def pin(card_id, comment_id, pinned, expected):
 def call(action, card_id, data=None):
     try:
         with sb.interactive_requests(seconds=12):
-            return sb.rpc('job_comment_threads', {'p_action': action,
+            result = sb.rpc('job_comment_threads', {'p_action': action,
                           'p_card': card_id, 'p_data': data or {}})
+            who = str((sb.current_user() or {}).get('id') or '')
+            for row in result.get('comments', []) + ([result['comment']] if result.get('comment') else []):
+                row['can_edit'] = bool(who and row.get('native') and str(row.get('author_id') or '') == who
+                                      and row.get('delivery') == 'sent' and row.get('provider_id'))
+            return result
     except Exception as error:
         message = str(error)
         if 'Comment is not in the shared snapshot yet' in message:
@@ -47,6 +52,28 @@ def call(action, card_id, data=None):
         if 'Pin changed' in message:
             return {'ok': False, 'error': 'Another user changed this pin. Wait for the refresh, then retry.'}
         return {'ok': False, 'error': 'Shared comments could not be confirmed. Keep your draft and retry.'}
+
+
+def edit(card_id, comment_id, body, expected):
+    """Update the shared reply, then its exact provider action; never repost."""
+    body = str(body or '').strip()
+    if not body or len(body) > 20000:
+        return {'ok': False, 'error': 'Reply must contain 1–20,000 characters.'}
+    try:
+        result = sb.rpc('edit_job_reply', {'p_card': card_id, 'p_id': comment_id,
+                        'p_body': body, 'p_expected': expected})
+    except Exception as error:
+        import app_error_reports
+        app_error_reports.report('pipeline', 'edit_job_reply', error)
+        return {'ok': False, 'error': 'Reply could not be saved. Refresh to check for changes; your draft is kept.'}
+    if not result.get('ok'):
+        return result
+    row = result['comment']
+    row['can_edit'] = True  # The RPC has checked author and exact-card access.
+    import trello_client as tc
+    synced = tc.update_comment(row['provider_id'], body)
+    return {**result, 'text': body, 'warning': '' if synced else
+            'Saved in OneLoss, but Trello did not update. Retry saving this edit when connected.'}
 
 
 def reply(card_id, parent_id, body, operation_id):

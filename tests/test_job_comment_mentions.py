@@ -41,3 +41,23 @@ def test_failure_is_not_empty_success_or_credential_leak(monkeypatch):
     assert not result['ok']
     assert 'SECRET' not in str(result)
     assert result['members'] == []
+
+
+def test_group_uses_assigned_card_members_and_assigned_oneloss_people(monkeypatch):
+    from job_comment_mentions import card_members
+    def call(path, **kwargs):
+        if path == f'/cards/{CARD}': return {'idBoard': BOARD}
+        assert path == f'/cards/{CARD}/members'
+        return [{'id':'1','username':'sam','fullName':'Sam'}]
+    monkeypatch.setitem(sys.modules, 'trello_client', types.SimpleNamespace(_call=call))
+    monkeypatch.setitem(sys.modules, 'personal_notifications', types.SimpleNamespace(mention_members=lambda card:{
+        'ok':True,'members':[{'username':'sam','member':True}, {'username':'laura','member':True},
+                             {'username':'unassigned','member':False}]}))
+    assert [p['username'] for p in card_members(CARD)['members']] == ['laura','sam']
+
+
+def test_group_fails_closed_if_membership_unavailable(monkeypatch):
+    import job_comment_mentions as mentions
+    monkeypatch.setattr(mentions,'members',lambda *a,**k:{'ok':True,'members':[{'username':'sam'}]})
+    monkeypatch.setitem(sys.modules,'personal_notifications',types.SimpleNamespace(mention_members=lambda card:{'ok':False}))
+    assert not mentions.card_members(CARD)['ok']

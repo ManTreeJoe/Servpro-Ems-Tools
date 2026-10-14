@@ -1,6 +1,6 @@
 {
-  "version": "1.8.32",
-  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.32",
-  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.32/Linguar-Hub-Setup-1.8.32.exe",
-  "notes": "Board ordering hotfix: direct Trello reads request and preserve actual card positions instead of assigning identical defaults. Reordering from an old cache refreshes positions and retains the selected drop slot. Includes the 1.8.31 Job Log delivery, history and popup fixes."
+  "version": "1.8.33",
+  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.33",
+  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.33/Linguar-Hub-Setup-1.8.33.exe",
+  "notes": "Comment and reply editing with formatting and mentions; @card and @members; DocuSketch quick link and unrestricted checklist checkbox; bounded workspace loading, retry, and shared error reporting."
 }

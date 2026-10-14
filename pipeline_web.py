@@ -2008,6 +2008,14 @@ class Api(JobSettingsApi):
         from job_comment_mentions import members
         return members(card_id)
 
+    def job_comment_card_members(self, card_id: str) -> dict:
+        from job_comment_mentions import card_members
+        return card_members(card_id)
+
+    def edit_job_reply(self, card_id: str, comment_id: str, text: str, expected: str) -> dict:
+        from comment_threads import edit
+        return edit(card_id, comment_id, text, expected)
+
     def personal_job_members(self, card_id: str) -> dict:
         from personal_notifications import call
         return call('members', card_id=card_id)

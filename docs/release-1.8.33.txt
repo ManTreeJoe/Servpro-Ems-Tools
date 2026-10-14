@@ -1,0 +1,10 @@
+OneLoss 1.8.33 — Comments and workspace reliability
+
+- Edit comments and your confirmed replies in the normal formatting/mention composer. Preserve drafts and thread identity.
+- @card stays a Trello group mention; @members inserts assigned individual handles.
+- Open the saved DocuSketch link from the job toolbar. DocuSketch checklist items no longer require a separate tool permission.
+- Failed workspace reads stop misleading loading placeholders, offer retry, and still attempt live details after a saved-data failure. Reads have bounded UI waits.
+- Include shared error reporting in Main for backend failures, JavaScript errors, and visible errors/warnings. Diagnostics are privacy-filtered and rate-limited.
+
+The author-checked reply-edit database function is already deployed. Maria Herrera's duplicate reference was repaired separately without deleting job history or changing Trello. Sam's underlying Requirements failure is not yet confirmed resolved; this release adds recovery and reporting.
+Includes prior 1.8.32 fixes. Unfinished file-catalog and other unrelated Dev work are excluded. Installer is not code-signed.

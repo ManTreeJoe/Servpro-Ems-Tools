@@ -333,7 +333,8 @@ class HomeApi:
             # Don't clobber if a name conflicts with a HomeApi method
             if hasattr(type(self), target):
                 continue
-            setattr(self, target, method)
+            import app_error_reports
+            setattr(self, target, app_error_reports.instrument(key, attr, method))
 
     def attach(self, w):
         """Pywebview window handle — also forward to every sub-Api
@@ -367,10 +368,16 @@ class HomeApi:
 
     def log_js_error(self, source="", message="", detail=""):
         try:
+            import app_error_reports
+            app_error_reports.report('frontend', 'javascript_error', message)
             import web_health
             return web_health.log_js_error(source, message, detail)
         except Exception:
             return {"ok": False}
+
+    def report_app_error(self, panel='', message=''):
+        import app_error_reports
+        return {'ok': app_error_reports.report(panel, 'visible_error', message)}
 
     def track_events(self, events: list) -> dict:
         """Shared privacy-safe usage sink for the shell and every panel.

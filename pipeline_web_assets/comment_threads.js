@@ -1,6 +1,6 @@
 /* Shared pins and replies are separate from the provider feed/cache. */
 window.CommentThreads = (() => {
-  function mount(root, conversation, cardId) {
+  function mount(root, conversation, cardId, {isActive = () => true} = {}) {
     if (!cardId || root._commentThreads || !window.pywebview?.api?.comment_thread_state) return;
     root._commentThreads = true;
     const api = window.pywebview.api;
@@ -106,6 +106,7 @@ window.CommentThreads = (() => {
       replyBanner.append(label, cancel);
     }
     function selectReply(id, actor, preview) {
+      if (root._editingComment) { state.textContent = 'Save or cancel your comment edit before replying.'; return; }
       root._commentReply = {id, actor, preview, cardId};
       banner(); input.dispatchEvent(new Event('input', {bubbles:true}));
       (compose.querySelector('[contenteditable="true"]') || input).focus();
@@ -124,8 +125,12 @@ window.CommentThreads = (() => {
       for (const row of rows) {
         const article = document.createElement('article');
         article.dataset.threadMessage = row.id;
+        article.dataset.commentId = row.id;
+        article.dataset.commentCardId = cardId;
+        article.dataset.commentSource = 'thread';
         const label = document.createElement('strong'); label.textContent = row.actor;
         const body = document.createElement('p'); body.textContent = row.body;
+        body.dataset.commentRaw = row.body;
         const context = document.createElement('small');
         context.textContent = row.id === threadRoot ? (row.native ? 'Original message' : 'Saved original · may have changed in Trello') : new Date(row.created_at).toLocaleString();
         const reply = document.createElement('button'); reply.type = 'button'; reply.className = 'text-btn'; reply.textContent = 'Reply';
@@ -135,6 +140,12 @@ window.CommentThreads = (() => {
           saved.actor = row.actor; saved.status = ''; paintComposer(); threadInput.focus();
         };
         article.append(label, context, body, reply);
+        if (row.can_edit) {
+          const edit = document.createElement('button'); edit.type='button'; edit.className='text-btn';
+          edit.dataset.commentEdit=''; edit.textContent='Edit';
+          edit.onclick=()=>{ if (!root._editingComment) closeThread(); };
+          article.append(edit);
+        }
         (row.id === threadRoot ? original : list).append(article);
         if (row.id === draft().parent) draft().actor = row.actor;
       }
@@ -149,7 +160,7 @@ window.CommentThreads = (() => {
       });
     }
     async function refresh() {
-      if (loading || pendingPins.size || !root.isConnected || document.hidden) return;
+      if (loading || pendingPins.size || !root.isConnected || document.hidden || !isActive()) return;
       loading = true; const version = generation;
       try {
         let after = '', rows = [];
@@ -157,8 +168,8 @@ window.CommentThreads = (() => {
           const result = await api.comment_thread_state(cardId, after);
           if (!result?.ok) throw new Error(result?.error || 'Shared comments unavailable');
           rows.push(...result.comments); after = result.next || '';
-        } while (after && root.isConnected && version === generation);
-        if (root.isConnected && version === generation) { records = rows; notice.textContent = ''; apply(); }
+        } while (after && root.isConnected && version === generation && isActive());
+        if (root.isConnected && version === generation && isActive()) { records = rows; notice.textContent = ''; apply(); }
       } catch (_) { notice.textContent = 'Pins and threads unavailable · retry shortly'; }
       finally { loading = false; }
     }
@@ -203,9 +214,10 @@ window.CommentThreads = (() => {
     compose.addEventListener('click', async event => {
       const button = event.target.closest('[data-post-comment]');
       const reply = root._commentReply;
-      if (!button || !reply) return;
+      if (!button || !reply || root._editingComment) return;
       event.preventDefault(); event.stopImmediatePropagation(); event.stopPropagation();
       const text = input.value.trim(); if (!text || button.disabled) return;
+      if (/(^|\s)@members\b/i.test(text)) { state.textContent = 'Select @members from suggestions to insert the assigned people before saving.'; return; }
       if (reply.cardId !== cardId) { state.textContent = 'This reply belongs to another card.'; return; }
       if (reply.body !== text) { reply.body = text; reply.operation = crypto.randomUUID(); }
       input.dispatchEvent(new Event('input', {bubbles:true}));
@@ -226,6 +238,14 @@ window.CommentThreads = (() => {
     }, true);
     root.addEventListener('comments-painted', filter);
     root.addEventListener('comment-reply-restored', banner);
+    root.addEventListener('comment-thread-edited', event => {
+      const row = event.detail;
+      if (!row || row.card_id !== cardId) return;
+      generation++;
+      records = records.map(saved => saved.id === row.id ? row : saved);
+      apply();
+    });
+    root._commentThreads = {refresh};
     banner(); refresh();
     const timer = setInterval(() => { if (!root.isConnected) { clearInterval(timer); window.removeEventListener('resize', positionThread); } else refresh(); }, 30000);
   }

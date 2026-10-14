@@ -132,8 +132,8 @@ window.JobConversation = (() => {
           (row.id === shared.id || (shared.provider_id && (row.external_id || row.id) === shared.provider_id) ||
             (shared.native && shared.operation_id && String(row.text || '').endsWith(`[OneLoss reply ${shared.operation_id}]`))));
         if (shared.native) {
-          const row = {...shared, text:shared.body, at:shared.created_at, source:'linguar',
-            external_id:shared.provider_id || '', can_manage:false, division:current, thread:shared};
+          const row = {...shared, text:shared.body, at:shared.created_at, source:'thread',
+            external_id:shared.provider_id || '', can_manage:!!shared.can_edit, division:current, thread:shared};
           if (index >= 0) messages[index] = row;
           else messages.push(row);
         } else if (index >= 0) messages[index] = {...messages[index], thread:shared};

@@ -37,7 +37,7 @@ def test_workspace_deep_load_survives_fast_lookup_failure():
     start = js.index("async function onAuditCard")
     end = js.index("function instantWorkspaceData", start)
     block = js[start:end]
-    assert "const fullOutcome = await fullPromise" in block
+    assert "const fullOutcome = await boundedWorkspaceRead(fullPromise" in block
     assert "workspace could not render" in block
     fast_failure = block[block.index("if (!fast?.ok)"):block.index("} else {", block.index("if (!fast?.ok)"))]
     assert "return;" not in fast_failure
@@ -115,8 +115,8 @@ def test_requirements_always_show_paperwork_and_account_tool_access():
     assert 'class="aud-section paperwork-section"' in js
     assert "Forms &amp; paperwork" in js
     assert "Showing the standard list · file evidence not checked yet" in js
-    assert "DocuSketch is not assigned to your account" in js
-    assert "needsDocuSketch && !canUseDocuSketch" in js
+    assert "DocuSketch is not assigned to your account" not in js
+    assert "blockedByAccess" not in js
     tabs = (ROOT / "pipeline_web_assets" / "job_workspace_tabs.js").read_text(
         encoding="utf-8")
     assert ".paperwork-section,.progress-section,.checklist-section" in tabs

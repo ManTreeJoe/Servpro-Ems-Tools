@@ -40,3 +40,6 @@
 .comment-mention-panel strong,.comment-mention-panel small { display:block; }
 .comment-mention-panel strong { font-size:12px; }
 .comment-mention-panel small { margin-top:2px; font-size:11px; color:var(--text-dim); }
+.comment-edit-banner{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 0;color:var(--text)}
+.comment-edit-banner[hidden]{display:none}
+.comment-edit-banner span{font-size:12px;color:var(--text-muted)}

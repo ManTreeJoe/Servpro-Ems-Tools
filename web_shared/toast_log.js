@@ -179,6 +179,10 @@
       }
     } catch (_) {}
     push({...entry, retry:undefined});
+    if (entry.kind === 'error' || entry.kind === 'warn') {
+      try { Promise.resolve(window.pywebview?.api?.report_app_error?.(entry.panel, entry.details)).catch(() => {}); }
+      catch (_) { /* Reporting must never break the original action. */ }
+    }
     present(entry);
   }
   window.OneLossNotice = {show:notify};
@@ -222,13 +226,14 @@
     if (window._toastLogShim) return;
     if (typeof window.setStatus !== "function") return;
     const orig = window.setStatus;
-    window.setStatus = function (msg, kind = "") {
+    window.setStatus = function (msg, kind = "", details = "") {
       if (msg) {
         const entry = {
           ts:     new Date().toISOString(),
           panel:  panelName(),
           msg:    String(msg),
           kind:   String(kind || ""),
+          details: String(details || msg),
         };
         notify(entry);
       }
