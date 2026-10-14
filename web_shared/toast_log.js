@@ -34,6 +34,9 @@
         border:1px solid var(--border-strong,#50665a);border-left:4px solid #efb762;
         border-radius:9px;padding:14px 16px;box-shadow:0 8px 30px #0005;overflow-wrap:anywhere}
       .ol-notice[data-kind=error]{border-left-color:#e59b88}
+      .ol-notice.is-leaving{opacity:0;transform:translateY(8px);transition:opacity 240ms ease,transform 240ms ease}
+      @media(prefers-reduced-motion:reduce){.ol-notice.is-leaving{transition:none;transform:none}}
+      .reduce-motion .ol-notice.is-leaving{transition:none;transform:none}
       .ol-notice header{display:flex;gap:12px;align-items:start;background:none;padding:0;border:0}
       .ol-notice strong{flex:1;font-size:15px}.ol-notice p{margin:7px 0;color:inherit}
       .ol-notice .ol-context{font-size:12px;color:var(--text-muted,#a9b9b0);margin:0 0 5px}
@@ -134,12 +137,34 @@
       actions.append(retry);
     }
     box.append(actions);
-    close.onclick = () => { visibleNotices.delete(key); box.remove(); };
-    visibleNotices.set(key, {box, context, count:1});
+    let timer, removal, started = 0;
+    let remaining = entry.kind === 'notification' ? 8000 : 12000;
+    const dismiss = () => { clearTimeout(timer); clearTimeout(removal); visibleNotices.delete(key); box.remove(); };
+    const pause = () => {
+      if (started) remaining = Math.max(0, remaining - (Date.now() - started));
+      started = 0;
+      clearTimeout(timer); clearTimeout(removal); box.classList.remove('is-leaving');
+    };
+    const resume = () => {
+      if (started || !box.isConnected || box.matches(':hover') || box.contains(document.activeElement)) return;
+      started = Date.now();
+      timer = setTimeout(() => {
+        started = 0; remaining = 0;
+        box.classList.add('is-leaving');
+        removal = setTimeout(dismiss, 250);
+      }, remaining);
+    };
+    close.onclick = dismiss;
+    box.onpointerenter = pause;
+    box.onpointerleave = resume;
+    box.addEventListener('focusin', pause);
+    box.addEventListener('focusout', () => setTimeout(resume, 0));
+    visibleNotices.set(key, {box, context, count:1, dismiss});
     host.append(box);
+    resume();
     while (visibleNotices.size > 3) {
       const first = visibleNotices.keys().next().value;
-      visibleNotices.get(first).box.remove(); visibleNotices.delete(first);
+      visibleNotices.get(first).dismiss();
     }
   }
 
