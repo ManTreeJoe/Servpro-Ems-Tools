@@ -1,4 +1,10 @@
 import job_workflow as workflow
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def scoped_delivery(monkeypatch):
+    monkeypatch.setattr(workflow, 'delivery_scope', lambda: {'fixture': 'owner'})
 
 
 def test_delivery_is_claimed_once_and_uncertain_post_is_not_retried(tmp_path, monkeypatch):

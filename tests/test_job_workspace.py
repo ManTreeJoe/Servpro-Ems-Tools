@@ -461,6 +461,10 @@ def test_job_log_create_edit_and_delete_queue_one_trello_comment(workspace, monk
     db, api = workspace
     import job_workflow
     monkeypatch.setattr(job_workflow, "DB_PATH", str(tmp_path / "workflow.db"))
+    origin = {'version': 1, 'user_id': 'fixture-user', 'department': 'IE',
+              'project': 'https://fixture.invalid', 'workspace': 'fixture-workspace',
+              'trello_identity': 'fixture-credential-fingerprint'}
+    monkeypatch.setattr(job_workflow, 'delivery_scope', lambda: dict(origin))
     db.upsert_job(display_name="Mirrored Log Test")
     posted, updated, deleted = [], [], []
     monkeypatch.setattr("trello_client.post_comment", lambda card, text: (
@@ -481,6 +485,7 @@ def test_job_log_create_edit_and_delete_queue_one_trello_comment(workspace, monk
     queued = job_workflow.pending()
     assert len(queued) == 1
     assert queued[0]["operation_type"] == "comment.create"
+    assert queued[0]['payload']['origin_scope'] == origin
     assert "Job Log · 09/03/26 · Monitor · Completed" in queued[0]["payload"]["text"]
 
     edited = api.save_crm_job_log("Mirrored Log Test", {

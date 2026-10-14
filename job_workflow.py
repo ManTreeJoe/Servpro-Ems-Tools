@@ -8,6 +8,7 @@ prevents individual buttons from growing their own network/rollback behavior.
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -21,6 +22,30 @@ DB_PATH = str(Path(paths.DATA_DIR) / "job_workflow.sqlite3")
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def delivery_scope() -> dict:
+    """Capture local routing identity, without a provider call or stored secrets."""
+    try:
+        import config
+        import supabase_client as sb
+        cfg = config.load()
+        user = str((sb.current_user() or {}).get('id') or '').strip()
+        project = str(sb.creds()[0] or '').strip().rstrip('/')
+        workspace = str(cfg.get('trello_workspace_id') or '').strip()
+        credentials = [str(cfg.get(name) or '').strip()
+                       for name in ('trello_api_key', 'trello_token')]
+        department = str(config.active_department() or config.base_department() or '').strip().upper()
+        if config.is_multi_dept() and not department:
+            return {}
+        if not user or not project or not workspace or not all(credentials):
+            return {}
+        return {'version': 1, 'user_id': user, 'project': project,
+                'department': department or '__single_office__',
+                'workspace': workspace,
+                'trello_identity': hashlib.sha256(json.dumps(credentials).encode()).hexdigest()}
+    except Exception:
+        return {}
 
 
 @contextmanager
@@ -53,7 +78,8 @@ def _connect():
         conn.close()
 
 
-def queue_job_log(job_key: str, saved: dict, card_id: str, mirror_text: str) -> dict:
+def queue_job_log(job_key: str, saved: dict, card_id: str, mirror_text: str,
+                  origin_scope: dict | None = None) -> dict:
     """Queue an immutable optional new-entry post, never a linked edit."""
     entry_id = str(saved.get("entry_id") or "").strip()
     card_id = str(card_id or "").strip()
@@ -62,6 +88,9 @@ def queue_job_log(job_key: str, saved: dict, card_id: str, mirror_text: str) -> 
         return {"queued": False, "reason": "no linked Trello card"}
     if comment_id:
         return {"queued": False, "reason": "Already linked; comments are independent"}
+    scope = delivery_scope() if origin_scope is None else origin_scope
+    if not scope or scope != delivery_scope():
+        return {"queued": False, "reason": "Saved in OneLoss; account/office delivery scope unavailable or changed"}
     key = f"job-log:{entry_id}"
     now = _now()
     operation_type = "comment.create"
@@ -73,7 +102,7 @@ def queue_job_log(job_key: str, saved: dict, card_id: str, mirror_text: str) -> 
             VALUES (?,?,?,?,?,?,?,'pending',0,NULL,?,?)
             ON CONFLICT(operation_key) DO NOTHING
         """, (key, operation_type, job_key, entry_id, card_id,
-              comment_id or None, json.dumps({"text": mirror_text}), now, now))
+              comment_id or None, json.dumps({"text": mirror_text, "origin_scope": scope}), now, now))
     return {"queued": True, "operation_key": key, "operation_type": operation_type}
 
 
@@ -164,9 +193,26 @@ def acknowledge(operation_key: str, *, external_id: str = "") -> None:
             pass
 
 
-def claim_delivery(operation_key: str) -> bool:
+def hold_delivery(operation_key: str, reason: str) -> None:
+    """Retain an ambiguous operation without guessing its original owner."""
+    with _connect() as conn:
+        conn.execute("""UPDATE trello_outbox SET status='held',last_error=?,updated_at=?
+                        WHERE operation_key=? AND status='pending'""",
+                     (reason, _now(), operation_key))
+
+
+def claim_delivery(operation_key: str, expected_scope: dict | None = None) -> bool:
     """Only one worker may send; interrupted sends require reconciliation."""
     with _connect() as conn:
+        scope = delivery_scope()
+        row = conn.execute('SELECT payload_json FROM trello_outbox WHERE operation_key=?',
+                           (operation_key,)).fetchone()
+        try:
+            origin = json.loads(row['payload_json']).get('origin_scope') if row else None
+        except (ValueError, TypeError):
+            origin = None
+        if not scope or origin != scope or (expected_scope is not None and scope != expected_scope):
+            return False
         cursor = conn.execute("""UPDATE trello_outbox SET status='sending',updated_at=?
             WHERE operation_key=? AND status='pending' AND operation_type='comment.create'""",
             (_now(), operation_key))

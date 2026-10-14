@@ -1,0 +1,8 @@
+OneLoss 1.8.31 — Job Log hotfix
+
+- New eligible Job Log comments can send even when optional pipeline queue tables are unavailable.
+- Queued delivery records the originating account, office, project, Trello workspace, and credential fingerprint. Credentials are not stored in the queue. Account changes do not drain another account's entries.
+- Historical unscoped entries remain held for review. Uncertain sends are not automatically reposted.
+- Saved Job Logs retain scoped visibility during unresolved card refreshes. Proven equivalent primary-card references restore retained history; verified auxiliary cards remain isolated.
+
+This installer does not run database migrations or repair historical queued posts. Previously hidden legacy history requires a verified primary-card refresh. Previously failed deliveries require verification on the originating computer. Unfinished Dev work is excluded. Installer is not code-signed.

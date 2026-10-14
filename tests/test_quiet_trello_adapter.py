@@ -234,6 +234,7 @@ def test_adapter_delivers_job_log_outbox_and_saves_acknowledgement(
         "work_date": "2026-09-21", "work_type": "Monitor",
         "status": "completed", "note": "Dry",
     })
+    monkeypatch.setattr(job_workflow, 'delivery_scope', lambda: {'fixture': 'owner'})
     job_workflow.queue_job_log(key, saved, "card-1", "Job Log mirror")
     monkeypatch.setattr(pipeline_web.pipeline_store, "pending_trello_changes",
                         lambda: {"ok": True, "cards": [], "comments": []})

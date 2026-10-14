@@ -237,24 +237,50 @@ def _job_info_sections(job: dict | None = None, *, trello_card=None) -> list:
 
 
 def _job_log_for_placement(entries: list[dict], card_id: str,
-                           primary_card_id: str = "") -> list[dict]:
+                           primary_card_id: str = "", *, include_legacy=None,
+                           card_aliases=()) -> list[dict]:
     """Return Job Log rows owned by the exact opened Board Placement.
 
     Rows written before placement ownership existed have no card id. Keep
     that history on the primary placement (or the only known card) rather
     than copying it into every temporary WIP/Estimating placement.
     """
-    opened = str(card_id or "").strip().casefold()
-    primary = str(primary_card_id or "").strip().casefold()
-    show_legacy = not primary or not opened or opened == primary
+    from job_log_projection import card_reference
+    opened = card_reference(card_id)
+    primary = card_reference(primary_card_id)
+    aliases = {opened, *card_aliases}
+    show_legacy = (not primary or not opened or primary in aliases) if include_legacy is None else include_legacy
     visible = []
     for entry in entries or []:
-        owner = str(entry.get("placement_card_id") or "").strip().casefold()
-        if owner == opened and opened:
+        owner = card_reference(entry.get("placement_card_id"))
+        if owner in aliases and opened and owner:
             visible.append(entry)
         elif not owner and show_legacy:
             visible.append(entry)
     return visible
+
+
+def _job_log_placement_scope(card_id, primary, placements, division, provider_card=None):
+    """Only exact placement evidence may change legacy-history visibility."""
+    from job_log_projection import card_reference
+    opened = card_reference(card_id)
+    aliases = {opened} if opened else set()
+    provider = provider_card or {}
+    evidence = {card_reference(provider.get(key)) for key in ('id', 'shortLink', 'shortUrl', 'url')}
+    evidence.discard('')
+    if opened and opened in evidence and provider.get('id'):
+        aliases.update(evidence)
+    primary_id = card_reference(primary.get('card_id'))
+    scope = {'placement_card_id': card_id, 'card_aliases': sorted(aliases)}
+    if primary_id and primary_id in aliases and not primary.get('ambiguous'):
+        scope['include_legacy'] = True
+    elif primary_id and not primary.get('ambiguous') and any(
+            row.get('division') == division and card_reference(row.get('card_id')) in aliases
+            and row.get('primary') is False for row in placements):
+        scope['include_legacy'] = False
+    # Otherwise retain the saved visibility decision, without importing new
+    # unplaced rows from an unresolved/name-derived shared job response.
+    return scope
 
 
 _CARD_FIELDS = ("name,desc,shortUrl,idBoard,idList,labels,due,"
@@ -1043,13 +1069,7 @@ class Api(JobSettingsApi):
             cid = (summary.get("trello_card_id") or "").strip()
         crm = dict(crm)
         primary_card_id = str(selected_card.get("card_id") or "").strip()
-        crm["job_log"] = _job_log_for_placement(
-            list(crm.get("job_log") or []), cid, primary_card_id)
-        crm["job_log_scope"] = {
-            "placement_card_id": cid,
-            "include_legacy": (not primary_card_id or not cid or
-                               cid.casefold() == primary_card_id.casefold()),
-        }
+        unfiltered_job_log = list(crm.get("job_log") or [])
         crm["work_environments"] = _detected_work_environments(
             crm, summary, division_cards, selected_division)
         # Linguar Hub is the durable source. Trello below is now an import/
@@ -1169,6 +1189,12 @@ class Api(JobSettingsApi):
             attachments = saved_workspace.get("attachments", [])
             members = saved_workspace.get("members", [])
             info_sections = info_sections or saved_workspace.get("info_sections", [])
+        log_scope = _job_log_placement_scope(cid, selected_card, division_placements,
+                                             selected_division, trello_card)
+        crm['job_log_scope'] = log_scope
+        crm['job_log'] = _job_log_for_placement(unfiltered_job_log, cid, primary_card_id,
+            include_legacy=log_scope.get('include_legacy', False),
+            card_aliases=log_scope['card_aliases'])
         comments.sort(key=lambda c: c.get("at") or "", reverse=True)
         from job_workspace_contract import build_job_workspace
         workspace = build_job_workspace(
@@ -2520,7 +2546,8 @@ class Api(JobSettingsApi):
         if not pending.get("ok"):
             return {"ok": False, "cards": 0, "comments": 0,
                     "error": pending.get("error") or "sync queue unavailable"}
-        if pending.get("mode") == "direct":
+        direct = pending.get("mode") == "direct"
+        if direct and pending.get("queue_reason") != "schema_missing":
             return {"ok": True, "cards": 0, "comments": 0, "error": "",
                     "mode": "direct", "queue_reason": pending.get("queue_reason", "")}
         import trello_client as tc
@@ -2575,16 +2602,26 @@ class Api(JobSettingsApi):
         # an append-only activity. They run in this same quiet adapter cycle.
         try:
             import job_workflow
+            scope = job_workflow.delivery_scope()
             for operation in job_workflow.pending():
                 key = str(operation.get("operation_key") or "")
                 kind = str(operation.get("operation_type") or "")
                 if kind in ("contents.ensure_card", "division.ensure_card"):
                     continue  # Separate scoped card provisioner, not a Job Log operation.
+                origin = (operation.get("payload") or {}).get("origin_scope")
+                if not origin:
+                    job_workflow.hold_delivery(key, "Legacy Job Log delivery has no account/office origin; review required")
+                    continue
+                if not scope or origin != scope:
+                    # Another account's records remain pending for their owner.
+                    continue
                 try:
                     external_id = ""
                     if kind == "comment.create":
-                        if not job_workflow.claim_delivery(key):
+                        if not job_workflow.claim_delivery(key, scope):
                             continue
+                        if job_workflow.delivery_scope() != scope:
+                            raise RuntimeError("Account or office changed before Job Log delivery")
                         posted = tc.post_comment(
                             str(operation.get("card_id") or ""),
                             str((operation.get("payload") or {}).get("text") or "")) or {}
@@ -2610,9 +2647,12 @@ class Api(JobSettingsApi):
                 errors.append('A Job Log comment delivery needs review. Check Trello before retrying; no automatic repost was attempted.')
         except Exception as ex:
             errors.append(str(ex))
-        return {"ok": not errors, "cards": cards_done,
+        result = {"ok": not errors, "cards": cards_done,
                 "comments": comments_done, "job_logs": job_logs_done,
                 "error": errors[0] if errors else ""}
+        if direct:
+            result.update(mode="direct", queue_reason=pending.get("queue_reason", ""))
+        return result
 
     def background_trello_sync(self) -> dict:
         """Start the quiet two-way Trello adapter cycle and return at once."""
