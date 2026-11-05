@@ -31,7 +31,12 @@ def listing(root, relative='', refresh=False):
     except Exception:
         pass  # A metadata-cache failure must not prevent a real folder read.
     if saved and not refresh:
-        return saved
+        try:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(saved['checked_at'])).total_seconds()
+            if 0 <= age < 30 and saved.get('files'):
+                return saved
+        except (ValueError, TypeError):
+            pass
     result = job_file_browser.list_folder(root, relative)
     if not result.get('ok'):
         return {**saved, 'warning': 'Folder refresh failed; showing the last saved listing. ' + result.get('error', '')} if saved else result

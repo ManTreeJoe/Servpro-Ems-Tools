@@ -709,7 +709,7 @@
         const field = select.dataset.crmField;
         let result;
         try { result = await pywebview.api.save_crm_job_workspace(
-          r.client, { [field]: select.value }); }
+          r.client, { [field]: select.value }, r.trello_card_id || ''); }
         catch (ex) { result = { ok: false, error: String(ex) }; }
         select.disabled = false;
         if (!result || !result.ok) {
@@ -725,7 +725,7 @@
         if (!confirm('Add this profile’s requirements? Existing requirements stay. Use only one full baseline to avoid duplicates.')) return;
         button.disabled = true; button.textContent = "Applying…";
         let result;
-        try { result = await pywebview.api.apply_job_profile(r.client, button.dataset.applyProfile); }
+        try { result = await pywebview.api.apply_job_profile(r.client, button.dataset.applyProfile, r.trello_card_id || ''); }
         catch (ex) { result = {ok:false, error:String(ex)}; }
         if (!result?.ok) {
           button.disabled = false; button.textContent = "Try again";
@@ -781,7 +781,7 @@
         if (!window.confirm(`Remove the pinned ${division} Trello card?`)) return;
         button.disabled = true;
         let result;
-        try { result = await pywebview.api.unpin_crm_division_trello(r.client, division); }
+        try { result = await pywebview.api.unpin_crm_division_trello(r.client, division, r.trello_card_id || ''); }
         catch (ex) { result = {ok:false, error:String(ex)}; }
         if (!result?.ok) { button.disabled = false; setStatus(ctx, result?.error || "Could not remove Trello card", "error"); return; }
         setStatus(ctx, `${division} Trello card removed`, "ok");
@@ -1747,7 +1747,7 @@
     }
     if (action === "open-folder") {
       const res = await pywebview.api.open_od_for_client(
-        row.client, row.path || "");
+        row.client, row.path || "", row.trello_card_id || "");
       if (res && res.ok) {
         if (res.refreshed && res.path && res.path !== row.path) {
           row.path = res.path;
@@ -1891,7 +1891,7 @@
     } else if (action === "job-info") {
       await openJobInfoModal(row, ctx);
     } else if (action === "copy-client") {
-      const info = await pywebview.api.job_info_copy_data(row.client);
+      const info = await pywebview.api.job_info_copy_data(row.client, row.trello_card_id || "");
       if (!info?.ok || !info.name) {
         setStatus(ctx, info?.error || "No customer name saved in Job Info", "warn");
         return;
@@ -1902,7 +1902,7 @@
       const ok = await copyText(ctx, nm);
       setStatus(ctx, ok ? `📋 Copied from Job Info: ${nm}` : "Couldn't copy", ok ? "ok" : "error");
     } else if (action === "copy-phone") {
-      const info = await pywebview.api.job_info_copy_data(row.client);
+      const info = await pywebview.api.job_info_copy_data(row.client, row.trello_card_id || "");
       if (!info?.ok || !info.phone) {
         setStatus(ctx, info?.error || "No customer phone saved in Job Info", "warn");
         return;
@@ -2954,7 +2954,7 @@
     let sch = null, data = null;
     try {
       sch  = await pywebview.api.job_settings_schema();
-      data = await pywebview.api.job_settings_load(row.client, child);
+      data = await pywebview.api.job_settings_load(row.client, child, row.trello_card_id || "");
     } catch (ex) {
       setStatus(ctx, "Job info failed: " + ex, "error");
       return;
@@ -3114,7 +3114,8 @@
         // card_desc is the description this edit was based on. Passing it
         // back avoids a second fetch and keeps the diff honest.
         res = await pywebview.api.job_settings_save(
-          row.client, out, child, data.card_desc || "");
+          row.client, out, child, data.card_desc || "", row.trello_card_id || "",
+          data.loss_label_context || null, data.insurance_context || null);
       } catch (ex) {
         msg.textContent = "Failed: " + ex;
         return;

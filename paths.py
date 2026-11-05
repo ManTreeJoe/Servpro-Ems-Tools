@@ -46,11 +46,13 @@ def _detect_channel():
             return "main"
     except Exception:
         pass
-    return "trial" if os.environ.get("LINGUAR_CHANNEL", "").lower() == "trial" else "main"
+    channel = os.environ.get("LINGUAR_CHANNEL", "").lower()
+    return channel if channel in {"trial", "dev"} else "main"
 
 
 CHANNEL = _detect_channel()
 IS_TRIAL = CHANNEL == "trial"
+IS_DEV = CHANNEL == "dev"
 
 
 # ── Stdout/stderr encoding ─────────────────────────────────────────────────
@@ -117,7 +119,7 @@ APPDATA = os.environ.get("APPDATA") or os.path.expanduser(r"~\AppData\Roaming")
 
 MAIN_APP_DIR_NAME = "Linguar Hub"
 TRIAL_APP_DIR_NAME = "Linguar Hub Trial"
-APP_DIR_NAME = TRIAL_APP_DIR_NAME if IS_TRIAL else MAIN_APP_DIR_NAME
+APP_DIR_NAME = "OneLoss Identity Dev" if IS_DEV else (TRIAL_APP_DIR_NAME if IS_TRIAL else MAIN_APP_DIR_NAME)
 # Pre-rebrand name. Everything lived here through v1.1.3, so a machine
 # upgrading from that build has ~90 MB of real state — config.json, the
 # job index, APA drafts, every backup — sitting under the old name.
@@ -228,7 +230,7 @@ def _seed_trial_data_dir():
     return DATA_DIR
 
 
-DATA_DIR = (_seed_trial_data_dir() if IS_TRIAL else
+DATA_DIR = (DATA_DIR if IS_DEV else _seed_trial_data_dir() if IS_TRIAL else
             _adopt_legacy_data_dir())
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -296,7 +298,8 @@ def _migrate_once():
                     except Exception:
                         pass
 
-_migrate_once()
+if not IS_DEV:
+    _migrate_once()
 
 
 # ── Auto-detection of folder paths ──────────────────────────────────────────
@@ -307,6 +310,8 @@ def auto_detect():
     Returns a dict with whichever keys we found. Caller overlays these on
     top of the bundled defaults so unknown keys keep their default value.
     """
+    if IS_DEV:
+        return {}  # Never discover production shares into the isolated pilot.
     home = os.path.expanduser("~")
     onedrive_roots = sorted(set(
         glob.glob(os.path.join(home, "OneDrive*"))

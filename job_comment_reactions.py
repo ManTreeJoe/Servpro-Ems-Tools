@@ -5,6 +5,40 @@ from comment_emoji import CHOICES, CODES
 
 _WRITE_LOCK = threading.Lock()
 _OPTIONS = {'_max_retries': 0, '_timeout': 5}
+PIN_CODE = '1F4CC'
+
+
+def pin_state(card_id):
+    """Read provider pins in pages; never interpret a partial/failed read as unpinned."""
+    try:
+        import trello_client as tc
+        if not re.fullmatch(r'(?:[0-9a-fA-F]{24}|[A-Za-z0-9]{8})', str(card_id)):
+            raise ValueError('Invalid card')
+        me = tc._call('/members/me', params={'fields': 'id'}, **_OPTIONS)
+        if not me.get('id'):
+            raise ValueError('Unknown account')
+        states, before = {}, None
+        for _ in range(20):
+            params = {'filter': 'commentCard', 'limit': 200, 'reactions': 'true', 'reactions_emoji': 'true'}
+            if before:
+                params['before'] = before
+            rows = tc._call(f'/cards/{card_id}/actions', params=params, **_OPTIONS)
+            if not isinstance(rows, list):
+                raise ValueError('Invalid response')
+            for row in rows:
+                if not isinstance(row.get('reactions'), list):
+                    raise ValueError('Missing reaction state')
+                pins = [r for r in row['reactions'] if _code(r) == PIN_CODE]
+                states[row['id']] = {'pinned': bool(pins), 'mine': any(r.get('idMember') == me['id'] for r in pins)}
+            if len(rows) < 200:
+                return {'ok': True, 'pins': states}
+            cursor = rows[-1].get('id')
+            if not cursor or cursor == before:
+                break
+            before = cursor
+        raise ValueError('Incomplete history')
+    except Exception:
+        return {'ok': False, 'error': 'Trello pins could not refresh. Previous pin markers are kept.'}
 
 
 def _snapshot(tc, card_id, action_id):

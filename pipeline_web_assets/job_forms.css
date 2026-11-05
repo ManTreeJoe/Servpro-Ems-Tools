@@ -20,3 +20,47 @@
   line-height: 1.35;
 }
 @media (max-width: 600px) { .job-form-fields { grid-template-columns: 1fr; } }
+.paperwork-matches { grid-column: 2 / -1; min-width: 0; }
+.paperwork-matches:has(.paperwork-match) { display: grid; gap: 8px; }
+.paperwork-match { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.paperwork-match > span { flex-basis: 100%; overflow-wrap: anywhere; color: var(--text-dim); font-size: 11px; }
+.paperwork-match button { white-space: normal; }
+/* Compact paperwork rows; leave the existing conversation panel unchanged. */
+.audit-card .paperwork-list { display:block; container-type:inline-size; border-top:1px solid var(--border); }
+.audit-card .paperwork-row { grid-template-columns:22px minmax(0,1fr) auto; gap:8px 10px; padding:10px 0; border:0; border-bottom:1px solid var(--border); border-radius:0; background:transparent; }
+.audit-card .paperwork-row strong { white-space:normal; overflow-wrap:anywhere; }
+.audit-card .paperwork-row small { overflow-wrap:anywhere; }
+.audit-card .paperwork-actions { grid-column:2 / -1; display:grid; gap:6px; min-width:0; }
+.audit-card .paperwork-actions:has(.paperwork-matches:only-child:not(:has(.paperwork-match))) { gap:0; }
+.audit-card .paperwork-actions .paperwork-matches { grid-column:auto; }
+.audit-card .paperwork-actions [data-form-match-feedback]:empty { display:none; }
+.audit-card .paperwork-actions > [data-prepare-form] { justify-self:start; white-space:normal; max-width:100%; }
+.audit-card .paperwork-actions .paperwork-match { align-items:center; }
+.audit-card .paperwork-actions .paperwork-match > span { flex-basis:100%; }
+.audit-card .paperwork-actions .paperwork-match { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:start; }
+.paperwork-confirm { padding:4px 10px;min-height:28px;font-size:11px;background:var(--green);color:var(--text);border:1px solid var(--border);border-radius:5px;cursor:pointer; }
+.paperwork-confirm:disabled { background:var(--surface-2);color:var(--text-dim);cursor:default; }
+.paperwork-confirm:focus-visible,.paperwork-file-link:focus-visible,.paperwork-file-menu summary:focus-visible { outline:2px solid var(--text);outline-offset:2px; }
+.paperwork-file-link { border:0; background:transparent; color:var(--link); padding:6px 0; font:inherit; font-size:12px; text-align:left; text-decoration:underline; cursor:pointer; overflow-wrap:anywhere; min-width:0; }
+.paperwork-file-menu summary { cursor:pointer; list-style:none; padding:4px 10px; border:1px solid var(--border); border-radius:5px; font-size:18px; line-height:1; }
+.paperwork-file-menu summary::-webkit-details-marker { display:none; }
+.paperwork-file-menu[open] { grid-column:1 / -1; }
+.paperwork-file-menu[open] summary { width:max-content; margin-left:auto; }
+.paperwork-file-options { display:grid; gap:6px; padding:8px; margin-top:6px; background:var(--surface-2); border:1px solid var(--border); border-radius:5px; }
+.paperwork-file-options .btn { text-align:left; white-space:normal; }
+@container (min-width:640px) {
+  .audit-card .paperwork-row { grid-template-columns:22px minmax(150px,1fr) 84px minmax(180px,.8fr); }
+  .audit-card .paperwork-row > b { grid-column:3; justify-self:start; }
+  .audit-card .paperwork-actions { grid-column:4; grid-row:1; }
+  .audit-card .paperwork-actions .paperwork-match { grid-template-columns:minmax(0,1fr) auto auto; gap:6px; }
+  .audit-card .paperwork-actions .paperwork-match > span { min-width:0; }
+  .audit-card .paperwork-actions > [data-prepare-form] { margin-left:0; }
+}
+.matched-form-preview { width: min(1000px, 94vw); max-width: 94vw; height: 88vh; max-height: 94vh; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); }
+.matched-form-preview::backdrop { background: rgba(0,0,0,.55); }
+.matched-form-preview[open] { display: flex; flex-direction: column; gap: 12px; }
+.matched-form-preview header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.matched-form-preview h2 { margin: 0; overflow-wrap: anywhere; font-size: 16px; }
+.matched-form-preview-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.matched-form-preview-content { flex: 1; min-height: 0; }
+.matched-form-preview iframe { width: 100%; height: 100%; border: 0; background: white; }

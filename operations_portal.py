@@ -247,7 +247,7 @@ class OperationsHandler(SimpleHTTPRequestHandler):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Linguar Hub Operations browser portal")
+    parser = argparse.ArgumentParser(description="OneLoss Operations browser portal")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--share", action="store_true", help="Listen on the office LAN")
     parser.add_argument("--key", default=os.environ.get("LINGUAR_OPERATIONS_KEY", ""))

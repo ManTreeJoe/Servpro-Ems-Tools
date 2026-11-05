@@ -52,9 +52,8 @@ def sanitize(name: str) -> str:
 
 
 def _norm(s: str) -> str:
-    """Comparison form — letters and spaces only, matching audit_logic's
-    normalization so 'Riley, Robert' and 'riley robert' are one client."""
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", " ", (s or "").lower())).strip()
+    """Ignore punctuation, but preserve unit, address and work-order digits."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", (s or "").lower())).strip()
 
 
 def ordinal(n: int) -> str:
@@ -116,10 +115,12 @@ def find_client_folder(client: str, *, base: str = "", year=None) -> str:
     if not want:
         return ""
     try:
+        matches = []
         with os.scandir(yd) as it:
             for e in it:
                 if e.is_dir(follow_symlinks=False) and _norm(e.name) == want:
-                    return e.path
+                    matches.append(e.path)
+        return matches[0] if len(matches) == 1 else ""
     except OSError:
         return ""
     return ""
@@ -572,24 +573,28 @@ def create(client: str, *, child: str = "", second_claim: bool = False,
              year=year)
     if not p.get("ok"):
         return p
-    promoted = None
-    if promote_first and p.get("mode") == "child":
-        promoted = promote_first_claim(p["client_dir"])
-        if not promoted.get("ok") and promoted.get("eligible"):
-            # The move failed and rolled back — stop rather than create a
-            # second claim beside a root we just failed to tidy.
-            return {**p, "ok": False, "created": False,
-                    "error": promoted.get("reason") or "promote failed",
-                    "promoted": promoted}
     path = p["path"]
     if p["exists"]:
         return {**p, "ok": False, "error": "That folder already exists",
                 "created": False}
+    promoted = None
+    if promote_first and p.get("mode") == "child":
+        promoted = promote_first_claim(p["client_dir"])
+        if not promoted.get("ok") and promoted.get("eligible"):
+            return {**p, "ok": False, "created": False,
+                    "error": promoted.get("reason") or "promote failed",
+                    "promoted": promoted}
     try:
-        os.makedirs(path, exist_ok=True)
+        # The existence check above is advisory. Another worker can create
+        # this path immediately afterwards, so creation itself must reject
+        # an existing folder instead of claiming it belongs to this job.
+        os.makedirs(path, exist_ok=False)
         if skeleton:
             for parts in _SKELETON:
                 os.makedirs(os.path.join(path, *parts), exist_ok=True)
+    except FileExistsError:
+        return {**p, "ok": False, "created": False,
+                "error": "That folder already exists. Refresh and choose a different folder."}
     except OSError as ex:
         return {**p, "ok": False, "error": f"create failed: {ex}",
                 "created": False}

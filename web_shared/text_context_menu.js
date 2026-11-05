@@ -9,8 +9,19 @@
   window.__linguarTextContextMenuInstalled = true;
 
   const MENU_ID = "linguar-text-context-menu";
+  const proseSelector = 'textarea, input[type="text"], input[type="search"], input:not([type]), [contenteditable="true"]';
+  function enableSpelling(field) {
+    if (!field || field.getAttribute('spellcheck') === 'false') return;
+    field.spellcheck = true;
+    // Native dictionaries need a language even inside dynamically loaded panels.
+    if (!field.closest('[lang]')) field.lang = 'en-US';
+    // Suggestions, not silent substitutions of names or claim information.
+    if (!field.hasAttribute('autocorrect')) field.setAttribute('autocorrect', 'off');
+  }
+  document.querySelectorAll(proseSelector).forEach(enableSpelling);
+  document.addEventListener('focusin', event => enableSpelling(event.target.closest?.(proseSelector)));
   const isField = (node) => Boolean(node?.closest?.("input, textarea, [contenteditable='true']"));
-  const fieldFor = (node) => node?.closest?.("input, textarea, [contenteditable='true']") || null;
+  const fieldFor = (node) => node?.closest?.("input, textarea, [contenteditable='true'], [contenteditable=''], [contenteditable='plaintext-only']") || null;
   const selectionText = (field) => {
     if (field && typeof field.selectionStart === "number") {
       return String(field.value || "").slice(field.selectionStart, field.selectionEnd);
@@ -47,16 +58,24 @@
     else document.execCommand("selectAll");
   };
 
-  function show(event, field, selected) {
+  function show(event, field, selected, actions = []) {
     close();
     window.closeContextMenu?.();
     const editable = Boolean(field && !field.readOnly && !field.disabled);
+    const range = window.getSelection()?.rangeCount ? window.getSelection().getRangeAt(0).cloneRange() : null;
+    const start = field?.selectionStart, end = field?.selectionEnd;
+    function restore() {
+      field?.focus();
+      if (field && typeof start === 'number') field.setSelectionRange(start, end);
+      else if (range) { const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); }
+    }
     const items = [
       ["Cut", editable && selected, () => document.execCommand("cut")],
       ["Copy", Boolean(selected), () => copyText(field)],
       ["Paste", editable, () => pasteText(field)],
       ["Select all", Boolean(field) || Boolean(document.body.innerText), () => selectAll(field)],
     ];
+    if(actions.length){items.splice(0,items.length,items[1],items[0],items[2],...actions);}
     const menu = document.createElement("div");
     menu.id = MENU_ID;
     menu.setAttribute("role", "menu");
@@ -80,18 +99,30 @@
       if (!enabled) button.style.opacity = ".38";
       button.addEventListener("pointerenter", () => { if (enabled) button.style.background = "var(--row-hover,var(--surface-2,#29302c))"; });
       button.addEventListener("pointerleave", () => { button.style.background = "transparent"; });
-      button.addEventListener("click", async () => { close(); if (enabled) await action(); });
+      button.addEventListener("mousedown", event => event.preventDefault());
+      button.addEventListener("click", async () => { close(); if (enabled) { restore(); await action(); } });
       menu.appendChild(button);
     });
-    document.body.appendChild(menu);
+    (event.target.closest('dialog[open]') || document.body).appendChild(menu);
     const bounds = menu.getBoundingClientRect();
     menu.style.left = Math.max(6, Math.min(event.clientX, innerWidth - bounds.width - 6)) + "px";
     menu.style.top = Math.max(6, Math.min(event.clientY, innerHeight - bounds.height - 6)) + "px";
   }
 
+  window.TextContextMenu = {show(event, actions = []) {
+    event.preventDefault();event.stopPropagation();
+    const field=fieldFor(event.target);
+    show(event,field,selectionText(field).trim(),actions);
+  }};
+
   document.addEventListener("contextmenu", (event) => {
     if (event.defaultPrevented || event.target?.closest?.(".ems-ctx-menu,.ems-ctx-submenu")) return;
     const field = fieldFor(event.target);
+    // Editable prose uses the native menu, including spelling suggestions.
+    // Keep the app's copy/search menu for non-editable selected text.
+    let nativeReady = false;
+    try { nativeReady = window.__oneLossNativeEditingMenu === true || window.top.__oneLossNativeEditingMenu === true || window.top.__LINGUAR_BROWSER_TOOLS__ === true; } catch (_) {}
+    if (field && (nativeReady || field.type === 'password')) return;
     const selected = selectionText(field).trim();
     if (!field && !selected) return;
     event.preventDefault();
@@ -102,4 +133,9 @@
     if (!event.target?.closest?.(`#${MENU_ID}`)) close();
   }, true);
   window.addEventListener("blur", close);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.getElementById(MENU_ID)) {
+      event.preventDefault();event.stopPropagation();close();
+    }
+  });
 })();

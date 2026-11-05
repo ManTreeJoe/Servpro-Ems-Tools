@@ -10,10 +10,16 @@ def resolve(client='', card_id=''):
     import ems_db
     from ems_db_common import DIVISIONS, LINK_TRELLO, division_link_type
     if card_id:
+        # Check all representations before selecting the division's facts.
+        generic = ems_db.find_job_by_reference(LINK_TRELLO, card_id)
         for division in DIVISIONS:
             job = ems_db.find_job_by_link(division_link_type(LINK_TRELLO, division), card_id)
             if job:
                 return job, division
+        # Historical EMS cards often have only the unsuffixed link. It is
+        # still an exact card identity, not a name-search fallback.
+        if generic:
+            return generic, 'EMS'
         return {}, ''
     return ems_db.find_job_by_name(client) or {}, 'EMS'
 
@@ -26,10 +32,8 @@ def web_url(value):
 
 def destination(client, card_id, provider):
     if provider == 'folder':
-        # A Windows job-folder path is machine-local configuration. It must
-        # remain usable even when the shared database is slow or offline.
-        import persistence
-        return str(persistence.get_folder_path(client) or '')
+        import job_folder_reference
+        return job_folder_reference.resolve(client, card_id)
     import ems_db
     import job_settings
     from ems_db_common import division_link_type

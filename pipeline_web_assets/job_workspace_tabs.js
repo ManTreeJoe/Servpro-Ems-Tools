@@ -40,7 +40,7 @@ window.JobWorkspaceTabs = (() => {
       const key = section.matches('.job-log-section') ? 'log'
         : section.matches('.paperwork-section,.progress-section,.checklist-section') ? 'requirements'
         : section.matches('.job-files-section,.signatures-section,.job-attachments-section') ? 'files'
-        : section.matches('.job-run-section') ? 'run' : 'overview';
+        : section.matches('.job-run-section,.job-timing-section,.job-details-section') ? 'run' : 'overview';
       panels.get(key).append(section);
     }
     // Comments remain a sibling of the tabbed main pane. Do not move or

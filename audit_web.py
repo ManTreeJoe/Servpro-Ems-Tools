@@ -1349,6 +1349,14 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         which left IUQ rows (no audit-row cache to fall back on)
         showing a generic "couldn't open folder" error.
         """
+        if card_id:
+            try:
+                import job_folder_reference
+                import job_file_browser
+                root = job_folder_reference.resolve(client, card_id)
+                return dict(job_file_browser.open_folder(root), path=root)
+            except Exception as error:
+                return {'ok': False, 'error': str(error), 'needs_find': True}
         # Candidate list in preference order. The folder pin is deliberately
         # local-only: opening Explorer must never wait on Supabase.
         candidates: list[tuple[str, str]] = []  # (label, path)
@@ -1382,6 +1390,13 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 continue
             seen.add(path)
             if not os.path.isdir(path):
+                continue
+            # Legacy rows may still carry a PC-local or broad drive pin.
+            # Never hand Explorer a drive/year root as if it were a job.
+            try:
+                import job_folder_reference
+                job_folder_reference.validate_job_root(path)
+            except ValueError:
                 continue
             try:
                 os.startfile(path)
@@ -1738,53 +1753,19 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         try:
             import ems_db
             import config as _config
-            job = ems_db.find_job_by_name(client)
+            state = audit_state if isinstance(audit_state, dict) else {}
+            job = ems_db.resolve_existing_job(client,
+                trello_card=str(state.get('trello_card_id') or '').strip(),
+                folder_path=str(state.get('path') or '').strip())
             if not job:
-                # A real audit/Trello/folder row may predate the shared job
-                # index.  Opening its workspace is a safe point to register
-                # it; forcing an admin to run a separate backfill made the
-                # CRM card unusable for exactly the older jobs it should track.
-                state = audit_state if isinstance(audit_state, dict) else {}
-                folder_path = str(state.get("path") or "").strip()
-                trello_card = str(state.get("trello_card_id") or "").strip()
-                try:
-                    # Older versions collapsed any title at its first spaced
-                    # dash. A card such as ``PCM - Kellogg Terrace ...`` may
-                    # consequently already be linked to the generic ``pcm``
-                    # row alongside unrelated claims. When the exact title
-                    # has no row, create its now-specific identity first and
-                    # attach the selected card there. Letting strong-link
-                    # resolution win here would perpetuate the bad merge.
-                    key = ems_db.upsert_job(
-                        display_name=client,
-                        department=(_config.active_department() or ""),
-                        metadata={"created_from": "crm_workspace"})
-                    if folder_path:
-                        ems_db.set_link(key, "folder_path", folder_path,
-                                        added_by="crm_workspace")
-                    if trello_card:
-                        ems_db.set_link(key, "trello_card", trello_card,
-                                        added_by="crm_workspace")
-                    job = ems_db.get_job(key)
-                except Exception:
-                    # Some older rows have no absolute path.  Preserve the
-                    # active franchise on the new master row, then attach any
-                    # strong identifier that was available.
-                    import config
-                    key = ems_db.upsert_job(
-                        display_name=client,
-                        department=(config.active_department() or ""),
-                        metadata={"created_from": "crm_workspace"})
-                    if folder_path:
-                        ems_db.set_link(key, "folder_path", folder_path,
-                                        added_by="crm_workspace")
-                    if trello_card:
-                        ems_db.set_link(key, "trello_card", trello_card,
-                                        added_by="crm_workspace")
-                    job = ems_db.get_job(key)
-                if not job:
-                    return {"ok": False, "missing": True,
-                            "error": "job could not be added to the shared index"}
+                return {"ok": False, "missing": True,
+                        "error": "This reference is not linked to a saved job. Create or link the job explicitly before editing."}
+            requested = ems_db.canon_key(client)
+            saved_name = ems_db.canon_key(job.get('display_name') or '')
+            if (job['canon_key'] == saved_name and requested.startswith(saved_name + ' - ')
+                    and len(ems_db.get_links(job['canon_key'], 'trello_card') or []) > 1):
+                return {'ok': False, 'identity_conflict': True,
+                        'error': 'This older job groups multiple cards under a shortened name. Review its identity before editing; no job was created or reassigned.'}
             master = ems_db.get_master_job(job.get("canon_key") or "") or job
             master_key = master.get("canon_key") or job.get("canon_key") or ""
 
@@ -1818,7 +1799,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 timeline_future = pool.submit(load_timeline)
                 history_future = pool.submit(load_audit_history)
                 division_future = pool.submit(
-                    self.crm_division_trello_cards, client)
+                    self.crm_division_trello_cards, job['canon_key'])
                 log_entries, log_error, log_deleted_ids = log_future.result()
                 timeline = timeline_future.result()
                 audit_history = history_future.result()
@@ -1904,12 +1885,13 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "migration_required": True,
                     "error": f"CRM setup is not ready: {ex}"}
 
-    def apply_job_profile(self, client: str, profile_id: str) -> dict:
+    def apply_job_profile(self, client: str, profile_id: str, card_id: str = "") -> dict:
         """Copy one visible Job Profile onto a Job; never keep a live link."""
         try:
             import ems_db
             import job_profiles
-            job = ems_db.find_job_by_name(client)
+            import job_saved_data
+            job = job_saved_data.resolve(client, card_id)[0]
             if not job:
                 return {"ok": False, "error": "job not found"}
             master = ems_db.get_master_job(job.get("canon_key") or "") or job
@@ -1924,7 +1906,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 return {"ok": False,
                         "error": "This profile is unavailable or already applied."}
             metadata = job_profiles.apply_to_job(master, profile)
-            ems_db.upsert_job(display_name=master.get("display_name") or client,
+            ems_db.update_job(master['canon_key'],
                               department=master.get("department") or "",
                               metadata=metadata)
             return {"ok": True, "profile_name": profile.get("name") or "Job Profile"}
@@ -1933,7 +1915,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
 
     def set_job_requirement(self, client: str, requirement_key: str,
                             state: str, note: str = "",
-                            details: dict | None = None) -> dict:
+                            details: dict | None = None, card_id: str = "") -> dict:
         """Record a human decision without replacing automatic evidence."""
         state = (state or "").strip().lower()
         if state == "reopen":
@@ -1946,7 +1928,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": "requirement is missing"}
         try:
             import ems_db
-            job = ems_db.find_job_by_name(client)
+            import job_saved_data
+            job = job_saved_data.resolve(client, card_id)[0]
             if not job:
                 return {"ok": False, "error": "job not found"}
             master = ems_db.get_master_job(job.get("canon_key") or "") or job
@@ -1964,7 +1947,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             metadata = dict(master.get("metadata") or {})
             overrides = dict(metadata.get("requirement_overrides") or {})
             history = list(metadata.get("requirement_history") or [])
-            actor = "Linguar Hub user"
+            actor = "OneLoss user"
             try:
                 import supabase_client
                 actor = supabase_client.actor_name(actor)
@@ -1990,8 +1973,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             history.append(record)
             metadata["requirement_overrides"] = overrides
             metadata["requirement_history"] = history[-200:]
-            ems_db.upsert_job(
-                display_name=master.get("display_name") or client,
+            ems_db.update_job(
+                master['canon_key'],
                 department=master.get("department") or "",
                 metadata=metadata)
             return {"ok": True, "state": state, "actor": actor, "at": at,
@@ -1999,13 +1982,14 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
-    def save_crm_job_workspace(self, client: str, patch: dict) -> dict:
+    def save_crm_job_workspace(self, client: str, patch: dict, card_id: str = "") -> dict:
         """Edit overall CRM controls; a human save always wins over sync."""
         if not isinstance(patch, dict):
             return {"ok": False, "error": "invalid job update"}
         try:
             import ems_db
-            job = ems_db.find_job_by_name(client)
+            import job_saved_data
+            job = job_saved_data.resolve(client, card_id)[0]
             if not job:
                 return {"ok": False, "error": "job not found"}
             master = ems_db.set_master_job_state(
@@ -2019,7 +2003,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def save_crm_work_environment(self, client: str, work_environment: str,
-                                  stage: str, owner: str = "") -> dict:
+                                  stage: str, owner: str = "", card_id: str = "") -> dict:
         """Set one job's EMS, Contents or Recon state independently."""
         allowed = {"not_applicable", "interested", "planned", "scheduled",
                    "active", "waiting", "on_hold", "ready_for_billing",
@@ -2033,7 +2017,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                     "error": "Interested is only used for Contents and Recon"}
         try:
             import ems_db
-            job = ems_db.find_job_by_name(client)
+            import job_saved_data
+            job = job_saved_data.resolve(client, card_id)[0]
             if not job:
                 return {"ok": False, "error": "job not found"}
             saved = ems_db.set_work_environment_state(
@@ -2101,14 +2086,16 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                                                     purpose == "primary")),
                                 "explicit_primary": metadata.get('primary') is True or (
                                     'primary' not in metadata and metadata.get('purpose') == 'primary'),
+                                "historical": metadata.get('historical') is True,
                             }
                             item["url"] = (f"https://trello.com/c/{item['card_id']}"
                                            if item["card_id"] else "")
                             item["pinned"] = bool(item["card_id"])
                             normalized_links.append(item)
                             placements.append(item)
-                        explicit = [item for item in normalized_links if item['explicit_primary']]
-                        eligible = explicit or [item for item in normalized_links if item['primary']]
+                        current_links = [item for item in normalized_links if not item['historical']]
+                        explicit = [item for item in current_links if item['explicit_primary']]
+                        eligible = explicit or [item for item in current_links if item['primary']]
                         ambiguous = len(eligible) > 1
                         primary = eligible[0] if len(eligible) == 1 else None
                         primary = primary or {}
@@ -2141,7 +2128,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             return False
 
     def pin_crm_division_trello(self, client: str, division: str,
-                                card_id_or_url: str, *, defer_info=False) -> dict:
+                                card_id_or_url: str, source_card_id: str = '', *, defer_info=False) -> dict:
         """Replace one division's primary pin, preserving other placements."""
         try:
             import ems_db
@@ -2155,12 +2142,22 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             normalized = normalize_division(division)
             from division_cards import validate_pin
             card_id = validate_pin(card_id, normalized)
-            job = ems_db.find_job_by_name(client)
+            # The open card identifies the loss even when its title differs
+            # from the stored name (especially separate claims at one address).
+            job = (ems_db.find_job_by_reference(LINK_TRELLO, source_card_id)
+                   if source_card_id else ems_db.find_job_by_name(client))
+            if source_card_id and not job:
+                return {'ok': False, 'missing': True,
+                        'error': 'The open card has no saved job link. Refresh the job before linking another card.'}
+            owner = ems_db.find_job_by_reference(LINK_TRELLO, card_id)
+            if job and owner and job['canon_key'] != owner['canon_key']:
+                raise ValueError('This card belongs to another job. Reconcile it before changing pins.')
+            job = owner or job
             if not job:
-                key = ems_db.upsert_job(display_name=client,
-                                        metadata={"created_from": "division_trello_pin"})
-                job = ems_db.get_job(key)
+                return {'ok': False, 'missing': True,
+                        'error': 'Create the job explicitly before linking this card.'}
             link_type = division_link_type(LINK_TRELLO, normalized)
+            ems_db.assert_link_owner(job['canon_key'], link_type, card_id)
             # A division may also be represented temporarily on Estimating,
             # Logs, or another responsibility board.  Changing the primary
             # WIP pin must not delete those placements.
@@ -2193,8 +2190,9 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                         if row.get("client") == client:
                             row["trello_card_id"] = card_id
             with self._division_cards_lock:
-                self._division_cards_cache.pop(
-                    (client or "").strip().casefold(), None)
+                # The same job is cached under card titles and its canonical
+                # key. A link edit must invalidate reverse/sibling views too.
+                self._division_cards_cache.clear()
             if defer_info:
                 return {"ok": True, "division": normalized, "card_id": card_id,
                         "job_key": job["canon_key"], "info_pull_pending": True,
@@ -2215,14 +2213,15 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
-    def unpin_crm_division_trello(self, client: str, division: str) -> dict:
+    def unpin_crm_division_trello(self, client: str, division: str, card_id: str = "") -> dict:
         """Remove the primary pin, leaving sibling and board placements."""
         try:
             import ems_db
             from ems_db_common import (DIV_EMS, LINK_TRELLO,
                                        division_link_type, normalize_division)
             normalized = normalize_division(division)
-            job = ems_db.find_job_by_name(client)
+            import job_saved_data
+            job = job_saved_data.resolve(client, card_id)[0]
             if not job:
                 return {"ok": False, "error": "job not found"}
             link_type = division_link_type(LINK_TRELLO, normalized)
@@ -2252,7 +2251,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def reconcile_crm_trello_pin(self, client: str) -> dict:
-        """Auto-pin one unambiguous card and report unsafe matches."""
+        """Review pin candidates without writing on a workspace read."""
         name = (client or "").strip()
         if not name:
             return {"ok": False, "state": "error", "error": "job name required"}
@@ -2287,12 +2286,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": True, "state": "linked", "card_id": pins[0],
                     "candidates": compact}
         if len(compact) == 1:
-            pinned = self.pin_trello(name, compact[0]["card_id"])
-            if not pinned.get("ok"):
-                return {"ok": False, "state": "error",
-                        "error": pinned.get("error") or "auto-pin failed"}
-            return {"ok": True, "state": "auto_pinned",
-                    "card_id": compact[0]["card_id"], "candidates": compact}
+            return {"ok": True, "state": "needs_link", "card_id": "",
+                    "reason": "explicit_link_required", "candidates": compact}
         if len(compact) > 1:
             return {"ok": True, "state": "conflict",
                     "reason": "multiple_matches", "candidates": compact}
@@ -2302,7 +2297,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
     def reconcile_crm_division_trello_cards(self, client: str,
                                             opened_card_id: str = "",
                                             opened_division: str = "") -> dict:
-        """Auto-link one clear Trello card per work division.
+        """Review clear Trello candidates per work division without claiming them.
 
         Only explicit board evidence determines division; unknown boards
         are not eligible for automatic pinning.
@@ -2342,16 +2337,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         opened_matches = any(c['card_id'] == opened_card_id
                              for c in grouped[clicked_division])
         existing_pin = str(current.get(clicked_division, {}).get('card_id') or '')
-        if opened_card_id and opened_matches and not existing_pin and not current.get(clicked_division, {}).get('ambiguous'):
-            # Opening a card may fill an empty verified division, never
-            # replace an existing pin or cross division boundaries.
-            saved = self.pin_crm_division_trello(
-                name, clicked_division, opened_card_id)
-            if saved.get("ok"):
-                current[clicked_division] = {
-                    "division": clicked_division,
-                    "card_id": opened_card_id, "pinned": True,
-                }
+        # Opening a workspace only reviews candidates; it never claims them.
         results = []
         for division in ("EMS", "CONTENTS", "RECON"):
             pin = str(current.get(division, {}).get("card_id") or "")
@@ -2371,12 +2357,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             elif pin:
                 state, reason = "linked", ""
             elif len(candidates) == 1:
-                saved = self.pin_crm_division_trello(
-                    name, division, candidates[0]["card_id"])
-                state = "auto_pinned" if saved.get("ok") else "error"
-                reason = "" if saved.get("ok") else saved.get("error", "auto-pin failed")
-                if saved.get("ok"):
-                    pin = candidates[0]["card_id"]
+                state, reason = 'needs_link', 'explicit_link_required'
             elif len(candidates) > 1:
                 state, reason = "conflict", "multiple_matches"
             else:
@@ -2392,16 +2373,29 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         """Stable Trello mirror for one Linguar Hub Job Log entry."""
         raw_date = str(entry.get("work_date") or "").strip()
         try:
-            shown_date = _dt.datetime.strptime(raw_date, "%Y-%m-%d").strftime("%m/%d/%y")
+            shown_date = _dt.datetime.strptime(raw_date, "%Y-%m-%d").strftime("%A %m/%d/%Y")
         except ValueError:
             shown_date = raw_date
         activity = str(entry.get("work_type") or "Job update").strip()
-        status = str(entry.get("status") or "completed").replace("_", " ").title()
-        lines = [f"🗒 Job Log · {shown_date} · {activity} · {status}"]
+        crew = str(entry.get("technicians") or "").strip()
+        # Schedule imports can prefix the crew with the activity already
+        # displayed above. Remove only that matching prefix, not other text.
+        prefix, separator, remainder = crew.partition(":")
+        if separator and prefix.strip().casefold() == activity.casefold():
+            crew = remainder.strip()
+        # Existing schedule entries keep the appointment time after the crew.
+        # Move only a recognizable trailing time, leaving other crew text intact.
+        import re
+        clock = r'\d{1,2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?'
+        timed = re.fullmatch(rf'(.+?)\s+[-–—]\s*({clock}(?:\s*[-–—]\s*{clock})?)', crew, re.I)
+        when = ''
+        if timed and '|' not in crew:
+            crew, when = timed.group(1).strip(), timed.group(2).strip()
+        lines = [f"**{shown_date}**", f"{activity}- {when}" if when else activity]
         if entry.get('work_party') == 'subcontractor':
             lines.append(f"Subcontractor: {entry.get('subcontractor') or ''}")
-        if str(entry.get("technicians") or "").strip():
-            lines.append(f"Crew: {str(entry['technicians']).strip()}")
+        if crew:
+            lines.append(f"Crew: {crew}")
         if str(entry.get("note") or "").strip():
             lines.append(str(entry["note"]).strip())
         if str(entry.get("equipment") or "").strip():
@@ -2415,14 +2409,21 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             import ems_db
             import supabase_client as sb
             import job_workflow
-            delivery_scope = job_workflow.delivery_scope()
-            job = ems_db.find_job_by_name(client)
+            import job_saved_data
+            cid = str(card_id or '').strip()
+            job, _division = job_saved_data.resolve(client, cid)
             if not job:
-                return {"ok": False, "error": "job not found"}
+                return {"ok": False, "error": (
+                    "This card is not linked to a saved job. Review its job link before saving the Job Log."
+                    if cid else "job not found")}
             entry = dict(entry or {})
             existing = (next((row for row in ems_db.list_job_log_entries(
                 job["canon_key"]) if row.get("entry_id") == entry.get("entry_id")), {})
                 if entry.get('entry_id') else {})
+            if entry.get('entry_id') and not existing:
+                return {'ok': False, 'error': 'This Job Log entry was not found on this job. Refresh before editing.'}
+            if cid and existing.get('placement_card_id') and existing['placement_card_id'] != cid:
+                return {'ok': False, 'error': 'This Job Log entry belongs to another card.'}
             post_to_trello = entry.pop('post_to_trello', True) is not False
             if existing.get('source') == 'pc_only' or (not entry.get('entry_id') and not post_to_trello):
                 # Persist the explicit OneLoss-only origin in the existing source
@@ -2431,7 +2432,6 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             entry["trello_comment_id"] = str(
                 entry.get("trello_comment_id") or
                 existing.get("trello_comment_id") or "").strip()
-            cid = str(card_id or "").strip()
             if not cid:
                 try:
                     cid = persistence.get_trello_card_id(client) or ""
@@ -2447,7 +2447,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 return {"ok": False, "error": "This entry was deleted. Refresh the Job Log."}
             queued = ({'queued':False, 'reason':'Saved in OneLoss; no comment change'}
                       if entry.get('entry_id') or not post_to_trello or saved.get('source') == 'pc_only' else job_workflow.queue_job_log(
-                          job["canon_key"], saved, cid, self._trello_job_log_text(saved), delivery_scope))
+                          job["canon_key"], saved, cid, self._trello_job_log_text(saved)))
             return {"ok": True, "entry": saved,
                     "synced_trello": False,
                     "pending_sync": bool(queued.get("queued")),
@@ -2527,7 +2527,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         try:
             import ems_db
             import job_workflow
-            job = ems_db.find_job_by_name(client)
+            import job_saved_data
+            job = job_saved_data.resolve(client, card_id)[0]
             if not job:
                 return {"ok": False, "error": "job not found"}
             entries = ems_db.list_job_log_entries(job["canon_key"])
@@ -2598,7 +2599,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         try:
             import ems_db
             import snapshot_logic as sg
-            job = ems_db.find_job_by_name(client)
+            import job_saved_data
+            job = job_saved_data.resolve(client, placement_card_id)[0]
             if not job:
                 return {"ok": False, "error": "job not found"}
             imported = 0
@@ -2674,12 +2676,19 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         """
         try:
             import ems_db
-            job = ems_db.find_job_by_name(client) or {}
+            import job_saved_data
+            job = job_saved_data.resolve(client, card_id)[0]
+            import card_insurance
             try:
                 import job_settings
                 info = job_settings.stored_values(job)
             except Exception:
                 info = {}
+            if card_insurance.enabled():
+                info = (card_insurance.project(job, {'id': card_id}, info) if card_id
+                        else card_insurance.overlay(info, {}))
+                # No fallback to another section's legacy insurance columns.
+                job = {**job, **{field: info.get(field, '') for field in card_insurance.FIELDS}}
             links = ems_db.get_links(job.get("canon_key") or "") if job else []
             by_type = {}
             for link in links or []:
@@ -2703,15 +2712,20 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
-    def job_info_copy_data(self, client: str) -> dict:
+    def job_info_copy_data(self, client: str, card_id: str = "") -> dict:
         """Copy-button facts from the saved Job Info record, never the row."""
         try:
             import ems_db
             import job_settings
-            job = ems_db.find_job_by_name(client) or {}
+            import job_saved_data
+            job = job_saved_data.resolve(client, card_id)[0]
+            import card_insurance
             if not job:
                 return {"ok": False, "error": "job is not in Job Info"}
             values = job_settings.stored_values(job)
+            if card_insurance.enabled():
+                values = (card_insurance.project(job, {'id': card_id}, values) if card_id
+                          else card_insurance.overlay(values, {}))
             return {"ok": True,
                     "name": values.get("customer_name") or job.get("display_name") or client,
                     "phone": values.get("phone") or "",
@@ -3243,84 +3257,17 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "scope": scope or "current", "typed": typed}
 
     def merge_candidates(self, winner_name: str, variant_names: list) -> dict:
-        """Permanently fold duplicate spellings of ONE job into `winner`.
+        """Never merge from a fuzzy folder-search result.
 
-        Powers the picker's 🔗 Merge button: consolidates the persisted
-        pins (every variant's Trello card + the first real folder) onto the
-        winner, drops the dupe spellings' pins, and merges the shared jobs-
-        graph identities (ems_db.merge_jobs). After this the misspelled /
-        reordered / carrier-suffixed variants stop existing as their own
-        thing everywhere, not just in this picker."""
-        winner = (winner_name or "").strip()
-        variants = [v.strip() for v in (variant_names or []) if v and v.strip()]
-        if not winner:
-            return {"ok": False, "error": "no winner"}
-        try:
-            import ems_db as _db
-            wkey = _db.canon_key(winner)
-            # Real dupes only — a variant whose canon key differs from the
-            # winner. Without this an empty/no-op merge would still upsert a
-            # bogus job for `winner` via resolve_and_link(create=True).
-            from_keys = [_db.canon_key(v) for v in variants
-                         if _db.canon_key(v) != wkey]
-            if not from_keys:
-                return {"ok": False, "error": "nothing to merge"}
-            group = [winner] + variants
-            # Union every pinned card across the group (winner's first).
-            cards: list = []
-            for nm in group:
-                try:
-                    for cid in (persistence.get_trello_card_ids(nm) or []):
-                        if cid and cid not in cards:
-                            cards.append(cid)
-                except Exception:
-                    pass
-            # First real folder across the group.
-            folder = ""
-            for nm in group:
-                try:
-                    fp = persistence.get_folder_path(nm) or ""
-                except Exception:
-                    fp = ""
-                if fp:
-                    folder = fp
-                    break
-            # Consolidate onto the winner.
-            try:
-                if cards:
-                    persistence.set_trello_card_ids(winner, cards)
-                if folder:
-                    persistence.set_folder_path(winner, folder)
-            except Exception:
-                pass
-            # Drop each dupe spelling's pins — but NEVER one that canon-
-            # collapses to the winner (that's the winner's own entry).
-            dropped = 0
-            for v in variants:
-                if _db.canon_key(v) == wkey:
-                    continue
-                try:
-                    persistence.set_trello_card_ids(v, [])
-                except Exception:
-                    pass
-                try:
-                    persistence.set_folder_path(v, "")
-                except Exception:
-                    pass
-                dropped += 1
-            # Merge the shared jobs-graph identities (upsert winner first).
-            try:
-                _db.resolve_and_link(
-                    winner, folder_path=folder,
-                    trello_card=(cards[0] if cards else ""),
-                    create=True, display_name=winner)
-                _db.merge_jobs(wkey, from_keys)
-            except Exception:
-                pass
-            return {"ok": True, "winner": winner, "dropped": dropped,
-                    "cards": len(cards), "folder": folder}
-        except Exception as ex:
-            return {"ok": False, "error": str(ex)}
+        The old picker rewrote local pins before attempting a multi-request
+        shared merge, swallowed failures, and could report success after only
+        the local half changed. Reviewed Job Management uses exact job IDs and
+        the server's preview-bound atomic merge instead.
+        """
+        return {"ok": False, "error": (
+            "Folder-search matches are suggestions, not verified duplicate jobs. "
+            "Review the two saved jobs in Job Management before merging; "
+            "no pins or jobs were changed.")}
 
     def suggest_card_for(self, client_name: str) -> dict:
         """Return the best-matching open Trello card(s) for a cardless job
@@ -3555,6 +3502,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         try:
             import new_loss_intake as nli
             fields = nli.parse_assignment_email(text or "")
+            import companycam_api as cc
+            fields.update(cc.intake_address(fields))
             fields["loss_type"] = nli.loss_type_from(fields.get("type_of_loss"))
             fields["card_name"] = nli.suggest_card_name(fields)
             return {"ok": True, "fields": fields}
@@ -3685,7 +3634,18 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         configured integration; a missing token must not leave a new loss
         half-created before work even starts.
         """
+        import companycam_api as cc
+        fields = dict(fields or {})
+        address_parts = cc.intake_address(fields)
+        if any(key in fields for key in ('street_address_1', 'street_address_2', 'city', 'state', 'postal_code')):
+            fields.update(address_parts)
+            fields['address'] = ', '.join(value for value in (
+                address_parts.get('street_address_1'), address_parts.get('street_address_2'),
+                address_parts.get('city'), ' '.join(filter(None, (address_parts.get('state'), address_parts.get('postal_code'))))) if value)
         if make_companycam:
+            address_error = cc.validate_address(address_parts)
+            if address_error:
+                return {'ok': False, 'error': address_error}
             try:
                 import companycam_api as cc
                 if not cc.is_configured():
@@ -3695,10 +3655,33 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             except Exception as ex:
                 return {"ok": False,
                         "error": f"CompanyCam preflight failed: {type(ex).__name__}: {ex}"}
+        if make_folder and isinstance(fields.get('client_choice'), dict) and not parent:
+            import new_loss_intake as nli
+            folder_plan = nli.plan_folder(fields, child=child, second_claim=bool(second_claim))
+            if folder_plan.get('ok') and folder_plan.get('mode') == 'child':
+                return {'ok': False, 'error': 'A folder with this name already exists. Choose it explicitly under “File under an existing client” before using it.'}
+        client_choice = fields.get('client_choice')
+        selected_client = None
+        if client_choice is not None:
+            try:
+                import ems_db
+                import new_loss_intake as nli
+                job_name = str(fields.get('card_name') or nli.suggest_card_name(fields) or '').strip()
+                if job_name and ems_db.find_job_by_name(job_name):
+                    return {'ok': False, 'error': 'A saved job already uses this card name. Add a date or other identifier to the card name so the new job stays separate.'}
+            except Exception:
+                return {'ok': False, 'error': 'Existing job names could not be checked. Refresh and try again before creating the loss.'}
+            prepared = self.prepare_intake_client(client_choice)
+            if not prepared.get('ok'):
+                return prepared
+            selected_client = prepared['client']['client_id']
         try:
             import new_loss_intake as nli
             fields = dict(fields or {})
-            res = nli.create_new_loss(fields, fields.get("loss_type"))
+            # The later job-link step uses the newly created card and folder.
+            # A preliminary pin by customer name can attach this card to a
+            # different loss for the same customer before that identity exists.
+            res = nli.create_new_loss(fields, fields.get("loss_type"), pin=False)
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
         if not res.get("ok"):
@@ -3712,15 +3695,14 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             except Exception as ex:
                 folder = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
             res["folder"] = folder
-        # Always adopt an existing project. Main also always passes
-        # make_companycam=True, so a missing project is created at intake.
+        # A new loss gets a new project; a name match is not proof of identity.
         try:
             res["companycam"] = nli.create_companycam_project(
                 fields,
                 card_name=res.get("name") or "",
                 trello_card=res.get("card_id") or "",
                 folder_path=(res.get("folder") or {}).get("path") or "",
-                confirm_create=bool(make_companycam))
+                confirm_create=bool(make_companycam), fresh_intake=True)
         except Exception as ex:
             res["companycam"] = {"ok": False,
                                  "error": f"{type(ex).__name__}: {ex}"}
@@ -3747,6 +3729,11 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             graph = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
         res["job_links"] = graph
+        if selected_client:
+            linked_job = graph.get('job') or {}
+            res['client_link'] = self.transfer_job_client(str(linked_job.get('job_id') or ''),
+                selected_client, int(linked_job.get('client_revision') or 0)) if linked_job.get('job_id') else {
+                    'ok': False, 'error': 'Job was created but its saved identity is unavailable. Link the client from the job after refreshing.'}
         res["companycam_trello_link"] = nli.publish_companycam_link(
             str(res.get("card_id") or ""), project_id)
         if xa_draft_id and res.get("card_id"):
@@ -3768,6 +3755,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             "links": bool(graph.get("ok")),
             "companycam_trello_link": bool(res["companycam_trello_link"].get("ok")),
         }
+        if selected_client:
+            steps['client'] = bool(res.get('client_link', {}).get('ok'))
         res["provisioning"] = {
             "complete": all(steps.values()),
             "steps": steps,
@@ -5400,8 +5389,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         # Job facts come from the v6 columns, so year built doesn't have
         # to be retyped either.
         try:
-            import ems_db
-            job = ems_db.find_job_by_name(client) or {}
+            import job_saved_data
+            job = job_saved_data.resolve(client, cid)[0]
         except Exception:
             job = {}
         try:
@@ -7201,6 +7190,10 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception as ex:
             return {"ok": False, "error": str(ex), "attachments": []}
         out = []
+        try:
+            uploaders = tc._attachment_uploaders(card_id)
+        except Exception:
+            uploaders = {}
         _IMG_EXTS = {".jpg", ".jpeg", ".jfif", ".png", ".heic", ".heif", ".webp",
                      ".bmp", ".tif", ".tiff", ".gif",
                      ".mp4", ".mov", ".m4v", ".avi"}
@@ -7229,6 +7222,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 "is_upload":  bool(a.get("isUpload")),
                 "size":       int(a.get("bytes") or 0),
                 "preview":    preview,
+                "uploader":   uploaders.get(a.get("id")) or "Unknown uploader",
+                "is_video":   mime.startswith("video/") or ext in {".mp4", ".mov", ".m4v", ".avi"},
             })
         # Newest first so the most recent photos float to the top
         out.sort(key=lambda a: a.get("date") or "", reverse=True)
@@ -7276,6 +7271,30 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             return {"ok": False, "error": "image too large"}
         b64 = _b64.b64encode(data).decode("ascii")
         return {"ok": True, "data_uri": f"data:{ctype};base64,{b64}"}
+
+    def trello_attachment_destinations(self, client, side='ems', stage='Trello attachments'):
+        from trello_attachment_import import destinations
+        try:
+            root = self._resolve_client_path(client)
+            if not root:
+                raise ValueError('Pin the correct job folder before importing.')
+            return {'ok': True, **destinations(root, side, stage)}
+        except Exception as error:
+            return {'ok': False, 'error': str(error)}
+
+    def import_trello_attachments(self, card_id, client, attachment_ids, side, stage, crew, expected_root):
+        from trello_attachment_import import import_files
+        from job_workspace_cache import scope
+        identity = scope()
+        target = self.trello_attachment_destinations(client, side, stage)
+        if not target.get('ok') or target.get('root') != expected_root:
+            return {'ok': False, 'error': 'Job destination changed. Review the folder again.'}
+        info = self.list_card_attachments(card_id)
+        if not info.get('ok'):
+            return info
+        def valid():
+            return scope() == identity and self.trello_attachment_destinations(client, side, stage).get('root') == expected_root
+        return import_files(info['attachments'], attachment_ids, target, crew, scope_valid=valid)
 
     def download_card_attachments(self, card_id: str,
                                   attachment_ids,
@@ -7437,6 +7456,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             # Prefer that locator so a display-name mismatch cannot send XA
             # staging through another fuzzy customer-folder lookup.
             job_path = (job_path or "").strip()
+            if job_path and not os.path.isdir(job_path):
+                return {"ok": False, "error": "The selected job folder is unavailable; no local folder was substituted.", "stages": []}
             if not job_path or not os.path.isdir(job_path):
                 job_path = persistence.get_folder_path(client) or ""
             if not job_path or not os.path.isdir(job_path):
@@ -8065,7 +8086,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         except Exception:
             return False
 
-    def reaudit_one(self, client: str) -> dict:
+    def reaudit_one(self, client: str, card_id: str = "") -> dict:
         """Re-audit just one client and update the cached row in
         place. Returns the updated row dict so the JS can splice it
         into state without a full re-fetch.
@@ -8078,6 +8099,26 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         """
         if not client:
             return {"ok": False, "error": "no client"}
+        if card_id:
+            try:
+                import job_folder_reference
+                root = job_folder_reference.resolve(client, card_id)
+                results, error = audit_jobs(
+                    [{'client': client, 'folder_override': root}],
+                    run_date=_dt.date.today().strftime('%m-%d-%Y'),
+                    use_cache=False, expand_subjobs=False)
+                if error or len(results or []) != 1:
+                    raise ValueError(error or 'The exact job folder scan did not return one result.')
+                result = results[0]
+                normalize = lambda p: os.path.normcase(os.path.realpath(p or ''))
+                if normalize(result.get('path')) != normalize(root):
+                    raise ValueError('The folder scan selected a different location. No scan results were accepted.')
+                if normalize(job_folder_reference.resolve(client, card_id)) != normalize(root):
+                    raise ValueError('The folder link changed during the scan. Reopen the job and retry.')
+                row = _shape_job({'client': client, 'section': 'work', 'raw': '', 'techs': []}, result, card_id)
+                return {'ok': True, 'row': row}
+            except Exception as error:
+                return {'ok': False, 'error': str(error)}
         try:
             d = _dt.date.today()
             doc_path = _find_run_doc_for_date(d)
@@ -8417,7 +8458,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
 
     def do_import(self, client: str, kind: str,
                    zip_paths: list[str], dest_subfolder: str = "",
-                   tech: str = "", side: str = "ems") -> dict:
+                   tech: str = "", side: str = "ems", card_id: str = "") -> dict:
         """Extract one zip group into the target job's EMS folder.
 
         `dest_subfolder` (optional) is the PICS stage folder the user
@@ -8437,7 +8478,11 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         importer's cleanup behavior.
         """
         try:
-            target_path = self._resolve_client_path(client)
+            if card_id:
+                import job_folder_reference
+                target_path = job_folder_reference.resolve(client, card_id)
+            else:
+                target_path = self._resolve_client_path(client)
             if not target_path:
                 return {"ok": False,
                         "error": f"Couldn't find OD folder for {client!r}"}
@@ -8453,7 +8498,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         # DOCS) — a separate tree OUTSIDE EMS. Mirrors the SP import's
         # 📦 Contents-side toggle. Creates CONTENTS/ if the job doesn't
         # have one yet. (2026-06-22)
-        _is_contents = (side or "").strip().lower() == "contents"
+        _contents_pics = (dest_subfolder or "").strip().upper() == "CONTENTS_PICS"
+        _is_contents = _contents_pics or (side or "").strip().lower() == "contents"
         base_dir  = os.path.join(target_path,
                                  "CONTENTS" if _is_contents else "EMS")
         pics_root = os.path.join(base_dir, "PICS")
@@ -8511,6 +8557,8 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         if _user_dest.upper() == "DOCS" or _user_dest.upper().startswith("DOCS:"):
             _docs_dest = (_user_dest.split(":", 1)[1].strip()
                           if ":" in _user_dest else "")
+        elif _contents_pics:
+            sub = ""
         elif _user_dest and _user_dest.upper() != "AUTO":
             sub = _user_dest
 
@@ -8518,7 +8566,14 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         # photographer in the export; wc_attachments are field photos).
         # A DOCS-forced pick is paperwork, so it's exempt. Frontend prompts
         # for the tech (pre-filled from the run-doc); this is the guarantee.
-        if (kind in ("companycam", "wc_attachments")
+        # A loose document batch needs no photographer. Archives remain
+        # conservative because they may contain photos not yet inspected.
+        _document_only = bool(zip_paths) and all(
+            os.path.splitext(str(p))[1].lower() in
+            {'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv', '.rtf',
+             '.odt', '.ods', '.ppt', '.pptx', '.msg', '.eml'}
+            for p in zip_paths)
+        if (kind in ("companycam", "wc_attachments") and not _document_only
                 and _docs_dest is None and not (tech or "").strip()):
             return {"ok": False, "need_tech": True,
                     "error": "Pick a tech before importing photos."}
@@ -8566,21 +8621,22 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                     docs_count += 1
                     _docs_landed_names.append(os.path.basename(dst))
             elif kind == "scope":
-                # Written scope PDF — drop into <EMS>/DOCS/Scope.pdf
-                # (the canonical filename audit_logic.check_forms
-                # looks for). On collision suffix with " (N).pdf".
+                # Keep Initial / Final in the filename; a generic rename
+                # loses the evidence needed to distinguish scope versions.
                 import shutil as _sh
                 src = zip_paths[0]
                 if not os.path.isfile(src):
                     return {"ok": False,
                             "error": f"Scope file missing: {src}"}
-                dst = os.path.join(docs_root, "Scope.pdf")
+                scope_name = os.path.basename(src)
+                scope_stem, scope_ext = os.path.splitext(scope_name)
+                dst = os.path.join(docs_root, scope_name)
                 if os.path.exists(dst):
                     n = 2
                     while os.path.exists(os.path.join(
-                            docs_root, f"Scope ({n}).pdf")):
+                            docs_root, f"{scope_stem} ({n}){scope_ext}")):
                         n += 1
-                    dst = os.path.join(docs_root, f"Scope ({n}).pdf")
+                    dst = os.path.join(docs_root, f"{scope_stem} ({n}){scope_ext}")
                 try:
                     _sh.move(src, dst)
                 except OSError:
@@ -8649,18 +8705,12 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 _force = ("" if _docs_dest is not None
                           else (_user_dest if (_user_dest
                                 and _user_dest.upper() != "AUTO") else ""))
-                # CompanyCam exports carry no photographer — `tech`
-                # (picked in the UI, defaulting to the run-doc tech)
-                # attributes the batch via a "<Tech> <date>" folder. Lead
-                # techs are filed by their roster initials (FB / ME / ML /
-                # RQ / PG / AP / JL); helpers keep their full first name.
-                # initials_for_name returns "" for non-leads → fall back to
-                # the raw name. (2026-06-19)
-                try:
-                    _tech_lbl = (audit_logic.tech_folder_label(tech or "")
-                                 or (tech or ""))
-                except Exception:
-                    _tech_lbl = tech or ""
+                if _contents_pics:
+                    _force = "."  # explicit CONTENTS/PICS root, not a stage token
+                # This is the operator's chosen attribution, not an automatic
+                # roster lookup. Preserve full names/crew text; import_zip
+                # sanitizes only characters that cannot appear in a folder.
+                _tech_lbl = str(tech or "").strip()
                 _landed = _ccz.import_zip(
                     zip_paths[0], pics_root, date_label=_date_lbl,
                     force_subfolder=_force, tech=_tech_lbl)
@@ -9120,6 +9170,18 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
 
         Returns the same shape as `do_import` (ok, pics_count,
         docs_count, …), plus `picked` (the chosen paths) for the UI."""
+        selection = self.pick_import_files(client)
+        if not selection.get("ok"):
+            return selection
+        picked = selection["paths"]
+        res = self.do_import(client, "wc_attachments", picked,
+                             dest_subfolder, tech=tech, side=side)
+        if isinstance(res, dict):
+            res["picked"] = picked
+        return res
+
+    def pick_import_files(self, client: str) -> dict:
+        """Select sources without importing, extracting, or recycling anything."""
         if not client:
             return {"ok": False, "error": "no client"}
         if self._window is None:
@@ -9144,14 +9206,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         if not result:
             return {"ok": False, "error": "", "cancelled": True}
         picked = list(result) if isinstance(result, (list, tuple)) else [result]
-        # Route through do_import's WC branch (handles zip + loose,
-        # split-routes by extension, converts HEIC, organizes rooms).
-        # Photos honor the user-picked stage folder (dest_subfolder).
-        res = self.do_import(client, "wc_attachments", picked,
-                             dest_subfolder, tech=tech, side=side)
-        if isinstance(res, dict):
-            res["picked"] = picked
-        return res
+        return {"ok": True, "paths": picked}
 
     # ── Phase 2: Pin Trello card ─────────────────────────────────────
     def suggest_trello(self, query: str, limit: int = 6) -> dict:
@@ -9309,12 +9364,9 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             persistence.set_trello_card_id(client, card_id)
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
-        try:
-            import ems_db as _db
-            _db.resolve_and_link(client, trello_card=card_id, create=True,
-                                 display_name=client)
-        except Exception:
-            pass
+        # persistence.set_trello_card_id already verifies and mirrors the
+        # exact card. A second create=True pass could add a name-keyed job
+        # after the verified pin and hide a partial failure.
         # Both lists, not just the daily run: a job pulled up through
         # Search lives in _oneoff_rows, so updating _last_rows alone left
         # the detail pane showing "no card" for the card just pinned.
@@ -9552,8 +9604,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                         (drop.get(field) or "").strip():
                     carried[field] = drop[field]
             if carried:
-                _db.upsert_job(display_name=keep.get("display_name")
-                               or keep_key, **carried)
+                _db.update_job(keep_key, **carried)
             res = _db.merge_jobs(keep_key, [drop_key])
             return {"ok": True, "merged": res.get("merged", 0),
                     "carried": sorted(carried),

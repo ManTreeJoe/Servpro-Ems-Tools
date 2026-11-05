@@ -17,6 +17,21 @@ const state = {
 };
 const MAX_WARM_PANELS = 6;
 
+function notifyJobsPanelLifecycle(frame) {
+  if (!frame?.isConnected || !frame._jobsLifecycleToken) return;
+  frame.contentWindow?.postMessage({type: 'oneloss-jobs-panel-active',
+    token: frame._jobsLifecycleToken, active: state.activeFrame === frame}, location.origin);
+}
+
+window.addEventListener('message', event => {
+  if (event.origin !== location.origin || event.data?.type !== 'oneloss-jobs-panel-ready') return;
+  const frame = state.frames.get('pipeline');
+  if (!frame || event.source !== frame.contentWindow || typeof event.data.token !== 'string'
+      || event.data.token.length > 100) return;
+  frame._jobsLifecycleToken = event.data.token;
+  notifyJobsPanelLifecycle(frame);
+});
+
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
@@ -248,6 +263,15 @@ window.addEventListener("message", async (ev) => {
     state.nav = await pywebview.api.nav();
     renderSidebar();
     renderDeptSwitch();
+  } else if (d.type === 'ems-connected-cards') {
+    const item = findItem('job_reconciliation');
+    if (item && typeof d.focus === 'string') {
+      const query = new URLSearchParams({popup:'1',focus:d.focus});
+      openToolWorkspace('connected-cards','Job tools','Connected cards',item.src+'?'+query.toString());
+    }
+  } else if (d.type === 'ems-close-connected-cards') {
+    const panel = document.querySelector('#connected-cards-workspace iframe');
+    if (panel?.contentWindow === ev.source) closeToolWorkspace('connected-cards');
   } else if (d.type === "ems-navigate" && d.key) {
     // Cross-tool jump from a panel's "Open in…" right-click. Switch the
     // content frame to the target tool, handing it `focus` (a client
@@ -263,7 +287,14 @@ window.addEventListener("message", async (ev) => {
   } else if (d.type === "linguar-open-daily-run") {
     openDailyRunWorkspace();
   } else if (d.type === "linguar-open-job") {
-    openJobWorkspace(d.focus || d.client || "", d.cardId || "", d.division || "", d.commentId || "");
+    if (d.fromNotifications) navigate('notifications');
+    openJobWorkspace(d.focus || d.client || "", d.cardId || "", d.division || "", d.commentId || "", d.notificationToken || "");
+    const workspace = document.getElementById('job-workspace');
+    if(workspace && d.notificationToken) workspace._notificationSource = ev.source;
+  } else if (d.type === 'oneloss-notification-opened') {
+    const workspace = document.getElementById('job-workspace');
+    if(workspace && ev.source === workspace.querySelector('iframe')?.contentWindow)
+      workspace._notificationSource?.postMessage({type:d.type,token:d.token}, '*');
   } else if (d.type === "linguar-close-job-workspace") {
     closeJobWorkspace();
   }
@@ -335,6 +366,9 @@ function openToolWorkspace(key, kicker, title, url) {
   wrap._returnFocus = returnFocus;
   document.body.appendChild(wrap);
   const close = () => closeToolWorkspace(key);
+  const popupTool={'daily-run':'daily_run','connected-cards':'job_reconciliation'}[key];
+  if(popupTool){const header=wrap.querySelector('.tool-workspace-head');header.dataset.popoutTool=popupTool;
+    header.dataset.popoutContext=JSON.stringify({client:new URL(url,location.href).searchParams.get('focus')||''});}
   wrap.querySelector(".tool-workspace-close").addEventListener("click", close);
   wrap._keyHandler = (event) => { if (event.key === "Escape") close(); };
   document.addEventListener("keydown", wrap._keyHandler);
@@ -365,13 +399,14 @@ function openNewLossWorkspace() {
 // One shared job record above whichever tool the user is working in. The
 // iframe runs Pipeline's existing card renderer/API, so Clients, Daily Run,
 // search, and Jobs never grow competing copies of job information.
-function openJobWorkspace(focus, cardId = "", division = "", commentId = "") {
+function openJobWorkspace(focus, cardId = "", division = "", commentId = "", notificationToken = "") {
   closeJobWorkspace();
   const returnFocus = document.activeElement;
   const params = new URLSearchParams({ job_workspace: "1", focus: focus || "Job" });
   if (cardId) params.set("card_id", cardId);
   if (division) params.set("division", division);
   if (commentId) params.set("comment_id", commentId);
+  if (notificationToken) params.set("notification_token", notificationToken);
   const wrap = document.createElement("div");
   wrap.id = "job-workspace";
   wrap.className = "tool-workspace shared-job-workspace";
@@ -477,6 +512,7 @@ function navigate(key, src, focus, isRestore) {
       $(".pane-content").insertBefore(frame, $("#welcome"));
     }
     frame.dataset.panelKey = key;
+    if (key === 'pipeline') frame.addEventListener('load', () => notifyJobsPanelLifecycle(frame));
     state.frames.set(key, frame);
   }
   state.frames.forEach((candidate) => candidate.classList.toggle("hidden", candidate !== frame));
@@ -489,6 +525,7 @@ function navigate(key, src, focus, isRestore) {
   }
   frame.classList.remove("hidden");
   state.activeFrame = frame;
+  notifyJobsPanelLifecycle(state.frames.get('pipeline'));
   state.frameOrder = state.frameOrder.filter((saved) => saved !== key);
   state.frameOrder.push(key);
   while (state.frameOrder.length > MAX_WARM_PANELS) {

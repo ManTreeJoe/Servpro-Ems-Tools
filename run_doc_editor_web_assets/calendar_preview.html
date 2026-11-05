@@ -19,7 +19,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 @media(max-width:700px){[data-layout="agenda"] .wc-day{display:block}[data-layout="agenda"] .wc-day-items{grid-template-columns:1fr}.wc-focus-detail .wc-visit{display:flex}.run-paper{padding:24px 18px}}
 </style>
 <div class="preview-note"><strong>Calendar test preview — sample jobs only.</strong> Edits are temporary and reset when this window closes. No live jobs, Word documents, database or Trello changes. Confirmation, posting and printing are not available yet.</div>
-<div class="job-finder"><label for="add-job-search">Add a job</label><input id="add-job-search" type="search" placeholder="Search job name or address…" autocomplete="off" aria-controls="job-matches"><div id="job-matches" hidden></div></div>
+<div class="job-finder"><label for="add-job-search">Add a job</label><input id="add-job-search" type="search" placeholder="Search job name, claim number or address…" autocomplete="off" aria-controls="job-matches"><div id="job-matches" hidden></div></div>
 <style>
 .job-finder{position:relative;display:flex;align-items:center;gap:12px;margin:8px 0;font:13px var(--font-body)}.job-finder input{width:min(480px,75%);padding:10px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px}#job-matches{position:absolute;top:100%;left:0;z-index:25;width:min(600px,100%);max-height:320px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow-1)}#job-matches button{display:block;width:100%;text-align:left;padding:12px;color:var(--text);background:transparent;border:0;border-bottom:1px solid var(--border);cursor:pointer}#job-matches button:hover,#job-matches button:focus-visible{background:var(--surface-2)}#job-matches small{display:block;color:var(--text-muted);margin-top:4px}#job-matches p{padding:12px}
 </style>
@@ -33,7 +33,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <label>Insurance carrier<input id="insurance"></label><label>Claim number<input id="claim"></label>
 <label>Email<input id="email" readonly></label>
 </div><div id="linked-job-details"></div></fieldset>
-<fieldset id="schedule-link-controls" hidden><legend>Job / Trello link</legend><p id="schedule-link-status"></p><label>Find or change linked job<input id="schedule-link-search" type="search" placeholder="Search name or address"></label><div id="schedule-link-results"></div><button type="button" class="btn" id="schedule-unlink">Remove link</button></fieldset>
+<fieldset id="schedule-link-controls" hidden><legend>Job / Trello link</legend><p id="schedule-link-status"></p><label>Find or change linked job<input id="schedule-link-search" type="search" placeholder="Search name, claim number or address"></label><div id="schedule-link-results"></div><button type="button" class="btn" id="schedule-unlink">Remove link</button></fieldset>
 <fieldset><legend>Schedule</legend><div class="edit-grid">
 <label>Section<select id="queue"><option value="scheduled">Scheduled</option><option value="tbs">To be scheduled</option><option value="pending">Pending</option><option value="hold">On hold</option></select></label>
 <label>Run group<select id="run-group"></select></label>
@@ -42,6 +42,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 </div></fieldset>
 <fieldset><legend>Activities & people</legend>
 <details id="activity-picker"><summary class="btn">Choose activities</summary><div id="activity-options"></div></details>
+<div class="edit-grid"><label>Other activity<input id="custom-activity" maxlength="120" placeholder="Add work not listed above"></label><button type="button" class="btn" id="add-activity">Add activity</button></div>
 <div id="activity-assignments"></div>
 <p id="activity-error" role="alert"></p>
 </fieldset>
@@ -50,7 +51,7 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <label>Access / contact instructions<textarea id="access" rows="3" placeholder="Gate, lockbox, tenant coordination"></textarea></label>
 <label class="edit-wide">Work notes / next step<textarea id="notes" rows="3" placeholder="What needs to happen on this visit?"></textarea></label>
 </div></fieldset>
-<footer><button type="button" class="btn" id="cancel">Cancel</button><button class="btn btn-primary">Apply sample edit</button></footer>
+<footer><button type="button" class="btn" id="remove-visit" hidden>Remove visit</button><button type="button" class="btn" id="cancel">Cancel</button><button class="btn btn-primary">Apply sample edit</button></footer>
 </form></dialog>
 <style>
 #editor{width:min(850px,calc(100% - 32px));padding:0;font-family:var(--font-body)}#visit-form{padding:20px;gap:18px}#visit-form header p{font-size:12px;color:var(--text-muted);margin:6px 0 0}#visit-form fieldset{border:1px solid var(--border);border-radius:6px;padding:14px;min-width:0}#visit-form legend{font-weight:600;font-size:13px;padding:0 6px}.edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.edit-wide{grid-column:1/-1}#visit-form label{font-size:12px;min-width:0}#visit-form input,#visit-form select,#visit-form textarea{width:100%;box-sizing:border-box;font:13px var(--font-body)}#visit-form textarea{background:var(--surface-2);color:var(--text);border:1px solid var(--border);padding:9px;border-radius:5px;resize:vertical}#visit-form footer{position:sticky;bottom:0;background:var(--surface);padding:12px 0;border-top:1px solid var(--border)}#activity-picker{position:relative;margin-bottom:12px}#activity-options{position:absolute;z-index:5;top:100%;left:0;width:min(450px,100%);background:var(--surface);padding:12px;border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow-1);display:flex;gap:8px;flex-wrap:wrap}#activity-options button{border-radius:16px}#activity-options [aria-pressed=true]{background:var(--green);color:white;border-color:var(--green-hover)}#activity-assignments{display:grid;grid-template-columns:1fr 1fr;gap:12px}#activity-error{color:var(--red);font-size:12px;margin:8px 0 0}@media(max-width:600px){.edit-grid,#activity-assignments{grid-template-columns:1fr}}
@@ -67,6 +68,8 @@ form{display:grid;gap:12px}form label{display:grid;gap:5px}form input,form selec
 <script src="schedule_history.js"></script>
 <script src="schedule_confirmation.js"></script>
 <script src="schedule_crew.js?v=20261007pills"></script>
+<script src="schedule_search_queue.js"></script>
+<script src="schedule_job_log.js"></script>
 <script>
 'use strict';
 const liveMode=new URLSearchParams(location.search).get('live')==='1';
@@ -95,23 +98,31 @@ if(!liveMode)[['tbs','TBS New Loss /Reinspection',3],['tbs','TBS Mitigation',5],
 });
 const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let availableJobs=liveMode?[]:names.map((name,i)=>({id:`available-${i}`,title:`${name} — new sample job`,address:`${300+i} Sample Avenue`,activities:[]}));
-async function findJobs(){
- const version=++searchVersion;
- const query=field('add-job-search').value.trim().toLowerCase(),results=field('job-matches');
+const addSearch=ScheduleSearchQueue(),linkSearch=ScheduleSearchQueue();
+async function findJobs(query,version,current=()=>true){
+ const results=field('job-matches');
  results.hidden=!query;if(!query)return;
  if(liveMode){
    results.innerHTML='<p role="status">Searching jobs…</p>';
-   try{const found=await live.search(query);if(version!==searchVersion)return;availableJobs=found.map(job=>records.find(r=>r.job_id===job.job_id)||job);}
-   catch(error){if(version===searchVersion)results.innerHTML=`<p role="alert">${safe(error.message)}</p>`;return;}
+   try{const found=await live.search(query);if(version!==searchVersion||!current())return;availableJobs=found;}
+   catch(error){if(version===searchVersion&&current())results.innerHTML=`<p role="alert">${safe(error.message)}</p>`;return;}
  }
- const jobs=[...records,...availableJobs.filter(job=>!records.some(row=>row.id===job.id))].filter(job=>`${job.title} ${job.address||''}`.toLowerCase().includes(query));
+ const jobs=liveMode?availableJobs:[...records,...availableJobs.filter(job=>!records.some(row=>row.id===job.id))].filter(job=>`${job.title} ${job.address||''}`.toLowerCase().includes(query));
  results.innerHTML=jobs.length?jobs.map(job=>`<button type="button" data-found-job="${safe(job.id)}">${safe(job.title)}<small>${safe(job.address)} · ${job.queue==='scheduled'?`Scheduled ${OneLossWeeklyCalendar.displayDate(job.date)} — edit visit`:job.queue?'Waiting — schedule this job':'Not scheduled — add visit'}</small></button>`).join(''):`<p role="status">No matching ${liveMode?'':'sample '}jobs.</p>`;
 }
-field('add-job-search').oninput=findJobs;
-field('add-job-search').onfocus=findJobs;
-field('job-matches').onclick=event=>{const button=event.target.closest('[data-found-job]');if(!button)return;const id=button.dataset.foundJob,row=records.find(r=>r.id===id);field('job-matches').hidden=true;openEditor(id,row?.date||addDay||today,true);addDay=null;};
-document.addEventListener('pointerdown',event=>{if(!event.target.closest('.job-finder'))field('job-matches').hidden=true;});
-field('add-job-search').onkeydown=event=>{if(event.key==='Escape')field('job-matches').hidden=true;else if(event.key==='ArrowDown'){event.preventDefault();field('job-matches').querySelector('button')?.focus();}};
+function queueAddSearch(){
+ const query=field('add-job-search').value.trim().toLowerCase(),version=++searchVersion,results=field('job-matches');
+ addSearch.invalidate();results.hidden=!query;results.textContent='';
+ if(!query)return;
+ if(liveMode){results.innerHTML='<p role="status">Searching jobs…</p>';addSearch.schedule(current=>findJobs(query,version,current));}
+ else void findJobs(query,version);
+}
+function dismissAddSearch(){searchVersion++;addSearch.invalidate();field('job-matches').hidden=true;}
+field('add-job-search').oninput=queueAddSearch;
+field('add-job-search').onfocus=queueAddSearch;
+field('job-matches').onclick=event=>{const button=event.target.closest('[data-found-job]');if(!button)return;const id=button.dataset.foundJob,row=records.find(r=>r.id===id);field('job-matches').hidden=true;openEditor(id,liveMode?(addDay||calendar.selectedDay()):(row?.date||addDay||today),true);addDay=null;};
+document.addEventListener('pointerdown',event=>{if(!event.target.closest('.job-finder'))dismissAddSearch();});
+field('add-job-search').onkeydown=event=>{if(event.key==='Escape')dismissAddSearch();else if(event.key==='ArrowDown'){event.preventDefault();field('job-matches').querySelector('button')?.focus();}};
 function legacy({selected,records}){
  const sections=['Monitor','Work To Be Performed','Upcoming','TBS New Loss /Reinspection','TBS Mitigation','TBS Contents','Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management','On Hold'];
  return `<article class="run-paper"><header><div class="paper-brand">SERVPRO</div><p>Cleaning. Restoration. Construction.</p><h2>SERVPRO® Team Lingurar</h2><h3><u>Servpro Daily Run</u></h3></header><h3><u>Date: ${OneLossWeeklyCalendar.displayDate(selected)}</u></h3>${sections.map(group=>{
@@ -122,7 +133,7 @@ function legacy({selected,records}){
  }).join('')}</article>`;
 }
 field('calendar').dataset.layout='dispatch';
-const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onRetry:()=>loadLive(),onAdd:day=>openEditor(null,day),onEdit:id=>openEditor(id),onSchedule:moveVisit});
+const calendar=OneLossWeeklyCalendar.mount(field('calendar'),{date:today,renderLegacy:legacy,onRetry:()=>loadLive(),onEdit:id=>openEditor(id),onSchedule:moveVisit});
 calendar.update({records});
 let realtime=null, refreshTimer=null, refreshing=false, refreshAgain=false;
 const live=liveMode?OneLossScheduleLive({render:rows=>{
@@ -142,31 +153,44 @@ async function loadLive(quiet=false){
  try{
    await live.load();
    if(!realtime)realtime=OneLossScheduleRealtime({credentials:()=>live.credentials(),changed:queueRefresh,status:text=>field('sync-status').textContent=text});
- }catch(error){if(!ready){calendar.update({records:[],loading:false,error:error.message});}else field('sync-status').textContent='Offline · changes may be delayed';}
+ }catch(error){dismissAddSearch();linkSequence++;linkSearch.invalidate();field('schedule-link-results').textContent='';if(!ready){calendar.update({records:[],loading:false,error:error.message});}else field('sync-status').textContent='Offline · changes may be delayed';}
  finally{refreshing=false;if(refreshAgain){refreshAgain=false;queueRefresh();}}
 }
 if(liveMode){
  document.title='OneLoss — Live schedule drafts';
  document.querySelector('.preview-note').textContent='Connecting to live Schedule…';
  const sync=document.createElement('span');sync.id='sync-status';sync.role='status';sync.textContent='Connecting…';sync.style.cssText='font-size:12px;color:var(--text-muted);margin-left:auto';document.querySelector('.job-finder').append(sync);
- const importButton=document.createElement('button');importButton.type='button';importButton.className='btn';importButton.textContent='Import document';document.querySelector('.job-finder').append(importButton);
  documentImport=OneLossScheduleDocumentImport({today,read:day=>live.importDocument(day),apply:key=>live.importAll(key),onImported:()=>loadLive(true)});
- importButton.onclick=()=>{if(ready)documentImport.open();};
  const history=OneLossScheduleHistory(live),historyButton=document.createElement('button');historyButton.type='button';historyButton.className='btn';historyButton.textContent='History';historyButton.onclick=()=>{if(ready)history.open();};document.querySelector('.job-finder').append(historyButton);
  const confirmation=OneLossScheduleConfirmation({live,onConfirmed:()=>loadLive(true)}),confirmButton=document.createElement('button');confirmButton.type='button';confirmButton.className='btn btn-primary';confirmButton.textContent='Confirm day';confirmButton.onclick=()=>{if(ready&&!saving)confirmation.open(calendar.selectedDay());};document.querySelector('.job-finder').append(confirmButton);
- document.querySelector('#visit-form header p').textContent='Job details are read-only here. Save changes only this schedule draft.';
+ document.querySelector('#visit-form header p').textContent='Address and contact edits update the linked OneLoss job everywhere. Timing, activities and notes apply only to this visit.';
  document.querySelector('#visit-form button.btn-primary').textContent='Save draft';
- ['job','address','contact','phone','insurance','claim'].forEach(id=>field(id).readOnly=true);
+ field('job').readOnly=true;
+ ['address','contact','phone','insurance','claim','email'].forEach(id=>field(id).readOnly=false);
  field('schedule-link-controls').hidden=false;
  calendar.update({records:[],loading:true});
  window.addEventListener('pywebviewready',loadLive,{once:true});
  if(window.pywebview?.api)setTimeout(loadLive,0);
- const fallback=setInterval(()=>{if(!document.hidden&&ready&&!saving)loadLive(true);},15000);
+ const fallback=setInterval(()=>{if(!document.hidden&&ready&&!saving)loadLive(true);},60000);
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueRefresh();});
  window.addEventListener('online',queueRefresh);
  window.addEventListener('pagehide',()=>{clearInterval(fallback);clearTimeout(refreshTimer);realtime?.close();});
 }
 const runGroups={scheduled:['Monitor','Work To Be Performed'],tbs:['TBS New Loss /Reinspection','TBS Mitigation','TBS Contents'],pending:['Pending Testing/Clearance/Abatement','Pending Approvals – Insurance/Self Pay','Pending Approvals – Property Management'],hold:['On Hold']};
+const linkedWork=liveMode?ScheduleJobLog({live}):null;
+if(linkedWork){
+ const button=document.createElement('button');button.type='button';button.className='btn';button.textContent='Preview linked Job Log';
+ field('visit-form').querySelector('footer').prepend(button);
+ button.onclick=async()=>{
+  const visit=records.find(row=>row.id===editing);
+  if(saving||!visit?.job_id||!visit?.revision){field('activity-error').textContent='Save and link this visit before previewing its Job Log.';return;}
+  const id=visit.id;button.disabled=true;
+  try{await linkedWork.open(visit,()=>field('editor').open&&editing===id);}
+  catch(error){if(field('editor').open&&editing===id)field('activity-error').textContent=error.message;}
+  finally{button.disabled=false;}
+ };
+ field('editor').addEventListener('close',()=>linkedWork.close());
+}
 async function moveVisit(id,day,placement={}){
  if(!ready||saving||field('editor').open)return;
  const existing=records.find(row=>row.id===id);if(!existing)return;
@@ -199,29 +223,35 @@ async function moveVisit(id,day,placement={}){
 }
 const extraFields=['address','contact','phone','insurance','claim','email','equipment','access','notes'];
 const jobFactFields=['address','contact','phone','insurance','claim','email'];
-function fillJobFacts(job){jobFactFields.forEach(key=>field(key).value=job?.[key]||'');ScheduleJobPreview.selected(field('linked-job-details'),job);}
+const factKeys={address:'address',contact:'customer_name',phone:'phone',insurance:'carrier',claim:'claim_number',email:'email'};
+let factsReady=true;
+function factsLoading(loading){factsReady=!loading;jobFactFields.forEach(key=>field(key).disabled=loading);field('visit-form').querySelector('.btn-primary').disabled=loading;}
+function fillJobFacts(job){jobFactFields.forEach(key=>field(key).value=job?.[key]||'');editingRow.facts_base=job?.facts_base||{};ScheduleJobPreview.selected(field('linked-job-details'),job);factsLoading(false);}
 function selectLinkedJob(job){
  if(!field('editor').open||saving)return;
- linkSequence++;editingRow.job_id=job.job_id;editingRow.trello_cards=job.trello_cards||[];
+ linkSequence++;linkSearch.invalidate();editingRow.job_id=job.job_id;editingRow.trello_cards=job.trello_cards||[];
  field('job').value=job.title;field('job').readOnly=true;fillJobFacts(job);
  field('schedule-link-status').textContent='Selected '+job.title+' — link changes when you save. Saved Trello links follow this job.';field('schedule-link-results').textContent='';
 }
 let linkSequence=0;
-field('schedule-link-search').oninput=async()=>{
+field('schedule-link-search').oninput=()=>{
  const sequence=++linkSequence,query=field('schedule-link-search').value.trim(),results=field('schedule-link-results');
- if(query.length<2){results.textContent='';return;}results.textContent='Searching jobs…';
- try{const jobs=await live.search(query);if(sequence!==linkSequence)return;
+ linkSearch.invalidate();
+ if(query.length<2||!field('editor').open){results.textContent='';return;}results.textContent='Searching jobs…';
+ linkSearch.schedule(async current=>{
+ try{const jobs=await live.search(query);if(sequence!==linkSequence||!current()||!field('editor').open)return;
    results.replaceChildren(...jobs.map(job=>{const row=document.createElement('div');row.className='schedule-job-result';
      const button=document.createElement('button');button.type='button';button.className='btn';button.textContent=job.title;
      const detail=document.createElement('small');detail.textContent=[job.address,job.insurance,job.claim].filter(Boolean).join(' · ')||'No saved address or insurance — check Preview before linking';button.append(detail);
-     button.onclick=async()=>{const version=++linkSequence;button.disabled=true;try{const current=await live.jobDetail(job.job_id);if(version===linkSequence)selectLinkedJob(current);}catch(error){if(version===linkSequence)field('schedule-link-status').textContent=error.message;}finally{button.disabled=false;}};
+     button.onclick=async()=>{const version=++linkSequence,wasReady=factsReady;factsLoading(true);button.disabled=true;try{const current=await live.jobDetail(job.job_id);if(version===linkSequence)selectLinkedJob(current);}catch(error){if(version===linkSequence){field('schedule-link-status').textContent=error.message;factsLoading(!wasReady);}}finally{button.disabled=false;}};
      const preview=document.createElement('button');preview.type='button';preview.className='btn';preview.textContent='Preview';preview.setAttribute('aria-label','Preview '+job.title);
      const show=()=>ScheduleJobPreview.open(job,id=>live.jobDetail(id),selectLinkedJob);
      preview.onclick=show;button.oncontextmenu=event=>{event.preventDefault();show();};row.append(button,preview);return row;
    }));if(!jobs.length)results.textContent='No matching jobs.';
- }catch(error){if(sequence===linkSequence)results.textContent=error.message;}
+ }catch(error){if(sequence===linkSequence&&current()&&field('editor').open)results.textContent=error.message;}
+ });
 };
-field('schedule-unlink').onclick=()=>{linkSequence++;editingRow.job_id=null;field('job').readOnly=false;field('schedule-link-status').textContent='Needs link — save to keep this as an unlinked schedule entry.';fillJobFacts(null);};
+field('schedule-unlink').onclick=()=>{linkSequence++;linkSearch.invalidate();field('schedule-link-results').textContent='';editingRow.job_id=null;editingRow.facts_base={};field('job').readOnly=false;field('schedule-link-status').textContent='Needs link — save to keep these details on this schedule entry only.';ScheduleJobPreview.selected(field('linked-job-details'),null);factsLoading(false);};
 function renderGroups(chosen){field('run-group').innerHTML=runGroups[field('queue').value].map(g=>`<option>${safe(g)}</option>`).join('');if(runGroups[field('queue').value].includes(chosen))field('run-group').value=chosen;else if(field('queue').value==='scheduled')field('run-group').value='Work To Be Performed';field('date').required=field('queue').value==='scheduled';}
 field('queue').onchange=()=>renderGroups();
 function renderActivities(){
@@ -231,13 +261,23 @@ function renderActivities(){
  ScheduleCrew.mount(field('activity-assignments'));
 }
 field('activity-options').onclick=event=>{const button=event.target.closest('[data-activity]');if(!button)return;const label=button.dataset.activity,index=activityDraft.findIndex(a=>a.label===label);if(index>=0)activityDraft.splice(index,1);else activityDraft.push({label,people:[]});renderActivities();field('activity-error').textContent='';};
+field('add-activity').onclick=()=>{
+ const label=field('custom-activity').value.trim();if(!label)return;
+ if(activityDraft.length>=30){field('activity-error').textContent='A visit supports up to 30 activities.';return;}
+ if(!activityDraft.some(a=>a.label.toLowerCase()===label.toLowerCase()))activityDraft.push({label,people:[]});
+ field('custom-activity').value='';renderActivities();field('activity-error').textContent='';
+};
+field('custom-activity').onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();field('add-activity').click();}};
 field('activity-assignments').oninput=event=>{if(event.target.dataset.assignment!==undefined)activityDraft[Number(event.target.dataset.assignment)].people=split(event.target.value);};
 function openEditor(id,day,schedule=false,placement=null){
  if(liveMode&&(!ready||saving))return;
  if(liveMode&&!id){addDay=day;field('add-job-search').focus();field('add-job-search').placeholder='Find the job to add a visit…';return;}
+ dismissAddSearch();linkSearch.invalidate();
  dropPlacement=placement;
  editing=id; const row=records.find(r=>r.id===id)||availableJobs.find(r=>r.id===id);
  editingRow=row?structuredClone(row):null;
+ field('custom-activity').value='';
+ field('remove-visit').hidden=!liveMode||!row?.revision;
  if(liveMode){linkSequence++;field('schedule-link-search').value='';field('schedule-link-results').textContent='';field('job').readOnly=!!row?.job_id;field('schedule-link-status').textContent=row?.job_id?`Linked job · ${row.trello_cards?.length||0} saved Trello card link(s). You can change the job below.`:'Needs link — this entry is saved even without a job or Trello match.';}
  field('job').value=row?.title||'';field('queue').value=placement?.queue||(schedule?'scheduled':row?.queue||'scheduled');field('date').value=OneLossWeeklyCalendar.displayDate(schedule?day:row?.date||day||today);field('date').setCustomValidity('');
  field('time').value=row?.time||'';
@@ -245,14 +285,26 @@ function openEditor(id,day,schedule=false,placement=null){
  ScheduleJobPreview.selected(field('linked-job-details'),row?.job_id?row:null);
  activityDraft=structuredClone(row?.activities||[]);renderActivities();renderGroups(placement?.group||row?.group);field('activity-picker').open=false;field('activity-error').textContent='';
  field('editor').showModal();field('job').focus();
- if(liveMode&&row?.job_id){const version=linkSequence;live.jobDetail(row.job_id).then(job=>{if(version===linkSequence&&field('editor').open&&editingRow?.job_id===job.job_id)fillJobFacts(job);}).catch(error=>{if(version===linkSequence&&field('editor').open)field('schedule-link-status').textContent='Could not refresh job details: '+error.message;});}
+ factsLoading(false);
+ if(liveMode&&row?.job_id){const version=linkSequence;factsLoading(true);field('schedule-link-status').textContent='Loading shared job details…';live.jobDetail(row.job_id).then(job=>{if(version===linkSequence&&field('editor').open&&editingRow?.job_id===job.job_id){editingRow.trello_cards=job.trello_cards||[];fillJobFacts(job);field('schedule-link-status').textContent='Linked to '+job.title+'. Changes to job details are shared everywhere in OneLoss.';}}).catch(error=>{if(version===linkSequence&&field('editor').open)field('schedule-link-status').textContent='Could not load current job details. Cancel and reopen, or select the job again. '+error.message;});}
  ScheduleCrew.load();
 }
 field('cancel').onclick=()=>{if(!saving)field('editor').close();};
+field('remove-visit').onclick=async()=>{
+ if(saving||!editingRow?.revision)return;
+ if(!window.confirm('Remove this visit from Schedule? The job and Trello card will not be deleted.'))return;
+ saving=true;field('visit-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=true);
+ try{await live.save({...editingRow,status:'canceled',job_facts:undefined});field('editor').close();}
+ catch(error){field('activity-error').textContent=error.message;}
+ finally{saving=false;field('visit-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=false);factsLoading(!factsReady);}
+ if(!field('editor').open)await loadLive(true);
+};
 field('editor').addEventListener('cancel',event=>{if(saving)event.preventDefault();});
+field('editor').addEventListener('close',()=>{linkSequence++;linkSearch.invalidate();field('schedule-link-results').textContent='';});
+window.addEventListener('pagehide',()=>{dismissAddSearch();linkSequence++;linkSearch.invalidate();});
 field('date').oninput=()=>field('date').setCustomValidity('');
 field('visit-form').onsubmit=async event=>{
- event.preventDefault(); if(saving)return;const existing=liveMode?editingRow:records.find(r=>r.id===editing),queue=field('queue').value;
+ event.preventDefault(); if(saving||!factsReady)return;const existing=liveMode?editingRow:records.find(r=>r.id===editing),queue=field('queue').value;
  let visitDate;try{visitDate=queue==='scheduled'?OneLossWeeklyCalendar.parseDate(field('date').value):undefined;}catch{field('date').setCustomValidity('Enter a valid date as MM/DD/YY.');field('date').reportValidity();return;}
  if(!activityDraft.length){field('activity-error').textContent='Choose at least one activity.';return;}
  const row={...existing,id:editing||`sample-${Date.now()}`,group:field('run-group').value,title:field('job').value.trim(),queue,date:visitDate,time:field('time').value.trim(),activities:structuredClone(activityDraft)};
@@ -262,6 +314,7 @@ field('visit-form').onsubmit=async event=>{
    row.id=existing.revision?existing.id:(existing.draftId||(existing.draftId=crypto.randomUUID()));
    row.job_id=existing.job_id;
    row.entry_title=field('job').value.trim();
+   row.job_facts={base:Object.fromEntries(jobFactFields.map(key=>[factKeys[key],existing.facts_base?.[factKeys[key]]||''])),values:Object.fromEntries(jobFactFields.map(key=>[factKeys[key],row[key]||'']))};
    saving=true;field('visit-form').querySelectorAll('button,input,select,textarea').forEach(el=>el.disabled=true);
    const saveButton=field('visit-form').querySelector('.btn-primary');saveButton.textContent='Saving…';
    try{await live.save(row,dropPlacement);field('editor').close();}

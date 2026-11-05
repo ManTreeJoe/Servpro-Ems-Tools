@@ -1,0 +1,13 @@
+OneLoss Main 1.8.45
+
+- Fix Job Log saves for renamed cards and separate-unit jobs. Related job actions use the exact linked card instead of guessing from its title.
+- Show every thread comment newest first, including the original message.
+- Mark card notifications read when its details successfully open.
+- Improve linked EMS/WIP/Estimating copies and record field-work completion when moving to Estimating.
+- Reject cached folder details belonging to another customer.
+- Keep Recon link-only: do not create Recon cards automatically.
+- Improve management-company contact details, job header layout, and pencil name editing. Move Forms to Requirements.
+- Improve client assignment/search, shared lane colors, checklist defaults, file browsing and photo reports.
+- Improve the uploaded Resources/forms library and support mapping existing PDF fields.
+
+Existing data and permissions are retained. Experimental card-scoped insurance remains disabled on Main.

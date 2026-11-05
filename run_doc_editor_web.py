@@ -24,6 +24,8 @@ class Api:
             return {'ok': True, 'context': store.context_id,
                     'department': store.department, 'records': store.load()}
         except Exception as ex:
+            import app_error_reports
+            app_error_reports.capture_failure('run_doc_editor', 'schedule_load', ex)
             return schedule_store.failure(ex)
 
     def schedule_history(self, start, end, expected_context):
@@ -69,6 +71,16 @@ class Api:
         try:
             store = schedule_store.ScheduleStore(expected_context)
             return {'ok': True, 'jobs': store.search(query)}
+        except Exception as ex:
+            return schedule_store.failure(ex)
+
+    def schedule_work_item_preview(self, visit_id, expected_revision, expected_context):
+        """Read-only dev boundary; no counterpart is persisted by preview."""
+        import schedule_store
+        import schedule_job_log
+        try:
+            store = schedule_store.ScheduleStore(expected_context)
+            return {'ok': True, **schedule_job_log.preview(store, visit_id, expected_revision)}
         except Exception as ex:
             return schedule_store.failure(ex)
 

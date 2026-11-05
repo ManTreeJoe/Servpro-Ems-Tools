@@ -26,7 +26,7 @@
   // could only be filed somewhere it didn't belong.
   const STAGES = [
     "Initial", "Reinspection", "Demo", "Mold Prep", "Post Mold Prep",
-    "Mold", "Abatement", "Monitor", "Post", "Contents", "Equipment",
+    "Mold", "Abatement", "Cleaning", "Monitor", "Post", "Contents", "Equipment",
   ];
   window.PICS_STAGES = STAGES;
 

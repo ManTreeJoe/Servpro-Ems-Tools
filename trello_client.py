@@ -23,6 +23,9 @@ _USER_AGENT = "EMS-Automation/1.0"
 
 
 def _creds():
+    import paths
+    if getattr(paths, "IS_DEV", False):
+        raise RuntimeError("Live Trello is disabled in isolated Dev.")
     cfg = config.load()
     key = (cfg.get("trello_api_key") or "").strip()
     token = (cfg.get("trello_token") or "").strip()
@@ -90,8 +93,18 @@ def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_re
                 continue
             raise
     if method.upper() in ('POST', 'PUT', 'DELETE'):
-        from card_activity_notifications import record
-        record(path, method, dict(params or {}) | dict(data or {}) | dict(json_data or {}))
+        try:
+            from card_activity_notifications import record
+            record(path, method, dict(params or {}) | dict(data or {}) | dict(json_data or {}))
+        except Exception:
+            # The provider has already confirmed this mutation. A secondary
+            # notification failure must not turn success into a retry that can
+            # duplicate cards, attachments, or other non-idempotent writes.
+            try:
+                import ems_log
+                ems_log.warn('notifications', 'Trello change saved; activity notification failed.')
+            except Exception:
+                pass
     if not raw or not _expect_json:
         return None
     return json.loads(raw)
@@ -302,7 +315,8 @@ def find_cards_by_name(query, *, max_results=20, with_lists=True):
 
 
 def find_accessible_cards_by_name(query, *, max_results=20,
-                                  include_closed=False):
+                                  include_closed=False, include_claim=False,
+                                  raise_if_unavailable=False):
     """Find strong name matches on any Trello board the user can access.
 
     The normal search is intentionally scoped to the configured workspace.
@@ -331,24 +345,37 @@ def find_accessible_cards_by_name(query, *, max_results=20,
     queries.extend(sorted((w for w in words if len(w) >= 4),
                           key=len, reverse=True)[:2])
     seen, candidates = set(), []
+    successful_searches = 0
     for q in queries:
         try:
             raw = _call("/search", params={
                 "query": q, "modelTypes": "cards",
-                "card_fields": "id,name,shortUrl,idBoard,idList,closed",
+                "card_fields": "id,name,shortUrl,idBoard,idList,closed" + (",desc" if include_claim else ""),
                 "cards_limit": str(max(20, int(max_results or 20))),
             })
         except Exception:
             continue
+        successful_searches += 1
         cards = (raw or {}).get("cards", []) if isinstance(raw, dict) else []
         for card in cards:
             cid = card.get("id") or ""
+            claim = ''
+            if include_claim:
+                import card_search
+                for section in parse_card_desc(card.get('desc') or '').values():
+                    if isinstance(section, dict):
+                        claim = claim or str(section.get('CLAIM NUMBER') or '').strip()
+            claim_match = include_claim and card_search.claim_score(query, claim) > 0
             if (not cid or cid in seen or
                     (card.get("closed") and not include_closed) or
-                    not title_match(card.get("name"))):
+                    not (title_match(card.get("name")) or claim_match)):
                 continue
+            card['_search_claim'] = claim
             seen.add(cid)
             candidates.append(card)
+
+    if raise_if_unavailable and not successful_searches:
+        raise RuntimeError('Trello search unavailable')
 
     board_names = {}
     out = []
@@ -365,6 +392,7 @@ def find_accessible_cards_by_name(query, *, max_results=20,
             "name": card.get("name") or "", "url": card.get("shortUrl") or "",
             "list_id": card.get("idList") or "", "list_name": "",
             "closed": bool(card.get("closed")),
+            "claim_number": card.get('_search_claim') or '',
         })
     return out
 
@@ -482,7 +510,7 @@ def list_notifications(*, limit=50, only_unread=False):
     Each item: {id, type, unread, date, data{card,board,text,...},
     memberCreator{fullName,username}}. `type` is e.g. mentionedOnCard /
     commentCard / changeCard / addedToCard / makeAdminOfBoard / etc.
-    Returns [] on any failure. Powers the in-app Notifications panel.
+    Provider failures are propagated so the panel keeps its previous feed.
     """
     params = {
         "limit": str(max(1, min(int(limit or 50), 1000))),
@@ -492,22 +520,39 @@ def list_notifications(*, limit=50, only_unread=False):
     }
     if only_unread:
         params["read_filter"] = "unread"
-    try:
-        return _call("/members/me/notifications", params=params) or []
-    except Exception:
-        return []
+    return _call("/members/me/notifications", params=params) or []
+
+
+def list_all_unread_notifications():
+    """Read the full unread set; never mistake a truncated page for a total."""
+    rows, seen, before = [], set(), ''
+    for _ in range(20):
+        params = {'read_filter': 'unread', 'fields': 'id,date,type,data,idAction,unread', 'limit': '1000'}
+        if before:
+            params['before'] = before
+        page = _call('/members/me/notifications', params=params)
+        if not isinstance(page, list):
+            raise ValueError('Trello did not return a notification list')
+        for row in page:
+            nid = row.get('id') if isinstance(row, dict) else None
+            if not nid:
+                raise ValueError('A Trello notification has no ID')
+            if nid not in seen:
+                seen.add(nid)
+                if row.get('unread') is not False:
+                    rows.append(row)
+        if len(page) < 1000:
+            return rows
+        next_before = page[-1].get('id')
+        if not next_before or next_before == before:
+            raise ValueError('Trello notification pagination did not advance')
+        before = next_before
+    raise ValueError('Trello unread count is too large to verify')
 
 
 def unread_notification_count():
-    """Count of UNREAD Trello notifications (for a sidebar/topbar badge).
-    Cheap-ish: fetches unread ids only. 0 on failure."""
-    try:
-        r = _call("/members/me/notifications",
-                  params={"read_filter": "unread", "fields": "id",
-                          "limit": "1000"}) or []
-        return len(r)
-    except Exception:
-        return 0
+    """Count unread Trello notifications; propagate an unconfirmed count."""
+    return len(list_all_unread_notifications())
 
 
 def mark_notification_read(notification_id, read=True):
@@ -750,6 +795,34 @@ def delete_owned_comment(action_id, card_id):
     except Exception:
         # HTTPError URLs contain API credentials; do not return raw exceptions.
         return {"ok": False, "error": "Trello deletion could not be confirmed. The Job Log entry was kept; check the original comment before trying again."}
+
+
+def change_owned_comment(action_id, card_id, *, text=None, delete=False):
+    """Interactive mutation: verify exact card and current author before writing."""
+    if not action_id or not card_id:
+        return {"ok": False, "error": "Reopen the job card before editing or deleting this comment."}
+    if not delete and not str(text or '').strip():
+        return {"ok": False, "error": "A comment cannot be empty."}
+    options = {"_max_retries": 0, "_timeout": 5}
+    action_path = '/actions/' + urllib.parse.quote(str(action_id), safe='')
+    try:
+        action = _call(action_path, params={"memberCreator": "true"}, **options) or {}
+        card = (action.get('data') or {}).get('card') or {}
+        if action.get('type') != 'commentCard' or card_id not in (card.get('id'), card.get('shortLink')):
+            return {"ok": False, "error": "This comment does not belong to the selected card."}
+        me = _call('/members/me', params={"fields": "id"}, **options) or {}
+        owner = action.get('idMemberCreator') or (action.get('memberCreator') or {}).get('id')
+        if not owner or not me.get('id') or owner != me['id']:
+            return {"ok": False, "error": "Only the comment's Trello author can edit or delete it. Check your connected Trello account."}
+        if delete:
+            _call(action_path, method='DELETE', **options)
+            return {"ok": True, "deleted": True, "synced_trello": True}
+        clean = str(text).strip()
+        _call(action_path + '/comments', method='PUT', data={"text": clean}, **options)
+        return {"ok": True, "text": clean, "synced_trello": True}
+    except Exception:
+        # Provider exceptions can include credential-bearing URLs.
+        return {"ok": False, "error": "Trello could not confirm the change. Your edit is still available; check the original comment before retrying."}
 
 
 def delete_comment(action_id):
@@ -2051,17 +2124,30 @@ def parse_card_desc(desc):
         return {}
     out = {}
     cur_section = None
+    pending_link = None
     for raw_line in desc.splitlines():
         line = raw_line.strip()
-        if not line or line == "---":
+        if not line or not line.strip('\u200c\u200b\ufeff'):
+            continue
+        if line == "---":
+            pending_link = None
             continue
         m = _SECTION_RE.match(line)
         if m:
+            pending_link = None
             cur_section = m.group(1).strip().upper()
             out.setdefault(cur_section, {})
             continue
         if cur_section is None:
             continue
+        if pending_link:
+            continuation = _re.fullmatch(r'\[[^\]]+\]\((https?://\S+?)(?:\s+"[^"]*")?\)', line)
+            bare_link = _re.fullmatch(r'https?://\S+', line)
+            if continuation or bare_link:
+                out[cur_section][pending_link] = continuation.group(1) if continuation else line
+                pending_link = None
+                continue
+            pending_link = None
         m = _KV_RE.match(line)
         if not m:
             continue
@@ -2078,6 +2164,8 @@ def parse_card_desc(desc):
         if val.startswith("mailto:"):
             val = val[len("mailto:"):]
         out[cur_section][key] = val
+        if cur_section == 'LINKS' and not val and 'LINK' in key:
+            pending_link = key
     return out
 
 

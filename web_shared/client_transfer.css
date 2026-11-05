@@ -3,6 +3,7 @@
 .client-transfer-dialog h2 { margin:0 0 12px; font:600 20px/1.3 var(--font-body,Segoe UI,sans-serif); }
 .client-transfer-dialog label { display:block; margin:12px 0; }
 .client-transfer-dialog input,.client-transfer-dialog select { display:block; width:100%; box-sizing:border-box; padding:10px; margin-top:5px; background:var(--surface-2,#292d33); color:inherit; border:1px solid var(--border,#48515d); border-radius:6px; font:inherit; }
+.client-transfer-dialog input[type=radio] { display:inline-block; width:auto; margin:0 7px 0 0; padding:0; vertical-align:middle; }
 .client-transfer-dialog button { padding:9px 13px; border:1px solid var(--border,#48515d); border-radius:6px; background:var(--surface-2,#292d33); color:inherit; font:inherit; cursor:pointer; }
 .client-transfer-dialog [data-save] { background:var(--green,#1c5541); color:white; }
 .client-transfer-dialog button:disabled { opacity:.5; cursor:default; }

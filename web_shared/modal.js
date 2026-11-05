@@ -33,6 +33,8 @@
   // Only a complete primary-pointer click on the same backdrop may dismiss.
   // Never treat a selection/drag released outside the panel as a close click.
   function bindBackdropClick(root, close) {
+    if (root._backdropCloseBound) return;
+    root._backdropCloseBound = true;
     let press = null, eligible = false;
     const isBackdrop = target => target === root ||
       (target?.classList?.contains('overlay-backdrop') && target.parentElement === root);
@@ -54,6 +56,18 @@
     });
   }
   window.bindBackdropClick = bindBackdropClick;
+  // Legacy tool dialogs keep their own close handlers (draft/busy guards).
+  // Route backdrop clicks through those handlers rather than removing DOM.
+  const bindToolBackdrops = () => document.querySelectorAll('.modal-scrim').forEach(root => {
+    bindBackdropClick(root, () => {
+      const top = [...document.querySelectorAll('.modal-scrim, .overlay')]
+        .filter(el => el.getClientRects().length).at(-1);
+      if (top !== root) return;
+      root.querySelector('[data-close], .audit-close, .modal-close')?.click();
+    });
+  });
+  new MutationObserver(bindToolBackdrops).observe(document.documentElement, {childList:true, subtree:true});
+  bindToolBackdrops();
   const FOCUSABLE = [
     'button:not([disabled])', '[href]', 'input:not([disabled])',
     'select:not([disabled])', 'textarea:not([disabled])',

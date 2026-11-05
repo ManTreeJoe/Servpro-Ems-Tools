@@ -104,7 +104,7 @@ def main():
             print(f"  [{i}/{len(carded)}] {name}: {shown}{more}")
         else:
             try:
-                ems_db.upsert_job(display_name=name, **updates)
+                ems_db.update_job(job['canon_key'], **updates)
             except Exception as ex:
                 failed += 1
                 changed_jobs -= 1

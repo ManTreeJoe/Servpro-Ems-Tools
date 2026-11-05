@@ -1,5 +1,5 @@
 /* Card membership combines Trello assignments and explicit OneLoss choices. */
-async function openJobMembers(cardId) {
+async function openJobMembers(cardId, onChange) {
   const previous=document.activeElement, dialog=document.createElement('dialog');
   dialog.className='job-members-dialog';
   dialog.innerHTML=`<header><h2>Job members</h2><button type="button" data-close aria-label="Close members">×</button></header>
@@ -26,7 +26,7 @@ async function openJobMembers(cardId) {
       check.onchange=async()=>{const value=check.checked;lock(true);status.textContent='Saving membership…';
         try{const result=await pywebview.api.set_personal_job_member(cardId,person.id,value);if(!result?.ok)throw Error(result?.error||'Membership was not confirmed.');person.member=value;person.source='OneLoss';handle.textContent='@'+person.username+' · OneLoss';status.textContent='OneLoss choice saved for this card. Trello is unchanged.';}
         catch(e){check.checked=!!person.member;status.textContent=e.message;retry.hidden=false;}
-        finally{lock(false);}
+        finally{lock(false);onChange?.();}
       };
     }
     for(const person of unmatched.filter(p=>`${p.name} ${p.username||''}`.toLowerCase().includes(search.value.toLowerCase()))){
@@ -46,3 +46,47 @@ async function openJobMembers(cardId) {
   };
   search.oninput=render;retry.onclick=load;dialog.showModal();await load();
 }
+
+window.JobMemberChips = {
+  mount(root, cardId) {
+    const host = root.querySelector('[data-quick-members]');
+    if (!host || !cardId || host.dataset.mounted) return;
+    host.dataset.mounted = 'true';
+    host.className = 'job-member-chips';
+    host.innerHTML = '<small>Members</small><div data-member-chips><span role="status">Loading members…</span></div>';
+    const row = host.querySelector('[data-member-chips]');
+    const colors = ['#245a81', '#8b3823', '#6450a0', '#286654', '#80591f'];
+    const open = () => openJobMembers(cardId, load);
+    async function load() {
+      let result;
+      try { result = await pywebview.api.personal_job_members(cardId); }
+      catch (_) { result = {ok:false}; }
+      if (!host.isConnected) return;
+      row.replaceChildren();
+      if (result?.ok) {
+        const members = [...(result.people || []).filter(p => p.member), ...(result.unmatched || [])];
+        for (const person of members) {
+          const name = person.name || person.username || 'Member';
+          const button = document.createElement('button');
+          button.type = 'button'; button.className = 'job-member-avatar';
+          button.textContent = name.trim().split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase();
+          button.title = name; button.setAttribute('aria-label', `Manage members: ${name}`);
+          const hash = [...String(person.id || person.username || name)].reduce((n,c)=>n+c.charCodeAt(0),0);
+          button.style.backgroundColor = colors[hash % colors.length];
+          button.onclick = open; row.append(button);
+        }
+        if (!members.length) {
+          const empty = document.createElement('span'); empty.textContent = 'No members'; row.append(empty);
+        }
+      } else {
+        const error = document.createElement('span'); error.textContent = 'Members unavailable'; error.setAttribute('role','status'); row.append(error);
+      }
+      const add = document.createElement('button');
+      add.type = 'button'; add.className = 'job-member-add'; add.textContent = '+';
+      add.title = 'Manage members'; add.setAttribute('aria-label','Manage members');
+      add.onclick = open; row.append(add);
+    }
+    host.refreshMembers = load;
+    void load();
+  }
+};

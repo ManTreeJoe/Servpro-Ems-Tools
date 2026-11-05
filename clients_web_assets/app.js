@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { clients: [], selected: "", division: "all", query: "", request: 0 };
+const state = { clients: [], selected: "", division: "all", ownership: "all", query: "", request: 0 };
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 
@@ -10,12 +10,24 @@ window.addEventListener("pywebviewready", async () => {
     loadClients();
   }, 180));
   $("#refresh").addEventListener("click", () => loadClients('',true));
+  $('#new-client').addEventListener('click', () => ClientJobs.create(async client => {
+    state.query=''; state.division='all'; $('#search').value='';
+    state.ownership='all';
+    document.querySelectorAll('[data-ownership]').forEach(button=>{const active=button.dataset.ownership==='all';button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
+    document.querySelectorAll('[data-division]').forEach(button=>button.classList.toggle('active',button.dataset.division==='all'));
+    await loadClients('client:'+client.client_id,true);
+  }));
   document.querySelectorAll("[data-division]").forEach((button) => button.addEventListener("click", () => {
     state.division = button.dataset.division || "all";
     document.querySelectorAll("[data-division]").forEach((item) => item.classList.toggle("active", item === button));
     loadClients();
   }));
   const focus = window.emsDeepLinkFocus ? window.emsDeepLinkFocus() : "";
+  document.querySelectorAll('[data-ownership]').forEach(button=>button.addEventListener('click',()=>{
+    state.ownership=button.dataset.ownership;
+    document.querySelectorAll('[data-ownership]').forEach(item=>{item.classList.toggle('active',item===button);item.setAttribute('aria-pressed',String(item===button));});
+    loadClients();
+  }));
   if (focus) { state.query = focus; $("#search").value = focus; }
   await loadClients(focus);
 });
@@ -24,11 +36,12 @@ async function loadClients(preferred = "", force = false) {
   const request = ++state.request;
   $("#client-list").innerHTML = `<div class="loading-card"><span class="spinner"></span>Loading clients…</div>`;
   let result;
-  try { result = await withTimeout(pywebview.api.list_clients(state.query, state.division, 300, force), 15000); }
+  try { result = await withTimeout(pywebview.api.list_clients(state.query, state.division, 300, force, state.ownership), 15000); }
   catch (error) { result = {ok:false, error:String(error), clients:[]}; }
   if (request !== state.request) return;
   state.clients = result?.clients || [];
-  $("#result-count").textContent = `${state.clients.length} client${state.clients.length === 1 ? "" : "s"}`;
+  const count = Number(result?.count ?? state.clients.length);
+  $("#result-count").textContent = `${state.clients.length < count ? state.clients.length+' of ' : ''}${count} ${state.ownership==='unassigned'?'unassigned job':'result'}${count===1?'':'s'}`;
   if (!result?.ok) {
     $("#client-list").innerHTML = `<div class="error-card"><strong>Clients could not be loaded</strong><span>${escapeHtml(result?.error || "Check the shared job-folder connection.")}</span><button class="btn" data-retry-clients>Retry</button></div>`;
     $("#client-list").querySelector("[data-retry-clients]")?.addEventListener("click", () => loadClients(preferred));
@@ -38,7 +51,7 @@ async function loadClients(preferred = "", force = false) {
   const target = preferred || state.selected || state.clients[0]?.name || "";
   const match = state.clients.find((item) => item.key === target || item.name.toLowerCase() === target.toLowerCase()) || state.clients[0];
   if (match) openClient(match.key || match.name);
-  else $("#account").innerHTML = `<div class="account-empty"><div class="empty-mark">0</div><h2>No clients found</h2><p>Try another name or division.</p></div>`;
+  else $("#account").innerHTML = `<div class="account-empty"><div class="empty-mark">0</div><h2>${state.ownership==='unassigned'?'No unassigned jobs found':'No clients found'}</h2><p>Try another name, division, or select All.</p></div>`;
 }
 
 function withTimeout(promise, milliseconds) {
@@ -89,23 +102,31 @@ function renderAccount(result) {
     <article class="account-shell">
       <header class="account-head">
         <div class="identity"><span class="account-monogram">${escapeHtml(initials(client.name))}</span><div><span class="eyebrow">Client account</span><h2>${escapeHtml(client.name || "Client")}</h2><p>${result.job_count || 0} job${result.job_count === 1 ? "" : "s"}${client.franchise ? ` · ${escapeHtml(client.franchise)}` : ""}</p></div></div>
-        <button class="btn" id="open-client-folder" ${client.folder_exists ? "" : "disabled"}>📁 Client folder</button>
+        <div class="job-actions">${client.client_id ? '<button class="btn btn-primary" id="link-client-jobs">Link existing jobs</button>' : ''}<button class="btn" id="open-client-folder" ${client.folder_exists ? "" : "disabled"}>📁 Client folder</button></div>
       </header>
       <section class="contact-grid">
         ${fact("Phone", client.phone, "Not saved")}${fact("Email", client.email, "Not saved")}${fact("Property / mailing address", client.address, "Not saved")}${fact("Known as", (client.aliases || []).join(" · "), "No aliases")}
       </section>
       <section class="jobs-section">
         <div class="section-heading"><div><span class="eyebrow">History</span><h3>Jobs & claims</h3></div><span class="section-count">${jobs.length}</span></div>
-        <nav class="job-tabs" role="tablist">${jobs.map((job, index) => `<button role="tab" aria-selected="${index === 0}" class="${index === 0 ? "active" : ""}" data-job-tab="${index}"><strong>${escapeHtml(job.name)}</strong><small>${divisionText(job.divisions)}</small></button>`).join("")}</nav>
+        ${!jobs.length ? '<p>No jobs linked yet. Use “Link existing jobs” to bring in saved jobs without merging them.</p>' : ''}
+        ${[false,true].map(past=>{
+          const grouped=jobs.map((job,index)=>({job,index})).filter(({job})=>['closed','archived','cancelled','canceled'].includes(String(job.status||'').toLowerCase())===past);
+          return grouped.length?`<h4>${past?'Past jobs':'Active / open jobs'}</h4><nav class="job-tabs" role="tablist" aria-label="${past?'Past':'Open'} jobs">${grouped.map(({job,index})=>`<button role="tab" aria-selected="${index===0}" class="${index===0?'active':''}" data-job-tab="${index}"><strong>${escapeHtml(job.name)}</strong><small>${divisionText(job.divisions)} · ${escapeHtml(job.status||'Status not saved')}</small></button>`).join('')}</nav>`:'';
+        }).join('')}
         <div class="job-panels">${jobs.map((job, index) => jobPanel(job, index, clientLog)).join("")}</div>
       </section>
     </article>`;
   $("#open-client-folder")?.addEventListener("click", async () => showResult(await pywebview.api.open_folder(client.folder || "")));
+  $('#link-client-jobs')?.addEventListener('click',()=>ClientJobs.link(client,()=>loadClients('client:'+client.client_id,true)));
   document.querySelectorAll('[data-job-panel]').forEach((panel,index)=>{
     const job=jobs[index];if(!job.job_id)return;
     const button=document.createElement('button');button.className='btn';button.textContent='Transfer to client';button.type='button';
     button.onclick=()=>ClientTransfer.open(job.job_id,'',r=>{state.query='';$('#search').value='';return loadClients(r.client_id?'client:'+r.client_id:'',true);});
     panel.querySelector('.job-actions').prepend(button);
+    const create=document.createElement('button');create.className='btn';create.type='button';create.textContent='Create client from this job';
+    create.onclick=()=>ClientTransfer.open(job.job_id,'',r=>{state.query='';$('#search').value='';return loadClients(r.client_id?'client:'+r.client_id:'',true);},true);
+    panel.querySelector('.job-actions').prepend(create);
   });
   document.querySelectorAll("[data-job-tab]").forEach((tab) => tab.addEventListener("click", () => selectJob(Number(tab.dataset.jobTab))));
   document.querySelectorAll("[data-open-job]").forEach((button) => button.addEventListener("click", () => {

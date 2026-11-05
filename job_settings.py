@@ -38,7 +38,9 @@ import re
 
 # Card sections, in template order.
 CUSTOMER  = "CUSTOMER INFORMATION"
+ACCOUNT   = "ACCOUNT INFO"
 TENANT    = "TENANT INFORMATION"
+POC       = "POINTS OF CONTACT"
 INSURANCE = "INSURANCE INFORMATION"
 PROPERTY  = "PROPERTY DETAILS"
 LINKS     = "LINKS"
@@ -60,6 +62,15 @@ FIELDS = [
     ("email",           CUSTOMER,  "EMAIL",               "Email",           True),
     ("source_of_lead",  CUSTOMER,  "SOURCE OF LEAD",      "Source of lead",  True),
     ("addl_contacts",   CUSTOMER,  "ADDITIONAL CONTACTS", "Other contacts",  False),
+
+    ("poc_name",        POC, "POC NAME", "POC name", True),
+    ("poc_role",        POC, "POC ROLE", "POC role / relationship", True),
+    ("poc_phone",       POC, "POC PHONE", "POC phone", True),
+    ("poc_email",       POC, "POC EMAIL", "POC email", True),
+    ("poc_2_name",      POC, "SECOND POC NAME", "Second POC name", True),
+    ("poc_2_role",      POC, "SECOND POC ROLE", "Second POC role / relationship", True),
+    ("poc_2_phone",     POC, "SECOND POC PHONE", "Second POC phone", True),
+    ("poc_2_email",     POC, "SECOND POC EMAIL", "Second POC email", True),
 
     ("tenant_name",     TENANT,    "NAME",                "Tenant name",     False),
     ("tenant_phone",    TENANT,    "PHONE NUMBER",        "Tenant phone",    False),
@@ -141,6 +152,18 @@ _KV_RE      = re.compile(r"^([A-Za-z][^:]{0,40}):\s*(.*)$")
 
 # Explicit template aliases only. Do not fuzzy-match insurance/customer fields.
 _KEY_ALIASES = {(LINKS, "INITIAL DOCUSKETCH LINK"): "DOCUSKETCH LINK"}
+
+# Older commercial cards keep these facts in Account Info above an empty
+# customer template. Never borrow tenant/POC fields or insurance details.
+_ACCOUNT_FIELDS = ('customer_name', 'address', 'phone', 'email')
+
+
+def _account_fallbacks(parsed):
+    customer, account = parsed.get(CUSTOMER, {}), parsed.get(ACCOUNT, {})
+    return {fid: str(account.get(BY_ID[fid][2]) or '').strip()
+            for fid in _ACCOUNT_FIELDS
+            if not str(customer.get(BY_ID[fid][2]) or '').strip()
+            and str(account.get(BY_ID[fid][2]) or '').strip()}
 
 
 def _section_name(name):
@@ -224,10 +247,57 @@ def xa_id_from_link(link):
     return m.group(1) if m else ""
 
 
+def _legacy_poc(desc):
+    """Read explicitly introduced POC blocks, without consuming customer facts.
+
+    Return a customer-parser view with contact-owned lines removed. Original
+    Trello text is never changed by this read operation.
+    """
+    result, retained = {}, []
+    section, contact = '', 0
+    for raw in (desc or '').splitlines():
+        line = raw.strip().replace('\\*', '*').replace('**', '').strip()
+        header = _SECTION_RE.match(raw.strip())
+        start = re.fullmatch(r'(?:POC|POINT OF CONTACT)\s*:\s*(.+)', line, re.I)
+        next_person = re.fullmatch(r'([^:()]+?)\s*\(([^()]+)\)\s*(?:POC)?', line, re.I) if contact else None
+        if start and section == CUSTOMER:
+            contact += 1
+            if contact <= 2:
+                prefix = 'poc_' if contact == 1 else 'poc_2_'
+                result[prefix + 'name'] = start[1].strip()
+            continue
+        if header and not start and ':' not in line:
+            section = _section_name(header[1])
+            contact = 0
+        if line == '---' or re.match(r'(?:Additional Contacts|Customer Name|Address|Source of Lead)\s*:', line, re.I):
+            contact = 0
+        if next_person and section == CUSTOMER:
+            contact += 1
+            if contact <= 2:
+                prefix = 'poc_' if contact == 1 else 'poc_2_'
+                result[prefix + 'name'] = next_person[1].strip()
+                result[prefix + 'role'] = next_person[2].strip()
+            continue
+        if contact and section == CUSTOMER:
+            prefix = 'poc_' if contact == 1 else 'poc_2_'
+            email = re.match(r'(?:E-?mail)\s*:\s*(.*)', line, re.I)
+            phone = re.match(r'(?:Number|Phone(?: Number)?)\s*:\s*(.*)', line, re.I)
+            if email:
+                value = re.search(r'[A-Za-z0-9.!#$%&\x27+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', email[1])
+                if value and contact <= 2: result[prefix + 'email'] = value[0]
+                continue
+            if phone or re.fullmatch(r'[+()\d][\d() .+\-]{6,}(?:\s*(?:ext|x)\.?\s*\d+)?', line, re.I):
+                if contact <= 2: result[prefix + 'phone'] = phone[1].strip() if phone else line
+                continue
+        retained.append(raw)
+    return '\n'.join(retained), result
+
+
 def from_card(desc):
     """Card description text -> {field_id: value}."""
     import trello_client as tc
-    parsed = tc.parse_card_desc(desc or "") or {}
+    customer_view, legacy_poc = _legacy_poc(desc)
+    parsed = tc.parse_card_desc(customer_view) or {}
     parsed = {_section_name(section): fields for section, fields in parsed.items()}
     for (section, alias), key in _KEY_ALIASES.items():
         fields = parsed.get(section, {})
@@ -239,6 +309,11 @@ def from_card(desc):
     out = {}
     for fid, section, key, _label, _core in FIELDS:
         out[fid] = ((parsed.get(section) or {}).get(key) or "").strip()
+    out.update(_account_fallbacks(parsed))
+    for fid, value in legacy_poc.items():
+        # Explicit modern fields, including intentional clears, win.
+        if BY_ID[fid][2] not in parsed.get(POC, {}):
+            out[fid] = value
     # Derive the XA id from the link when the card carries no explicit one.
     # Never overwrite a value someone typed: a hand-entered id beats one
     # parsed out of a URL that may point at a superseded assignment.
@@ -298,6 +373,21 @@ def render_desc(original, values, changed_ids=None):
         f = BY_ID.get(fid)
         if f:
             want[(f[1], f[2])] = (f[2], values.get(fid) or "")
+
+    # Edit/clear the field we actually displayed, not just its empty duplicate.
+    # Otherwise clearing a customer field would resurrect the Account value.
+    import trello_client as tc
+    original_fields = tc.parse_card_desc(original) or {}
+    account_edits = set(_account_fallbacks(original_fields))
+    for fid in _ACCOUNT_FIELDS:
+        key = BY_ID[fid][2]
+        account_value = str(original_fields.get(ACCOUNT, {}).get(key) or '').strip()
+        if account_value and account_value == str(original_fields.get(CUSTOMER, {}).get(key) or '').strip():
+            account_edits.add(fid)
+    for fid in account_edits:
+        if fid in ids:
+            key = BY_ID[fid][2]
+            want[(ACCOUNT, key)] = (key, values.get(fid) or '')
 
     lines = (original or '').splitlines()
     seen = set()
@@ -401,6 +491,25 @@ def stored_base(rec):
     return dict(_meta_of(rec).get(_META_BASE) or {})
 
 
+def display_values(rec, desc=''):
+    """Preview never-imported facts without replacing saved or cleared values."""
+    facts = stored_values(rec)
+    meta = _meta_of(rec)
+    recorded = set(meta.get(_META_SETTINGS) or {}) | set(meta.get(_META_BASE) or {})
+    descriptions = [desc] if isinstance(desc, str) else desc
+    candidates = [from_card(text) for text in descriptions if text]
+    # Multiple placements may share a job; only preview facts they agree on.
+    preview = {}
+    for key in BY_ID:
+        values = {item.get(key) for item in candidates if item.get(key)}
+        if len(values) == 1:
+            preview[key] = values.pop()
+    for key, value in preview.items():
+        if key not in recorded and not facts.get(key):
+            facts[key] = value
+    return facts
+
+
 # ── load / save ────────────────────────────────────────────────────────
 
 def _record(canon_key, child_name=""):
@@ -467,6 +576,25 @@ def load(canon_key, child_name="", *, refresh=True, exact_card_id="", initialize
     if rec is None:
         return {"ok": False, "error": "job not found"}
 
+    import card_insurance
+    if card_insurance.enabled() and not child_name:
+        if not exact_card_id:
+            values=card_insurance.overlay(stored_values(rec),{})
+            return {'ok':True,'canon_key':canon_key,'values':values,'conflicts':[],
+                    'synced':False,'source':'database','error':'Open an EMS, Contents or Recon card to edit insurance details.'}
+        values,context,pending=card_insurance.load_editor(rec,exact_card_id,stored_values(rec),
+            fetch_missing=bool(refresh or initialize_missing))
+        if refresh or initialize_missing:
+            card = card_insurance.source_card(exact_card_id)
+            parsed_contacts = from_card(card.get('desc') or '')
+            saved_contacts = _meta_of(rec).get(_META_SETTINGS) or {}
+            for fid in BY_ID:
+                if fid.startswith('poc_') and fid not in saved_contacts:
+                    values[fid] = parsed_contacts.get(fid, '')
+        return {'ok':True,'canon_key':canon_key,'card_id':exact_card_id,'values':values,
+                'insurance_context':context,'insurance_pending':pending,'conflicts':[],
+                'synced':False,'source':'database','error':''}
+
     if child_name:
         mine, inherited, _parent = inherited_values(canon_key, rec)
         card_id = _card_id(rec, canon_key, child_name)
@@ -490,6 +618,30 @@ def load(canon_key, child_name="", *, refresh=True, exact_card_id="", initialize
     if not refresh and not first_load:
         out.update(source='database', refresh_pending=bool(card_id),
                    conflicts=list(_meta_of(rec).get('trello_import_conflicts') or []))
+        # Existing jobs predate the POC fields. The normal editor intentionally
+        # skips whole-job refreshes, but must still preview new contact fields.
+        saved = _meta_of(rec).get(_META_SETTINGS) or {}
+        missing_poc = [fid for fid in BY_ID if fid.startswith('poc_') and fid not in saved]
+        missing_customer = any(not mine.get(fid) for fid in _ACCOUNT_FIELDS)
+        if initialize_missing and exact_card_id and not child_name and (missing_poc or missing_customer):
+            try:
+                import trello_client as tc
+                card = tc.get_card_lite(exact_card_id) or {}
+                contacts = from_card(card.get('desc') or '')
+                for fid in missing_poc:
+                    out['values'][fid] = contacts.get(fid, '')
+                out['poc_source'] = 'linked Trello card preview'
+                if _account_fallbacks(tc.parse_card_desc(card.get('desc') or '') or {}):
+                    # Preview only. Three-way merge protects saved local edits,
+                    # including intentional clears against a nonempty baseline.
+                    preview, conflicts = merge(stored_base(rec), mine, contacts)
+                    customer_ids = {fid for fid, section, *_rest in FIELDS if section == CUSTOMER}
+                    for fid in customer_ids:
+                        out['values'][fid] = preview[fid]
+                    out['conflicts'] += [c for c in conflicts if c['id'] in customer_ids]
+                    out['customer_source'] = 'linked Trello Account Info preview'
+            except Exception:
+                out['error'] = 'POC details could not load from the linked Trello card. Reopen Job info to retry.'
         return out
     if not card_id:
         # No card: the Hub IS the record. Not an error — 115 of 415 jobs
@@ -526,6 +678,9 @@ def pull_from_card(canon_key, card_id):
     The baseline advances only for non-conflicting fields so the disagreement
     remains reviewable after the card is reopened.
     """
+    import card_insurance
+    if card_insurance.enabled():
+        return {'ok':False,'error':'Card-specific insurance import is not enabled in this Dev preview. No shared job facts were overwritten.','conflicts':[]}
     rec = _record(canon_key)
     if rec is None:
         return {"ok": False, "error": "job not found", "conflicts": []}
@@ -563,7 +718,7 @@ def pull_from_card(canon_key, card_id):
             "imported_count": len(imported), "conflicts": conflicts}
 
 
-def save(canon_key, values, child_name="", card_desc="", *, edited_only=False, exact_card_id=""):
+def save(canon_key, values, child_name="", card_desc="", *, edited_only=False, exact_card_id="", insurance_context=None, _shared_only=False):
     """Persist values, then push the changed fields to the card.
 
     THE DATABASE IS THE SOURCE OF TRUTH. Two things follow from that, and
@@ -589,6 +744,23 @@ def save(canon_key, values, child_name="", card_desc="", *, edited_only=False, e
     rec = _record(canon_key, child_name)
     if rec is None:
         return {"ok": False, "error": "job not found"}
+
+    import card_insurance
+    if card_insurance.enabled() and not child_name and not _shared_only:
+        insurance={k:str(v or '').strip() for k,v in (values or {}).items() if k in card_insurance.FIELDS}
+        shared={k:v for k,v in (values or {}).items() if k not in card_insurance.FIELDS}
+        saved=None
+        if insurance:
+            saved=card_insurance.save_editor(rec,exact_card_id,insurance,insurance_context)
+        result=save(canon_key,shared,card_desc=card_desc,edited_only=True,
+                    exact_card_id=exact_card_id,_shared_only=True)
+        if saved:
+            result['insurance_context']={k:saved[k] for k in ('job_id','card_key','section','revision')}
+            result['insurance_pending']=True
+            result['pending_push']=True
+            result['changed']=list(dict.fromkeys(result.get('changed',[])+list(insurance)))
+            result['error']='Insurance saved in OneLoss for this card. Trello insurance sync is not enabled in this Dev preview.'
+        return result
 
     values = {k: (v or "").strip() for k, v in (values or {}).items()
               if k in BY_ID}
@@ -717,6 +889,5 @@ def _persist(canon_key, child_name, values, meta):
     for fid, col in COLUMN_FIELDS.items():
         if fid in values:
             cols[col] = values[fid]
-    ems_db.upsert_job(display_name=(ems_db.get_job(canon_key) or {})
-                      .get("display_name") or canon_key,
-                      metadata=meta, clear_fields=[col for col, value in cols.items() if value == ''], **cols)
+    ems_db.update_job(canon_key, metadata=meta,
+                      clear_fields=[col for col, value in cols.items() if value == ''], **cols)

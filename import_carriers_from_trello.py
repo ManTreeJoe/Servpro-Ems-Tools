@@ -106,7 +106,7 @@ def apply(changes):
     written = 0
     for _key, display_name, _old, new in changes:
         try:
-            ems_db.upsert_job(display_name=display_name, carrier=new)
+            ems_db.update_job(_key, carrier=new)
             written += 1
         except Exception as ex:
             print(f"  ! {display_name}: {type(ex).__name__}: {ex}")

@@ -1,0 +1,11 @@
+OneLoss 1.8.37
+
+- Cleaner notifications grouped by job, with All/Mentions views and remembered board filters.
+- Click a comment to open its card; Show more keeps the notification unread.
+- Read status updates after the card opens, with a small manual read/unread control.
+- Archived/unarchived activity is visible; moves no longer show an unknown source as a question mark.
+- Improved comment delivery, editing and draft retention.
+- Improved live board refresh and locally bundled Trello board backgrounds.
+- Safer diagnostic reporting for connection failures, with anonymous device and job/tool context.
+
+Experimental identity/reconciliation tools remain disabled on Main. This installer does not reorganize job folders or merge job records. Installer is not code-signed.

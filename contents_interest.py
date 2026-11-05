@@ -12,7 +12,6 @@ _DRAIN_LOCK = threading.Lock()
 _ROUTES = {
     "EMS": ("work in progress", "tbs new loss/re-inspection", "ems - residential template"),
     "CONTENTS": ("contents", "new loss", "contents template"),
-    "RECON": ("recon work in progress", "tbs new loss", None),
 }
 
 
@@ -24,6 +23,9 @@ def scope():
 def queue(job, division="CONTENTS", stage="interested"):
     from ems_db_common import normalize_division
     division = normalize_division(division)
+    if division.upper() == 'RECON':
+        cancel(job, division)
+        return {"pending": False, "division": division, "link_only": True, "card_id": ""}
     department = str(job.get("department") or scope()).upper()
     key = division.lower() + "-card:" + hashlib.sha256(
         (department + ":" + str(job.get("job_id") or job["canon_key"])).encode()).hexdigest()
@@ -58,7 +60,9 @@ def _ensure(operation):
     import trello_client as tc
     import job_settings
     from ems_db_common import division_link_type
-    division = operation["payload"].get("division", "CONTENTS")
+    division = str(operation["payload"].get("division", "CONTENTS")).upper()
+    if division == 'RECON':
+        raise ValueError('Recon is link-only. Link an existing Recon card; creation is disabled.')
     board_name, lane_name, template_name = _ROUTES[division]
     link_type = division_link_type("trello_card", division)
     key = operation["job_key"]
@@ -100,6 +104,16 @@ def _ensure(operation):
     if matches:
         card = matches[0]  # Recover a successful POST whose response/pin save failed.
     else:
+        # A manually/Trello-created card may predate our durable reference.
+        # Name similarity cannot authorize a link, but must stop a duplicate.
+        import re
+        def base_name(name):
+            name = re.sub(r'\s*[-–—]?\s*(?:CONTENTS|RECON)\s*$', '', str(name or ''), flags=re.I)
+            return re.sub(r'\W+', ' ', name).strip().casefold()
+        if division in ('CONTENTS', 'RECON') and any(
+                base_name(c.get('name')) == base_name(job.get('display_name') or key)
+                for c in cards):
+            raise ValueError(f'A possible existing {division.title()} card has this job name. Link it to the job before retrying; no duplicate was created.')
         templates = [c for c in cards if not c.get("closed") and
                      c.get("name", "").strip().casefold() == template_name]
         if template_name and len(templates) != 1:
@@ -131,6 +145,11 @@ def drain():
     try:
         for operation in job_workflow.pending(500):
             if operation["operation_type"] not in ("contents.ensure_card", "division.ensure_card"):
+                continue
+            if str(operation['payload'].get('division', '')).upper() == 'RECON':
+                with job_workflow._connect() as conn:
+                    conn.execute("UPDATE trello_outbox SET status='cancelled',updated_at=?,last_error=NULL WHERE operation_key=? AND status='pending'",
+                                 (job_workflow._now(), operation['operation_key']))
                 continue
             if operation["payload"].get("department") != scope():
                 continue

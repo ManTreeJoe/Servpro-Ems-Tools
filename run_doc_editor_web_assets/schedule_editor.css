@@ -1,4 +1,6 @@
 /* Compact visit editor using the existing palette and controls. */
+.preview-note[role=status]{background:transparent;border:0;padding:4px 0;color:var(--text-muted);font:12px var(--font-body)}
+#remove-visit{margin-right:auto;color:var(--red)}
 #editor[open],.crew-popover:popover-open{animation:ui-surface-enter 140ms ease-out}
 @media(prefers-reduced-motion:reduce){#editor[open],.crew-popover:popover-open{animation:none}}
 .reduce-motion #editor[open],.reduce-motion .crew-popover:popover-open{animation:none}

@@ -70,6 +70,8 @@ def creds():
     cfg = config.load()
     url = (cfg.get("supabase_url") or "").strip().rstrip("/")
     key = (cfg.get("supabase_anon_key") or "").strip()
+    if getattr(_paths, "IS_DEV", False) and url != "https://erenessjerbkmhhrgpvk.supabase.co":
+        raise NotConfigured("Isolated Dev may only connect to its test database.")
     if not url or not key:
         raise NotConfigured(
             "Supabase is not configured. Set supabase_url and "
@@ -150,7 +152,7 @@ def _cross_process_session_lock(timeout_s: float = 15.0):
                     acquired = True
                 except OSError:
                     if time.monotonic() >= deadline:
-                        raise TimeoutError("another Linguar Hub instance is still refreshing sign-in")
+                        raise TimeoutError("another OneLoss instance is still refreshing sign-in")
                     time.sleep(0.05)
         except ImportError:
             # Windows is the supported desktop target. Tests and developer
@@ -230,7 +232,7 @@ def update_display_name(display_name: str) -> dict:
     return current_user() or {}
 
 
-def actor_name(fallback: str = "Linguar Hub") -> str:
+def actor_name(fallback: str = "OneLoss") -> str:
     """Human-facing author label for comments, logs, and audit events."""
     user = current_user() or {}
     return user.get("display_name") or user.get("email") or fallback
@@ -262,9 +264,9 @@ def interactive_requests(seconds=15):
 
 def _raw(method, path, *, params=None, body=None, token=None,
          extra_headers=None, _max_retries=4):
-    """One HTTPS call. Retries 429/503 with backoff, honoring Retry-After.
+    """One HTTPS call. Retry temporary errors with backoff when safe.
 
-    503 is retried only for idempotent methods: Supabase can return one
+    503 and 555 are retried only for idempotent methods: Supabase can return one
     AFTER accepting a write, and replaying a POST would duplicate a row.
     """
     url, key = creds()
@@ -300,16 +302,19 @@ def _raw(method, path, *, params=None, body=None, token=None,
                 break
         except urllib.error.HTTPError as ex:
             payload = ex.read().decode("utf-8", "replace")
+            safe_read = method in ("GET", "HEAD")
             retryable = (ex.code == 429
-                         or (ex.code == 503 and method in ("GET", "HEAD")))
-            if retryable and attempt < _max_retries:
+                         or (ex.code in (503, 555) and safe_read))
+            retry_limit = min(_max_retries, 2) if ex.code == 555 else _max_retries
+            if retryable and attempt < retry_limit:
                 delay = 0.0
                 ra = ex.headers.get("Retry-After") if ex.headers else None
                 try:
                     delay = float(ra) if ra else 0.0
                 except (TypeError, ValueError):
                     delay = 0.0
-                time.sleep(delay if delay > 0 else min(2 ** attempt, 8))
+                fallback = min(0.25 * (2 ** attempt), 0.5) if ex.code == 555 else min(2 ** attempt, 8)
+                time.sleep(delay if delay > 0 else fallback)
                 attempt += 1
                 continue
             raise SupabaseError(ex.code, payload, full) from None
@@ -556,6 +561,8 @@ def invoke_function(name: str, body=None):
     Supabase's server-side secret store and can never be read back by the
     client.
     """
+    if getattr(_paths, "IS_DEV", False):
+        raise RuntimeError("External-service functions are disabled in isolated Dev.")
     clean = str(name or "").strip()
     if not clean or not all(c.isalnum() or c in "-_" for c in clean):
         raise ValueError("invalid Edge Function name")

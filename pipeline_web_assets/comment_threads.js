@@ -10,11 +10,23 @@ window.CommentThreads = (() => {
     const search = root.querySelector('[data-comment-search]');
     const state = root.querySelector('[data-comment-state]');
     let records = [], loading = false, generation = 0, threadRoot = '', opener = null;
+    let pins = {}, pinsLoading = false, pinGeneration = 0;
+    async function refreshPins() {
+      if(!api.job_comment_pin_state || pinsLoading || pendingPins.size || !root.isConnected || !isActive())return;
+      pinsLoading=true;const version=pinGeneration;
+      try {
+        const result=await api.job_comment_pin_state(cardId);
+        if(version!==pinGeneration)return;
+        if(result?.ok){pins=result.pins;conversation.setPinState?.(cardId,pins);filter();}
+        else notice.textContent=result?.error||'Trello pins could not refresh.';
+      } catch(_){notice.textContent='Trello pins could not refresh. Previous markers are kept.';}
+      finally{pinsLoading=false;}
+    }
     const pendingPins = new Set();
     const toolbar = document.createElement('div');
     toolbar.className = 'comment-thread-filter';
     toolbar.innerHTML = '<button class="text-btn" type="button" aria-pressed="true" data-comment-all>All</button><button class="text-btn" type="button" aria-pressed="false" data-comment-pinned-filter>Pinned</button><small role="status"></small>';
-    root.querySelector('.comment-search').after(toolbar);
+    stream.before(toolbar);
     const notice = toolbar.querySelector('small');
     const replyBanner = document.createElement('div');
     replyBanner.className = 'comment-reply-banner'; replyBanner.hidden = true;
@@ -27,8 +39,8 @@ window.CommentThreads = (() => {
     root.append(thread);
     const threadScroll = document.createElement('div');
     threadScroll.className = 'comment-thread-scroll';
-    thread.querySelector('.comment-thread-original').before(threadScroll);
-    threadScroll.append(thread.querySelector('.comment-thread-original'), thread.querySelector('.comment-thread-messages'));
+    thread.querySelector('.comment-thread-original').replaceWith(threadScroll);
+    threadScroll.append(thread.querySelector('.comment-thread-messages'));
     const threadInput = thread.querySelector('[data-thread-input]');
     const threadStatus = thread.querySelector('[data-thread-status]');
     const threadSend = thread.querySelector('[type="submit"]');
@@ -113,9 +125,9 @@ window.CommentThreads = (() => {
     }
     function paintThread() {
       if (!threadRoot) return;
-      const list = thread.querySelector('.comment-thread-messages'), original = thread.querySelector('.comment-thread-original');
+      const list = thread.querySelector('.comment-thread-messages');
       const scroll = threadScroll.scrollTop;
-      list.replaceChildren(); original.replaceChildren();
+      list.replaceChildren();
       const rows = records.filter(row => row.root_id === threadRoot).sort((a,b) => (Date.parse(b.created_at)||0)-(Date.parse(a.created_at)||0));
       const replies = rows.filter(row => row.id !== threadRoot);
       thread.querySelector('[data-thread-count]').textContent = `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'} · Newest first`;
@@ -146,10 +158,16 @@ window.CommentThreads = (() => {
           edit.onclick=()=>{ if (!root._editingComment) closeThread(); };
           article.append(edit);
         }
-        (row.id === threadRoot ? original : list).append(article);
+        // The original participates in the same date order as every reply.
+        if (row.id === threadRoot) article.classList.add('comment-thread-original');
+        list.append(article);
         if (row.id === draft().parent) draft().actor = row.actor;
       }
-      if (!original.children.length) original.textContent = 'Original message is not available in the saved thread.';
+      if (!rows.some(row => row.id === threadRoot)) {
+        const missing = document.createElement('p');
+        missing.textContent = 'Original message is not available in the saved thread.';
+        list.append(missing);
+      }
       threadScroll.scrollTop = scroll; paintComposer();
     }
     function apply() {
@@ -192,6 +210,32 @@ window.CommentThreads = (() => {
         thread.querySelector('button')?.focus({preventScroll:true});
       } else {
         if(pendingPins.has(id))return;
+        const providerId=article.dataset.commentSource==='trello'?article.dataset.commentId:article.dataset.commentExternalId;
+        if(/^[a-f\d]{24}$/i.test(providerId||'') && api.job_comment_reactions){
+          pendingPins.add(id);pinGeneration++;button.disabled=true;
+          try {
+            // Fetch first: never toggle from stale UI or remove someone else's reaction.
+            const snapshot=await api.job_comment_reactions(cardId,providerId);
+            if(!snapshot?.ok)throw Error(snapshot?.error||'Could not verify the pin.');
+            const mine=!!snapshot.reactions?.find(row=>row.code==='1F4CC')?.mine;
+            const legacy=article.dataset.pinLegacy==='true';
+            const active=!(mine||legacy);
+            const result=await api.job_comment_reactions(cardId,providerId,'1F4CC',active);
+            if(!result?.ok)throw Error(result?.error||'Trello could not confirm the pin.');
+            const pin=result.reactions?.find(row=>row.code==='1F4CC');
+            pins[providerId]={pinned:!!pin?.count,mine:!!pin?.mine};
+            conversation.setPinState?.(cardId,pins);
+            document.dispatchEvent(new CustomEvent('trello-pin-saved',{detail:{card:cardId,id:providerId,result}}));
+            if(legacy){
+              const cleared=await api.pin_job_comment(cardId,id,false,true);
+              if(!cleared?.ok)throw Error('Trello updated, but the older OneLoss pin could not be cleared. Refresh and retry.');
+              records=records.filter(row=>row.id!==cleared.comment.id);records.push(cleared.comment);apply();
+            }
+            notice.textContent=active?'Pinned in Trello':pin?.count?'Your pin removed · still pinned by a coworker':'Pin removed';
+          }catch(error){notice.textContent=error.message;}
+          finally{pendingPins.delete(id);pinGeneration++;filter();button.disabled=false;}
+          return;
+        }
         const expected = article.dataset.commentPinned === 'true';
         const original = records.find(row=>row.id===id);
         pendingPins.add(id);
@@ -237,6 +281,14 @@ window.CommentThreads = (() => {
       finally { button.disabled = false; }
     }, true);
     root.addEventListener('comments-painted', filter);
+    const reactionChanged=event=>{
+      const {card,id,reactions}=event.detail||{};
+      if(card!==cardId||!root.isConnected)return;
+      pinGeneration++;
+      const pin=reactions?.find(row=>row.code==='1F4CC');
+      pins[id]={pinned:!!pin?.count,mine:!!pin?.mine};conversation.setPinState?.(cardId,pins);filter();
+    };
+    document.addEventListener('trello-reactions-confirmed',reactionChanged);
     root.addEventListener('comment-reply-restored', banner);
     root.addEventListener('comment-thread-edited', event => {
       const row = event.detail;
@@ -246,8 +298,8 @@ window.CommentThreads = (() => {
       apply();
     });
     root._commentThreads = {refresh};
-    banner(); refresh();
-    const timer = setInterval(() => { if (!root.isConnected) { clearInterval(timer); window.removeEventListener('resize', positionThread); } else refresh(); }, 30000);
+    banner(); refresh();refreshPins();
+    const timer = setInterval(() => { if (!root.isConnected) { clearInterval(timer); window.removeEventListener('resize', positionThread);document.removeEventListener('trello-reactions-confirmed',reactionChanged); } else {refresh();if(!document.hidden)refreshPins();} }, 30000);
   }
   return {mount};
 })();

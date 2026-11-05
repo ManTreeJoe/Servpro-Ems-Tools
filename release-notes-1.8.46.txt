@@ -1,0 +1,8 @@
+OneLoss Main 1.8.46
+
+- Refresh the Jobs board layout, navigation spacing, and loading placeholders.
+- Improve paperwork detection, including ATP files in common EMS document folders.
+- Show reviewable Trello description details in the job Overview.
+- Improve notification and background sync feedback.
+
+The new unified comment delivery system is not included.

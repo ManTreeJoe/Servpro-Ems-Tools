@@ -68,14 +68,6 @@ class CompanyCamApi:
                                        str(res.get("error") or "provider unavailable"))
                 m = res.get("match") if res.get("ok") else None
                 if m:
-                    try:
-                        import ems_db
-                        ems_db.resolve_and_link(
-                            client, companycam_project=m["id"],
-                            trello_card=card_id, create=True,
-                            source="companycam")
-                    except Exception:
-                        pass
                     return m["id"], m["name"]
             except Exception:
                 raise
@@ -181,9 +173,22 @@ class CompanyCamApi:
         project_id = str(project_id)
         try:
             import ems_db
-            ems_db.resolve_and_link(
-                client, companycam_project=project_id,
-                trello_card=card_id, create=True, source="companycam")
+            # A manual project choice edits an existing job. It must not
+            # manufacture a second job from a different display spelling.
+            job = (ems_db.find_job_by_reference(ems_db.LINK_TRELLO, card_id)
+                   if card_id else ems_db.find_job_by_name(client))
+            if not job:
+                return {"ok": False, "error": (
+                    "This card is not linked to a saved job. Review its job "
+                    "link before pinning CompanyCam; no job was created.")}
+            owner = ems_db.find_job_by_reference(
+                ems_db.LINK_COMPANYCAM, project_id)
+            if owner and owner['job_id'] != job['job_id']:
+                return {"ok": False, "error": (
+                    "This CompanyCam project belongs to another saved job. "
+                    "Review the two jobs before changing its link.")}
+            ems_db.set_link(job['canon_key'], ems_db.LINK_COMPANYCAM,
+                            project_id, added_by="companycam")
             # Drop any OTHER CompanyCam link on this job, or the pin does
             # nothing at all.
             #
@@ -206,24 +211,19 @@ class CompanyCamApi:
             # is meant to fix. Say so instead.
             removed, problem = [], ""
             try:
-                job = ems_db.find_job_by_name(client)
-                if not job:
-                    problem = (f"pinned, but no job named {client!r} to pin it "
-                               f"to — the old project may still win")
-                else:
-                    ck = job["canon_key"]
-                    for ln in (ems_db.get_links(ck, ems_db.LINK_COMPANYCAM)
-                               or []):
-                        val = str(ln.get("link_value") or "")
-                        if val and val != project_id:
-                            ems_db.remove_link(ck, ems_db.LINK_COMPANYCAM, val)
-                            removed.append(val)
-                    # Prove it: re-read what the resolver will actually
-                    # see, rather than trusting that the writes landed.
-                    now = ems_db.get_link(ck, ems_db.LINK_COMPANYCAM)
-                    if str(now or "") != project_id:
-                        problem = (f"pin did not take — the job still "
-                                   f"resolves to {now or 'nothing'}")
+                ck = job["canon_key"]
+                for ln in (ems_db.get_links(ck, ems_db.LINK_COMPANYCAM)
+                           or []):
+                    val = str(ln.get("link_value") or "")
+                    if val and val != project_id:
+                        ems_db.remove_link(ck, ems_db.LINK_COMPANYCAM, val)
+                        removed.append(val)
+                # Prove it: re-read what the resolver will actually
+                # see, rather than trusting that the writes landed.
+                now = ems_db.get_link(ck, ems_db.LINK_COMPANYCAM)
+                if str(now or "") != project_id:
+                    problem = (f"pin did not take — the job still "
+                               f"resolves to {now or 'nothing'}")
             except Exception as ex:
                 problem = f"could not clear the old project: {ex}"
             if problem:
@@ -546,7 +546,7 @@ class CompanyCamApi:
                              card_id: str = "",
                              dest_subfolder: str = "", request_id: str = "",
                              selected_photo_ids=None, project_id: str = "",
-                             visits_first: bool = False, preview_id: str = "") -> dict:
+                             visits_first: bool = False, preview_id: str = "", quick_import: bool = False) -> dict:
         """What a pull would bring in, grouped by shoot — day, what was
         done, how many, and where it lands.
 
@@ -597,12 +597,15 @@ class CompanyCamApi:
             r = cc.plan_pull(pid, pics, subfolder=stage, tech=(tech or ""),
                              contents_dir=self._cc_contents_dir(client, pics),
                              docs_dir=self._cc_docs_dir(client, pics),
-                             defer_tags=visits_first and selected_photo_ids is None,
+                             defer_tags=quick_import or (visits_first and selected_photo_ids is None),
                              only_ids=selected_photo_ids,
-                             strict_tags=visits_first and selected_photo_ids is not None,
+                             strict_tags=not quick_import and visits_first and selected_photo_ids is not None,
                              **preview_options,
                              **({"progress_cb": progress} if request_id else {}))
             if r.get("ok"):
+                if quick_import:
+                    r['quick_import'] = True
+                    r['tags_pending'] = False
                 from companycam_stage_tags import STAGE_TAGS
                 r['stage_tags'] = dict(STAGE_TAGS)
                 if visits_first:
@@ -615,11 +618,48 @@ class CompanyCamApi:
                 # Keep initial visit listing free of historical document reads.
                 # After selection, restore advisory Run stages for only those
                 # shoots without CompanyCam stage tags (one lookup per date).
-                if not visits_first or selected_photo_ids is not None:
+                if not quick_import and (not visits_first or selected_photo_ids is not None):
                     self._suggest_stages_from_run_doc(client, r.get("groups"))
             return r
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+
+    def companycam_preview_page(self, client, card_id, project_id, preview_id, offset=0, start=None, end=None):
+        from companycam_preview import previews
+        from job_workspace_cache import scope
+        identity = (scope(), client, card_id, str(project_id))
+        try:
+            result = previews.page(preview_id, identity, offset, start, end)
+            if scope() != identity[0]:
+                raise ValueError('Account changed. Reopen the preview.')
+            return result
+        except ValueError as error:
+            return {'ok': False, 'error': str(error)}
+
+    def companycam_preview_tags(self, client, card_id, project_id, preview_id, photo_ids):
+        """One bounded read-only batch, scoped to the exact preview/account."""
+        from companycam_preview import previews
+        from job_workspace_cache import scope
+        import companycam_api as cc
+        identity = (scope(), client, card_id, str(project_id))
+        if not isinstance(photo_ids, list) or not 1 <= len(photo_ids) <= 8:
+            return {'ok': False, 'error': 'Select between 1 and 8 photos per tag-check batch.'}
+        ready = []
+        try:
+            photos = previews.get(preview_id, identity, photo_ids)
+            for photo in photos:
+                if scope() != identity[0]:
+                    raise ValueError('Account changed. Reopen the photo preview.')
+                cc.photo_tags(photo.get('id'), photo.get('updated_at') or '', strict=True)
+                if scope() != identity[0]:
+                    raise ValueError('Account changed. Reopen the photo preview.')
+                ready.append(str(photo.get('id')))
+            return {'ok': True, 'ready': ready}
+        except Exception as error:
+            return {'ok': False, 'ready': ready,
+                    'error': str(error) if isinstance(error, ValueError) else cc.tag_read_error(error)}
+        finally:
+            cc.flush_tag_cache()
 
     def _suggest_stages_from_run_doc(self, client: str, groups) -> None:
         """Fill `suggested_stage` on every shoot CompanyCam left untagged,
@@ -696,15 +736,18 @@ class CompanyCamApi:
         if any(g.get('tags') for g in groups):
             return {'ok': False, 'error': 'Custom CompanyCam tags are disabled. Reopen the photo preview and select a stage.'}
         from companycam_stage_tags import approved_stage_tags, stage_tag
+        from companycam_stage_tags import STAGE_TAGS
+        if any(g.get('quick_import') is True and str(g.get('stage') or '').strip() not in STAGE_TAGS for g in groups):
+            return {'ok': False, 'error': 'Choose a supported destination for every Quick import shoot.'}
         approved_tags = {}
-        if any(stage_tag(g.get('stage')) for g in groups):
+        if any(g.get('quick_import') is not True and stage_tag(g.get('stage')) for g in groups):
             try:
                 approved_tags = approved_stage_tags()
             except Exception:
                 return {'ok': False, 'error': 'CompanyCam default tags could not be verified. No tags or photos were changed. The tag-list connection must be available before importing a selected stage.'}
             for group in groups:
                 selected = str(group.get('stage') or '').strip()
-                if stage_tag(selected) and selected not in approved_tags:
+                if group.get('quick_import') is not True and stage_tag(selected) and selected not in approved_tags:
                     return {'ok': False, 'error': f'No existing CompanyCam default tag matches {selected}. No tags or photos were changed.'}
         pulled = skipped = tagged = 0
         errors = []
@@ -731,7 +774,7 @@ class CompanyCamApi:
             # CompanyCam's API only supports additive photo tagging.  The
             # pull dialog labels this honestly and sends only new tags; a
             # failed tag must not prevent the requested photo download.
-            automatic_tag = approved_tags.get(stage, '')
+            automatic_tag = '' if g.get('quick_import') is True else approved_tags.get(stage, '')
             requested_tags = []
             for value in ([automatic_tag] if automatic_tag else []):
                 value = str(value or "").strip()
@@ -754,6 +797,7 @@ class CompanyCamApi:
                     pid, pics, since_epoch=None, subfolder=stage,
                     tech=(row_tech or tech or ""), only_ids=ids,
                     force_tech=bool(row_tech),
+                    organize_by_tags=g.get('quick_import') is not True,
                     contents_dir=contents,
                     docs_dir=docs,
                     _operation=operation,

@@ -241,21 +241,7 @@ def _canon_pin_key(client) -> str:
     # allowed one Trello card's comments to appear on another job. Start with
     # the full title and remove only a suffix proven to be a carrier below.
     head = s
-    # Also strip the no-space-after variant " -Carrier" (e.g.
-    # "Smith, John -AAA") — fragment must be a short uppercase
-    # alpha to avoid eating "Smith-Jones".
-    head = _re.sub(r"\s+-\s*[A-Z][A-Za-z0-9&/]{0,15}\s*$", "", head)
-    # And the no-space-before variant "- Carrier" (e.g.
-    # "Smith, John- AAA"). Same guard — short alpha tail only.
-    head = _re.sub(r"-\s+[A-Z][A-Za-z0-9&/]{0,15}\s*$", "", head)
-    # Both rules above only match a SINGLE-word tail, so the no-space
-    # variants missed every multi-word carrier — and most carriers are
-    # two words. "Smith, John - State Farm" and "Smith, John- State Farm"
-    # canon'd to different keys, i.e. two jobs for one insured; on the
-    # live index 8 rows were sitting on a "- Self Pay" / "- State Farm"
-    # key that the spaced spelling would never find.
-    #
-    # Widen it ONLY for a tail we actually recognise as a carrier. The
+    # Strip single- and multi-word suffixes ONLY when recognized carriers. The
     # dash is not reserved for carriers — it also separates units, dates,
     # sub-properties and claim numbers ("Avila Apartments- Unit 226",
     # "Keystone- Highland Village- (Unit 168)", "7 -11  (Norco)",
@@ -341,6 +327,7 @@ def _save(state):
                 _CACHE_MTIME = os.path.getmtime(_STATE_PATH)
             except OSError:
                 _CACHE_MTIME = None
+            return True
         except OSError as ex:
             try:
                 import ems_log
@@ -354,6 +341,7 @@ def _save(state):
                     os.remove(tmp)
             except OSError:
                 pass
+            return False
 
 
 # ── Sidecar caches ─────────────────────────────────────────────────────────
@@ -1684,15 +1672,21 @@ def get_folder_path(client):
     "linked but import says no OD" class of bug.
     """
     fp = _load().get("folder_paths", {})
+    matches = []
     for key in _pin_lookup_keys(client):
         if key in fp:
             value = fp[key]
             try:
                 from ems_db_common import resolve_portable_folder_path
-                return resolve_portable_folder_path(value) or None
+                value = resolve_portable_folder_path(value)
             except Exception:
-                return value
-    return None
+                pass
+            if value:
+                matches.append(value)
+    # Name-order aliases can have conflicting historical pins. Never select
+    # the first one silently; leave them intact for explicit review.
+    identities = {os.path.normcase(os.path.normpath(path)) for path in matches}
+    return matches[0] if len(identities) == 1 else None
 
 
 def set_folder_path(client, path):
@@ -1847,43 +1841,41 @@ def set_trello_card_ids(client, card_ids, *, mirror=True):
     # Validate the whole request before touching either local or shared state.
     from division_cards import validate_pin
     cleaned = list(dict.fromkeys(validate_pin(c, 'EMS') for c in (card_ids or []) if c))
-    state = _load()
-    pins = state.setdefault("trello_card_ids", {})
-    if cleaned:
-        # Dedupe while preserving caller-supplied order (the picker order
-        # is meaningful — first card is the primary / default for posts).
-        seen = set()
-        deduped = []
-        for c in cleaned:
-            if c not in seen:
-                seen.add(c)
-                deduped.append(c)
-        pins[key] = deduped
-    else:
-        pins.pop(key, None)
-    _save(state)
-    if not mirror:
-        return
-    # Mirror into the shared jobs DB so every tool sees the pin without
-    # consulting persistence.json directly, AND teach the identity graph:
-    # a Trello card is a strong id, so if it already belongs to a job filed
-    # under a different spelling, resolve_and_link aliases `client` to that
-    # job instead of spawning a duplicate. Best-effort — a DB hiccup must
-    # not block the pin write itself.
-    try:
+    if mirror and cleaned:
+        import ems_db
+        target = ems_db.find_job_by_name(client)
+        owners = [ems_db.find_job_by_reference('trello_card', cid) for cid in cleaned]
+        keys = {job['canon_key'] for job in [target, *owners] if job}
+        if len(keys) > 1:
+            raise ValueError('These cards belong to different jobs. Reconcile before changing pins.')
+        if not keys:
+            raise ValueError('Create the job explicitly before linking these cards.')
+        if keys:
+            for cid in cleaned:
+                ems_db.assert_link_owner(next(iter(keys)), 'trello_card', cid)
+    if mirror:
         import ems_db
         if cleaned:
+            expected_key = next(iter(keys))
             job = ems_db.resolve_and_link(client, trello_card=cleaned[0],
-                                          create=True, source="trello_pin")
-            job_key = job["canon_key"] if job else key
+                                          create=False, source="trello_pin")
+            if not job or job['canon_key'] != expected_key:
+                raise ValueError('Job identity changed while linking. Reopen the job before changing pins.')
+            job_key = job['canon_key']
         else:
             found = ems_db.find_job_by_name(client)
-            job_key = (found["canon_key"] if found
-                       else ems_db.upsert_job(
-                           display_name=(client or "").strip() or key))
-        # Mirror the full card list onto the resolved job (replace-set).
-        # Preserve explicitly secondary WIP/Estimating representations.
-        for old in ems_db.get_links(job_key, 'trello_card') or []:
+            job_key = found['canon_key'] if found else None
+        previous = ems_db.get_links(job_key, 'trello_card') if job_key else []
+        # Confirm every replacement before removing any old pin. This is
+        # still multiple requests, not an atomic server-side replacement.
+        for index, cid in enumerate(cleaned):
+            ems_db.set_link(job_key, "trello_card", cid,
+                            added_by="persistence.set_trello_card_ids",
+                            metadata={'division':'EMS','primary':index == 0,
+                                      'purpose':'primary' if index == 0 else 'placement'})
+        from ems_db_common import _norm_link
+        selected = {_norm_link('trello_card', cid) for cid in cleaned}
+        for old in previous or []:
             metadata = old.get('metadata')
             if not isinstance(metadata, dict):
                 try:
@@ -1892,18 +1884,20 @@ def set_trello_card_ids(client, card_ids, *, mirror=True):
                     metadata = {}
             if metadata.get('primary') is False or metadata.get('purpose') not in (None, '', 'primary'):
                 continue
+            if _norm_link('trello_card', old.get('link_value') or '') in selected:
+                continue
             ems_db.remove_link(job_key, 'trello_card', old.get('link_value') or '')
-        for index, cid in enumerate(cleaned):
-            ems_db.set_link(job_key, "trello_card", cid,
-                            added_by="persistence.set_trello_card_ids",
-                            metadata={'division':'EMS','primary':index == 0,
-                                      'purpose':'primary' if index == 0 else 'placement'})
-        # The resolved app job owns its identity. A provider title is not
-        # authority to create another job and perform a best-effort merge:
-        # a timeout midway leaves two owners and splits saved log history.
-        # Any reconciliation of existing duplicates is a separate operation.
-    except Exception:
-        pass
+    # Do not mutate _load's shared cache before the mirror succeeds or before
+    # the local write commits. A failure must not advertise a successful pin.
+    state = dict(_load())
+    pins = dict(state.get('trello_card_ids') or {})
+    state['trello_card_ids'] = pins
+    if cleaned:
+        pins[key] = cleaned
+    else:
+        pins.pop(key, None)
+    if _save(state) is False:
+        raise OSError('The local pin could not be saved. Shared links may have changed; reload the job to verify before retrying.')
 
 
 def set_trello_card_id(client, card_id, *, mirror=True):
@@ -1927,18 +1921,23 @@ def backfill_job_graph():
         import ems_db
     except Exception:
         return {"folders": 0, "cards": 0, "jobs": 0}
+    # The shared database must not gain a new job merely because this PC has
+    # an old name-keyed pin. Local graph seeding keeps its historical behavior.
+    allow_create = ems_db.backend_name() != 'supabase'
     state = _load()
-    folders = cards = 0
+    folders = cards = skipped = 0
     touched = set()
     for key, path in (state.get("folder_paths") or {}).items():
         if not (key and path):
             continue
         try:
             job = ems_db.resolve_and_link(key, folder_path=path,
-                                          create=True, source="backfill_folder")
+                                          create=allow_create, source="backfill_folder")
             if job:
                 touched.add(job["canon_key"])
                 folders += 1
+            else:
+                skipped += 1
         except Exception:
             pass
     for key, cids in (state.get("trello_card_ids") or {}).items():
@@ -1950,8 +1949,11 @@ def backfill_job_graph():
             from division_cards import validate_pin
             cid_list = [validate_pin(c, 'EMS') for c in cid_list]
             job = ems_db.resolve_and_link(key, trello_card=cid_list[0],
-                                          create=True, source="backfill_trello")
-            job_key = job["canon_key"] if job else ems_db.canon_key(key)
+                                          create=allow_create, source="backfill_trello")
+            if not job:
+                skipped += 1
+                continue
+            job_key = job["canon_key"]
             touched.add(job_key)
             for c in cid_list:
                 ems_db.set_link(job_key, "trello_card", c,
@@ -1959,7 +1961,8 @@ def backfill_job_graph():
             cards += 1
         except Exception:
             pass
-    return {"folders": folders, "cards": cards, "jobs": len(touched)}
+    return {"folders": folders, "cards": cards, "jobs": len(touched),
+            "skipped_unlinked": skipped}
 
 
 # ── Starred (per-user followed) clients ───────────────────────────────────

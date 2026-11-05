@@ -10,10 +10,11 @@
 <title>OneLoss</title>
 <script src="../web_shared/appearance.js?v=20260901a"></script>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260910a" />
-<link rel="stylesheet" href="app.css?v=20260930badge-inline" />
+<link rel="stylesheet" href="app.css?v=20261105-compact-navigation" />
 <link rel="stylesheet" href="updates.css?v=20261012" />
 <link rel="stylesheet" href="../web_shared/workspace_controls.css?v=20260910a" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
+<link rel="stylesheet" href="sidebar_compact.css?v=20261105" />
 <script src="../web_shared/text_context_menu.js?v=20260903a"></script>
 </head>
 <body class="responsive-ui">
@@ -45,6 +46,7 @@
       </div>
     </footer>
   </aside>
+  <script src="sidebar_compact.js?v=20261028"></script>
 
   <!-- Right pane — tool content (header removed; iframe gets full height) -->
   <section class="pane">
@@ -153,11 +155,15 @@
   .fr-secondary:hover { background: rgba(255,255,255,.06); }
 </style>
 
+<script src="../web_shared/vendor/markdown-it/markdown-it.min.js"></script>
+<script src="../pipeline_web_assets/comment_markdown.js"></script>
 <script src="../web_shared/health_banner.js?v=20260826a"></script>
 <script src="../web_shared/toast_log.js?v=20260731j"></script>
 <script src="updates.js?v=20261012"></script>
+<script src="../web_shared/page_reload.js"></script>
 <script src="app.js?v=20261012updates"></script>
 <script src="../web_shared/popout_menu.js?v=20260929"></script>
-<script src="notification_badge.js?v=20260930poll"></script>
+<script src="../run_doc_editor_web_assets/schedule_realtime.js?v=20261019jobs"></script>
+<script src="notification_badge.js?v=20261104-live"></script>
 </body>
 </html>

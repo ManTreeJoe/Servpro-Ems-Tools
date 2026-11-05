@@ -22,6 +22,43 @@
 (function () {
   "use strict";
 
+  // Shared in-app viewer: opening a photo never changes import selection.
+  window.openImportImagePreview = async function ({title = 'Photo', source} = {}) {
+    const origin = document.activeElement;
+    const dialog = document.createElement('dialog');
+    dialog.className = 'modal-scrim import-image-viewer';
+    dialog.setAttribute('aria-label', title);
+    dialog.style.cssText = 'position:fixed;display:block;animation:none;backdrop-filter:none;inset:0;margin:auto;width:min(1100px,94vw);height:90vh;max-width:94vw;max-height:90vh;padding:16px;box-sizing:border-box;background:var(--bg,#202428);color:var(--text,#eee);border:1px solid var(--border,#555);border-radius:10px;';
+    const heading = document.createElement('header');
+    heading.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px;';
+    const name = document.createElement('strong'); name.textContent = title;
+    const close = document.createElement('button'); close.className = 'btn'; close.textContent = 'Close preview';
+    const message = document.createElement('p'); message.textContent = 'Loading image…'; message.setAttribute('role','status');
+    const img = document.createElement('img'); img.alt = title;
+    img.style.cssText = 'display:none;width:100%;height:calc(100% - 60px);object-fit:contain;';
+    heading.append(name, close); dialog.append(heading, message, img); document.body.append(dialog);
+    const dismiss = () => { dialog.close(); };
+    const key = event => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); dismiss(); }
+    };
+    window.addEventListener('keydown', key, true);
+    dialog.addEventListener('close', () => {
+      window.removeEventListener('keydown', key, true); dialog.remove();
+      if (origin?.isConnected) origin.focus();
+    }, {once:true});
+    close.onclick = dismiss;
+    dialog.showModal(); close.focus();
+    img.onload = () => { message.hidden = true; img.style.display = 'block'; };
+    img.onerror = () => { img.style.display = 'none'; message.hidden = false; message.textContent = 'Image could not load. Close this preview and try again.'; };
+    try {
+      const url = typeof source === 'function' ? await source() : source;
+      if (!dialog.isConnected) return;
+      if (typeof url !== 'string' || !/^(https:\/\/|data:image\/(?:png|jpeg|jpg|gif|webp|bmp);base64,)/i.test(url))
+        throw Error('Image preview unavailable.');
+      img.src = url;
+    } catch (_) { if (dialog.isConnected) message.textContent = 'Image preview unavailable. Your selection is unchanged.'; }
+  };
+
   function esc(s) {
     return String(s ?? "")
       .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -47,7 +84,9 @@
     console.log("[trello_attachments]", kind || "", msg);
   }
 
-  window.openTrelloAttachmentsModal = async function ({ cardId, client, onAfter } = {}) {
+  window.openTrelloAttachmentsModal = async function ({ cardId, client, division = 'EMS', onAfter } = {}) {
+    if (window.TrelloAttachmentGallery)
+      return window.TrelloAttachmentGallery.open({cardId, client, division, onAfter});
     if (!cardId) {
       status("No Trello card pinned — pin one first", "warn");
       return;
@@ -114,17 +153,17 @@
           thumb = `<div style="${thumbBox}display:flex;align-items:center;justify-content:center;background:var(--surface-2);font-size:28px;">📄</div>`;
         }
         return `
-          <label class="ta-row" data-id="${esc(a.id)}"
+          <div class="ta-row" data-id="${esc(a.id)}"
                  style="display:grid;grid-template-columns:auto auto 1fr auto auto;gap:12px;align-items:center;padding:8px 12px;background:${isSel ? "var(--green-soft)" : "var(--surface)"};border:1px solid ${isSel ? "var(--green)" : "var(--border)"};border-radius:6px;cursor:pointer;">
-            <input type="checkbox" class="ta-cb" data-id="${esc(a.id)}" ${isSel ? "checked" : ""} />
-            ${thumb}
+            <input type="checkbox" class="ta-cb" aria-label="Select ${esc(a.name)}" data-id="${esc(a.id)}" ${isSel ? "checked" : ""} />
+            ${a.is_image ? `<button type="button" class="ta-preview" data-id="${esc(a.id)}" aria-label="Preview ${esc(a.name)}" style="padding:0;border:0;background:transparent;cursor:zoom-in;">${thumb}</button>` : thumb}
             <div style="min-width:0;">
               <div style="font-weight:600;font-size:13px;word-break:break-word;">${esc(a.name)}</div>
               <div class="muted" style="font-size:11px;">${a.is_image ? "🖼 image" : (a.mime || "file")} · ${fmtBytes(a.size)} · ${esc(fmtDate(a.date))}${a.is_upload ? "" : " · external link"}</div>
             </div>
             <button class="btn ta-open" data-url="${esc(a.url)}" style="font-size:10px;padding:3px 8px;" title="Open in browser">👁</button>
             <button class="btn ta-one" data-id="${esc(a.id)}" style="font-size:10px;padding:3px 8px;" title="Download this one">📥</button>
-          </label>`;
+          </div>`;
       }).join("");
       // Wire row checkboxes
       listEl.querySelectorAll(".ta-cb").forEach((cb) =>
@@ -134,16 +173,14 @@
           else selected.delete(cb.dataset.id);
           render();
         }));
-      // Whole-row click toggles selection (excluding inner buttons)
-      listEl.querySelectorAll(".ta-row").forEach((row) =>
-        row.addEventListener("click", (e) => {
-          if (e.target.closest(".ta-open") || e.target.closest(".ta-one") ||
-              e.target.tagName === "INPUT") return;
-          const id = row.dataset.id;
-          if (selected.has(id)) selected.delete(id);
-          else selected.add(id);
-          render();
-        }));
+      listEl.querySelectorAll(".ta-preview").forEach(b => b.addEventListener('click', () => {
+        const attachment = attachments.find(a => a.id === b.dataset.id);
+        window.openImportImagePreview({title:attachment.name, source:async () => {
+          const result = await pywebview.api.fetch_trello_image(attachment.url);
+          if (!result?.ok || !result.data_uri) throw Error('Preview failed');
+          return result.data_uri;
+        }});
+      }));
       // Open URL button
       listEl.querySelectorAll(".ta-open").forEach((b) =>
         b.addEventListener("click", (e) => {

@@ -98,6 +98,55 @@ def merge_card_metadata(existing: dict | None, record: dict) -> dict:
     return metadata
 
 
+def sync_display_name(existing: dict | None, trello_name: str) -> str:
+    """Keep an explicitly named job separate from its linked card title."""
+    existing = existing or {}
+    metadata = existing.get("metadata")
+    if not isinstance(metadata, dict):
+        try:
+            metadata = json.loads(existing.get("metadata_json") or "{}")
+        except (TypeError, ValueError):
+            metadata = {}
+    override = str((metadata if isinstance(metadata, dict) else {}).get(
+        "display_name_override") or "").strip()
+    return override or trello_name
+
+
+def resolve_against_link_owners(records, owner_for):
+    """Exact card ownership wins over current spelling; conflicts stop the sync.
+
+    owner_for returns a canonical key or None and must reject multiple owners.
+    Validate every record before the adapters start writing anything.
+    """
+    for rec in records:
+        owners = {owner for value in (rec.get('card_id'), rec.get('card_url')) if value
+                  for owner in [owner_for(value)] if owner}
+        if len(owners) > 1:
+            raise ValueError('Card ID and URL belong to different jobs. Reconcile before syncing.')
+        if owners:
+            rec['canon_key'] = next(iter(owners))
+            rec['_linked_identity'] = True
+            rec['aliases'] = list(dict.fromkeys([*(rec.get('aliases') or []), rec.get('display_name') or '']))
+
+
+def name_signature(value):
+    """Conservative review signal for punctuation and name-order variants.
+
+    This is never an identity key: two claims may have similar titles. It may
+    only prevent an automatic creation until someone reviews the existing job.
+    """
+    import re
+    return tuple(sorted(re.findall(r'[a-z0-9]+', str(value or '').casefold())))
+
+
+def name_variant_keys(candidate_key, existing_keys):
+    signature = name_signature(candidate_key)
+    if not signature:
+        return []
+    return sorted({key for key in existing_keys if key and key != candidate_key
+                   and name_signature(key) == signature})
+
+
 def resolve_against_existing(records, exists) -> dict:
     """Point cards at the job they already belong to, under whichever
     spelling the index happens to hold.
@@ -276,7 +325,7 @@ def collect(*, exclude_quality: bool = True,
         try:
             cards = tc._call(f"/boards/{bid}/cards",
                              params={"fields":
-                                     "id,name,shortUrl,idList,closed,desc"}) or []
+                                     "id,name,shortUrl,idList,closed,desc,labels"}) or []
         except Exception:
             cards = []
 
@@ -319,6 +368,7 @@ def collect(*, exclude_quality: bool = True,
                 "board":        b.get("name", ""),
                 "lane":         lane,
                 "card_id":      card.get("id") or "",
+                "card_url":     card.get("shortUrl") or "",
                 # Every column the card stated. claim_number and carrier
                 # stay as their own keys for the callers that only want
                 # those two; `columns` is the whole set.
@@ -326,6 +376,7 @@ def collect(*, exclude_quality: bool = True,
                 # Non-column values (links, other contacts, notes and scope)
                 # stay as lightweight text metadata in the shared record.
                 "settings":     values,
+                "labels":       card.get('labels') or [],
             }))
             if progress_cb is not None:
                 try:

@@ -8,11 +8,19 @@
 <script src="../web_shared/panel_state.js?v=20260811a"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Trello Notifications — OneLoss</title>
+<title>Notifications — OneLoss</title>
 <script src="../web_shared/appearance.js?v=20260901a"></script>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20260910a" />
 <link rel="stylesheet" href="theme.css?v=20260903a" />
 <style>
+  .comment-markdown,.notif-snippet { overflow-wrap:anywhere; line-height:1.5; }
+  .comment-markdown p,.notif-snippet p { margin:0 0 8px; }
+  .comment-markdown > :last-child,.notif-snippet > :last-child { margin-bottom:0; }
+  .comment-markdown ul,.comment-markdown ol,.notif-snippet ul,.notif-snippet ol { padding-left:20px; margin:6px 0; }
+  .comment-markdown blockquote,.notif-snippet blockquote { margin:8px 0; padding-left:10px; border-left:2px solid var(--border); }
+  .comment-markdown a,.notif-snippet a { color:var(--text); text-decoration:underline; }
+  .comment-markdown pre { white-space:pre-wrap; }
+  .comment-markdown h1,.comment-markdown h2,.comment-markdown h3 { font-size:inherit; }
   .topbar-actions { display: flex; align-items: center; gap: 8px; }
   .unread-pill {
     background: var(--red); color: #fff; font-weight: 700; font-size: 11px;
@@ -80,48 +88,62 @@
   <summary>Windows notifications</summary>
   <div class="desktop-alert-controls">
     <label>Desktop alerts <select id="desktop-alert-mode" disabled><option value="off">Off</option><option value="mentions">Mentions only</option><option value="jobs">Mentions and my job comments</option></select></label>
+    <label>Sound <select id="desktop-alert-sound" aria-label="Sound" disabled><option value="chime">Message chime</option><option value="system">Windows default</option><option value="silent">Silent</option></select></label>
     <button class="btn" id="desktop-alert-test" disabled>Send test notification</button>
     <span id="desktop-alert-status" role="status"></span>
   </div>
-  <p>From your personal OneLoss inbox, on this PC. Keep the app running or minimized. Windows Do not disturb may silence banners. Comments posted only in Trello are not included.</p>
+  <p>Keep the app running or minimized to receive alerts. Windows controls notification volume and Do not disturb. Bursts play at most one sound every five seconds.</p>
 </details>
 <link rel="stylesheet" href="desktop.css?v=20261001">
-<script src="desktop.js?v=20261001"></script>
-<nav class="inbox-sources" aria-label="Notification source"><button id="personal-source" aria-pressed="true">My OneLoss inbox</button><button id="trello-source" aria-pressed="false">Connected Trello account</button></nav>
-<section id="personal-panel">
-  <header class="topbar"><div class="brand"><span class="brand-name">My notifications</span></div><div class="topbar-actions"><label>Show <select id="personal-filter"><option value="all">All activity</option><option value="mentions">@mentions</option><option value="my_jobs">My jobs</option></select></label><label class="toggle"><input type="checkbox" id="personal-unread"> Only show unread</label><button class="btn" id="personal-refresh">Refresh</button></div></header>
-  <p class="personal-status" id="personal-status" role="status">Loading your inbox…</p>
-  <main id="personal-feed" class="content"></main>
-</section>
-<section id="trello-panel" hidden>
+<script src="desktop.js?v=20261020sound"></script>
 <header class="topbar">
   <div class="brand">
-    <span class="brand-mark"></span>
-    <span class="brand-name">🔔 Trello Notifications</span>
+    <span class="brand-name">Notifications</span>
     <span id="unread-pill" class="unread-pill zero">0</span>
   </div>
   <div class="topbar-actions">
+    <div class="notification-views" role="group" aria-label="Notification view">
+      <button type="button" data-notification-view="all" aria-pressed="true">All</button>
+      <button type="button" data-notification-view="mentions" aria-pressed="false">Mentions</button>
+    </div>
+    <details class="notification-board-picker">
+      <summary id="notification-board-summary">All boards</summary>
+      <div id="notification-board-options" aria-label="Boards"></div>
+    </details>
     <label class="toggle"><input type="checkbox" id="unread-only" /> Only show unread</label>
-    <button id="mark-all-btn" class="btn">✓ Mark all read</button>
+    <button id="mark-all-btn" class="btn">Mark shown read</button>
+    <button id="clear-all-btn" class="btn" title="Mark all Trello and OneLoss notifications read, including those not shown">Mark all read</button>
     <button id="refresh-btn" class="btn">↻ Refresh</button>
   </div>
 </header>
 <div class="status-bar" style="padding:6px 18px;font-size:12px;color:var(--text-muted);border-bottom:1px solid var(--border);">
   <span id="status-msg"></span>
+  <span> · Open a comment to view its card. Show more keeps it unread.</span>
 </div>
 <main class="content" id="feed">
   <div class="empty"><span class="big">🔔</span>Loading notifications…</div>
 </main>
-</section>
 <script src="../web_shared/vendor/markdown-it/markdown-it.min.js"></script>
 <script src="../pipeline_web_assets/comment_markdown.js"></script>
 <link rel="stylesheet" href="../web_shared/comment_display.css">
 <script src="reader.js?v=20260929"></script>
 <link rel="stylesheet" href="type_filter.css?v=20261012">
 <script src="type_filter.js?v=20261012"></script>
-<script src="app.js?v=20261012types"></script>
+<link rel="stylesheet" href="../pipeline_web_assets/comment_reactions.css?v=20261020">
+<script src="../pipeline_web_assets/comment_reactions.js?v=20261020notifications"></script>
+<script src="unified.js?v=20261104-stable-refresh"></script>
 <link rel="stylesheet" href="personal.css?v=20260929">
-<script src="personal.js?v=20261012types"></script>
 <link rel="stylesheet" href="inbox.css?v=20260930board-tabs">
+<link rel="stylesheet" href="conversation_feed.css?v=20261020activity">
+<style>
+#feed{flex:1;min-height:0;overflow:auto}.topbar,.status-bar,.desktop-alert-settings{flex-shrink:0}
+.comment-reactions .text-btn{background:transparent;border:0;color:var(--text-muted);padding:4px 0;cursor:pointer;font:inherit;font-size:12px}
+#notification-board{max-width:210px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);padding:6px;border-radius:5px}
+.responsive-ui .topbar{flex-wrap:wrap;overflow:visible}.responsive-ui .topbar .brand{display:flex!important}
+.responsive-ui .topbar-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start}
+.topbar-actions>*{flex-shrink:0}.notification-types summary{white-space:nowrap}
+.notif-list{padding:0;list-style:none}.notif-meta{font-size:12px}
+@media(max-width:650px){.responsive-ui .topbar .brand{width:100%}.responsive-ui .topbar-actions{flex-basis:100%}}
+</style>
 </body>
 </html>

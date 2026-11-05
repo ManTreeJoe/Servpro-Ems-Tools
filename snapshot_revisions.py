@@ -8,12 +8,10 @@ import ems_db
 from ems_db_common import EVENT_SNAPSHOT_REVISION
 
 
-def _job(client: str) -> dict:
-    row = ems_db.find_job_by_name(client)
-    if row:
-        return row
-    # Snapshot can be the first workflow to see a manually typed job.
-    ems_db.upsert_job(display_name=(client or "").strip())
+def _job(client: str, card_id: str = "") -> dict:
+    # A supplied card must resolve exactly; never fall back to its title.
+    if card_id:
+        return ems_db.resolve_existing_job(client, trello_card=card_id) or {}
     return ems_db.find_job_by_name(client) or {}
 
 
@@ -45,11 +43,15 @@ def queue_status(client: str, card_id: str) -> dict:
 
 def save_revision(client: str, data: dict, *, pdf_path: str = "",
                   card_id: str = "", source_refs: dict | None = None) -> dict:
-    row = _job(client)
+    try:
+        row = _job(client, card_id)
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
     key = row.get("canon_key") or ""
     if not key:
-        return {"ok": False, "error": "job could not be resolved"}
-    previous = list_revisions(client, limit=1000)
+        return {"ok": False, "error": "Create or link the saved job before saving a snapshot; no job was created."}
+    previous = [dict(event.get("payload") or {}) for event in
+                ems_db.list_events(key, EVENT_SNAPSHOT_REVISION, limit=1000)]
     revision = max([int(r.get("revision") or 0) for r in previous] or [0]) + 1
     structured = {
         "snapshot_id": str(uuid.uuid4()),

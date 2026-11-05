@@ -1,7 +1,7 @@
 /* Supabase documented Phoenix v1 protocol; user JWT + table RLS.
  * Events invalidate the view. Never trust event payloads as job data.
  */
-window.OneLossScheduleRealtime=function({credentials,changed,status}){
+window.OneLossScheduleRealtime=function({credentials,changed,status,changes,channel='schedule'}){
  let socket=null,disposed=false,retry=null,heartbeat=null,authTimer=null,joinTimeout=null;
  let attempt=0,generation=0,reference=0,awaitingBeat=null,topic='';
  function clear(){clearInterval(heartbeat);clearInterval(authTimer);clearTimeout(joinTimeout);}
@@ -21,15 +21,15 @@ window.OneLossScheduleRealtime=function({credentials,changed,status}){
      const auth=await credentials();if(disposed||gen!==generation)return;
      const url=new URL(auth.url);if(url.protocol!=='https:')throw new Error('HTTPS required');
      url.protocol='wss:';url.pathname='/realtime/v1/websocket';url.search=new URLSearchParams({apikey:auth.key,vsn:'1.0.0'}).toString();
-     topic='realtime:schedule:'+auth.department;reference=0;awaitingBeat=null;
+     topic='realtime:'+channel+':'+auth.department;reference=0;awaitingBeat=null;
      socket=new WebSocket(url.toString());const own=socket;
      joinTimeout=setTimeout(()=>{if(gen===generation)lost();},15000);
      own.onopen=()=>{
        if(gen!==generation)return;
-       send('phx_join',{access_token:auth.token,config:{broadcast:{ack:false,self:false},presence:{enabled:false},postgres_changes:[{event:'*',schema:'public',table:'schedule_visits',filter:'department=eq.'+auth.department}]}});
+       send('phx_join',{access_token:auth.token,config:{broadcast:{ack:false,self:false},presence:{enabled:false},postgres_changes:changes || [{event:'*',schema:'public',table:'schedule_visits',filter:'department=eq.'+auth.department}]}});
        heartbeat=setInterval(()=>{if(awaitingBeat){lost();return;}awaitingBeat=send('heartbeat',{},'phoenix');},25000);
        authTimer=setInterval(async()=>{
-         try{const fresh=await credentials();if(gen===generation)send('access_token',{access_token:fresh.token});}
+         try{const fresh=await credentials();if(gen===generation){if(fresh.url!==auth.url || fresh.department!==auth.department || fresh.user!==auth.user){lost();return;}send('access_token',{access_token:fresh.token});}}
          catch{if(gen===generation)lost();}
        },60000);
      };

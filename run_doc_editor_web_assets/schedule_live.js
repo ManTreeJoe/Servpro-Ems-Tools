@@ -10,6 +10,7 @@ window.OneLossScheduleLive = function ({render, notice}) {
   };
   return {
     async jobDetail(id){return (await call('schedule_job_detail',id,context)).job;},
+    workItemPreview(id,revision){return call('schedule_work_item_preview',id,revision,context);},
     confirmationPreview(day){return call('schedule_confirmation_preview',day,context);},
     confirmDay(command){return call('schedule_confirm_day',command,context);},
     history(start,end){return call('schedule_history',start,end,context);},
@@ -26,7 +27,7 @@ window.OneLossScheduleLive = function ({render, notice}) {
         if(context&&context!==result.context)throw new Error('Account or office changed. Reopen Schedule before continuing.');
         context=result.context;department=result.department;
         if(version!==mutation)return; // A pre-save read cannot undo newer UI state.
-        render(result.records);notice('Live schedule · '+department+' · Draft edits do not move cards. Review Confirm day to apply board moves. Comment posting and printing are not enabled yet.');
+        render(result.records);notice('Live schedule · '+department+' · Use Confirm day to review board moves.');
       } catch(error) {notice(error.message,true);throw error;}
       finally {loading=false;}
     },
@@ -39,8 +40,9 @@ window.OneLossScheduleLive = function ({render, notice}) {
       mutation++;
       const visit={id:row.id,job_id:row.job_id,queue:row.queue,group:row.group,
         date:row.date||null,arrival:row.time||'',activities:row.activities,
-        equipment:row.equipment||'',access:row.access||'',notes:row.notes||'',status:'active'};
+        equipment:row.equipment||'',access:row.access||'',notes:row.notes||'',status:row.status||'active'};
       const command={department,expected_revision:row.revision||0,visit,entry_title:row.entry_title||row.title||'',source_key:row.source_key||null};
+      if(row.job_facts)command.job_facts=row.job_facts;
       if(placement)command.before_id=placement.beforeId||null;
       const signature=JSON.stringify(command);
       if(!pending||pending.signature!==signature)pending={signature,command:{...command,operation_id:crypto.randomUUID()}};

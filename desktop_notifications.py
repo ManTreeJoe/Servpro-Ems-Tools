@@ -1,13 +1,26 @@
 """Per-user desktop delivery of the existing personal inbox. No background service."""
 import json
 import os
+import re
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 
 import paths
 
 _manager = None
+
+
+def notification_text(text):
+    """Readable native-toast excerpt; original comments remain untouched."""
+    text = str(text or '')
+    text = re.sub(r'\[([^\]\n]+)\]\((?:https?://|mailto:)[^\n)]*\)', r'\1', text)
+    for marker in ('**', '__', '~~', '`'):
+        text = re.sub(re.escape(marker)+r'(.+?)'+re.escape(marker), r'\1', text)
+    text = re.sub(r'(?m)^\s*(?:#{1,6}\s+|>\s*)', '', text)
+    text = re.sub(r'\\([<>])', r'\1', text)
+    return ' '.join(text.split())
 
 
 def identity():
@@ -66,19 +79,46 @@ class FreshItems:
         return fresh
 
 
+def sound_preference(scope, sound=None):
+    """Separate per-account/office setting; existing alert opt-in is unchanged."""
+    if sound is not None and sound not in ('chime', 'system', 'silent'):
+        raise ValueError('Invalid notification sound')
+    if not scope:
+        return 'silent'
+    with sqlite3.connect(paths.data('desktop_notifications.db'), timeout=5) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS sounds (scope TEXT PRIMARY KEY, sound TEXT NOT NULL)')
+        key = json.dumps(scope)
+        if sound is not None:
+            db.execute('INSERT OR REPLACE INTO sounds VALUES (?,?)', (key, sound))
+        row = db.execute('SELECT sound FROM sounds WHERE scope=?', (key,)).fetchone()
+        return row[0] if row else 'chime'
+
+
 class WindowsDelivery:
     def __init__(self, channel):
         from windows_toasts import InteractableWindowsToaster
         from windows_app_identity import register_notifications
         app_id = register_notifications(channel)
         self.toaster = InteractableWindowsToaster('OneLoss', notifierAUMID=app_id)
+        self.last_sound = float('-inf')
 
     def show(self, title, body, clicked, failed=lambda: None):
-        from windows_toasts import Toast
-        toast = Toast([title[:100], body[:240]])
+        from windows_toasts import Toast, ToastAudio, AudioSource
+        toast = Toast([title[:100], notification_text(body)[:240]])
+        try:
+            sound = sound_preference(identity())
+        except Exception:
+            sound = 'silent'
+        now = time.monotonic()
+        quiet = sound == 'silent' or now - self.last_sound < 5
+        toast.audio = ToastAudio(
+            sound=AudioSource.IM if sound == 'chime' else AudioSource.Default,
+            silent=quiet, looping=False)
         toast.on_activated = lambda _: threading.Thread(target=clicked, daemon=True).start()
         toast.on_failed = lambda _: failed()
         self.toaster.show_toast(toast)
+        if not quiet:
+            self.last_sound = now
 
 
 class Manager:
@@ -92,6 +132,20 @@ class Manager:
         self.trello_error = ''
         self.lock = threading.Lock()
         self.started = False
+        self.alert_targets = {}
+
+    def present_in_app(self, scope, item, title, body):
+        if self.api is None:
+            return
+        import uuid
+        token = str(uuid.uuid4())
+        with self.lock:
+            self.alert_targets[token] = (scope, dict(item))
+            while len(self.alert_targets) > 100:
+                self.alert_targets.pop(next(iter(self.alert_targets)))
+        self.api._window.evaluate_js('window.OneLossNotice?.show(' + json.dumps({
+            'kind':'notification', 'panel':'Notifications', 'title':title,
+            'msg':body, 'alertToken':token}) + ')')
 
     def start(self):
         with self.lock:
@@ -125,7 +179,7 @@ class Manager:
                 return
             context = self.api._subs['notifications'].notification_job(current['card_id'], current.get('comment_id',''))
             if context.get('ok') and identity() == scope and trello_alerts.account_key() == item['account_key']:
-                self.api._window.evaluate_js('window.postMessage(' + json.dumps({'type':'linguar-open-job', **context}) + ',location.origin)')
+                self.api._window.evaluate_js('window.postMessage(' + json.dumps({'type':'linguar-open-job', **context, 'fromNotifications':True}) + ',location.origin)')
                 self.api.focus_window()
                 import trello_client as tc
                 tc.mark_notification_read(current['notification_id'], True)
@@ -144,7 +198,7 @@ class Manager:
         if identity() != scope:
             return
         if context.get('ok'):
-            self.api._window.evaluate_js('window.postMessage(' + json.dumps({'type': 'linguar-open-job', **context}) + ',location.origin)')
+            self.api._window.evaluate_js('window.postMessage(' + json.dumps({'type': 'linguar-open-job', **context, 'fromNotifications':True}) + ',location.origin)')
             self.api.focus_window()
             call('read', id=current['id'], read=True)
         else:
@@ -176,6 +230,7 @@ class Manager:
             if self.stop_event.is_set() or identity() != scope or preferences(scope) != mode:
                 break
             title = ('You were mentioned · ' if item['kind'] == 'mention' else 'New job comment · ') + item.get('client', 'OneLoss')
+            self.present_in_app(scope, item, title, item.get('actor', 'Teammate') + ': ' + item.get('body', ''))
             self.send(title, item.get('actor', 'Teammate') + ': ' + item.get('body', ''),
                       lambda item=item: self.open_item(scope, item))
 
@@ -200,11 +255,9 @@ class Manager:
                 if identity()!=scope or preferences(scope)!=mode or trello_alerts.account_key()!=account:
                     return
                 item['account_key'] = account
-                title = ('Trello mention · ' if item['kind']=='mention' else 'Trello comment · ') + item['client']
+                title = ('Mention · ' if item['kind']=='mention' else 'Comment · ') + item['client']
                 body = item['actor'] + ': ' + item['body']
-                self.api._window.evaluate_js('window.OneLossNotice?.show(' + json.dumps({
-                    'kind':'notification','panel':'Connected Trello account',
-                    'title':title,'msg':body[:240]}) + ')')
+                self.present_in_app(scope, item, title, body)
                 self.send(title, body, lambda item=item:self.open_item(scope,item))
         except Exception:
             # Independent of the native inbox: a provider failure must not
@@ -226,12 +279,14 @@ def install(api, channel):
     return _manager
 
 
-def settings(mode=None):
+def settings(mode=None, sound=None):
     try:
         scope = identity()
         if not scope:
             return {'ok': False, 'error': 'Sign in to OneLoss to configure your desktop alerts.'}
-        return {'ok': True, 'mode': preferences(scope, mode), 'available': os.name == 'nt' and _manager is not None,
+        if sound is not None and sound not in ('chime', 'system', 'silent'):
+            raise ValueError('Invalid notification sound')
+        return {'ok': True, 'mode': preferences(scope, mode), 'sound': sound_preference(scope, sound), 'available': os.name == 'nt' and _manager is not None,
                 'error': (_manager.error or _manager.trello_error) if _manager else ''}
     except Exception:
         return {'ok': False, 'error': 'Desktop alert settings could not be saved. Try again.'}
@@ -245,3 +300,17 @@ def test_notification():
         return {'ok': True}
     except Exception:
         return {'ok': False, 'error': 'Windows could not send the test. Check notification permissions and Do not disturb.'}
+
+
+def open_alert(token):
+    if _manager is None:
+        return {'ok':False, 'error':'Reopen Notifications to find this alert.'}
+    with _manager.lock:
+        target = _manager.alert_targets.get(str(token))
+    if not target or _manager.stop_event.is_set() or identity() != target[0]:
+        return {'ok':False, 'error':'This alert expired or the account changed. Open Notifications.'}
+    try:
+        _manager.open_item(*target)
+        return {'ok':True}
+    except Exception:
+        return {'ok':False, 'error':'The notification could not open. Try again from Notifications.'}

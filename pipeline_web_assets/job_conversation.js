@@ -6,6 +6,7 @@ window.JobConversation = (() => {
   const esc = value => String(value || '').replace(/[&<>"']/g, char =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[char]);
   function mount(root, options) {
+    const stream = root.querySelector('[data-comment-stream]');
     const current = normalize(options.division);
     const cards = new Map();
     for (const row of options.cards || []) {
@@ -50,7 +51,7 @@ window.JobConversation = (() => {
       controls.append(button);
       buttons.set(division, button);
     }
-    if (!options.followWorkspace) root.querySelector('.comment-search').before(controls);
+    if (!options.followWorkspace) stream.before(controls);
     const status = document.createElement('small');
     status.className = 'comment-division-status';
     status.setAttribute('role', 'status');
@@ -62,7 +63,7 @@ window.JobConversation = (() => {
     errorStatus.className = 'comment-division-error';
     errorStatus.setAttribute('role', 'alert');
     errorStatus.hidden = true;
-    root.querySelector('.comment-search').before(errorStatus);
+    stream.before(errorStatus);
     const selectedDestinations = new Set([current]);
     const destination = document.createElement('div');
     destination.className = 'comment-post-destination';
@@ -108,11 +109,11 @@ window.JobConversation = (() => {
       }).join('')}</div>`;
       root.querySelector('.comment-compose').prepend(placementPicker);
     }
-    const stream = root.querySelector('[data-comment-stream]');
     const post = root.querySelector('[data-post-comment]');
     if (post) post.disabled = !cards.size;
     let fingerprint = null;
     let threadRecords = [];
+    let pinStates = {};
     function paint() {
       for (const [key, button] of buttons) {
         button.setAttribute('aria-pressed', String(visible.has(key)));
@@ -139,6 +140,11 @@ window.JobConversation = (() => {
         } else if (index >= 0) messages[index] = {...messages[index], thread:shared};
       }
       messages.sort((a,b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
+      for (const message of messages) {
+        message.pin_state = pinStates[message.card_id]?.[message.external_id || message.id];
+        const rootId = message.thread?.root_id || message.thread?.id;
+        message.reply_count = rootId ? threadRecords.filter(row => row.parent_id && row.root_id === rootId).length : 0;
+      }
       const failed = [...visible].some(key => errors.has(key));
       const loading = [...visible].some(key => pending.has(key) || !completed.has(key));
       const emptyText = failed ? 'Comments could not be checked. Try refreshing.'
@@ -146,8 +152,13 @@ window.JobConversation = (() => {
       const nextFingerprint = JSON.stringify([messages, messages.length ? '' : emptyText]);
       if (nextFingerprint !== fingerprint) {
         const top = stream.scrollTop;
+        const openMenus = new Set([...stream.querySelectorAll('.comment-actions-menu[open]')]
+          .map(menu => menu.closest('[data-comment-id]')?.dataset.commentId));
         stream.innerHTML = messages.map(options.render).join('') ||
           `<div class="aud-empty activity-empty" role="status">${emptyText}</div>`;
+        stream.querySelectorAll('[data-comment-id]').forEach(row => {
+          if (openMenus.has(row.dataset.commentId)) row.querySelector('.comment-actions-menu')?.setAttribute('open','');
+        });
         stream.scrollTop = top;
         fingerprint = nextFingerprint;
         const count = root.querySelector('[data-comment-count]');
@@ -225,6 +236,7 @@ window.JobConversation = (() => {
     return {
       refresh,
       setThreadRecords(rows) { threadRecords = rows; paint(); },
+      setPinState(card, rows) { pinStates[card] = rows; paint(); },
       updateCards(rows) {
         if (options.lockedCard) return;
         const hadCards = cards.size > 0;

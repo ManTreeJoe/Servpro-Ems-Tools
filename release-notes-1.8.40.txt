@@ -1,0 +1,12 @@
+OneLoss 1.8.40 — Unified file imports
+
+Import files is now the single entry point for local files, CompanyCam photos and Trello attachments.
+CompanyCam and Trello galleries support grouped selection, image previews and destination review before importing.
+CompanyCam quick import avoids waiting for every photo's tags. Optional tag-based organization remains available.
+Completed CompanyCam imports no longer add a status-screen step when reopening the gallery.
+Adds right-click text editing support, a smaller comments header and compact job-link controls.
+Adds notification sound choices.
+Retains the 1.8.38 Job Log and 1.8.39 comment-posting fixes.
+
+Known limitation: older Trello downloads without attachment IDs in their filenames may not be recognized as duplicates.
+Automated checks use controlled fixtures; they do not post comments or import customer files.

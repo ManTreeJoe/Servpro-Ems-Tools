@@ -57,7 +57,11 @@
   transform: translateY(1px);
   box-shadow: inset 0 1px 3px rgba(21,40,33,.18);
 }
-.responsive-ui .btn:disabled { opacity: .4; cursor: not-allowed; }
+.responsive-ui .btn:disabled {
+  opacity: 1; cursor: not-allowed;
+  background: var(--surface-2); color: var(--text-muted);
+  border-color: var(--border); box-shadow: none;
+}
 
 .responsive-ui .btn-primary,
 .responsive-ui .topbar .btn-primary {
@@ -106,3 +110,27 @@
 @media (prefers-reduced-motion: reduce) {
   .responsive-ui .btn { transition: none; }
 }
+
+/* Older panels ship a copy of the original dark-only theme. Keep native
+   popups and common status/control states on the current shared palette. */
+:root[data-theme] select, :root[data-theme] .search { color-scheme: inherit; }
+:root[data-theme] option, :root[data-theme] optgroup {
+  background-color: var(--surface-2); color: var(--text);
+}
+:root[data-theme] :is(input, textarea)::placeholder { color: var(--text-dim); opacity: 1; }
+.responsive-ui :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring); outline-offset: 2px;
+}
+/* These composite fields already highlight their outer boundary on focus.
+   Do not draw a second rectangular ring around the inner editing surface.
+   Standalone fields and toolbar buttons retain their keyboard focus ring. */
+:root .comment-search input:focus,
+:root .comment-editor .comment-editor-content:focus {
+  outline: none;
+  box-shadow: none;
+}
+.responsive-ui .status-msg.ok, .responsive-ui .status.ok { color: var(--success-text); }
+.responsive-ui .chip.warn { background: var(--amber-soft); color: var(--amber); }
+.responsive-ui .chip.hot { background: var(--red-soft); color: var(--danger-text); }
+.reduce-motion .responsive-ui .btn { transition: none; }
+.reduce-motion .responsive-ui .btn:active:not(:disabled) { transform: none; }

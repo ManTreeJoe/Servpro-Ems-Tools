@@ -7,6 +7,7 @@ GROUPS = {
  'Work & travel': [('🏠','house home'),('🏢','office building'),('🚗','car'),('🚚','truck'),('✈️','airplane'),('🛠️','tools repair'),('🔨','hammer'),('📷','camera photo'),('📋','clipboard'),('📁','folder'),('📅','calendar'),('💡','idea light bulb'),('🔑','key'),('🏆','trophy'),('🎉','celebrate party'),('🚀','rocket')],
  'Symbols': [('❤️','heart love'),('💚','green heart'),('💙','blue heart'),('💯','hundred perfect'),('✅','check done'),('❌','cross no'),('⚠️','warning'),('❓','question'),('❗','exclamation'),('⭐','star'),('✨','sparkles'),('🔴','red circle'),('🟢','green circle'),('🏁','finish flag')],
 }
+GROUPS['Work & travel'].append(('📌', 'pushpin pin pinned'))
 CHOICES = [{'code':'-'.join(f'{ord(c):04X}' for c in emoji), 'emoji':emoji, 'name':name, 'category':group}
            for group, entries in GROUPS.items() for emoji, name in entries]
 CODES = frozenset(row['code'] for row in CHOICES)

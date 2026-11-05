@@ -298,6 +298,12 @@ class Api(SharedCommentApi):
     # Trello-attachments modal (shared) backend.
     def list_card_attachments(self, *a, **k):
         return self._aw().list_card_attachments(*a, **k)
+
+    def trello_attachment_destinations(self, *args):
+        return self._aw().trello_attachment_destinations(*args)
+
+    def import_trello_attachments(self, *args):
+        return self._aw().import_trello_attachments(*args)
     def download_card_attachments(self, *a, **k):
         return self._aw().download_card_attachments(*a, **k)
     def fetch_trello_image(self, *a, **k):

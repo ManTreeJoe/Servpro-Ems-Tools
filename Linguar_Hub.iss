@@ -10,7 +10,7 @@
 #endif
 
 #ifdef Trial
-  #define MyAppName "Linguar Hub Trial"
+  #define MyAppName "OneLoss Trial"
   #define MyAppExe  "Linguar Hub Trial.exe"
   #define AppGuid   "9C6B4E2A-7F3D-4B1E-9A2C-3D5F7A1B9C03"
   #define OutBase   "Linguar-Hub-Trial-Setup"
@@ -18,7 +18,7 @@
   #define SetupIcon "linguar_hub_trial.ico"
   #define AppUserModelId "Servpro.LinguarHub.Trial.2026.2"
 #else
-  #define MyAppName "Linguar Hub"
+  #define MyAppName "OneLoss"
   #define MyAppExe  "Linguar Hub.exe"
   #define AppGuid   "9C6B4E2A-7F3D-4B1E-9A2C-3D5F7A1B9C02"
   #define OutBase   "Linguar-Hub-Setup"
@@ -70,6 +70,16 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [InstallDelete]
+; Display branding changes only; retain AppId, executable and install paths.
+#ifdef Trial
+Type: files; Name: "{autodesktop}\Linguar Hub Trial.lnk"
+Type: files; Name: "{userprograms}\Linguar Hub Trial\Linguar Hub Trial.lnk"
+Type: files; Name: "{userprograms}\Linguar Hub Trial\Uninstall Linguar Hub Trial.lnk"
+#else
+Type: files; Name: "{autodesktop}\Linguar Hub.lnk"
+Type: files; Name: "{userprograms}\Linguar Hub\Linguar Hub.lnk"
+Type: files; Name: "{userprograms}\Linguar Hub\Uninstall Linguar Hub.lnk"
+#endif
 ; The AppId is deliberately unchanged, so this UPGRADES an existing EMS Tools
 ; install in place. That also means the old exe and its shortcuts survive the
 ; copy and the user is left with two apps, one of them dead. Remove them.

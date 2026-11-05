@@ -1,0 +1,10 @@
+OneLoss Main 1.8.44
+
+- Search for Contents and Recon cards by job name instead of pasting a link; matching results show board and lane.
+- Mark checklist items Does not apply in the pencil editor; saves [N/A] and checks off the item in Trello. Removing N/A reopens the item.
+- Show actual Trello labels on lane cards and refresh previews after label changes.
+- Remove the duplicate Loss type selector from Edit Job Info; Cause of loss stays.
+- Correct State Farm paperwork: Authorization to Pay instead of Authorization to Perform, recognize ST/SF ATP filenames, and remove the separate State Farm COS requirement. Regular COS remains.
+- Enable normal card dragging on Logs with existing destination and office-access checks.
+
+Pop-out tabs and ambiguous job-link reconciliation are not included.

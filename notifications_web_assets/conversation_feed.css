@@ -1,0 +1,45 @@
+/* Option A: job cards with comment bubbles and quiet secondary actions. */
+#feed {max-width:760px}
+.notification-job {margin:0 0 16px;border:1px solid var(--border);border-radius:9px;overflow:hidden;background:var(--surface)}
+.notification-job-head {position:relative;padding:14px 32px 14px 16px;background:color-mix(in srgb,var(--surface-2) 82%,#46745b);border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:5px}
+.notification-job-head.has-unread::after {content:"";position:absolute;right:15px;top:20px;width:8px;height:8px;background:#69a8fa;border-radius:50%}
+.notification-job-head button {border:0;background:none;color:var(--text);font:inherit;font-weight:700;text-align:left;padding:0;white-space:normal;overflow-wrap:anywhere}
+.notification-job-head small {color:var(--text-muted);font-size:11px}
+.notification-events {list-style:none;padding:0;margin:0}
+.notification-date-divider {display:flex;align-items:center;gap:10px;padding:12px 16px 3px;color:var(--text-muted);font-size:11px;font-weight:500;list-style:none}
+.notification-date-divider::after {content:"";flex:1;height:1px;background:var(--border);opacity:.45}
+.notification-events .notif-date {font-variant-numeric:tabular-nums}
+.notification-events .notif {cursor:default;grid-template-columns:25px minmax(0,1fr);gap:8px;padding:14px;border-left:0;background:transparent}
+.notification-events .notif.unread {border-left:0;background:transparent}
+.notification-events .notif:last-child {border-bottom:0}
+.notification-events .notif-icon {font-size:12px;color:#579dff;padding-top:3px}
+.notification-events .notif-icon::after {display:none}
+.notification-events .notif.read .notif-icon {visibility:hidden}
+.notification-events .notif-side {grid-column:2;display:block;margin-top:-8px}
+.notification-events .notif-date {margin-left:auto;white-space:normal;font-size:10px;font-weight:400;text-align:right}
+.notification-events .notif-meta {display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:12px;color:var(--text)}
+.notif-avatar {width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:#416e65;color:white;font-size:10px;font-weight:600}
+.notification-events .notif-snippet {background:var(--bg);padding:0 10px;border:8px solid var(--bg);border-radius:6px;max-height:calc(6.4em + 16px);-webkit-line-clamp:4;white-space:normal;line-height:1.6;box-sizing:border-box;cursor:pointer;font-size:13px}
+.notification-events .notif-snippet:hover {outline:1px solid var(--border)}
+.notification-events .is-activity .notif-snippet {background:transparent;border-color:transparent;font-size:12px;color:var(--text-muted)}
+.notification-events .notif-snippet.expanded {display:block;max-height:none;-webkit-line-clamp:unset}
+.notification-events .notif-snippet p {margin:0 0 6px}
+.notification-events .notif-snippet p:last-child {margin-bottom:0}
+.notification-expand {display:block;width:fit-content;margin:0 auto;border:0;background:none;text-decoration:underline;padding:6px 0;color:var(--link,var(--text));font-size:12px}
+.notification-expand[hidden] {display:none}
+.notification-read-toggle {display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;cursor:pointer}
+.notification-read-toggle::before {content:"";width:8px;height:8px;border:1px solid var(--text-muted);border-radius:50%}
+.notification-read-toggle.is-unread::before {background:#69a8fa;border-color:#69a8fa}
+.notification-read-toggle:hover {background:var(--surface-2)}
+.notification-read-toggle:disabled {opacity:.5;cursor:wait}
+.notification-views {display:flex;gap:4px;align-items:center}
+.notification-views button {background:none;border:0;border-bottom:2px solid transparent;color:var(--text-muted);font:inherit;padding:8px 10px;cursor:pointer}
+.notification-views button[aria-pressed=true] {color:var(--text);border-bottom-color:var(--green,#70aa91)}
+.notification-board-picker {position:relative;font-size:12px;max-width:260px}
+.notification-board-picker summary {padding:8px;border:1px solid var(--border);border-radius:5px;cursor:pointer;overflow-wrap:anywhere}
+#notification-board-options {position:absolute;top:100%;left:0;min-width:250px;max-width:min(320px,85vw);max-height:360px;overflow:auto;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 8px 24px #0005}
+#notification-board-options label {display:flex;gap:8px;align-items:start;padding:8px;cursor:pointer;overflow-wrap:anywhere}
+#notification-board-options label:hover {background:var(--surface-2)}
+.notification-events .notif-snippet:focus-visible,.notification-actions summary:focus-visible,.notification-board-picker summary:focus-visible {outline:2px solid var(--link,#579dff);outline-offset:2px}
+.notification-events button:focus-visible,.notification-job-head button:focus-visible {outline:2px solid var(--link,#579dff);outline-offset:2px}
+@media(max-width:450px){#feed{padding:10px 8px}.notification-events .notif{padding:12px 10px}.notification-events .notif-meta{flex-wrap:wrap}.notification-events .notif-date{margin-left:0}}

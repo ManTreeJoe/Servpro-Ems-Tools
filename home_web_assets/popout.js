@@ -6,11 +6,14 @@
       const result=await pywebview.api.popout_source(query.get('tool'));
       if(!result?.ok)throw Error('Tool unavailable.');
       const url=new URL(result.src,location.href);
+      if(query.get('client'))url.searchParams.set('focus',query.get('client'));
       if(query.get('cardId')){
         url.searchParams.set('job_workspace','1');url.searchParams.set('card_id',query.get('cardId'));
         url.searchParams.set('focus',query.get('client')||'Job');
         url.searchParams.set('division',query.get('division')||'EMS');
         if(query.get('commentId'))url.searchParams.set('comment_id',query.get('commentId'));
+        if(query.get('jobTab'))url.searchParams.set('job_tab',query.get('jobTab'));
+        if(query.get('jobAction'))url.searchParams.set('job_action',query.get('jobAction'));
       }
       frame.src=url.href;
     }catch(e){status(e.message);}

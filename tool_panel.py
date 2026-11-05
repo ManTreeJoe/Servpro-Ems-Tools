@@ -1897,7 +1897,7 @@ def run_standalone(panel_class,
             _dpi.bind_scale_shortcuts(root, on_change=_on_scale_change)
         except Exception:
             pass
-    root.title(getattr(panel_class, "TOOL_TITLE", "Linguar Hub"))
+    root.title(getattr(panel_class, "TOOL_TITLE", "OneLoss"))
     root.geometry(saved_geo or geometry)
     if minsize:
         root.minsize(*minsize)

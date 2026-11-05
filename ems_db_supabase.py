@@ -145,6 +145,8 @@ def upsert_job(*, display_name: str, claim_number: str = "",
                status: str = "", date_received: str = "",
                department: str = "", metadata: dict | None = None,
                clear_fields=(),
+               _existing_key: str = "",
+               _expected_job_id: str = "",
                **crm) -> str:
     """Insert or update, with the SQLite backend's partial-update rule: a
     blank value never overwrites an existing non-blank one unless its column
@@ -169,11 +171,15 @@ def upsert_job(*, display_name: str, claim_number: str = "",
     for col in clear_fields:
         supplied[col] = ''
 
-    key = canon_key(display_name)
+    key = _existing_key or canon_key(display_name)
     if not key:
         raise ValueError("display_name must canonicalize to a non-empty key")
     now = _now_iso()
     existing = _one("jobs", canon_key=f"eq.{key}", select="*")
+    if _existing_key and existing is None:
+        raise ValueError('Saved job no longer exists. Reopen it before editing; no replacement was created.')
+    if _expected_job_id and existing is not None and existing.get('job_id') != _expected_job_id:
+        raise ValueError('Saved job identity changed. No replacement was created or modified.')
     md_json = json.dumps(metadata) if metadata else None
     if existing is None:
         body = {
@@ -207,7 +213,10 @@ def upsert_job(*, display_name: str, claim_number: str = "",
     }
     for col in _TEXT_COLUMNS:
         patch[col] = '' if col in clear_fields else supplied.get(col) or existing.get(col)
-    _sb.rest("PATCH", "jobs", params={"canon_key": f"eq.{key}"}, body=patch)
+    if _existing_key:
+        _conditional_job_patch(key, existing, patch)
+    else:
+        _sb.rest("PATCH", "jobs", params={"canon_key": f"eq.{key}"}, body=patch)
     if renamed_from:
         try:
             add_alias(key, renamed_from, source="rename")
@@ -219,6 +228,40 @@ def upsert_job(*, display_name: str, claim_number: str = "",
         except Exception:
             pass
     return key
+
+
+def _conditional_job_patch(key, expected, patch):
+    """The write predicate, not a post-write check, protects row identity."""
+    job_id = expected.get('job_id')
+    if not job_id:
+        raise ValueError('Saved job identity is unavailable. No replacement was created.')
+    params = {'canon_key': f'eq.{key}', 'job_id': f'eq.{job_id}',
+              'department': 'is.null' if expected.get('department') is None else f"eq.{expected['department']}",
+              'select': 'canon_key,job_id'}
+    saved = _sb.rest('PATCH', 'jobs', params=params, body=patch, prefer='return=representation')
+    if (not isinstance(saved, list) or len(saved) != 1 or saved[0].get('canon_key') != key
+            or saved[0].get('job_id') != job_id):
+        raise ValueError('Saved job changed or is unavailable. Reopen before retrying; no replacement was created.')
+
+
+def update_job(canon_key_value: str, *, expected_job_id='', **changes) -> str:
+    """Update an existing identity, including a legacy name key; never insert.
+
+    Missing/retired keys are rejected, including when an offline edit replays.
+    Display names are presentation and cannot select another job here.
+    """
+    if not canon_key_value or {'_existing_key', '_expected_job_id'} & changes.keys():
+        raise ValueError('An existing job key is required')
+    display_name = changes.pop('display_name', '')
+    if display_name and display_name.strip():
+        prior = get_job(canon_key_value)
+        if prior is None:
+            raise ValueError('Saved job no longer exists. Reopen it before editing; no replacement was created.')
+        metadata = dict(changes.get('metadata') or prior.get('metadata') or {})
+        metadata['display_name_override'] = display_name.strip()
+        changes['metadata'] = metadata
+    return upsert_job(display_name=display_name,
+                      _existing_key=canon_key_value, _expected_job_id=expected_job_id, **changes)
 
 
 def get_job(canon_key_value: str):
@@ -305,6 +348,12 @@ def set_work_environment_state(canon_key_value: str, work_environment: str,
     }
     rows = _sb.rest("POST", "crm_job_departments", body=body,
                     prefer="resolution=merge-duplicates,return=representation")
+    if env == 'EMS' and stage == 'ready_for_billing':
+        # The atomic database transition stamps completion after the upsert.
+        saved = _one('crm_job_departments', job_id=f"eq.{job['job_id']}",
+                     work_environment='eq.EMS', select='*')
+        if saved:
+            rows = [saved]
     if changed_stage and stage:
         log_event(canon_key_value, "crm_department_stage_changed", payload={
             "work_environment": env, "from_stage": previous_stage,
@@ -680,7 +729,10 @@ def find_job_by_name(name: str, *, department: str = ""):
         return None
     row = _one("jobs", canon_key=f"eq.{key}", select="*")
     if row is None:
-        a = _one("job_aliases", alias_canon=f"eq.{key}", select="canon_key")
+        aliases = _rows('job_aliases', alias_canon=f'eq.{key}', select='canon_key', limit='2')
+        if len({a['canon_key'] for a in aliases}) > 1:
+            raise ValueError('This name is an alias of multiple jobs. Use an exact reference or reconcile it.')
+        a = aliases[0] if aliases else None
         if a:
             row = _one("jobs", canon_key=f"eq.{a['canon_key']}", select="*")
             # An alias that TRUNCATES the job's name claims every sibling
@@ -786,6 +838,10 @@ def set_link(canon_key_value: str, link_type: str, link_value: str, *,
         link_value = _norm_link(link_type, link_value)
     if not (canon_key_value and link_type and link_value):
         return
+    if link_type == LINK_FOLDER:
+        # All direct callers must observe the same ownership check as pin UI.
+        # This preflight is not a replacement for server-side race protection.
+        assert_link_owner(canon_key_value, link_type, original_folder)
     body = {
         "canon_key": canon_key_value, "link_type": link_type,
         "link_value": link_value, "added_at": _now_iso(),
@@ -871,21 +927,43 @@ def remove_link(canon_key_value: str, link_type: str,
                  "link_value": f"eq.{candidate}"})
 
 
-def find_job_by_link(link_type: str, link_value: str):
+def _find_job_by_link(link_type: str, link_value: str, *, cross_division=False):
+    from ems_db_common import identity_link_types
     candidates = (folder_storage_candidates(link_value)
                   if link_type == LINK_FOLDER
                   else [_norm_link(link_type, link_value)])
     if not (link_type and candidates):
         return None
+    owners = set()
+    kinds = identity_link_types(link_type) if cross_division else (link_type,)
     for candidate in candidates:
-        links = _rows("job_links", link_type=f"eq.{link_type}",
+        links = _rows("job_links", link_type=_in(kinds) if len(kinds) > 1 else f"eq.{link_type}",
                  link_value=f"eq.{candidate}", select="canon_key",
-                 order="added_at.asc", limit="2")
-        if len(links) > 1:
-            raise ValueError('This reference is linked to multiple jobs. Reconcile the links before editing.')
-        if links:
-            return get_job(links[0]["canon_key"])
-    return None
+                 order="added_at.asc")
+        owners.update(link['canon_key'] for link in links)
+    if len(owners) > 1:
+        raise ValueError('This reference is linked to multiple jobs. Reconcile the links before editing.')
+    return get_job(next(iter(owners))) if owners else None
+
+
+def find_job_by_link(link_type, link_value):
+    return _find_job_by_link(link_type, link_value)
+
+
+def find_job_by_reference(link_type, link_value):
+    return _find_job_by_link(link_type, link_value, cross_division=True)
+
+
+def resolve_existing_job(name='', **references):
+    from ems_db_common import _resolve_existing_job
+    return _resolve_existing_job(find_job_by_reference, find_job_by_name, name, **references)
+
+
+def assert_link_owner(canon_key_value, link_type, link_value):
+    """Preflight only; server enforcement is required for races and hidden owners."""
+    owner = find_job_by_reference(link_type, link_value)
+    if owner and owner['canon_key'] != canon_key_value:
+        raise ValueError('This reference already belongs to another job. Reconcile it before changing pins.')
 
 
 def migrate_folder_links_portable(*, apply: bool = False) -> dict:
@@ -952,11 +1030,15 @@ def resolve_and_link(name: str = "", *, folder_path: str = "",
     incoming_dept = department_for_path(folder_path) if folder_path else None
 
     job = None
+    owners = {}
     for lt, lv in strong:
         if lv:
-            job = find_job_by_link(lt, lv)
-            if job:
-                break
+            owner = find_job_by_reference(lt, lv)
+            if owner:
+                owners[owner['canon_key']] = owner
+    if len(owners) > 1:
+        raise ValueError('These references belong to different jobs. Reconcile them before linking.')
+    job = next(iter(owners.values()), None)
     if job is not None and strict_department and _department_conflict(
             job, incoming_dept):
         raise DepartmentConflict(
@@ -1417,6 +1499,9 @@ def _reparent_children(from_key: str, into_key: str) -> int:
 
 def merge_jobs(into_key: str, from_keys) -> dict:
     """Fold jobs together. Refuses across franchises, like SQLite."""
+    import paths
+    if getattr(paths, 'IS_DEV', False):
+        raise ValueError('Legacy merging is disabled in the identity pilot. Use reviewed reconciliation; no records were changed.')
     into_key = (into_key or "").strip()
     if not into_key:
         return {"merged": 0}
@@ -1473,6 +1558,9 @@ def merge_jobs(into_key: str, from_keys) -> dict:
 
 def delete_job(canon_key_value: str) -> dict:
     """Delete one shared job graph row; external folders/cards stay put."""
+    import paths
+    if getattr(paths, 'IS_DEV', False):
+        raise ValueError('Legacy deletion is disabled in the identity pilot; no records were changed.')
     key = (canon_key_value or "").strip()
     if not key:
         return {"deleted": 0}
@@ -1628,6 +1716,41 @@ def sync_from_trello(*, exclude_quality: bool = True,
     if not records:
         return out
 
+    # Bulk exact-reference ownership across divisions, including URL shortlinks.
+    refs = sorted({_norm_link(LINK_TRELLO, value) for rec in records
+                   for value in (rec.get('card_id'), rec.get('card_url')) if value})
+    owners = {}
+    for part in _chunks(refs):
+        for link in _rows('job_links', link_type='in.(trello_card,trello_card_contents,trello_card_recon)',
+                          link_value=_in(part), select='canon_key,link_value'):
+            owners.setdefault(link['link_value'], set()).add(link['canon_key'])
+
+    def owner_for(value):
+        keys = owners.get(_norm_link(LINK_TRELLO, value), set())
+        if len(keys) > 1:
+            raise ValueError('This card is linked to multiple jobs. Reconcile before syncing.')
+        return next(iter(keys), None)
+
+    # Historical card collisions must not stop every unrelated job from
+    # refreshing. Quarantine only the ambiguous card(s); never choose an
+    # owner or write a new link for them during a bulk sync.
+    eligible = []
+    conflicted = []
+    for rec in records:
+        try:
+            _walk.resolve_against_link_owners([rec], owner_for)
+        except ValueError:
+            conflicted.append(rec)
+        else:
+            eligible.append(rec)
+    if conflicted:
+        out['skipped_card_conflicts'] = len(conflicted)
+        out.setdefault('warnings', []).append(
+            f'{len(conflicted)} card(s) have conflicting saved links and need review; other cards continued syncing.')
+    records = eligible
+    if not records:
+        return out
+
     # Before anything is keyed: point each card at the job it already
     # belongs to when the index holds the other spelling. Both the card's
     # key and its swapped form are looked up in ONE read, so this costs a
@@ -1644,10 +1767,33 @@ def sync_from_trello(*, exclude_quality: bool = True,
             if sk:
                 probe.add(sk)
     known = set()
+    confirmed = {}
     for part in _chunks(sorted(probe)):
-        for row in _rows("jobs", canon_key=_in(part), select="canon_key"):
+        for row in _rows("jobs", canon_key=_in(part), select="canon_key,job_id,department"):
             known.add(row["canon_key"])
-    _walk.resolve_against_existing(records, lambda k: k in known)
+            confirmed[row['canon_key']] = row
+    _walk.resolve_against_existing([rec for rec in records if not rec.get('_linked_identity')],
+                                  lambda k: k in known)
+    if any(rec.get('_linked_identity') and rec['canon_key'] not in known for rec in records):
+        raise ValueError('A linked job is unavailable. No replacement was created by sync.')
+
+    # The bulk sync also enrolls new jobs. Do not let punctuation/name-order
+    # variants create a second row beside a folder-only job (or beside another
+    # new card in this batch). Keep syncing unrelated cards and report skips.
+    new_keys = {rec['canon_key'] for rec in records if rec['canon_key'] not in known}
+    if new_keys:
+        saved_keys = {row['canon_key'] for row in _rows('jobs', select='canon_key')}
+        all_keys = saved_keys | new_keys
+        blocked = {key for key in new_keys
+                   if _walk.name_variant_keys(key, all_keys)}
+        if blocked:
+            skipped = [rec for rec in records if rec['canon_key'] in blocked]
+            records = [rec for rec in records if rec['canon_key'] not in blocked]
+            out['skipped_name_conflicts'] = len(skipped)
+            out.setdefault('warnings', []).append(
+                f'{len(skipped)} card(s) need job-name review; no duplicate jobs were created for them.')
+            if not records:
+                return out
 
     # One merged record per key writes the job fields. Historical cards can
     # fill blanks, while an active card always wins current values and status.
@@ -1660,12 +1806,20 @@ def sync_from_trello(*, exclude_quality: bool = True,
     for part in _chunks(keys):
         for row in _rows("jobs", canon_key=_in(part), select="*"):
             existing[row["canon_key"]] = row
+    # A job observed earlier is update-only even if it disappears or is
+    # replaced before hydration. Validate the whole batch before any writes.
+    for key in keys:
+        if key in confirmed:
+            prior, current = confirmed[key], existing.get(key)
+            if (current is None or not prior.get('job_id') or prior['job_id'] != current.get('job_id')
+                    or prior.get('department') != current.get('department')):
+                raise ValueError('A saved job changed or is unavailable. No replacement was created by sync.')
 
     now = _now_iso()
-    job_rows, alias_rows, rename_events = [], [], []
+    job_rows, update_rows, alias_rows, rename_events = [], [], [], []
     for key, rec in by_key.items():
         prior = existing.get(key)
-        name = rec["display_name"]
+        name = _walk.sync_display_name(prior, rec["display_name"])
         # Every column the card stated, not just claim + carrier. The
         # collector already dropped blanks, and the partial-update rule
         # below means a card that omits a field never clears one.
@@ -1696,9 +1850,12 @@ def sync_from_trello(*, exclude_quality: bool = True,
                 alias_rows.append({"canon_key": key, "alias": was,
                                    "alias_canon": canon_key(was),
                                    "source": "rename"})
-        job_rows.append(row)
-        alias_rows.append({"canon_key": key, "alias": name,
-                           "alias_canon": canon_key(name),
+        if prior is None:
+            job_rows.append(row)
+        else:
+            update_rows.append((key, prior, row))
+        alias_rows.append({"canon_key": key, "alias": rec["display_name"],
+                           "alias_canon": canon_key(rec["display_name"]),
                            "source": "trello"})
         # The card's own spelling when it was redirected to an existing
         # job — so a search for the card title still finds it.
@@ -1708,6 +1865,12 @@ def sync_from_trello(*, exclude_quality: bool = True,
                                    "alias_canon": canon_key(extra),
                                    "source": "trello"})
 
+    # Existing jobs cannot use an upsert: deletion must not resurrect them.
+    # Conditional per-row patches are deliberate until a safe batch-update
+    # RPC is available. New-job enrollment remains batched below.
+    for key, prior, row in update_rows:
+        _conditional_job_patch(key, prior, row)
+        out['jobs_upserted'] += 1
     for part in _chunks(job_rows):
         _sb.rest("POST", "jobs", body=part,
                  prefer="resolution=merge-duplicates")
@@ -1744,6 +1907,21 @@ def sync_from_trello(*, exclude_quality: bool = True,
         _sb.rest("POST", "job_links", body=part,
                  prefer="resolution=merge-duplicates")
         out["links_added"] += len(part)
+
+    # Per-card evidence is retained even when records collapse to one job.
+    import contents_label_sync
+    for key in {rec['canon_key'] for rec in records if rec.get('status') != 'closed'
+                and contents_label_sync.has_contents(rec.get('labels'))}:
+        try:
+            contents_label_sync.ensure(get_job(key) or {})
+        except Exception as ex:
+            out.setdefault('warnings', []).append(f'Contents interest not confirmed for {key}: {ex}')
+    for key in {rec['canon_key'] for rec in records if rec.get('status') != 'closed'
+                and contents_label_sync.has_recon(rec.get('labels'))}:
+        try:
+            contents_label_sync.ensure_recon(get_job(key) or {})
+        except Exception as ex:
+            out.setdefault('warnings', []).append(f'Recon interest not confirmed for {key}: {ex}')
 
     for key, was, now_name in rename_events:
         try:

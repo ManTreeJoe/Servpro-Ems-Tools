@@ -1,0 +1,38 @@
+/* The grid always reserves only the rail; expansion overlays the active tool. */
+.sidebar-expand-button{display:none}
+@media(min-width:651px){
+  .sidebar-auto-collapse .shell{grid-template-columns:64px minmax(0,1fr)}
+  .sidebar-auto-collapse .sidebar{position:relative;grid-column:1;grid-row:1;width:64px;z-index:40;transition:width 150ms ease;}
+  .sidebar-auto-collapse .sidebar:is(:hover,:focus-within){width:230px;box-shadow:8px 0 24px #0004}
+  .sidebar-auto-collapse .sidebar-expand-button{display:block;flex-shrink:0;margin:8px 14px;width:36px;height:32px;background:transparent;border:1px solid #ffffff30;border-radius:6px;color:#fff;cursor:pointer}
+  /* Freeze the full inner layout. Narrowing the outer box only clips it. */
+  .sidebar-auto-collapse .sidebar > :is(.sb-head,.sb-nav,.sb-foot){width:230px;min-width:230px;box-sizing:border-box}
+  .sidebar-auto-collapse .sb-head{padding:20px 14px 16px}
+  .sidebar-auto-collapse .brand-row{justify-content:flex-start}
+  .sidebar-auto-collapse .workspace-trigger{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:14px;padding:6px 4px}
+  .sidebar-auto-collapse .workspace-monogram{margin:0}
+  .sidebar-auto-collapse .workspace-trigger{position:relative}
+  .sidebar-auto-collapse .sidebar:not(:hover):not(:focus-within) .workspace-trigger{background:transparent;border-color:transparent;clip-path:inset(0 calc(100% - 40px) 0 0 round 9px)}
+  .sidebar-auto-collapse .sidebar:not(:hover):not(:focus-within) .workspace-trigger::before{content:"";position:absolute;left:0;top:0;bottom:0;width:38px;box-sizing:border-box;border:1px solid rgba(190,219,205,.3);border-radius:9px;background:#184A3B;pointer-events:none}
+  .sidebar-auto-collapse .workspace-trigger .workspace-monogram{position:relative;z-index:1}
+  .sidebar-auto-collapse :is(.workspace-current,.workspace-chevron,.sb-name){display:block;white-space:nowrap}
+  .sidebar-auto-collapse .sb-nav{padding:13px 10px;min-height:0;overflow-x:hidden}
+  .sidebar-auto-collapse .sb-group{height:auto;margin:10px 10px 5px;padding-left:44px;color:#809B90;background:none;white-space:nowrap}
+  .sidebar-auto-collapse .sb-group:first-child{margin-top:4px}
+  .sidebar-auto-collapse .sb-item{display:grid;grid-template-columns:25px minmax(0,1fr);gap:18px;width:auto;min-height:38px;margin:2px 0;padding:6px 11px;position:relative;justify-content:normal}
+  .sidebar-auto-collapse .sb-item .sb-name{overflow:hidden;text-overflow:ellipsis}
+  .sidebar-auto-collapse .sidebar:not(:hover):not(:focus-within) .sb-item.active{background:transparent;box-shadow:none}
+  .sidebar-auto-collapse .sidebar:not(:hover):not(:focus-within) .sb-item.active::before{content:"";position:absolute;left:1px;top:0;bottom:0;width:44px;border-radius:10px;background:#246A55;box-shadow:inset 3px 0 #F0B95F,inset 0 -2px rgba(240,185,95,.28);pointer-events:none}
+  .sidebar-auto-collapse .sb-item .sb-icon{position:relative;z-index:1}
+  .sidebar-auto-collapse .sb-foot{display:grid;justify-items:stretch;padding:13px 14px 14px}
+  .sidebar-auto-collapse .sb-session{display:grid}
+  .sidebar-auto-collapse #time-meta{display:block;padding-left:50px;white-space:nowrap}
+  .sidebar-auto-collapse .sb-session .sb-utility-row{display:grid;grid-template-columns:36px minmax(0,1fr);grid-template-rows:34px 34px;gap:6px 14px;align-items:center}
+  .sidebar-auto-collapse .sb-settings-btn{grid-column:1;grid-row:1;width:36px}
+  .sidebar-auto-collapse #refresh-btn{grid-column:1;grid-row:2;width:36px;padding:0}
+  .sidebar-auto-collapse .sb-company-state{display:flex;grid-column:2;grid-row:1}
+  .sidebar-auto-collapse .sb-item[data-key="notifications"]{grid-template-columns:25px minmax(0,1fr)}
+  .sidebar-auto-collapse .notification-badge{position:absolute;top:1px;left:30px;right:auto;min-width:16px;padding:1px 3px;font-size:9px}
+}
+.reduce-motion .sidebar{transition:none!important}
+@media(prefers-reduced-motion:reduce){.sidebar{transition:none!important}}

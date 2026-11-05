@@ -15,3 +15,4 @@
 .snapshot-toggle input{appearance:none;width:24px;height:14px;margin:0;border-radius:999px;background:var(--border);position:relative;cursor:pointer}
 .snapshot-toggle input::after{content:"";position:absolute;width:10px;height:10px;left:2px;top:2px;border-radius:50%;background:var(--text-muted);transition:transform 120ms ease}
 .snapshot-toggle input:checked{background:var(--green)}.snapshot-toggle input:checked::after{transform:translateX(10px);background:var(--on-accent)}.snapshot-toggle.on{border-color:var(--green);color:var(--text);background:var(--green-soft)}.snapshot-toggle:focus-within{outline:2px solid var(--link);outline-offset:2px}
+:root[data-theme] #snap-tabs .tab-btn.active { color:var(--success-text); }

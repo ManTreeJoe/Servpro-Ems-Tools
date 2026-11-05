@@ -305,7 +305,7 @@
           window.AuditDetail.openCopyPicsToXaModal(r, {});
         else setStatus("Stage-for-XA unavailable", "warn");
         break;
-      case "folder": await pywebview.api.open_od_for_client(r.client, r.path || ""); break;
+      case "folder": await pywebview.api.open_od_for_client(r.client, r.path || "", r.trello_card_id || ""); break;
       case "trello":
         if (r.trello_card_id) await pywebview.api.open_trello_card(r.trello_card_id);
         else setStatus("No Trello card pinned for this job", "warn");

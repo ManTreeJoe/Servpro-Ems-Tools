@@ -660,7 +660,8 @@ INITIAL_PAPERWORK_FORMS = ("Auth to Perform", "Customer Info Form",
 def is_initial_paperwork(filename) -> bool:
     """True when this file is one of the intake forms (ATP/CIF/CER/COS)."""
     name = str(filename or "")
-    if not name:
+    from form_file_evidence import is_document_candidate
+    if not name or not is_document_candidate(name):
         return False
     for label, pattern in REQUIRED_FORMS:
         if label in INITIAL_PAPERWORK_FORMS and                 re.search(pattern, name, re.IGNORECASE):
@@ -699,7 +700,7 @@ COMMERCIAL_FORM_NAMES = frozenset([
 # Additive, unlike COMMERCIAL_FORM_NAMES which removes forms — marking a
 # job self-pay makes the audit ask for MORE, not less.
 SELF_PAY_FORMS = [
-    ("Home Improvement Contract", r"home\s*improve|\bhic\b"),
+    ("Home Improvement Contract", r"home[ _-]*improv|\bhic\b|\blong[ _-]*form[ _-]*contract\b"),
     ("3 Day Right to Cancel",
      r"(3|three)\s*[- ]?\s*day|right\s*to\s*cancel|\brtc\b"),
 ]
@@ -1369,6 +1370,8 @@ def check_forms(ems_path, carrier=None):
                         pass
     except OSError:
         return [name for name, _pat in REQUIRED_FORMS]
+    from form_file_evidence import is_document_candidate
+    all_files = [name for name in all_files if is_document_candidate(name)]
     missing = []
     for form_name, pattern in REQUIRED_FORMS:
         if not any(re.search(pattern, fn, re.IGNORECASE) for fn in all_files):
@@ -2942,11 +2945,12 @@ def audit_jobs(client_names, audit_base, year=None, folder_path_lookup=None,
             if _ff:
                 misplaced_forms = [{"label": k, "where": v}
                                    for k, v in _ff.items()]
-                fi = [f for f in fi if f not in _ff]
+                # A matching filename in another job is only a review hint.
+                # It cannot establish ownership or satisfy this job's forms.
             if _pf:
                 misplaced_photos = [{"label": k, "where": v}
                                     for k, v in _pf.items()]
-                pi = [p for p in pi if p not in _pf]
+                # Likewise, another loss/unit's photos cannot satisfy this one.
 
         # Day-by-day photo requirements — cumulative list from the ledger
         # (recorded up-front above), each auto-satisfied when a photo

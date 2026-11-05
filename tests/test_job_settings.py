@@ -251,7 +251,8 @@ class _FakeDB:
     def get_job(self, _k): return self.job
     def get_links(self, _k, _t): return self.links
     def children_of(self, _k): return []
-    def upsert_job(self, **kw):
+    def update_job(self, key, **kw):
+        assert key == self.job['canon_key']
         self.job["metadata"] = kw.get("metadata") or {}
         return "k"
 

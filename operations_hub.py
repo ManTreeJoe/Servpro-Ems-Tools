@@ -301,7 +301,7 @@ class OperationsHub:
         if not client:
             return {"ok": False, "error": "This job has no client name."}
         if action == "folder":
-            return self._pipeline.open_job_folder(client, path)
+            return self._pipeline.open_job_folder(client, path, card_id)
         if action == "xa":
             opened = self._pipeline.open_xa_link(client, card_id)
             return {"ok": bool(opened), "error": "No XA link was found." if not opened else ""}

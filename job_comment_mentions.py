@@ -39,7 +39,7 @@ def card_members(card_id):
         return {'ok': False, 'members': [], 'error': 'OneLoss membership could not be verified. Retry before tagging the group.'}
     people = {row['username'].casefold(): row for row in result['members']}
     for row in local.get('members', []):
-        username = str(row.get('username') or '')
+        username = str(row.get('trello_username') or row.get('username') or '')
         if row.get('member') is True and re.fullmatch(r'[A-Za-z0-9_.-]+', username):
-            people.setdefault(username.casefold(), row)
+            people.setdefault(username.casefold(), {**row, 'username': username})
     return {'ok': True, 'members': sorted(people.values(), key=lambda row: row['username'].casefold())}

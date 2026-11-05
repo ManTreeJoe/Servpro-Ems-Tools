@@ -149,6 +149,8 @@
 <link rel="stylesheet" href="../web_shared/workspace_controls.css?v=20260910a" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
 <script src="../web_shared/text_context_menu.js?v=20260903a"></script>
+<link rel="stylesheet" href="responsive_layout.css?v=20261016" />
+<script src="layout.js" defer></script>
 </head>
 <body class="responsive-ui">
 <header class="topbar">
@@ -1995,7 +1997,11 @@ async function save() {
   if (res?.ok) {
     VALUES = {...VALUES, ...out};
     if (out.appearance) {
-      window.LinguarAppearance?.setPreference(out.appearance);
+      window.LinguarAppearance?.setPreference(out.appearance, {
+        system:window.LinguarAppearance?.current().system,
+        density:out.ui_density, reduce_motion:out.reduce_motion,
+        sidebar_auto_collapse:out.sidebar_auto_collapse
+      });
       await refreshAppearanceStatus(out.appearance);
     }
     await renderFirstRunWizard();

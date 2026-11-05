@@ -404,7 +404,7 @@ def _operational_group_rollup(lifecycle, transitions) -> dict[str, Any]:
     result["clock_quality"] = "estimated_from_stage_history"
     result["note"] = (
         "Existing history has total stage time. Controllable time becomes exact "
-        "as approved pause and handoff events are recorded in Linguar Hub."
+        "as approved pause and handoff events are recorded in OneLoss."
     )
     return result
 

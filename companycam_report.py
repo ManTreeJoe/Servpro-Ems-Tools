@@ -76,11 +76,13 @@ def plan(project_id: str, *, start_date: str = "", end_date: str = "",
             "captured_at": captured, "creator": raw.get("creator_name") or "",
             "description": _description(raw), "tags": tags,
         })
+    rows.sort(key=lambda row: row['captured_at'], reverse=True)
     start = max(0, int(offset or 0))
     page_size = max(1, min(int(limit or 120), 5000))
     page = rows[start:start + page_size]
     return {"ok": True, "project_id": str(project_id), "photos": page,
             "count": len(page), "total": len(rows), "offset": start,
+            "catalog": rows if start == 0 else None,
             "has_more": start + len(page) < len(rows)}
 
 

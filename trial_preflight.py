@@ -59,7 +59,7 @@ def main(argv=None):
     argv = sys.argv if argv is None else argv
     go_cloud = "--cloud" in argv
     print("=" * 68)
-    print("  Linguar Hub — shared database preflight")
+    print("  OneLoss — shared database preflight")
     print("=" * 68)
 
     import paths

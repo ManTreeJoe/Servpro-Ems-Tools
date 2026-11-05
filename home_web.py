@@ -43,7 +43,7 @@ _INSTANCE_MUTEX = None
 
 
 def _is_dev_runtime():
-    """True for a full source shell that reuses Main's real data safely."""
+    """True for a source Dev shell; its profile is selected before import."""
     return os.environ.get("LINGUAR_DEV_MODE", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
@@ -64,7 +64,7 @@ def _window_title():
     if channel == "Trial":
         return "OneLoss — TRIAL"
     if channel == "Dev":
-        return "OneLoss — DEV"
+        return "OneLoss — DEV · LIVE DATA" if os.environ.get('ONELOSS_DEV_LIVE') == '1' else "OneLoss — DEV"
     return "OneLoss"
 
 
@@ -169,19 +169,10 @@ NAV_GROUPS = [
         ("disputes",    "▤", "Billing & AR"),
         ("analytics",   "⌁", "Analytics"),
         ("resources",   "⌑", "Resources"),
+        ("snapshot",    "📸", "Snapshot Builder"),
     ]),
-    ("Job tools", [
-        ("apa",         "⌁", "APA Monitor"),
-        ("snapshot",    "◫", "Snapshot"),
-        ("photo_folders","📷", "Photo Folders"),
-        ("exceptions",  "⚠", "Exceptions"),
+    ("Activity", [
         ("notifications", "🔔", "Notifications"),
-        ("hygiene",     "⚠", "Hygiene"),
-        ("wc_audit",    "🗂", "WC Audit"),
-        ("spreadsheet", "📒", "Spreadsheets"),
-        ("job_notes",   "🗒", "Job Notes"),
-        ("multi_unit",  "🏢", "Multi-Unit"),
-        ("cheat_sheet", "📝", "Cheat Sheet"),
     ]),
     ("System", [
         ("automations", "⚡", "Automations"),
@@ -249,6 +240,14 @@ SUB_MODULES = {
     "resources":   "resources_web",
     "automations": "automations_web",
 }
+
+# Native boards are isolated from the live workspace until shared storage
+# and the migration/sync contract are ready.
+if _is_dev_runtime():
+    NAV_GROUPS.append(("Dev lab", [("native_boards", "▦", "New boards")]))
+    SUB_MODULES["native_boards"] = "native_boards_web"
+    NAV_GROUPS[-1][1].append(("job_reconciliation", "⇄", "Manage linked cards"))
+    SUB_MODULES["job_reconciliation"] = "job_reconciliation_web"
 
 
 class HomeApi:
@@ -375,9 +374,9 @@ class HomeApi:
         except Exception:
             return {"ok": False}
 
-    def report_app_error(self, panel='', message=''):
+    def report_app_error(self, panel='', message='', context=None):
         import app_error_reports
-        return {'ok': app_error_reports.report(panel, 'visible_error', message)}
+        return {'ok': app_error_reports.report(panel, 'visible_error', message, context)}
 
     def track_events(self, events: list) -> dict:
         """Shared privacy-safe usage sink for the shell and every panel.
@@ -739,7 +738,6 @@ class HomeApi:
     # The Workspace group is the stable product navigation. These legacy
     # panels remain available through Settings when an office needs them.
     _PANELS_HIDDEN_BY_DEFAULT = {
-        "snapshot",
         "photo_folders",
         "exceptions",
         "notifications",
@@ -753,7 +751,7 @@ class HomeApi:
     }
 
     def _is_panel_visible(self, key: str) -> bool:
-        if key == "settings":
+        if key in {"settings", "notifications"}:
             return True   # Settings is pinned in the sidebar — never hideable.
         try:
             import persistence as _per
@@ -775,7 +773,7 @@ class HomeApi:
         rows = []
         for (label, items) in NAV_GROUPS:
             for (k, ic, n) in items:
-                if k == "settings":
+                if k in {"settings", "notifications"}:
                     continue   # pinned — no visibility toggle
                 rows.append({
                     "key":     k,
@@ -790,8 +788,10 @@ class HomeApi:
     def set_panel_visibility(self, key: str, visible: bool) -> dict:
         if not key:
             return {"ok": False, "error": "key required"}
-        if key == "settings":
-            return {"ok": False, "error": "Settings is pinned and can't be hidden"}
+        if key in {"settings", "notifications"}:
+            return {"ok": False, "error": "This navigation item is pinned and can't be hidden"}
+        if key not in {k for _, items in NAV_GROUPS for k, _, _ in items}:
+            return {"ok": False, "error": "This tool is no longer in sidebar settings"}
         try:
             import persistence as _per
             if key in {'job_notes', 'photo_folders', 'spreadsheet'}:
@@ -1080,7 +1080,8 @@ class HomeApi:
                         departments = [d for d in departments
                                        if str(d.get("key") or "").upper() in allowed]
             except Exception:
-                pass
+                return {"ok": False, "enabled": False, "departments": [],
+                        "error": "Could not verify franchise access. Please retry before switching workspaces."}
             return {
                 "ok": True,
                 "enabled": bool(departments),
@@ -1106,6 +1107,9 @@ class HomeApi:
             if not key or key == cur:
                 return {"ok": True, "unchanged": True}
             state = self.department_state()
+            if not state.get("ok"):
+                return {"ok": False, "error": state.get("error") or
+                        "Could not verify franchise access. Please retry."}
             allowed = {str(d.get("key") or "") for d in
                        (state.get("departments") or [])}
             if key not in allowed:
@@ -1182,6 +1186,8 @@ def main(argv=None):
     import desktop_notifications
     desktop_alerts = desktop_notifications.install(api, _runtime_channel())
     win.events.loaded += desktop_alerts.start
+    import native_text_editing
+    win.events.loaded += lambda: native_text_editing.enable(win)
     try:
         import global_hotkey
         api._hotkey = global_hotkey.Manager(api.focus_window)
@@ -1200,6 +1206,8 @@ def main(argv=None):
         if _is_dev_runtime():
             from dev_http_port import available_port
             start_options['http_port'] = available_port()
+            if getattr(_paths, 'IS_DEV', False):
+                start_options['storage_path'] = _paths.data('webview')
         webview.start(debug=False, http_server=True, icon=taskbar_icon, **start_options)
     finally:
         desktop_alerts.stop()

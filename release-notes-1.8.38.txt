@@ -1,0 +1,11 @@
+OneLoss 1.8.38 — Job Log delivery hotfix
+
+- Restores pending Job Log comment delivery when the optional legacy shared queue is unavailable.
+- Starts background delivery immediately after a new Job Log is saved without making the editor wait.
+- Checks the saved entry's Trello acknowledgement before sending, preventing reposts after reviewed recovery.
+- Preserves held/uncertain deliveries and the base-office boundary.
+- Outbound Job Logs are attempted before unrelated Contents provisioning.
+
+Built from the exact 1.8.37 source snapshot with only the pipeline delivery hotfix.
+No database migration. Unfinished Dev interface/import changes are excluded.
+Validated with 51 focused automated tests. Native installed-app end-to-end validation remains pending.

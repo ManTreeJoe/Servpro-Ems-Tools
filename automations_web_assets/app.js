@@ -28,6 +28,6 @@ function summaryFor(r){
     "Flag overdue assigned work":"Notify the assigned person first, then escalate after the configured delay.",
     "Request division closeout":"Users request closeout; an admin confirms Closeout or Closed.",
     "Daily stalled-job review":"Create one weekday review of active jobs with no recent progress.",
-    "Mirror reviewed changes to Trello":"Mirror approved Linguar changes while Trello remains connected."
+    "Mirror reviewed changes to Trello":"Mirror approved OneLoss changes while Trello remains connected."
   }; return starter[r.name] || `${r.trigger_label} automation in review.`;
 }

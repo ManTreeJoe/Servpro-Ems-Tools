@@ -37,11 +37,12 @@
     let selected=options.date || iso(new Date()), records=[], mode='calendar', query='', loading=false, error='';
     let period=options.period || 'three', anchor=selected;
     let disposed=false, draggedId=null;
+    let waitingSection='all';
     const today=()=>options.today?.() || iso(new Date());
     date(selected);
     function matching(row) {
       return (!row.completed || options.includeCompleted) &&
-        [row.title,...(row.activities||[]).flatMap(a=>[a.label,...(a.people||[])])].join(' ').toLowerCase().includes(query.toLowerCase());
+        [row.title,row.address,...(row.activities||[]).flatMap(a=>[a.label,...(a.people||[])])].join(' ').toLowerCase().includes(query.toLowerCase());
     }
     function rows(day) { return records.filter(r=>r.queue==='scheduled' && r.date===day && matching(r)); }
     function range() {
@@ -54,13 +55,22 @@
       if(options.archive)return items.map(card).join('') || '<p class="wc-empty">No imported Run</p>';
       return ['Monitor','Work To Be Performed'].map(group=>{
         const entries=items.filter(r=>(r.group || 'Work To Be Performed')===group);
+        if(group==='Monitor'&&!entries.length)return '';
         return `<h3 class="wc-group-title">${group} <small>${entries.length}</small></h3>${entries.map(card).join('') || '<p class="wc-empty">None scheduled</p>'}`;
       }).join('');
     }
     function queues() {
       if(options.archive)return '';
       const groups=[['tbs','TBS New Loss /Reinspection'],['tbs','TBS Mitigation'],['tbs','TBS Contents'],['pending','Pending Testing/Clearance/Abatement'],['pending','Pending Approvals – Insurance/Self Pay'],['pending','Pending Approvals – Property Management'],['hold','On Hold']];
-      return `<section class="wc-waiting"><h2>Waiting work</h2><p>Not booked on a day · grouped like the Run</p><div class="wc-waiting-grid" tabindex="0" aria-label="Waiting work groups">${groups.map(([queue,title])=>{
+      const fallback={tbs:'TBS Mitigation',pending:'Pending Approvals – Insurance/Self Pay',hold:'On Hold'};
+      const choices=[['all','All waiting work'],['tbs','To be scheduled'],['pending','Pending approvals / testing'],['hold','On Hold'],...groups.filter(([q])=>q!=='hold').map(([,title])=>[title,title])];
+      const inSection=(row,value)=>row.queue!=='scheduled' && (value==='all'||row.queue===value||(row.group||fallback[row.queue])===value);
+      const count=value=>records.filter(r=>inSection(r,value)&&matching(r)).length;
+      const visibleGroups=groups.filter(([queue,title])=>waitingSection==='all'||queue===waitingSection||title===waitingSection);
+      return `<section class="wc-waiting"><h2>Waiting work</h2>
+        <label class="wc-waiting-filter">Section<select data-waiting-section aria-label="Waiting work section">${choices.map(([value,title])=>`<option value="${escape(value)}" ${waitingSection===value?'selected':''}>${escape(title)} (${count(value)})</option>`).join('')}</select></label>
+        ${waitingSection!=='all'?'<button type="button" class="btn" data-clear-waiting>Show all waiting work</button>':''}
+        <div class="wc-waiting-grid" tabindex="0" aria-label="Waiting work groups">${visibleGroups.map(([queue,title])=>{
         const fallback={tbs:'TBS Mitigation',pending:'Pending Approvals – Insurance/Self Pay',hold:'On Hold'};
         const entries=records.filter(r=>r.queue===queue && (r.group||fallback[queue])===title && matching(r));
         return `<section class="wc-waiting-group" data-drop-date="" data-drop-queue="${queue}" data-drop-group="${escape(title)}"><h3>${escape(title)} <small>${entries.length}</small></h3><div class="wc-queue-scroll" data-drop-list tabindex="0" aria-label="${escape(title)} items">${entries.map(card).join('')||'<p class="wc-empty">Drop work here</p>'}</div></section>`;
@@ -75,10 +85,9 @@
       return `<button type="button" class="wc-visit" data-color="${color}" data-edit="${escape(row.id)}" draggable="${Boolean(options.onSchedule)}" ${options.onEdit ? '' : 'disabled'}>
         ${row.time || row.canceled || row.completed ? `<span class="wc-time">${escape([row.time,row.canceled?'Canceled — needs rescheduling':row.completed?'Complete':''].filter(Boolean).join(' · '))}</span>` : ''}
         <strong>${escape(row.title)}</strong>
-        ${typeof row.confirmed==='boolean'&&row.queue==='scheduled'?`<small>${row.confirmed?'Confirmed':'Draft'}</small>`:''}
-        ${row.needs_link?'<small class="wc-needs-link">Needs link</small>':row.trello_cards?.length?'<small>Trello linked</small>':''}
+        ${row.address?`<small>${escape(row.address)}</small>`:''}
+        ${row.needs_link?'<small class="wc-needs-link">Needs link</small>':''}
         ${(row.activities||[]).map(a=>`<span><span class="wc-activity" data-color="${activityColor(a.label)}">${escape(a.label)}</span>${a.people?.length ? `<small>${escape(a.people.join(', '))}</small>` : ''}</span>`).join('')}
-        ${row.since && row.queue!=='scheduled' ? `<small>Since ${escape(displayDate(row.since))}</small>` : ''}
       </button>`;
     }
     function dayColumn(day) {
@@ -107,7 +116,6 @@
       <div class="wc-content" aria-busy="${loading}">${loading?'<p role="status">Loading schedule…</p>':error?`<p role="alert">${escape(error)}</p>${options.onRetry?'<button type="button" class="btn" data-retry>Retry</button>':''}`:mode==='calendar'?`<div class="wc-week">${days.map(dayColumn).join('')}</div>`:mode==='legacy'?`<section class="wc-legacy"><header><h2>${escape(label(selected))} — Daily Run</h2><p>Same visits as the calendar</p></header>${rows(selected).map(card).join('') || '<p class="wc-empty">No scheduled work for this day.</p>'}${options.onAdd?`<button type="button" class="btn" data-add="${selected}">+ Add work</button>`:''}</section>`:`<section class="wc-queue" aria-label="${mode==='tbs'?'To be scheduled':'Pending'}">${queueRecords.map(card).join('') || '<p class="wc-empty">No matching items.</p>'}</section>`}</div>`;
       host.querySelector('.wc-filters button[data-mode="calendar"]')?.replaceChildren(document.createTextNode('Scheduled'));
       const toolbar=host.querySelector('.wc-toolbar');
-      toolbar.insertAdjacentHTML('afterend','<div class="wc-color-key" aria-label="Schedule color key">'+[['monitor','Monitor'],['initial','Initial inspection'],['reinspection','Reinspection'],['review','Work to be reviewed'],['demo','Demo'],['contents','Contents'],['equipment','Equipment'],['pending','Pending'],['hold','On hold'],['canceled','Canceled']].map(([key,label])=>`<span data-color="${key}">${label}</span>`).join('')+'</div>');
       const dropdown=document.createElement('details'); dropdown.className='wc-filter-menu';
       dropdown.innerHTML='<summary class="btn">Filters</summary><div class="wc-filter-popover"><strong>View</strong></div>';
       const popup=dropdown.querySelector('.wc-filter-popover');
@@ -164,8 +172,10 @@
       else if (button.dataset.edit) options.onEdit?.(button.dataset.edit);
       else if (button.dataset.add) options.onAdd?.(button.dataset.add);
       else if (button.hasAttribute('data-retry')) options.onRetry?.();
+      else if (button.hasAttribute('data-clear-waiting')) { waitingSection='all';render('[data-waiting-section]'); }
     }
     function change(event) {
+      if(event.target.hasAttribute('data-waiting-section')) { waitingSection=event.target.value;render('[data-waiting-section]');return; }
       if(event.target.hasAttribute('data-date')) {
         try { const next=parseDate(event.target.value);event.target.setCustomValidity('');select(next);host.querySelector('[data-date]')?.focus(); }
         catch { event.target.setCustomValidity('Enter a valid date as MM/DD/YY.');event.target.reportValidity(); }

@@ -2,6 +2,20 @@
 window.AuditCommentLinks=(()=>{
  const el=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n;};
  const date=iso=>window.AuditFieldControls.date(iso);
+ const isoDay=value=>window.AuditFieldControls.isoDate(date(value));
+ function noteSuggestion(text){
+  const clean=String(text||'').replace(/\*/g,'');
+  const days=[...clean.matchAll(/\b(?:(\d{1,2})[\/-](\d{1,2})[\/-](\d{4}|\d{2})|(\d{4})-(\d{2})-(\d{2}))\b/g)].map(m=>m[4]?`${m[4]}-${m[5]}-${m[6]}`:`${m[3].length===2?'20'+m[3]:m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`).filter(d=>isoDay(d));
+  const times=[...clean.matchAll(/\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\b|\b([01]\d|2[0-3]):([0-5]\d)\b(?!\s*(?:AM|PM))/gi)].map(m=>{
+   if(m[4])return `${m[4]}:${m[5]}`;
+   if(+m[1]<1||+m[1]>12||+(m[2]||0)>59)return '';
+   return `${String(+m[1]%12+(m[3].toUpperCase()==='PM'?12:0)).padStart(2,'0')}:${m[2]||'00'}`;
+  }).filter(Boolean);
+  const unique=[...new Set(days)],hours=[...new Set(times)];
+  // A range is not an exact event time; do not silently choose its endpoint.
+  const range=/\b\d{1,2}(?::\d{2})?\s*(?:AM|PM)?\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM)\b/i.test(clean);
+  return {day:unique.length===1?unique[0]:'',time:hours.length===1&&!range?hours[0]:'',ambiguous:unique.length>1||hours.length>1||range};
+ }
  function inspectionSuggestion(text){
   const clean=String(text||'').replace(/\*/g,'');
   const dates=[...clean.matchAll(/(?:inspection (?:performed|date)|(?:^|\n)\s*date)\s*:?\s*(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})\b/gi)];
@@ -32,47 +46,51 @@ window.AuditCommentLinks=(()=>{
   const form=el('form'),label=el('label','Audit item'),choice=el('select');choice.setAttribute('aria-label','Audit item');
   for(const [key,[name]] of Object.entries(state.targets))choice.add(new Option(name,key));choice.value=target;label.append(choice);
   const help=el('p'),fields=el('div'),error=el('p');error.setAttribute('role','alert');
-  const day=el('input');day.placeholder='MM/DD/YYYY';day.setAttribute('aria-label','Event date');day.inputMode='numeric';
+  const day=el('input');day.type='date';day.setAttribute('aria-label','Event date');
   const time=el('input');time.type='time';time.setAttribute('aria-label','Event time');
   const zone=el('select');zone.setAttribute('aria-label','Event timezone');
   for(const [v,t] of [['Pacific','Pacific (automatic)'],['-07:00','PDT'],['-08:00','PST']])zone.add(new Option(t,v));
-  const dayLabel=el('label','Event date (MM/DD/YYYY)');dayLabel.append(day);const timeLabel=el('label','Time');timeLabel.append(time);const zoneLabel=el('label','Timezone');zoneLabel.append(zone);
+  const dayLabel=el('label','Event date');dayLabel.append(day);const timeLabel=el('label','Time');timeLabel.append(time);const zoneLabel=el('label','Timezone');zoneLabel.append(zone);
   fields.append(dayLabel,timeLabel,zoneLabel);
   const inspectionBox=el('fieldset'),inspectionLegend=el('legend','Inspection performed — from the note');
   const inspectionDay=el('input'),inspectionTime=el('input'),confirmed=el('input');
-  inspectionDay.placeholder='MM/DD/YYYY';inspectionDay.setAttribute('aria-label','Inspection date');
+  inspectionDay.type='date';inspectionDay.setAttribute('aria-label','Inspection date');
   inspectionTime.type='time';inspectionTime.setAttribute('aria-label','Inspection time');confirmed.type='checkbox';
   const confirmation=el('label','Save this confirmed inspection time (Pacific)');confirmation.prepend(confirmed);
   const suggestion=inspectionSuggestion(comment.text),savedInspection=state.links.items.inspection_at;
   const savedParts=savedInspection?.comment_id===comment.id?window.AuditFieldControls.pacificParts(savedInspection.value):null;
-  inspectionDay.value=savedParts?date(savedParts.day):suggestion.day;inspectionTime.value=savedParts?savedParts.time:suggestion.time;
+  inspectionDay.value=savedParts?savedParts.day:window.AuditFieldControls.isoDate(suggestion.day);inspectionTime.value=savedParts?savedParts.time:suggestion.time;
   inspectionBox.append(inspectionLegend,el('p','Suggested from the note, not its posting timestamp. Confirm the date, year, and AM/PM. Blank fields need your input.'),inspectionDay,inspectionTime,confirmation);
   let originalValue='',originalControls='';
   function fill(){const timestamp=state.targets[choice.value][1]==='timestamp';
-   const posting=['field_note_posted_at','initial_note_sent_at'].includes(choice.value);
+   const posting=['field_note_posted_at','initial_note_sent_at','incoming_loss_at','insured_contacted_at'].includes(choice.value);
    const value=(choice.value===target&&linked?existing.value:timestamp&&posting?comment.date:'')||'';
    const p=window.AuditFieldControls.pacificParts(value);
-   day.value=p.day?date(p.day):'';time.value=p.time;zone.value=p.zone;
+   const suggested=noteSuggestion(comment.text);
+   day.value=p.day||(!posting?suggested.day:'');time.value=p.time||(!posting?suggested.time:'');zone.value=p.zone;
    originalValue=value;originalControls=JSON.stringify([day.value,time.value,zone.value]);
    timeLabel.hidden=zoneLabel.hidden=!timestamp;
    help.textContent=timestamp?'Uses this comment’s posting time. Verify that this is the correct note; you may correct the time below.':'Confirm when the work or billing actually happened—not when this comment was posted.';
    inspectionBox.hidden=choice.value!=='field_note_posted_at';
-   if(choice.value==='field_note_posted_at')dayLabel.firstChild.textContent='Field note posted — date (MM/DD/YYYY)';
-   else dayLabel.firstChild.textContent='Event date (MM/DD/YYYY)';
+   if(choice.value==='field_note_posted_at')dayLabel.firstChild.textContent='Field note posted — date';
+   else dayLabel.firstChild.textContent='Event date';
    if(choice.value==='inspection_at')help.textContent='Enter when the inspection was performed, as written in the note—not when the comment was posted.';
-   if(['incoming_loss_at','insured_contacted_at','on_site_at'].includes(choice.value))help.textContent='Confirm the actual event date and time from the evidence. The comment posting time is not substituted.';
+   if(choice.value==='on_site_at')help.textContent='Confirm the actual event date and time from the evidence. The comment posting time is not substituted.';
+   if(posting)help.textContent=value?'From comment timestamp (Pacific). Confirm this matches the event; you can edit the date and time before saving.':'Comment timestamp unavailable. Enter and confirm the date and time before saving.';
+   if(choice.value===target&&linked)help.textContent='Previously saved audit time. Review or edit the date and time before saving.';
+   if(!posting&&!value)help.textContent=(suggested.day||suggested.time?'Prefilled from the note. Confirm this is the date and time for the selected audit item. ':'No clear date or time found in the note. ')+(suggested.ambiguous?'Multiple dates/times or a time range need your review. ':'')+'Fill any blanks; the posting time is not substituted.';
   }choice.onchange=fill;fill();
   const actions=el('div'),save=el('button','Save link'),cancel=el('button','Cancel');save.type='submit';cancel.type='button';cancel.onclick=()=>dialog.close();actions.append(cancel,save);
   const remove=el('button','Unlink');remove.type='button';if(linked)actions.prepend(remove);
   let busy=false;
   async function submit(unlink){if(busy)return;error.textContent='';
-   const iso=window.AuditFieldControls.isoDate(day.value),timestamp=state.targets[choice.value][1]==='timestamp';
+   const iso=isoDay(day.value),timestamp=state.targets[choice.value][1]==='timestamp';
    const unchanged=originalControls===JSON.stringify([day.value,time.value,zone.value]);
-   const value=timestamp&&unchanged?originalValue:timestamp&&iso&&time.value?window.AuditFieldControls.timestamp(iso,time.value,zone.value):timestamp?'':iso;
-   if(!unlink&&!value){error.textContent='Enter a valid MM/DD/YYYY date and, for note times, a time and timezone.';return;}
+   const value=timestamp&&unchanged&&originalValue?originalValue:timestamp&&iso&&time.value?window.AuditFieldControls.timestamp(iso,time.value,zone.value):timestamp?'':iso;
+   if(!unlink&&!value){error.textContent=!iso?'Choose a valid event date.':!time.value?'Enter the event time.':'This time is ambiguous or invalid for the timezone. Confirm the time and choose PDT or PST if needed.';return;}
    let inspection;
    if(!unlink&&choice.value==='field_note_posted_at'&&confirmed.checked){
-    const d=window.AuditFieldControls.isoDate(inspectionDay.value);
+    const d=isoDay(inspectionDay.value);
     inspection=d&&inspectionTime.value?window.AuditFieldControls.timestamp(d,inspectionTime.value,'Pacific'):'';
     if(!inspection){error.textContent='Confirm a valid inspection date and time in Pacific time.';return;}
    }
@@ -87,7 +105,14 @@ window.AuditCommentLinks=(()=>{
   dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});dialog.addEventListener('close',()=>dialog.remove());
   form.append(label,help,fields,inspectionBox,error,actions);dialog.append(heading,excerpt,form);document.body.append(dialog);dialog.showModal();
  }
- async function menu(event,context){
+ function menu(event,context){
+  // Editing a draft is never an audit-link operation, even inside a comment row.
+  if(event.target.isContentEditable || event.target.closest('input,textarea,[contenteditable="true"],[contenteditable=""],[contenteditable="plaintext-only"]'))return;
+  if(window.TextContextMenu){
+   window.TextContextMenu.show(event,[['Link to audit',true,()=>auditMenu(event,context)]]);
+  }else void auditMenu(event,context);
+ }
+ async function auditMenu(event,context){
   event.preventDefault();event.stopPropagation();
   document.querySelector('.audit-link-menu')?.remove();
   const box=el('div');box.className='audit-link-menu';box.setAttribute('role','menu');box.append(el('small','Link to audit…'));
@@ -113,7 +138,7 @@ window.AuditCommentLinks=(()=>{
    else if(!pending.has(c.card)){pending.add(c.card);request(c.card).then(r=>{states.set(c.card,r);paint();}).catch(()=>{});}
   }}
   const observer=new MutationObserver(()=>paint());observer.observe(host,{childList:true,subtree:true});paint();
-  host.addEventListener('contextmenu',e=>{const context=resolve(e.target);if(context?.card&&context.comment?.id)void menu(e,{...context,onChange:(links,targets)=>{states.set(context.card,{links,targets});paint();onChange?.(links,targets);}});});
+  host.addEventListener('contextmenu',e=>{if(e.target.isContentEditable || e.target.closest('input,textarea,[contenteditable="true"],[contenteditable=""],[contenteditable="plaintext-only"]'))return;const context=resolve(e.target);if(context?.card&&context.comment?.id)void menu(e,{...context,onChange:(links,targets)=>{states.set(context.card,{links,targets});paint();onChange?.(links,targets);}});});
  }
  function protectForm(form,links){for(const [key,link] of Object.entries(links?.items||{})){
   const input=form.elements[key];if(!input)continue;
@@ -122,5 +147,5 @@ window.AuditCommentLinks=(()=>{
   group.querySelector('[data-link-explanation]')?.remove();
   if(link){const note=el('small','Linked comment · right-click that comment to edit or unlink this date.');note.dataset.linkExplanation='';group.append(note);}
  }}
- return {bind,menu,badge,protectForm,inspectionSuggestion};
+ return {bind,menu,badge,protectForm,inspectionSuggestion,noteSuggestion};
 })();

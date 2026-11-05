@@ -644,6 +644,8 @@ def upsert_job(*, display_name: str,
                 department: str = "",
                 metadata: dict | None = None,
                 clear_fields=(),
+                _existing_key: str = "",
+                _expected_job_id: str = "",
                 **crm) -> str:
     """Insert or update a job, keyed on `canon_key(display_name)`.
 
@@ -676,7 +678,7 @@ def upsert_job(*, display_name: str,
     })
     for col in clear_fields:
         supplied[col] = ''
-    key = canon_key(display_name)
+    key = _existing_key or canon_key(display_name)
     if not key:
         raise ValueError("display_name must canonicalize to a non-empty key")
     now = _now_iso()
@@ -695,6 +697,10 @@ def upsert_job(*, display_name: str,
     with _LOCK, _connect() as c:
         existing = c.execute(
             "SELECT * FROM jobs WHERE canon_key = ?", (key,)).fetchone()
+        if _existing_key and existing is None:
+            raise ValueError('Saved job no longer exists. Reopen it before editing; no replacement was created.')
+        if _expected_job_id and existing is not None and existing['job_id'] != _expected_job_id:
+            raise ValueError('Saved job identity changed. No replacement was created or modified.')
         if existing is None:
             created = True
             cols = ["canon_key", "display_name", "job_id",
@@ -1211,19 +1217,17 @@ def find_job_by_name(name: str, *, department: str = "") -> dict | None:
         row = c.execute(
             "SELECT * FROM jobs WHERE canon_key=?", (key,)).fetchone()
         if row is None:
-            # Oldest alias wins. `add_alias` now refuses to create a
-            # second claimant, but rows predating that guard are still
-            # in the DB — and a bare LIMIT 1 resolved them on rowid
-            # order, i.e. differently depending on insert history. The
-            # earliest mapping is the one recorded before any later
-            # fuzzy matcher guessed at the same name.
-            row = c.execute("""
-                SELECT j.* FROM jobs j
+            # Historical conflicting aliases require review, never the oldest.
+            aliases = c.execute("""
+                SELECT DISTINCT j.* FROM jobs j
                 JOIN job_aliases a ON a.canon_key = j.canon_key
                 WHERE a.alias_canon = ?
                 ORDER BY a.added_at ASC, a.canon_key ASC
-                LIMIT 1
-            """, (key,)).fetchone()
+                LIMIT 2
+            """, (key,)).fetchall()
+            if len(aliases) > 1:
+                raise ValueError('This name is an alias of multiple jobs. Use an exact reference or reconcile it.')
+            row = aliases[0] if aliases else None
             # An alias that TRUNCATES the job's name claims every sibling.
             # No answer beats the wrong job: callers treat None as "not
             # known yet" and ask. See truncation_alias_is_ambiguous.
@@ -1362,6 +1366,22 @@ def carriers_for(names) -> dict:
                 for orig in wanted.get(r["alias_canon"], ()):
                     out.setdefault(orig, (r["carrier"] or "").strip())
     return out
+
+
+def update_job(canon_key_value: str, *, expected_job_id='', **changes) -> str:
+    """Update an existing identity without deriving its key from its title."""
+    if not canon_key_value or {'_existing_key', '_expected_job_id'} & changes.keys():
+        raise ValueError('An existing job key is required')
+    display_name = changes.pop('display_name', '')
+    if display_name and display_name.strip():
+        prior = get_job(canon_key_value)
+        if prior is None:
+            raise ValueError('Saved job no longer exists. Reopen it before editing; no replacement was created.')
+        metadata = dict(changes.get('metadata') or prior.get('metadata') or {})
+        metadata['display_name_override'] = display_name.strip()
+        changes['metadata'] = metadata
+    return upsert_job(display_name=display_name,
+                      _existing_key=canon_key_value, _expected_job_id=expected_job_id, **changes)
 
 
 def get_job(canon_key_value: str) -> dict | None:
@@ -1744,24 +1764,45 @@ def _is_primary_job_key(key: str) -> bool:
         ).fetchone() is not None
 
 
-def find_job_by_link(link_type: str, link_value: str) -> dict | None:
+def _find_job_by_link(link_type: str, link_value: str, *, cross_division=False) -> dict | None:
     """Reverse lookup: the job that owns a given external reference (OD
     folder / Trello card / CompanyCam project). This is what proves two
     different name spellings are the same job. Returns the job dict or None."""
     nv = _norm_link(link_type, link_value)
     if not (link_type and nv):
         return None
+    from ems_db_common import identity_link_types
+    kinds = identity_link_types(link_type) if cross_division else (link_type,)
     with _LOCK, _connect() as c:
         row = c.execute("""
-            SELECT j.* FROM jobs j
+            SELECT DISTINCT j.* FROM jobs j
             JOIN job_links l ON l.canon_key = j.canon_key
-            WHERE l.link_type=? AND l.link_value=?
+            WHERE l.link_type IN ({}) AND l.link_value=?
             ORDER BY l.added_at ASC
             LIMIT 2
-        """, (link_type, nv)).fetchall()
+        """.format(','.join('?' for _ in kinds)), (*kinds, nv)).fetchall()
     if len(row) > 1:
         raise ValueError('This reference is linked to multiple jobs. Reconcile the links before editing.')
     return _row_to_dict(row[0]) if row else None
+
+
+def find_job_by_link(link_type, link_value):
+    return _find_job_by_link(link_type, link_value)
+
+
+def find_job_by_reference(link_type, link_value):
+    return _find_job_by_link(link_type, link_value, cross_division=True)
+
+
+def resolve_existing_job(name='', **references):
+    from ems_db_common import _resolve_existing_job
+    return _resolve_existing_job(find_job_by_reference, find_job_by_name, name, **references)
+
+
+def assert_link_owner(canon_key_value, link_type, link_value):
+    owner = find_job_by_reference(link_type, link_value)
+    if owner and owner['canon_key'] != canon_key_value:
+        raise ValueError('This reference already belongs to another job. Reconcile it before changing pins.')
 
 
 def resolve_and_link(name: str = "", *, folder_path: str = "",
@@ -1801,12 +1842,15 @@ def resolve_and_link(name: str = "", *, folder_path: str = "",
               (LINK_COMPANYCAM, companycam_project)]
     incoming_dept = department_for_path(folder_path) if folder_path else None
 
-    job = None
-    for lt, lv in strong:            # strong links prove identity first
+    owners = {}
+    for lt, lv in strong:            # all strong links must agree
         if lv:
-            job = find_job_by_link(lt, lv)
-            if job:
-                break
+            owner = find_job_by_reference(lt, lv)
+            if owner:
+                owners[owner['canon_key']] = owner
+    if len(owners) > 1:
+        raise ValueError('These references belong to different jobs. Reconcile them before linking.')
+    job = next(iter(owners.values()), None)
     if job is not None and strict_department and _department_conflict(
             job, incoming_dept):
         # The folder itself already belongs to a job owned by the other
@@ -2415,11 +2459,23 @@ def sync_from_trello(*, exclude_quality: bool = True,
     b_total = found["boards"]
     cards_total = jobs_upserted = links_added = 0
 
+    confirmed = {}
+    def owner_for(value):
+        owner = find_job_by_reference(LINK_TRELLO, value)
+        if owner:
+            previous = confirmed.get(owner['canon_key'])
+            if previous and previous['job_id'] != owner['job_id']:
+                raise ValueError('A linked job changed during sync. Retry without creating a replacement.')
+            confirmed[owner['canon_key']] = owner
+            return owner['canon_key']
+    _walk.resolve_against_link_owners(found['records'], owner_for)
+
     # Point a card at the job it already belongs to when the index holds
     # the other spelling — otherwise "Knudsen, Seth - Mercury" makes a
     # second job for the "Seth Knudsen" the audit is already reading.
     _walk.resolve_against_existing(
-        found["records"], lambda k: get_job(k) is not None)
+        [rec for rec in found['records'] if not rec.get('_linked_identity')],
+        lambda k: get_job(k) is not None)
 
     job_records = _walk.collapse_records(found["records"])
     for rec in job_records:
@@ -2432,8 +2488,11 @@ def sync_from_trello(*, exclude_quality: bool = True,
         cols = dict(rec.get("columns") or {})
         cols.pop("claim_number", None)
         cols.pop("carrier", None)
+        prior = confirmed.get(key) or get_job(key)
+        identity = {'_existing_key': key, '_expected_job_id': prior['job_id']} if prior else {}
         upsert_job(
-            display_name=rec["display_name"],
+            **identity,
+            display_name=_walk.sync_display_name(prior, rec["display_name"]),
             claim_number=rec["claim_number"],
             carrier=rec["carrier"],
             status=rec["status"],

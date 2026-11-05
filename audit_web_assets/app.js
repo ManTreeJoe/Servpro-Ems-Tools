@@ -3546,9 +3546,7 @@ function renderAuditCandidates(host, cands, typed, widened) {
       <span class="suggest-name">${escapeHtml(titleCase(c.label || c.name))}</span>
       ${c.detail ? `<span class="suggest-dept">${escapeHtml(c.detail)}</span>` : ""}
       ${(!c.has_card && !c.path) ? `<span class="suggest-why">no folder/card</span>` : ""}
-      ${c.mergeable ? `<button class="btn sg-merge" data-i="${i}"
-          style="font-size:10px;padding:2px 8px;flex:none;"
-          title="Fold ${c.variants.length} duplicate spellings into one job">🔗 ${c.variants.length}</button>` : ""}
+      ${c.mergeable ? `<span class="suggest-why" title="Name variants are suggestions; review saved jobs in Job Management before merging">${c.variants.length} names</span>` : ""}
     </div>`).join("");
   // Widen only while we're still on the current year.
   const moreRow = !widened
@@ -3569,7 +3567,6 @@ function renderAuditCandidates(host, cands, typed, widened) {
   bindSuggestKeys(host);
   host.querySelectorAll(".sg-cand").forEach((el) => {
     el.addEventListener("click", (ev) => {
-      if (ev.target.closest(".sg-merge")) return;   // merge handled below
       const c = cands[+el.dataset.i];
       // Same reasoning as the scan button: an async handler that throws
       // here reaches nothing at all, so the row just looks dead.
@@ -3580,22 +3577,6 @@ function renderAuditCandidates(host, cands, typed, widened) {
       } catch (ex) {
         setStatus(`Audit failed: ${ex}`, "error");
       }
-    });
-  });
-  host.querySelectorAll(".sg-merge").forEach((el) => {
-    el.addEventListener("click", async (ev) => {
-      ev.stopPropagation();
-      const c = cands[+el.dataset.i];
-      host.innerHTML = `<div class="suggest-empty">Merging ${c.variants.length} spellings into ${escapeHtml(c.name)}…</div>`;
-      let res;
-      try { res = await pywebview.api.merge_candidates(c.name, c.variants); }
-      catch (ex) { res = { ok: false, error: String(ex) }; }
-      if (!res?.ok) {
-        host.innerHTML = `<div class="suggest-empty">Merge failed: ${escapeHtml(res?.error || "?")}</div>`;
-        return;
-      }
-      setStatus(`🔗 Merged ${res.dropped} duplicate${res.dropped === 1 ? "" : "s"} into ${c.name}`, "ok");
-      runDeepPicker(typed, widened ? "all" : "");   // re-list — dupes gone
     });
   });
   host.querySelector(".sg-more")?.addEventListener("click",
@@ -5890,6 +5871,8 @@ function openNewLossModal() {
     }
     const btn = $$("#nl-create");
     btn.disabled = true;
+    fields.client_choice = await window.IntakeClient.choose(fields);
+    if (!fields.client_choice) { btn.disabled = false; return; }
     $$("#nl-status").textContent = "Creating folder, Trello card, and CompanyCam project…";
     const res = await pywebview.api.create_new_loss(
       fields,

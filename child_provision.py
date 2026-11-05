@@ -259,11 +259,11 @@ def apply_child(parent_key, child_name, *, card_id="", project_id="",
             import companycam_api as cc
             title = f"{plan['parent']['display_name']} - {name}"
             proj = cc.create_project(title)
-            pid = str((proj or {}).get("id") or "")
+            pid = str(((proj or {}).get("project") or {}).get("id") or "") if (proj or {}).get('ok') else ''
             steps["project"] = ({"ok": True, "action": "created", "id": pid}
                                 if pid else
                                 {"ok": False, "action": "create",
-                                 "error": "no id returned"})
+                                 "error": (proj or {}).get('error') or "no id returned"})
         except Exception as ex:
             steps["project"] = {"ok": False, "action": "create",
                                 "error": f"{type(ex).__name__}: {ex}"}

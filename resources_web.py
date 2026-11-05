@@ -21,12 +21,23 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 import resources_index as ri          # noqa: E402
+from job_forms import JobFormsApi
+from form_builder import FormBuilderApi
 
 ASSETS_DIR = os.path.join(_HERE, "resources_web_assets")
 INDEX_HTML = os.path.join(ASSETS_DIR, "index.html")
 
+from webview.http import BottleServer
 
-class Api:
+
+class ResourcesServer(BottleServer):
+    @classmethod
+    def start_server(cls, urls, http_port, **kwargs):
+        # Include the app directory when computing the common serving root.
+        return super().start_server([*urls, _HERE], http_port, **kwargs)
+
+
+class Api(JobFormsApi, FormBuilderApi):
     def __init__(self):
         self._window = None
         self._building = False
@@ -35,6 +46,14 @@ class Api:
         self._window = w
 
     # ── reading ──────────────────────────────────────────────────────
+    def forms_library(self):
+        rows = []
+        import form_builder
+        rows.extend(dict(id=r['id'],title=r['title'],available=True,group='Custom · this computer',
+                         note='Mapped PDF · edit its field positions with Build fields',path='',custom=True)
+                    for r in form_builder.listing())
+        return {'ok': True, 'rows': rows}
+
     def stats(self) -> dict:
         try:
             s = ri.stats()
@@ -156,10 +175,12 @@ def main(argv=None):
     api = Api()
     win = webview.create_window(
         title="📚 Resources — OneLoss",
+        # Serve from the app root so shared CSS/JS siblings are reachable.
+        # A file:// window cannot reliably load versioned assets in WebView2.
         url=INDEX_HTML, js_api=api,
         width=1180, height=860, min_size=(760, 520))
     api.attach(win)
-    webview.start(debug=False)
+    webview.start(debug=False, http_server=True, server=ResourcesServer)
 
 
 if __name__ == "__main__":

@@ -54,10 +54,20 @@
   --font-utility:var(--font-body);
   --on-accent:   #FFFFFF;
   --scrim:       rgba(5,8,7,.72);
+  --success-text:#94D4AD;
+  --focus-ring:  #9CC7EF;
+  --danger:      var(--red);
+  --danger-text: #ECA58E;
+  --accent:      var(--link);
 }
 
 /* Warm field-paper light mode: the same green/amber operations language,
  * without turning the app into a featureless white admin template. */
+:root[data-theme="dark"] {
+  /* Legacy per-panel theme copies may retain their surface palette, but
+     secondary labels must not fall back to the old low-contrast gray. */
+  --text:#F2F4F7; --text-muted:#C0C6CE; --text-dim:#AAB3BF;
+}
 :root[data-theme="light"] {
   color-scheme: light;
   --bg:           #F5F7F4;
@@ -65,17 +75,17 @@
   --surface-2:    #EEF2EF;
   --surface-3:    #E1E8E3;
   --border:       #DFE5E0;
-  --border-strong:#A9B9AF;
+  --border-strong:#718278;
   --text:         #152821;
-  --text-muted:   #68766F;
-  --text-dim:     #829087;
+  --text-muted:   #4C5E54;
+  --text-dim:     #53635B;
   --green:        #164F3D;
   --green-hover:  #0E3D2E;
   --green-dark:   #102F26;
   --green-soft:   rgba(22,79,61,.10);
-  --amber:        #BF8A29;
+  --amber:        #805600;
   --amber-soft:   rgba(191,138,41,.12);
-  --red:          #B85438;
+  --red:          #A83E2B;
   --red-soft:     rgba(184,84,56,.10);
   --link:         #3D668F;
   --cobalt:       #3D668F;
@@ -96,19 +106,24 @@
   --shadow-1:     0 1px 2px rgba(21,40,33,.08), 0 14px 34px rgba(21,40,33,.08);
   --on-accent:    #FFFFFF;
   --scrim:        rgba(31,43,36,.34);
+  --success-text:#246342;
+  --focus-ring:  #215B91;
+  --danger-text: var(--red);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
     --bg:#F5F7F4;--surface:#FFFFFF;--surface-2:#EEF2EF;--surface-3:#E1E8E3;
-    --border:#DFE5E0;--border-strong:#A9B9AF;--text:#152821;
-    --text-muted:#68766F;--text-dim:#829087;--green:#164F3D;
+    --border:#DFE5E0;--border-strong:#718278;--text:#152821;
+    --text-muted:#4C5E54;--text-dim:#53635B;--green:#164F3D;
     --green-hover:#0E3D2E;--green-dark:#102F26;--green-soft:rgba(22,79,61,.10);
-    --amber:#BF8A29;--amber-soft:rgba(191,138,41,.12);--red:#B85438;
+    --amber:#805600;--amber-soft:rgba(191,138,41,.12);--red:#A83E2B;
     --red-soft:rgba(184,84,56,.10);--link:#3D668F;--chip-bg:#E5EBE7;
     --chip-active:#DBEAE4;--row-hover:#F0F4F1;--row-active:#E2EDE7;
     --on-accent:#FFFFFF;--scrim:rgba(31,43,36,.34);
+    --success-text:#246342;--focus-ring:#215B91;
+    --danger-text:var(--red);
   }
 }
 
@@ -178,7 +193,7 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
   color: var(--text-muted);
   flex-shrink: 0;
 }
-.status-msg.ok    { color: var(--green); }
+.status-msg.ok    { color: var(--success-text); }
 .status-msg.warn  { color: var(--amber); }
 .status-msg.error { color: var(--red); }
 
@@ -190,8 +205,8 @@ body { display: flex; flex-direction: column; min-height: 100vh; }
   color: var(--text);
 }
 .chip.ok      { background: var(--green); color: var(--on-accent); }
-.chip.warn    { background: var(--amber); color: #FFFFFF; }
-.chip.hot     { background: var(--red);   color: #FFFFFF; }
+.chip.warn    { background: var(--amber-soft); color: var(--amber); }
+.chip.hot     { background: var(--red-soft); color: var(--danger-text); }
 .chip.muted   { background: var(--chip-bg); color: var(--text-muted); }
 .chip.pill    { border-radius: 999px; padding: 2px 10px; }
 

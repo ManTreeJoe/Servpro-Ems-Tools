@@ -54,7 +54,7 @@ def _shape(n):
     list_ = data.get("list") or data.get("listAfter") or {}
     creator = n.get("memberCreator") or {}
     ntype = n.get("type") or ""
-    emoji, label = _TYPE_META.get(ntype, ("🔔", ntype or "Notification"))
+    emoji, label = _TYPE_META.get(ntype, ("🔔", "Job activity"))
     # The human-readable body varies by type: a comment/mention carries
     # data.text; a card change carries the field that moved.
     snippet = (data.get("text") or "").strip()
@@ -62,7 +62,32 @@ def _shape(n):
         la = data.get("listAfter") or {}
         lb = data.get("listBefore") or {}
         if la or lb:
-            snippet = f"moved {lb.get('name','?')} → {la.get('name','?')}"
+            before, after = lb.get("name"), la.get("name")
+            if before and after:
+                snippet = f"Moved {before} → {after}"
+            elif after:
+                snippet = f"Moved to {after}"
+            elif before:
+                snippet = f"Moved from {before}"
+            else:
+                snippet = "Moved card"
+        elif "closed" in (data.get("old") or {}) and isinstance(card.get("closed"), bool):
+            snippet = "Archived card" if card["closed"] else "Unarchived card"
+        elif data.get("boardAfter"):
+            destination = data["boardAfter"].get("name")
+            snippet = f"Moved to board {destination}" if destination else "Moved to another board"
+        elif "due" in (data.get("old") or {}):
+            snippet = f"Due date changed to {card['due']}" if card.get("due") else "Due date removed"
+        elif "name" in (data.get("old") or {}):
+            snippet = f"Renamed card to {card['name']}" if card.get("name") else "Renamed card"
+        elif "desc" in (data.get("old") or {}):
+            snippet = "Updated card description"
+    if not snippet:
+        snippet = {
+            "commentCard": "Comment text unavailable. Open the card to check.",
+            "mentionedOnCard": "Mention text unavailable. Open the card to check.",
+            "changeCard": "Card updated — details unavailable. Open the card to check.",
+        }.get(ntype, label)
     short = card.get("shortLink") or card.get("id") or ""
     return {
         "id":        n.get("id") or "",
@@ -75,13 +100,28 @@ def _shape(n):
         "card_name": card.get("name") or "",
         "card_short": short,
         "card_id": card.get('id') or short,
-        "comment_id": (n.get('idAction') or '') if ntype in ('commentCard','mentionedOnCard') else '',
+        "comment_id": (n.get('idAction') or '') if ntype in ('commentCard','mentionedOnCard','reactionAdded') else '',
         "card_url":  f"https://trello.com/c/{short}" if short else "",
         "board":     board.get("name") or "",
         "list":      list_.get("name") or "",
         "snippet":   snippet,
         "by":        creator.get("fullName") or creator.get("username") or "",
     }
+
+
+def _unread_identity(source, row):
+    """Count one comment once only when both exact provider IDs agree."""
+    if source == 'trello':
+        card = ((row.get('data') or {}).get('card') or {}).get('id') or ''
+        comment = row.get('idAction') or ''
+        is_comment = row.get('type') in ('commentCard', 'mentionedOnCard')
+    else:
+        card = row.get('card_id') or ''
+        comment = row.get('comment_id') or ''
+        is_comment = row.get('kind') in ('comment', 'mention')
+    if is_comment and card and comment:
+        return ('comment', str(card).lower(), str(comment).lower())
+    return (source, str(row.get('id') or ''))
 
 
 class Api:
@@ -93,14 +133,33 @@ class Api:
     def attach(self, window):
         self._window = window
 
+    def realtime_credentials(self):
+        """Use the signed-in user's existing, RLS-protected live connection."""
+        try:
+            import schedule_store
+            store = schedule_store.ScheduleStore()
+            return {'ok': True, 'url': store.url, 'key': store.key,
+                    'token': store.token, 'department': store.department, 'user': store.user}
+        except Exception:
+            return {'ok': False, 'error': 'Live updates unavailable; backup refresh active.'}
+
     # ── Feed ─────────────────────────────────────────────────────────
-    def desktop_settings(self, mode=None):
+    def job_comment_reactions(self, card_id, action_id, code=None, active=None):
+        """React without opening the card or changing notification read state."""
+        from job_comment_reactions import reactions
+        return reactions(card_id, action_id, code, active)
+
+    def desktop_settings(self, mode=None, sound=None):
         import desktop_notifications
-        return desktop_notifications.settings(mode)
+        return desktop_notifications.settings(mode, sound)
 
     def desktop_test(self):
         import desktop_notifications
         return desktop_notifications.test_notification()
+
+    def desktop_open(self, token):
+        import desktop_notifications
+        return desktop_notifications.open_alert(token)
 
     def notification_job(self, card_id, comment_id=''):
         try:
@@ -142,8 +201,8 @@ class Api:
             import trello_client as tc
             raw = tc.list_notifications(limit=limit,
                                         only_unread=bool(only_unread))
-        except Exception as ex:
-            return {"ok": False, "error": str(ex), "groups": [],
+        except Exception:
+            return {"ok": False, "error": "Trello notifications could not refresh. Check your connection and retry.", "groups": [],
                     "total": 0, "unread": 0}
         groups: dict = {}
         for n in raw:
@@ -173,12 +232,28 @@ class Api:
                 "unread": total_unread}
 
     def unread_count(self) -> dict:
-        """Cheap unread count for the sidebar badge."""
+        """Exact combined unread count, or unavailable if a source is incomplete."""
         try:
             import trello_client as tc
-            return {"ok": True, "count": tc.unread_notification_count()}
-        except Exception as ex:
-            return {"ok": False, "error": str(ex), "count": 0}
+            import personal_notifications as pn
+            trello = tc.list_all_unread_notifications()
+            personal = pn.call('inbox', filter='all', unread=True)
+            if not personal.get('ok'):
+                return {'ok': False, 'count': None, 'error': 'OneLoss unread count unavailable.'}
+            items = personal.get('items')
+            if not isinstance(items, list):
+                return {'ok': False, 'count': None, 'error': 'OneLoss unread count unavailable.'}
+            # The existing service returns at most 100 rows and has no cursor.
+            # Refuse to present a truncated count as an exact total.
+            if len(items) >= 100:
+                return {'ok': False, 'count': None, 'error': 'OneLoss unread count exceeds the verifiable page.'}
+            if any(not isinstance(row, dict) or not row.get('id') for row in items):
+                return {'ok': False, 'count': None, 'error': 'OneLoss unread count unavailable.'}
+            identities = {_unread_identity('trello', row) for row in trello}
+            identities.update(_unread_identity('personal', row) for row in items if not row.get('read_at'))
+            return {'ok': True, 'count': len(identities)}
+        except Exception:
+            return {'ok': False, 'count': None, 'error': 'Unread count unavailable. Refresh to retry.'}
 
     # ── Actions ──────────────────────────────────────────────────────
     def mark_read(self, notification_id: str, read: bool = True) -> dict:
@@ -207,6 +282,17 @@ class Api:
             if isinstance(ex, (URLError, TimeoutError)):
                 return {'ok': False, 'error': 'Trello could not confirm the change. Check your connection and refresh notifications before retrying.'}
             return {'ok': False, 'error': 'The app could not confirm the read-status change. Check your Trello connection and refresh before retrying.'}
+
+    def clear_all_sources(self) -> dict:
+        """Explicit user action: mark all Trello and OneLoss notifications read."""
+        import personal_notifications as pn
+        trello = self.mark_all_read()
+        try:
+            personal = pn.clear_unread()
+        except Exception:
+            personal = {'ok': False, 'error': 'OneLoss read status could not be confirmed.'}
+        return {'ok': bool(trello.get('ok') and personal.get('ok')),
+                'trello': trello, 'personal': personal}
 
     def open_url(self, url: str) -> bool:
         if not url:

@@ -83,6 +83,16 @@ def load(card, division):
             if row:
                 from job_log_projection import restore
                 payload = json.loads(row[0])
+                # Reject old name-search results attached to another card.
+                # Keep the snapshot on disk for diagnosis; rebuild on demand.
+                import persistence
+                audit = payload.get('audit') or {}
+                requested = payload.get('client') or ''
+                owner = audit.get('client') or ''
+                if requested and owner and not (
+                        set(persistence._pin_lookup_keys(requested)) &
+                        set(persistence._pin_lookup_keys(owner))):
+                    return None
                 payload['crm'] = {**(payload.get('crm') or {}),
                     **restore(conn, current_scope, card, division, payload.get('crm') or {})}
         if row:

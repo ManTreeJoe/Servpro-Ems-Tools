@@ -1,0 +1,10 @@
+OneLoss 1.8.39 — Comment posting hotfix
+
+Fixes comments being blocked across all jobs after background reads remember an unavailable optional legacy table.
+The cached result now preserves the same verified error type as the original response, allowing the intended Trello posting path.
+Only confirmed missing-table responses are cached. Permission failures, timeouts and uncertain writes never enable a fallback post.
+Includes the 1.8.38 Job Log delivery fixes.
+
+Built from the exact 1.8.38 snapshot with only the pipeline_store.py correction.
+95 focused automated tests passed. No permissions, database schema, or user account changes.
+Sam's computer still needs post-update confirmation with a single comment.

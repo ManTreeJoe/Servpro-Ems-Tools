@@ -1,0 +1,55 @@
+/* Use the Settings workspace, without changing controls or save behavior. */
+.wrap.settings-packed { grid-auto-rows:1px; row-gap:0; grid-auto-flow:row dense; }
+.settings-static-heading { margin:0; font-size:13px; font-weight:700; }
+.settings-disclosure > .settings-static-heading { padding:16px 18px 12px; }
+.admin-advanced > .settings-static-heading { margin:12px 0 8px; }
+.wrap section.admin-advanced > div { position:static; min-width:0; box-shadow:none; display:flex; flex-wrap:wrap; }
+.wrap section.admin-advanced > div .btn { width:auto; }
+.wrap > #form-fields > section { min-width:0; margin-bottom:0!important; }
+.wrap {
+  max-width:900px;
+  min-height:0;
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:18px;
+  align-content:start;
+  align-items:start;
+  padding:16px 24px 40px;
+}
+.wrap > .settings-tabs {grid-column:1/-1;margin:0;top:-16px;padding:12px 0;}
+.settings-tab {flex:0 1 210px;}
+.wrap > section,.wrap > details,.wrap > #form-fields > details {min-width:0;margin-bottom:0!important;}
+#form-fields {display:contents;}
+.health-settings,#first-run-card,#user-access-card,
+.wrap > section:has(#jp-list),.wrap > section:has(#pm-list),.wrap > section:has(#dept-fields) {grid-column:1/-1;}
+.wrap input,.wrap select,.wrap textarea {max-width:100%;min-width:0;}
+.wrap .pm-fields input,.wrap .pm-fields select,.wrap .pm-fields textarea {
+  width:100%;padding:9px 10px;font:inherit;color:var(--text);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
+}
+.wrap .pm-fields textarea {min-height:230px;resize:vertical;line-height:1.6;}
+.wrap .pm-fields :is(input,select,textarea):focus-visible {outline:2px solid var(--green);outline-offset:2px;}
+.wrap .jp-row,.wrap .pm-grid {overflow-wrap:anywhere;}
+.wrap section > div:first-child {flex-wrap:wrap;}
+@media(min-width:1100px) {
+  .wrap > section:has(#jp-editor:not([style*="none"])),
+  .wrap > section:has(#pm-editor:not([style*="none"])) {
+    display:block;
+  }
+  .wrap > section:has(#jp-list) > div:not(#jp-list):not(#jp-editor),
+  .wrap > section:has(#pm-list) > div:not(#pm-list):not(#pm-editor) {grid-column:1/-1;}
+  #jp-list:has(+ #jp-editor:not([style*="none"])),
+  #pm-list:has(+ #pm-editor:not([style*="none"])) {max-height:65vh;overflow:auto;padding-right:10px;}
+  #jp-editor,#pm-editor {margin-top:16px;min-width:0;}
+}
+.wrap .connections-grid,.wrap .pm-fields {grid-template-columns:minmax(0,1fr);}
+@media(max-width:850px) {
+  .wrap {grid-template-columns:minmax(0,1fr);padding:12px 14px 32px;gap:14px;}
+  .wrap > .settings-tabs {top:-12px;}
+  .settings-tab {flex:1;padding:9px 6px;}
+}
+@media(max-width:480px) {
+  .wrap .pm-fields {grid-template-columns:minmax(0,1fr);}
+  .wrap .pm-span {grid-column:1;}
+  .footer {padding:12px;flex-wrap:wrap;}
+}

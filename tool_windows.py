@@ -21,7 +21,14 @@ class ToolWindows:
         card = str(context.get('cardId') or '')
         if card and (tool != 'pipeline' or not re.fullmatch(r'[a-fA-F0-9]{24}|[a-zA-Z0-9]{8}', card)):
             return {'ok': False, 'error': 'Choose a saved job card first.'}
-        key = ('card', card) if card else ('tool', tool)
+        action = str(context.get('jobAction') or '')
+        if action and (not card or action not in ('import', 'photo_report', 'companycam', 'trello_attachments')):
+            return {'ok': False, 'error': 'This job tool cannot be opened separately.'}
+        division = str(context.get('division') or 'EMS').upper()
+        if card and division not in ('EMS', 'CONTENTS', 'RECON'):
+            return {'ok': False, 'error': 'Choose a valid job section first.'}
+        context = dict(context, division=division) if card else context
+        key = ('card', card, division, action) if action else (('card', card) if card else ('tool', tool))
         with self.lock:
             existing = self.windows.get(key)
             if existing:
@@ -34,7 +41,7 @@ class ToolWindows:
             if not base or not base.startswith(('http://127.0.0.1:', 'http://localhost:')):
                 return {'ok': False, 'error': 'Pop-outs need the running desktop app.'}
             params = {'tool': tool}
-            for name in ('cardId', 'client', 'division', 'commentId'):
+            for name in ('cardId', 'client', 'division', 'commentId', 'jobTab', 'jobAction'):
                 if context.get(name):
                     params[name] = str(context[name])[:300]
             api = home_web.HomeApi(tool_keys={'audit' if tool == 'daily_run' else tool})
@@ -42,11 +49,17 @@ class ToolWindows:
             title = next((name for _, rows in home_web.NAV_GROUPS for k, _, name in rows if k == tool), tool.replace('_', ' ').title())
             if card:
                 title = str(context.get('client') or 'Job')[:100]
+                if action:
+                    label = {'import': 'Import files', 'photo_report': 'Photo report',
+                             'companycam': 'CompanyCam photos', 'trello_attachments': 'Trello attachments'}[action]
+                    title = f'{label} · {title} · {division}'
             window = webview.create_window(
                 title=f'{title} · {home_web._window_title()}',
                 url=urljoin(base, '/home_web_assets/popout.html')+'?'+urlencode(params),
                 js_api=api, width=1280, height=860, min_size=(760, 560), confirm_close=True)
             api.attach(window)
+            import native_text_editing
+            window.events.loaded += lambda: native_text_editing.enable(window)
             self.windows[key] = window
             def closed():
                 with self.lock:

@@ -11,6 +11,15 @@
  * `document.readyState === "complete"` (all scripts loaded).
  */
 (function () {
+  if(!document.querySelector('script[src*="page_reload.js"]')){
+    const reloadScript=document.createElement('script');
+    reloadScript.src='../web_shared/page_reload.js';document.head.appendChild(reloadScript);
+  }
+  // Share native-window commands across embedded tools, not only Jobs.
+  if(!document.querySelector('script[src*="popout_menu.js"]')){
+    const script=document.createElement('script');script.src='../web_shared/popout_menu.js';
+    document.head.appendChild(script);
+  }
   if (window.parent === window) return;  // standalone — let pywebview do its thing
   // Snapshot hosts the existing Pipeline comments workspace one level deeper.
   // Route to HomeApi, not Snapshot's already-namespaced proxy.

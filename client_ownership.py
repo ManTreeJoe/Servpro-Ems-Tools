@@ -20,7 +20,7 @@ class ClientOwnershipApi:
             if not value:
                 raise ValueError('This card needs an exact saved job link before its client can be changed.')
             rows = sb.rest('GET', 'jobs', params={key: 'eq.'+value,
-                'select': 'job_id,canon_key,display_name,department,client_id,client_revision', 'limit': 2}) or []
+                'select': 'job_id,canon_key,display_name,department,client_id,client_revision,email,phone,address,metadata_json', 'limit': 2}) or []
             if len(rows) != 1:
                 raise ValueError('Exact saved job not found. No name-based reassignment was attempted.')
             job = rows[0]
@@ -52,3 +52,62 @@ class ClientOwnershipApi:
             return dict(ok=True, client=client)
         except Exception as error:
             return dict(ok=False, error=str(error))
+
+    def create_client_profile(self, details, department=''):
+        try:
+            import config, supabase_client as sb
+            details = dict(details or {})
+            result = sb.rpc('create_client_profile', dict(p_name=str(details.get('name') or '').strip(),
+                p_department=department or config.active_department(), p_email=str(details.get('email') or ''),
+                p_phone=str(details.get('phone') or ''), p_address=str(details.get('address') or '')))
+            return dict(ok=True, **result)
+        except Exception as error:
+            return dict(ok=False, error=str(error))
+
+    def client_match_options(self, fields):
+        try:
+            import config, supabase_client as sb
+            from client_matching import rank_clients
+            if not sb.is_signed_in():
+                raise ValueError('Sign in to choose a client.')
+            clients=[]
+            for offset in range(0,50000,500):
+                batch=sb.rest('GET','crm_clients',params={'department':'eq.'+config.active_department(),
+                    'active':'eq.true','select':'client_id,display_name,email,phone,address_json',
+                    'order':'display_name,client_id','limit':500,'offset':offset}) or []
+                clients.extend(batch)
+                if len(batch)<500:break
+            else:raise ValueError('Client directory is too large to load completely.')
+            return dict(ok=True,clients=rank_clients(clients,fields))
+        except Exception as error:
+            return dict(ok=False,error=str(error))
+
+    def prepare_intake_client(self, choice):
+        """Verify explicit choice before any external job creation."""
+        import config, supabase_client as sb
+        if not isinstance(choice,dict):
+            return dict(ok=False,error='Choose the client for this job first.')
+        if choice.get('mode')=='new':
+            try:
+                details = dict(choice.get('details') or {})
+                name = str(details.get('name') or '').strip()
+                email = str(details.get('email') or '').strip()
+                phone = str(details.get('phone') or '').strip()
+                address = str(details.get('address') or '').strip()
+                if not 1 <= len(name) <= 300 or len(email) > 320 or len(phone) > 100 or len(address) > 1000:
+                    return dict(ok=False, error='Review the new client name and contact details.')
+                rows = sb.rest('POST', 'crm_clients', body={'display_name': name,
+                    'department': config.active_department(), 'email': email or None,
+                    'phone': phone or None, 'address_json': {'line1': address}}, prefer='return=representation')
+                if not isinstance(rows, list) or len(rows) != 1 or not rows[0].get('client_id'):
+                    return dict(ok=False, error='The new client could not be confirmed. Check the client list before retrying.')
+                return dict(ok=True, client=rows[0], reused=False)
+            except Exception:
+                return dict(ok=False, error='The new client could not be confirmed. Check the client list before retrying.')
+        try:
+            client_id=str(UUID(str(choice.get('client_id'))))
+            rows=sb.rest('GET','crm_clients',params={'client_id':'eq.'+client_id,
+                'department':'eq.'+config.active_department(),'active':'eq.true','select':'client_id,display_name','limit':1}) or []
+            if not rows:raise ValueError('Client is no longer available in this office.')
+            return dict(ok=True,client=rows[0])
+        except Exception as error:return dict(ok=False,error=str(error))

@@ -28,7 +28,7 @@ METRICS = {
     "cycle": {
         "label": "Total Cycle Time", "unit": "days", "direction": "lower",
         "start": "max(dispatch_at, xact_assigned_at)",
-        "end": "final_audit_completed_at", "source": "Xactimate/XA + Linguar Hub",
+        "end": "final_audit_completed_at", "source": "Xactimate/XA + OneLoss",
     },
     "zero_rejections": {
         "label": "Zero Rejection Files", "unit": "percent", "direction": "higher",

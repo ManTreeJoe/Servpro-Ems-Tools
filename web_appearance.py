@@ -43,4 +43,5 @@ def preferences() -> dict:
         "effective": system if selected == "system" else selected,
         "density": str(cfg.get("ui_density") or "comfortable"),
         "reduce_motion": bool(cfg.get("reduce_motion", False)),
+        "sidebar_auto_collapse": bool(cfg.get("sidebar_auto_collapse", False)),
     }

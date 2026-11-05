@@ -27,34 +27,42 @@
     const style = document.createElement('style');
     style.id = 'oneloss-notice-style';
     style.textContent = `
-      #oneloss-notices{position:fixed;right:18px;bottom:20px;z-index:2147483000;
-        width:min(410px,calc(100vw - 24px));max-height:70vh;overflow:auto;
-        display:grid;gap:10px;pointer-events:none;font:14px/1.5 var(--font-body,Segoe UI,sans-serif)}
+      #oneloss-notices{position:fixed;right:14px;bottom:14px;z-index:2147483000;
+        width:min(330px,calc(100vw - 24px));max-height:60vh;overflow:auto;
+        display:grid;gap:8px;pointer-events:none;font:13px/1.4 var(--font-body,Segoe UI,sans-serif)}
       .ol-notice{pointer-events:auto;background:var(--surface,#17201b);color:var(--text,#edf3ef);
         border:1px solid var(--border-strong,#50665a);border-left:4px solid #efb762;
-        border-radius:9px;padding:14px 16px;box-shadow:0 8px 30px #0005;overflow-wrap:anywhere}
+        border-radius:8px;padding:10px 12px;box-shadow:0 5px 18px #0004;overflow-wrap:anywhere}
       .ol-notice[data-kind=error]{border-left-color:#e59b88}
       .ol-notice.is-leaving{opacity:0;transform:translateY(8px);transition:opacity 240ms ease,transform 240ms ease}
       @media(prefers-reduced-motion:reduce){.ol-notice.is-leaving{transition:none;transform:none}}
       .reduce-motion .ol-notice.is-leaving{transition:none;transform:none}
       .ol-notice header{display:flex;gap:12px;align-items:start;background:none;padding:0;border:0}
-      .ol-notice strong{flex:1;font-size:15px}.ol-notice p{margin:7px 0;color:inherit}
-      .ol-notice .ol-context{font-size:12px;color:var(--text-muted,#a9b9b0);margin:0 0 5px}
+      .ol-notice strong{flex:1;font-size:13px}.ol-notice p{margin:5px 0;color:inherit}
+      .ol-notice .ol-context{font-size:11px;color:var(--text-muted,#a9b9b0);margin:0 0 3px}
       .ol-notice button,.ol-notice summary{font:inherit;color:inherit;cursor:pointer}
       .ol-notice button{background:var(--surface-2,#202b25);border:1px solid var(--border-strong,#50665a);
-        border-radius:5px;padding:6px 10px;min-height:34px}
+        border-radius:5px;padding:4px 8px;min-height:28px}
       .ol-notice header button{padding:0 8px;background:transparent}
       .ol-notice button:focus-visible,.ol-notice summary:focus-visible{outline:2px solid var(--text,#edf3ef);outline-offset:3px}
       .ol-notice pre{white-space:pre-wrap;max-height:160px;overflow:auto;font:12px/1.5 monospace;margin:8px 0}
-      .ol-notice .ol-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+      .ol-notice .ol-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
       .ol-notice details{margin-top:8px;font-size:12px}
+      .ol-notice .ol-message{margin:6px 0;line-height:1.4;max-height:110px;overflow:auto}
+      .ol-notice[data-kind=notification] .ol-message{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;max-height:55px}
+      .ol-notice .ol-message strong{font-size:inherit}
+      .ol-message p{margin:0 0 8px}.ol-message p:last-child{margin-bottom:0}
+      .ol-message ul,.ol-message ol{padding-left:20px;margin:6px 0}
+      .ol-message blockquote{margin:8px 0;padding-left:10px;border-left:2px solid var(--border-strong,#50665a)}
+      .ol-message a{color:inherit;text-decoration:underline}
+      .ol-message h1,.ol-message h2,.ol-message h3{font-size:inherit;margin:8px 0}
       @media(max-width:480px){#oneloss-notices{right:12px;bottom:12px;max-height:55vh}}
     `;
     document.head.appendChild(style);
   }
 
   function cleanDetail(value) {
-    return String(value || '').slice(0, 6000)
+    return String(value || '')
       .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+/gi, 'Bearer [redacted]')
       .replace(/((?:access_token|refresh_token|apikey|api_key|token|password)["']?\s*[:=]\s*["']?)[^\s"'&,}]+/gi, '$1[redacted]');
   }
@@ -75,19 +83,27 @@
     const previous = visibleNotices.get(key);
     if (previous) {
       previous.count++;
-      previous.context.textContent = `${entry.panel} · repeated ${previous.count} times`;
+      previous.context.textContent = `${entry.kind==='notification'?'Notifications':entry.panel} · repeated ${previous.count} times`;
       return;
     }
     const box = document.createElement('article');
     box.className = 'ol-notice'; box.dataset.kind = entry.kind;
-    const context = document.createElement('div'); context.className = 'ol-context'; context.textContent = entry.panel;
+    const context = document.createElement('div'); context.className = 'ol-context'; context.textContent = entry.kind==='notification'?'Notifications':entry.panel;
     const head = document.createElement('header');
     const title = document.createElement('strong');
     const close = document.createElement('button'); close.textContent = '×'; close.setAttribute('aria-label','Dismiss notification');
-    const body = document.createElement('p');
+    const body = document.createElement('div'); body.className='ol-message';
     const technical = /HTTP\s*\d|Traceback|SupabaseError|WinError|statement timeout|TimeoutError|42501|57014/.test(entry.msg);
     title.textContent = entry.title || (entry.kind === 'warn' ? 'Needs attention' : 'Action needs attention');
     body.textContent = entry.msg;
+    if (entry.kind === 'notification' && window.CommentMarkdown) {
+      body.innerHTML = window.CommentMarkdown.display(entry.msg);
+      body.onclick = event => {
+        const link=event.target.closest('a');if(!link)return;
+        event.preventDefault();
+        if (/^(https?:\/\/|mailto:)/i.test(link.href)) window.pywebview?.api?.open_url(link.href);
+      };
+    }
     if (technical && !entry.title) {
       if (/403|42501|permission|row.level security/i.test(entry.msg)) {
         title.textContent = 'Permission needed';
@@ -109,7 +125,8 @@
     }
     const details = document.createElement('details');
     const summary = document.createElement('summary'); summary.textContent = 'Details';
-    const pre = document.createElement('pre'); pre.textContent = cleanDetail(entry.details || entry.msg);
+    const pre = document.createElement('pre'); pre.textContent = cleanDetail(
+      [entry.msg, entry.details !== entry.msg ? entry.details : '', entry.savedState].filter(Boolean).join('\n\n'));
     details.append(summary, pre); box.append(details);
     const actions = document.createElement('div'); actions.className = 'ol-actions';
     const copy = document.createElement('button'); copy.textContent = 'Copy details';
@@ -120,8 +137,18 @@
     actions.append(copy);
     if (entry.kind === 'notification') {
       details.hidden = true; copy.hidden = true;
-      const open = document.createElement('button'); open.textContent = 'Open notifications';
-      open.onclick = () => { window.postMessage({type:'ems-navigate',key:'notifications'},location.origin); close.click(); };
+      const open = document.createElement('button'); open.textContent = entry.alertToken?'Open job':'Open notifications';
+      open.onclick = async () => {
+        if(open.disabled)return;open.disabled=true;
+        try {
+          if(entry.alertToken){
+            const result=await window.pywebview?.api?.notifications_desktop_open(entry.alertToken);
+            if(!result?.ok)throw new Error(result?.error||'Open Notifications to find this alert.');
+          }else window.postMessage({type:'ems-navigate',key:'notifications'},location.origin);
+          close.click();
+        }catch(error){body.textContent=error.message;open.disabled=false;}
+      };
+      box.addEventListener('click',event=>{if(!event.target.closest('button,a,summary,details'))open.click();});
       actions.append(open);
     }
     if (typeof entry.retry === 'function') {
@@ -181,7 +208,7 @@
     push({...entry, retry:undefined});
     if (entry.kind === 'error' || entry.kind === 'warn') {
       try { Promise.resolve(window.pywebview?.api?.report_app_error?.(entry.panel, entry.details)).catch(() => {}); }
-      catch (_) { /* Reporting must never break the original action. */ }
+      catch (_) { /* Diagnostics must never break the original action. */ }
     }
     present(entry);
   }

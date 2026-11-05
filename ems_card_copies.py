@@ -23,12 +23,13 @@ def link_copy(client, source_id, copied_id):
     copied_id = tc.parse_card_identifier(copied_id)
     if not source_id or not copied_id:
         raise ValueError("Choose the original EMS card and paste the copy's Trello link.")
-    job = ems_db.find_job_by_name(client)
+    fields = "name,idBoard,closed,shortLink,shortUrl"
+    source = tc.get_card_lite(source_id, fields=fields) or {}
+    job = next((hit for alias in (source.get('id'), source_id, source.get('shortLink'))
+                if alias and (hit := ems_db.find_job_by_link('trello_card', alias))), None)
     if not job:
         raise ValueError("Save this job before linking its copy.")
     links = ems_db.get_links(job["canon_key"], "trello_card") or []
-    fields = "name,idBoard,closed,shortLink,shortUrl"
-    source = tc.get_card_lite(source_id, fields=fields) or {}
     target = tc.get_card_lite(copied_id, fields=fields) or {}
     aliases = {str(v or "").lower() for v in (source_id, source.get("id"), source.get("shortLink"))}
     if not any(str(row.get("link_value") or "").lower() in aliases for row in links):

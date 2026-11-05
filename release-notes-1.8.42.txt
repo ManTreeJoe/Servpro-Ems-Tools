@@ -1,0 +1,3 @@
+Restores comment-editor right-click tools and native spellcheck after reloads.
+Posted comments now show clipboard actions first, with Link to audit opening the audit list on demand.
+Fixes right-click menus inside pop-up dialogs and keeps Escape from closing the underlying dialog.

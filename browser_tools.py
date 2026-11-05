@@ -203,7 +203,7 @@ class BrowserToolHost:
         if method in BROWSER_UNAVAILABLE_SHELL_METHODS:
             return {
                 "ok": False,
-                "error": "Install application updates from the Linguar Hub Windows app.",
+                "error": "Install application updates from the OneLoss Windows app.",
                 "desktop_only": True,
             }
         if not method or method.startswith("_") or method not in self._allowed:

@@ -30,8 +30,13 @@ def open_folder(root, relative=''):
         _, folder = _target(root, relative)
         if not folder.is_dir():
             raise ValueError('This folder is unavailable. Check OneDrive or refresh the listing.')
-        os.startfile(str(folder))
-        return {'ok': True}
+        # Path.resolve() is needed above to reject escapes, but on Windows it
+        # converts an X: drive into its UNC target. Explorer has opened This PC
+        # for some users when given that converted target. Hand it the original
+        # verified drive path instead; _target already checked its real target.
+        visible_path = os.path.normpath(os.path.join(os.fspath(root), relative))
+        os.startfile(visible_path)
+        return {'ok': True, 'path': visible_path}
     except (OSError, ValueError) as error:
         return {'ok': False, 'error': str(error)}
 
@@ -48,7 +53,7 @@ def list_folder(root, relative=''):
                 directory = entry.is_dir(follow_symlinks=False)
                 ext = target.suffix.lower()
                 rows.append({'name': entry.name, 'relative': str(target.relative_to(base)),
-                             'directory': directory, 'size': stat.st_size,
+                             'directory': directory, 'size': stat.st_size, 'modified': stat.st_mtime,
                              'offline': _offline(stat),
                              'kind': 'folder' if directory else 'photo' if ext in PHOTOS else 'document' if ext in DOCUMENTS else 'file'})
                 if len(rows) >= 2000:

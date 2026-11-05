@@ -384,7 +384,7 @@ def create_folder(fields, *, child="", second_claim=False,
 
 
 def create_companycam_project(fields, *, card_name="", trello_card="",
-                              folder_path="", confirm_create=False):
+                              folder_path="", confirm_create=False, fresh_intake=False):
     """Create the job's CompanyCam project AT INTAKE and pin it.
 
     Today the project is found LATER by fuzzy name match — and that match
@@ -392,6 +392,8 @@ def create_companycam_project(fields, *, card_name="", trello_card="",
     INSURED while our run-doc names are often junk like "Lastname/POC".
     Creating it here and pinning the id means nothing ever has to guess.
 
+    `fresh_intake` forbids adopting a project or job by name. The provider
+    search must still succeed before creating, so uncertain retries stop.
     `confirm_create` is required to actually create. Without it this only
     LOOKS — it reports the existing project when one already matches, or
     `would_create` with the name/address it would use.
@@ -426,7 +428,7 @@ def create_companycam_project(fields, *, card_name="", trello_card="",
     # split across two and neither looks wrong.
     try:
         import ems_db
-        job = ems_db.find_job_by_name(identity) or (
+        job = None if fresh_intake else ems_db.find_job_by_name(identity) or (
             ems_db.find_job_by_name(insured) if insured else None)
         if job:
             pinned = ems_db.get_link(job["canon_key"], ems_db.LINK_COMPANYCAM)
@@ -441,7 +443,7 @@ def create_companycam_project(fields, *, card_name="", trello_card="",
     if not existing.get("ok"):
         return {"ok": False, "created": False,
                 "error": existing.get("error") or "CompanyCam project lookup failed; nothing was created."}
-    if existing.get("ok") and existing.get("match"):
+    if not fresh_intake and existing.get("ok") and existing.get("match"):
         match = existing["match"]
         return {"ok": True, "created": False,
                 "project": match,
@@ -459,6 +461,7 @@ def create_companycam_project(fields, *, card_name="", trello_card="",
     res = cc.create_project(
         name,
         address=address,
+        address_parts=cc.intake_address(fields),
         contact_name=insured,
         contact_email=(fields.get("email") or "").strip(),
         contact_phone=(fields.get("phone") or "").strip(),
@@ -511,7 +514,7 @@ def save_intake_facts(linked, fields, card_name):
                                    'customer_name': incoming['customer_name']}
     columns = {column: values[field] for field, column in job_settings.COLUMN_FIELDS.items()
                if values.get(field)}
-    ems_db.upsert_job(display_name=record['display_name'], metadata=metadata, **columns)
+    ems_db.update_job(key, metadata=metadata, **columns)
     return ems_db.get_job(key) or linked
 
 
@@ -572,6 +575,14 @@ def create_new_loss(fields, loss_type=None, *, pin=True):
     if not src:
         return {"ok": False,
                 "error": f"No '{loss_type}' template on the board."}
+    try:
+        template = tc.get_card(src['id'])
+        if not template or not isinstance(template.get('attachments'), list):
+            return {'ok': False, 'error': 'The template links could not be checked. No card was created.'}
+        if tc.card_companycam_link(template):
+            return {'ok': False, 'error': 'The selected template contains a CompanyCam project link. Remove that link from the template before creating a new loss.'}
+    except Exception:
+        return {'ok': False, 'error': 'The template links could not be checked. No card was created.'}
     intake = tmpls.get("_intake")
     if not intake:
         return {"ok": False, "error": "No 'New Loss' intake list on the board."}

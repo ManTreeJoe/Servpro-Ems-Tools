@@ -32,7 +32,7 @@
 .comment-link-panel button { margin-right:8px; padding:5px 8px; background:var(--surface-2); border:1px solid var(--border); border-radius:4px; color:var(--text); }
 .comment-link-panel small { display:block; margin-top:5px; }
 .comment-compose .comment-editor { position:relative; overflow:visible; }
-.comment-mention-panel { position:absolute; left:0; right:0; bottom:100%; margin-bottom:5px; z-index:20; background:var(--surface); border:1px solid var(--border); border-radius:7px; box-shadow:0 5px 18px #0005; }
+.comment-mention-panel { position:relative; margin-top:5px; z-index:20; background:var(--surface); border:1px solid var(--border); border-radius:7px; box-shadow:0 5px 18px #0005; }
 .comment-mention-status { padding:7px 10px; font-size:11px; color:var(--text-dim); }
 .comment-mention-panel [role="listbox"] { max-height:200px; overflow-y:auto; }
 .comment-mention-panel [role="option"] { display:block; width:100%; text-align:left; padding:7px 10px; border:0; background:transparent; color:var(--text); cursor:pointer; }

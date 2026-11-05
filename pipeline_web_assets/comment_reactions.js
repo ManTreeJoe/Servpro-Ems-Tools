@@ -83,6 +83,7 @@ window.CommentReactions = (() => {
       const result=await window.pywebview.api.job_comment_reactions(card,id,code||null,code?active:null);
       if(!result?.ok)throw Error(result?.error||'Trello could not confirm reactions. Reopen React to check.');
       s.rows=result.reactions||[];s.choices=result.choices||[];s.account=result.account;
+      document.dispatchEvent(new CustomEvent('trello-reactions-confirmed',{detail:{card,id,reactions:s.rows}}));
       if(code&&active){recent=[code,...recent.filter(c=>c!==code)].slice(0,16);try{localStorage.setItem('oneloss.recentEmoji',JSON.stringify(recent));}catch(_){}}
     }catch(e){if(code)s.rows=previous;s.error=e.message||'Trello is unavailable. Reopen React to check before trying again.';}
     finally{s.busy=false;s.checkedAt=Date.now();repaint(s);}
@@ -120,5 +121,10 @@ window.CommentReactions = (() => {
   window.addEventListener('resize',position);
   document.addEventListener('scroll',e=>{if(popup&&!popup.contains(e.target))close();},true);
   document.querySelectorAll('.comment-reactions').forEach(mount);
-  return {markup};
+  document.addEventListener('trello-pin-saved',event=>{
+    const {card,id,result}=event.detail||{};
+    const state=snapshots.get(JSON.stringify([card,id]));
+    if(state&&!state.busy){state.rows=result.reactions||[];state.error='';state.checkedAt=Date.now();repaint(state);}
+  });
+  return {markup,isBusy:()=>[...snapshots.values()].some(state=>state.busy)};
 })();

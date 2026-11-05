@@ -24,9 +24,13 @@
       <h1>Clients</h1>
     </div>
     <label class="search-wrap"><span>⌕</span><input id="search" type="search" placeholder="Search clients, properties, or management companies…" autocomplete="off"></label>
+    <button class="btn btn-primary" id="new-client">+ New client</button>
   </header>
   <nav class="division-nav" aria-label="Client filters">
-    <button class="active" data-division="all">All clients</button>
+    <button class="active" data-ownership="all" aria-pressed="true">All</button>
+    <button data-ownership="unassigned" aria-pressed="false">Unassigned</button>
+    <span class="client-filter-divider" aria-hidden="true">│</span>
+    <button class="active" data-division="all">All divisions</button>
     <button data-division="EMS">💧 EMS</button>
     <button data-division="CONTENTS">📦 Contents</button>
     <button data-division="RECON">🔨 Recon</button>
@@ -43,6 +47,7 @@
   <div id="status" class="status-line" role="status"></div>
   <link rel="stylesheet" href="../web_shared/client_transfer.css?v=20261012">
   <script src="../web_shared/client_transfer.js?v=20261012"></script>
+  <script src="client_jobs.js?v=20261021"></script>
   <script src="app.js?v=20261012clients"></script>
 </body>
 </html>

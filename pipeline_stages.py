@@ -249,7 +249,6 @@ _SKIP_LANE_SUBSTRINGS = (
     "template",        # 'Templates', 'Initial Inspection Template'
     "templet",         # misspelling caught in the wild
     "label",           # 'Labels', 'LABELS'
-    "marketing team",  # admin team list
     "on call",         # 'ON CALL TEAMS'
     "collections process",
     "disposal",        # 'TOTAL IOSS DISPOSAL', 'GARMENTS RETURN'

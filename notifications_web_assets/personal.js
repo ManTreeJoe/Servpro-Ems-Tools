@@ -37,9 +37,12 @@
     if(!visible.length&&typeFilter?.active()){const empty=document.createElement('p');empty.className='personal-empty';empty.textContent='No notifications match these types. Change Types or select all.';feed.append(empty);return;}
     if(!visible.length){const empty=document.createElement('p');empty.className='personal-empty';empty.textContent=get('personal-unread').checked?'No unread notifications. Turn off Only show unread to see earlier messages.':'No notifications in this view. Add members from a job’s Members button. New OneLoss comments and @mentions appear here.';feed.append(empty);return;}
     for(const item of visible){const row=document.createElement('article');row.className='personal-notification'+(!item.read_at?' unread':'');
-      const content=document.createElement('div'),title=document.createElement('strong'),meta=document.createElement('small'),body=document.createElement('p'),actions=document.createElement('div');actions.className='personal-actions';
+      const content=document.createElement('div'),title=document.createElement('strong'),meta=document.createElement('small'),body=document.createElement('div'),actions=document.createElement('div');actions.className='personal-actions';
       title.textContent=item.client;meta.textContent=`${item.kind==='mention'?'Mention':item.kind==='membership'?'Added to job':'Job comment'} · ${item.actor} · ${new Date(item.created_at).toLocaleString()}`;
-      body.textContent=item.body;content.append(title,document.createElement('br'),meta,body);row.append(content,actions);feed.append(row);
+      body.className='comment-markdown';
+      if(window.CommentMarkdown)body.innerHTML=window.CommentMarkdown.display(item.body);else body.textContent=item.body;
+      body.onclick=e=>{const a=e.target.closest('a');if(a){e.preventDefault();e.stopPropagation();if(/^(https?:\/\/|mailto:)/i.test(a.href))window.pywebview?.api?.open_url(a.href);}};
+      content.append(title,document.createElement('br'),meta,body);row.append(content,actions);feed.append(row);
       function button(label,fn){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=async()=>{b.disabled=true;try{await fn();}catch(e){status(e.message||'Action was not confirmed. Refresh and retry.');}finally{b.disabled=false;}};actions.append(b);return b;}
       button('Open job',()=>openJob(item));
       button('Read message',async()=>{if(window.NotificationReader){window.NotificationReader.open(item,()=>openJob(item));await readOpened(item);}});

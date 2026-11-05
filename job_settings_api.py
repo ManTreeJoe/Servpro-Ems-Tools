@@ -44,6 +44,105 @@ class JobSettingsApi(ClientOwnershipApi, JobFormsApi):
     """Mix into a panel's `Api` class. pywebview exposes inherited methods
     exactly like defined ones."""
 
+    def section_profile_review(self, client: str, card_id: str, facts=None) -> dict:
+        try:
+            import section_profile_review
+            return section_profile_review.load(client, card_id, facts)
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
+
+    def extra_job_tasks(self, client, card_id, token='', command=None):
+        try:
+            import job_extra_tasks
+            if command is None:
+                return job_extra_tasks.load(client, card_id)
+            result = job_extra_tasks.save(client, card_id, token, command)
+            invalidate = getattr(self, '_invalidate_workspace', None)
+            if invalidate:
+                invalidate(client, card_id)
+            return result
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
+
+    def card_completion(self, client, card_id, command=None):
+        try:
+            import job_card_completion
+            if command is None:
+                return job_card_completion.load(client, card_id)
+            result = job_card_completion.save(client, card_id, **command)
+            invalidate = getattr(self, '_invalidate_workspace', None)
+            if invalidate:
+                invalidate(client, card_id)
+            return result
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
+
+    def card_completion_date(self, client, card_id, command=None):
+        try:
+            import job_card_completion
+            if command is None:
+                return job_card_completion.load_date(client, card_id)
+            result = job_card_completion.save_date(client, card_id, **command)
+            invalidate = getattr(self, '_invalidate_workspace', None)
+            if invalidate:
+                invalidate(client, card_id)
+            self._board_view_cache = None
+            return result
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
+
+    def section_profile_save(self, client, card_id, facts, expected_token, profile_id=''):
+        try:
+            import section_profile_review
+            result = section_profile_review.save(client, card_id, facts, expected_token, profile_id)
+            invalidate = getattr(self, '_invalidate_workspace', None)
+            if invalidate:
+                invalidate(client, card_id)
+            return result
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
+
+    def card_labels_load(self, client: str, card_id: str) -> dict:
+        try:
+            import card_labels
+            return card_labels.load(client, card_id)
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
+
+    def card_title_load(self, client: str, card_id: str) -> dict:
+        try:
+            import card_title
+            return card_title.load(client, card_id)
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
+
+    def card_title_save(self, client: str, card_id: str, name: str, expected: str) -> dict:
+        try:
+            import card_title
+            return card_title.save(client, card_id, name, expected)
+        except Exception as ex:
+            return {'ok': False, 'error': str(ex)}
+        finally:
+            import job_workspace_cache
+            job_workspace_cache.invalidate(client=client)
+            invalidate = getattr(self, '_invalidate_workspace', None)
+            if invalidate:
+                invalidate(client=client)
+
+    def card_labels_toggle(self, client: str, card_id: str, label_id: str,
+                           selected: bool, board_id: str) -> dict:
+        try:
+            import card_labels
+            return card_labels.toggle(client, card_id, label_id, selected, board_id)
+        except Exception as ex:
+            return {'ok': False, 'error': 'Label change could not be confirmed. Reload Labels to check. ' + str(ex)}
+        finally:
+            import job_workspace_cache
+            job_workspace_cache.invalidate(client=client)
+            invalidate = getattr(self, '_invalidate_workspace', None)
+            if invalidate:
+                invalidate(client=client)
+
     def job_settings_schema(self) -> dict:
         """Field list plus which are shown up front."""
         try:
@@ -104,7 +203,7 @@ class JobSettingsApi(ClientOwnershipApi, JobFormsApi):
 
     def job_settings_save(self, client: str, values: dict,
                           child_name: str = "", card_desc: str = "", card_id: str = "",
-                          loss_label_context: dict = None) -> dict:
+                          loss_label_context: dict = None, insurance_context: dict = None) -> dict:
         """Save, and push only the fields that differ from the card.
 
         `card_desc` is the description the edit was based on, handed back
@@ -131,7 +230,8 @@ class JobSettingsApi(ClientOwnershipApi, JobFormsApi):
             else:
                 try:
                     res = job_settings.save(key, values, child_name or "",
-                                            card_desc or "", edited_only=True, exact_card_id=card_id)
+                                            card_desc or "", edited_only=True, exact_card_id=card_id,
+                                            insurance_context=insurance_context)
                 except Exception as ex:
                     res = {'ok': False, 'error': f'Other job-info fields could not be saved: {ex}'}
             if label_result and label_result.get('ok'):

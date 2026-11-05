@@ -678,7 +678,10 @@ def get_sheet_pin(client):
         return ""
     try:
         import ems_db
-        v = (ems_db.get_link(key, _SHEET_PIN_LINK) or "").strip()
+        job = ems_db.find_job_by_name(client)
+        if not job:
+            return ""
+        v = (ems_db.get_link(job['canon_key'], _SHEET_PIN_LINK) or "").strip()
     except Exception:
         return ""
     return v if v in _ALL_SHEETS else ""
@@ -695,6 +698,10 @@ def set_sheet_pin(client, sheet):
         return False
     try:
         import ems_db
+        job = ems_db.find_job_by_name(client)
+        if not job:
+            return False
+        key = job['canon_key']
     except Exception:
         return False
 
@@ -705,25 +712,15 @@ def set_sheet_pin(client, sheet):
         except Exception:
             return False
 
-    for attempt in (1, 2):
-        try:
-            ems_db.remove_link(key, _SHEET_PIN_LINK)
-            ems_db.set_link(key, _SHEET_PIN_LINK, sheet,
-                            added_by="tracked_move")
-            return True
-        except Exception:
-            # job_links carries a FOREIGN KEY into `jobs`, so a job the
-            # index has never seen cannot hold a pin — the write fails and
-            # the hand-move silently reverts on the next sync, which is the
-            # exact bug this is here to fix. The spreadsheet row IS a real
-            # job, so register it and retry once.
-            if attempt == 2:
-                return False
-            try:
-                ems_db.upsert_job(display_name=(client or "").strip())
-            except Exception:
-                return False
-    return False
+    try:
+        ems_db.set_link(key, _SHEET_PIN_LINK, sheet, added_by="tracked_move")
+        for link in ems_db.get_links(key, _SHEET_PIN_LINK):
+            if link['link_value'] != sheet:
+                ems_db.remove_link(key, _SHEET_PIN_LINK, link['link_value'])
+        return True
+    except Exception:
+        # A failed pin is not permission to create a second job by name.
+        return False
 
 
 def _route_for(r):
@@ -1942,6 +1939,12 @@ def move_existing_row(client, target_sheet_base, *, year=None):
     never happened."""
     if not client or target_sheet_base not in _ALL_SHEETS:
         return False
+    try:
+        import ems_db
+        if not ems_db.find_job_by_name(client):
+            return False
+    except Exception:
+        return False
     yr = year or datetime.today().year
     path = workbook_path(yr)
     if _is_locked(path):
@@ -1964,8 +1967,7 @@ def move_existing_row(client, target_sheet_base, *, year=None):
             return False
     # Only after the workbook write landed — a pin promising a move that
     # never happened would be worse than no pin at all.
-    set_sheet_pin(client, target_sheet_base)
-    return True
+    return set_sheet_pin(client, target_sheet_base)
 
 
 # Columns a user may hand-edit from the Snapshot Tracked tab. Explicit

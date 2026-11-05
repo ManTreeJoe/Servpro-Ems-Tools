@@ -55,3 +55,15 @@
 .row .acts { flex: none; display: flex; gap: 4px; }
 .row .acts .btn { padding: 2px 8px; font-size: 11px; }
 mark { background: var(--accent, #4aa3ff); color: #fff; border-radius: 2px; }
+#forms-library { margin: 12px; }
+[hidden] { display: none !important; }
+#shared-files { margin: 0 12px 12px; }
+.areas > .btn { display: block; width: calc(100% - 24px); text-align: left; }
+.areas > .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--surface-2); }
+.library-empty { padding: 48px 24px; text-align: center; }
+.library-empty h2 { font-size: 18px; margin: 0 0 10px; }
+.library-empty p { color: var(--text-muted); margin: 0 0 20px; }
+.library-preview { width: min(850px, 90vw); max-height: 90vh; overflow: auto; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
+.library-preview img { display: block; width: 100%; margin-top: 12px; }
+.library-preview > button { float: right; }
+@media(max-width: 760px) { .row { flex-wrap: wrap; } .row .acts { flex-wrap: wrap; } .areas { flex-basis: 135px; } }

@@ -1,14 +1,17 @@
 (() => {
   window.addEventListener('pywebviewready', async () => {
     const mode = document.getElementById('desktop-alert-mode');
+    const sound = document.getElementById('desktop-alert-sound');
     const test = document.getElementById('desktop-alert-test');
     const status = document.getElementById('desktop-alert-status');
     let saved = 'off';
+    let savedSound = 'chime';
     try {
       const result = await pywebview.api.desktop_settings();
       if (!result?.ok) throw Error(result?.error || 'Desktop settings could not load.');
       saved = mode.value = result.mode;
-      mode.disabled = test.disabled = !result.available;
+      savedSound = sound.value = result.sound || 'chime';
+      mode.disabled = sound.disabled = test.disabled = !result.available;
       status.textContent = result.error || (result.available ? '' : 'Available in the main Windows app.');
     } catch (error) { status.textContent = error.message; }
     mode.onchange = async () => {
@@ -20,6 +23,16 @@
         status.textContent = saved === 'off' ? 'Desktop alerts off.' : 'Saved. Only new activity will alert you.';
       } catch (error) { mode.value = saved; status.textContent = error.message; }
       finally { mode.disabled = false; }
+    };
+    sound.onchange = async () => {
+      sound.disabled = test.disabled = true;
+      try {
+        const result = await pywebview.api.desktop_settings(null, sound.value);
+        if (!result?.ok) throw Error(result?.error || 'Sound could not be saved.');
+        savedSound = sound.value = result.sound;
+        status.textContent = savedSound === 'silent' ? 'Notifications will be silent.' : 'Sound saved. Send a test notification to hear it.';
+      } catch (error) { sound.value = savedSound; status.textContent = error.message; }
+      finally { sound.disabled = test.disabled = false; }
     };
     test.onclick = async () => {
       test.disabled = true;

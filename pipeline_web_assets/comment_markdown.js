@@ -66,7 +66,10 @@ window.CommentMarkdown = (() => {
       }
     });
   }
-  const render = text => md.render(String(text || ''));
+  // Outlook/Trello pastes sometimes contain repeated empty title quotes.
+  // Normalize only malformed mailto links for display, never the stored source.
+  const render = text => md.render(String(text || '').replace(
+    /(\[[^\]\n]+\]\(mailto:[^\s)]+)\s+"{2,}\)/gi, '$1)'));
   // Display-only decoration: never modify the Markdown used for editing/posting.
   function display(text) {
     const host=document.createElement('div');host.innerHTML=render(text);

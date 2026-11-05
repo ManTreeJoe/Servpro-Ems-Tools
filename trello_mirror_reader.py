@@ -122,12 +122,28 @@ def _read(card_id=None, board_ids=None, catalog=False):
             result = _shared_read(scope, department, workspace, card_id)
         if scope != cache.scope() or not isinstance(result, dict):
             return None
+        # The isolated pilot has static, synthetic board snapshots, not a
+        # live provider poller. Only its explicit fixture board bypasses age.
+        import paths
+        if getattr(paths, 'IS_DEV', False):
+            for row in result.get('boards', []):
+                if (row.get('board') or {}).get('id') in {
+                    'dddddddddddddddddddddddd', 'dddddddddddddddddddddd02',
+                    'dddddddddddddddddddddd03', 'dddddddddddddddddddddd04'}:
+                    row['ready'] = True
+                    row['safe_after'] = datetime.now(timezone.utc).isoformat()
+            if (result.get('card') or {}).get('idBoard') == 'dddddddddddddddddddddddd':
+                result['ready'] = True
+                result['safe_after'] = datetime.now(timezone.utc).isoformat()
         with _FAILURE_LOCK:
             _FAILURES.pop(failure_key, None)
         return result, max(barrier, _barrier())  # An edit may have occurred during the RPC.
     except Exception as ex:
         if failure_key:
             _record_failure(failure_key)
+        import app_error_reports
+        app_error_reports.capture_failure('pipeline', 'server_projection_read', ex,
+                                         {'card_id': str(card_id)} if card_id else None)
         # Older installs/schema, access denial, or outage: no empty-success.
         logging.getLogger(__name__).warning(
             'Server Trello projection unavailable; retry backoff active (type=%s, status=%s)',

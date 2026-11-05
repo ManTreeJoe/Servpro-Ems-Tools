@@ -57,6 +57,7 @@ FIELDS = [
                             ["board", "stages"]),
     ("job_workspace_default_open", "Open Job Workspace details by default", "bool"),
     ("reduce_motion",       "Reduce interface motion",    "bool"),
+    ("sidebar_auto_collapse", "Collapse sidebar to icons; expand on hover or focus", "bool"),
     ("global_hotkey_enabled", "Use a shortcut to show OneLoss", "bool"),
     ("global_hotkey",       "Show-app shortcut",           "choice",
                             ["ctrl+alt+space", "ctrl+shift+space",
@@ -66,7 +67,7 @@ FIELDS = [
 
 _PERSONAL_FIELDS = {
     "appearance", "ui_scale", "ui_density", "pipeline_default_view",
-    "job_workspace_default_open", "reduce_motion",
+    "job_workspace_default_open", "reduce_motion", "sidebar_auto_collapse",
     "global_hotkey_enabled", "global_hotkey",
     "preferred_browser",
     # These are paths as THIS Windows machine reaches the shared storage.
@@ -86,6 +87,7 @@ _FIELD_GROUPS = {
     "pipeline_default_view": "Appearance & shortcuts",
     "job_workspace_default_open": "Appearance & shortcuts",
     "reduce_motion": "Appearance & shortcuts",
+    "sidebar_auto_collapse": "Appearance & shortcuts",
     "global_hotkey_enabled": "Appearance & shortcuts", "global_hotkey": "Appearance & shortcuts",
     "preferred_browser": "Appearance & shortcuts",
     "audit_base": "Folders & documents", "runs_dir": "Folders & documents",

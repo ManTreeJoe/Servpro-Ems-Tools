@@ -1450,7 +1450,7 @@ async function runSnapshotAudit() {
 
   let res;
   try {
-    res = await pywebview.api.audit_current(client);
+    res = await pywebview.api.audit_current(client, state.cardId || '');
   } catch (ex) {
     summary.textContent = "Audit failed: " + ex;
     summary.style.color = "var(--red)";
@@ -1512,7 +1512,8 @@ function renderSnapshotAuditRow(row) {
 async function onAuditAction(act, row) {
   switch (act) {
     case "open-folder":
-      if (row.path) pywebview.api.open_folder(row.path); break;
+      {const opened = await pywebview.api.open_od_for_client(row.client, '', row.trello_card_id || state.cardId || '');
+      if(!opened?.ok)setStatus(opened?.error || 'The verified job folder could not open.', 'warn');} break;
     case "copy-name": {
       const ok = await copyText(row.client || "");
       setStatus(ok ? `📋 Copied: ${row.client}` : "Couldn't copy",

@@ -1,0 +1,14 @@
+[data-quick-labels] { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:8px 0; font-size:12px; }
+[data-label-chips] { display:flex; flex-wrap:wrap; gap:5px; }
+.quick-label-caption { color:var(--muted); }
+.quick-label-chip { border:0; border-radius:4px; padding:5px 8px; color:white; cursor:pointer; }
+[data-quick-labels] details { position:relative; }
+[data-quick-labels] summary { cursor:pointer; padding:5px 8px; border:1px solid var(--border); border-radius:5px; list-style:none; }
+.quick-label-picker { position:absolute; z-index:200; top:100%; left:0; width:280px; max-width:70vw; padding:10px; background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px #0005; }
+.quick-label-picker input { box-sizing:border-box; width:100%; margin-bottom:8px; padding:8px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:5px; }
+[data-label-options] { max-height:240px; overflow:auto; display:grid; gap:5px; }
+.quick-label-picker button { padding:8px; text-align:left; background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:4px; cursor:pointer; }
+[data-label-options] [aria-pressed=true]::after { content:' ✓'; }
+.quick-label-picker button:disabled { opacity:.6; cursor:wait; }
+[data-label-reload] { margin-top:8px; }
+[data-quick-labels] small { color:var(--muted); }

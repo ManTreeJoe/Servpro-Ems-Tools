@@ -136,7 +136,7 @@ STARTER_RULES = (
         "category": "rule", "trigger_type": "stage_changed",
         "trigger": {}, "conditions": [{"field": "trello_link", "operator": "exists", "value": True}],
         "actions": [{"type": "sync_trello", "value": "stage_comment_requirements"}],
-        "summary": "While Trello is connected, mirror approved Linguar changes without making Trello the owner.",
+        "summary": "While Trello is connected, mirror approved OneLoss changes without making Trello the owner.",
     },
 )
 

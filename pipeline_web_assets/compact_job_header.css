@@ -1,0 +1,70 @@
+.audit-card .modal-head {gap:6px;padding-top:12px;padding-bottom:8px;}
+.audit-card .audit-head-main {flex-wrap:wrap;gap:4px;min-width:0;}
+.audit-card .audit-head-copy {flex:1 1 100%;max-width:100%;}
+.audit-card .modal-title-row {flex-wrap:wrap;}
+.audit-card .modal-title-row .modal-title {white-space:normal;overflow-wrap:anywhere;}
+.audit-card .workspace-load-state {margin-left:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;}
+.audit-card .card-title-edit {flex:0 0 28px;width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:18px;line-height:1;}
+.job-header-meta {display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;min-width:0;width:100%;}
+.job-header-meta .job-member-chips {display:flex;align-items:center;gap:6px;margin:0;order:3;flex:0 1 auto;}
+.job-header-meta .job-member-chips>small {margin:0;font-size:11px;}
+.job-header-meta [data-quick-labels] {margin:0;min-width:0;flex:1 1 280px;font-size:12px;order:1;}
+.job-header-meta .job-header-tags {flex:0 0 auto;order:2;}
+.job-header-meta [data-quick-members]:empty,.job-header-meta [data-quick-labels]:empty {display:none;}
+.job-header-meta .quick-label-chip {padding:5px 8px;font-weight:600;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;}
+.job-header-meta [data-label-chips] {min-width:0;max-width:100%;}
+.job-header-meta .job-member-chips button {width:26px;height:26px;min-width:26px;}
+.audit-card .job-division-folder-tabs {margin:0;}
+.audit-card .job-division-folder-tabs button {min-height:34px;padding:6px 14px;}
+.audit-card .card-quick-actions {padding:2px 0;}
+.audit-card .card-quick-actions {align-items:center;gap:12px;overflow:visible;flex-wrap:wrap;}
+.audit-card .quick-main-actions {gap:14px;flex-wrap:wrap;}
+.audit-card .quick-primary-actions,.audit-card .quick-destination-actions,.audit-card .quick-utility-actions {gap:5px;}
+.audit-card .quick-destination-actions {padding-left:12px;border-left:1px solid var(--border);}
+.audit-card .card-quick-actions .action-btn {height:34px;min-height:34px;border-radius:6px;}
+.audit-card .quick-primary-actions .action-btn {display:inline-flex;width:auto;min-width:0;gap:7px;padding:0 10px;white-space:nowrap;font-size:11px;}
+.audit-card .quick-primary-actions .quick-tool-label,.audit-card .quick-primary-actions .tool-menu-trigger > small {display:inline;}
+.audit-card .quick-destination-actions .action-btn {width:32px;min-width:32px;background:transparent;border-color:transparent;padding:5px;}
+.audit-card .quick-destination-actions .action-btn:hover,.audit-card .quick-utility-actions .action-btn:hover {background:var(--surface-2);border-color:var(--border);}
+.audit-card .quick-utility-actions {margin-left:auto;border-left:1px solid var(--border);padding-left:10px;}
+.audit-card .quick-utility-actions .action-btn {width:32px;min-width:32px;background:transparent;border-color:transparent;}
+.audit-card .card-quick-actions img,.audit-card .card-quick-actions svg {width:18px;height:18px;object-fit:contain;}
+.audit-card .card-quick-actions .action-btn:focus-visible {outline:2px solid var(--text);outline-offset:2px;}
+@media(max-width:700px) {
+  .audit-card .quick-main-actions {gap:8px;flex:1 1 100%;}
+  .audit-card .quick-primary-actions {flex-wrap:wrap;max-width:100%;flex-shrink:1;}
+  .audit-card .quick-destination-actions {padding-left:0;border-left:0;}
+}
+.audit-card .workspace-refresh {font-size:22px;line-height:1;}
+.audit-card .workspace-load-state:empty {display:none;}
+.compact-overview .overview-top {display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:12px 0;border-bottom:1px solid var(--border);padding-bottom:12px;}
+.compact-overview .overview-top-block {min-width:0;}
+.compact-overview .overview-top-block + .overview-top-block {border-left:1px solid var(--border);padding-left:16px;}
+.compact-overview header {display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.compact-overview h4 {font-size:12px;margin:0;font-weight:600;color:var(--text);}
+.overview-edit {display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;flex-shrink:0;border:1px solid transparent;background:transparent;color:var(--text-dim);border-radius:5px;cursor:pointer;}
+.overview-edit:hover {background:var(--surface-2);border-color:var(--border);}
+.overview-edit:focus-visible {outline:2px solid var(--link);outline-offset:2px;}
+.compact-overview .job-info-group {margin:0;padding:9px 0 11px;border-bottom:1px solid var(--border);border-top:0;}
+.compact-overview .job-info-grid {gap:8px 18px;}
+.compact-overview .job-info-field {border:1px solid transparent;background:transparent;border-radius:4px;padding:5px 29px 5px 0;gap:3px;width:100%;}
+.compact-overview .job-info-field>span {font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;}
+.compact-overview .job-info-field>strong {font-size:13px;font-weight:400;white-space:pre-wrap;overflow-wrap:anywhere;}
+.compact-overview .job-info-field>i {opacity:1;color:var(--text-dim);}
+.compact-overview .job-info-field:hover {background:var(--surface-2);border-color:var(--border);}
+.compact-overview .job-info-field:focus-visible {outline:2px solid var(--link);outline-offset:1px;}
+.compact-overview .job-info-field[data-move-job-location] {padding-right:55px;}
+.compact-overview .job-info-field.copied {border-color:var(--green-light);transform:none;}
+.overview-missing {display:grid;gap:3px;padding:5px 0;font-size:11px;color:var(--text-dim);}
+.overview-missing strong {font-size:13px;color:var(--text-dim);font-weight:400;}
+@media(max-width:700px) {
+ .compact-overview .overview-top {grid-template-columns:1fr;gap:10px;}
+ .compact-overview .overview-top-block + .overview-top-block {border-left:0;border-top:1px solid var(--border);padding:10px 0 0;}
+ .compact-overview .job-info-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+.snapshot-card-mode .workspace-refresh,
+.snapshot-comments-mode .workspace-refresh {display:none;}
+@media(max-width:600px) {
+  .job-header-meta {gap:6px 10px;}
+  .job-header-meta [data-quick-labels] {flex-basis:100%;}
+}

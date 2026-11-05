@@ -42,8 +42,10 @@ function hilite(text, q) {
 }
 
 async function loadAreas() {
+  if (window.formsLibraryActive) return;
   let s;
   try { s = await pywebview.api.stats(); } catch (e) { return; }
+  if (window.formsLibraryActive) return;
   const areas = (s && s.areas) || [];
   const total = (s && s.files) || 0;
   const age = s && s.age_hours;
@@ -57,6 +59,9 @@ async function loadAreas() {
   $("#areas").querySelectorAll(".area").forEach((el) =>
     el.addEventListener("click", () => {
       state.area = el.dataset.top || "";
+      window.formsLibraryActive = false;
+      $('#forms-library').setAttribute('aria-pressed', 'false');
+      $("#ext").disabled = false;
       loadAreas();
       run();
     }));
@@ -125,6 +130,7 @@ function render(rows, q) {
 }
 
 async function run() {
+  if (window.formsLibraryActive) return window.renderFormsLibrary();
   const q = ($("#q").value || "").trim();
   const ext = $("#ext").value || "";
   // An AREA (or a type) is a query in its own right — clicking "Vendors"
@@ -149,6 +155,7 @@ async function run() {
     setStatus((res && res.error) || "Search failed", "error");
     return;
   }
+  if (window.formsLibraryActive) return;
   state.rows = res.rows || [];
   render(state.rows, q);
   const what = q ? `${res.count} match${res.count === 1 ? "" : "es"} for “${esc(q)}”`

@@ -11,8 +11,9 @@ import trello_client as tc
 
 def _context(client, source_id):
     source_id = tc.parse_card_identifier(source_id)
-    job = ems_db.find_job_by_name(client)
     source = tc.get_card_lite(source_id, fields='name,desc,idBoard,idList,closed,shortLink') or {}
+    job = next((hit for alias in (source.get('id'), source_id, source.get('shortLink'))
+                if alias and (hit := ems_db.find_job_by_link('trello_card', alias))), None)
     if not job or source.get('closed') is not False or source.get('idBoard') not in copies.MAIN_BOARDS:
         raise ValueError('Choose an open EMS card on main WIP or Estimating.')
     aliases = {source_id, source.get('id'), source.get('shortLink')} - {None, ''}

@@ -1,0 +1,65 @@
+{
+  "active_department": "IE",
+  "apa_monitor_root": "X:\\IE_Public\\APA Monitor",
+  "appearance": "system",
+  "audit_base": "X:\\IE_Public",
+  "companycam_api_token": "",
+  "departments": {
+    "IE": {
+      "apa_monitor_root": "X:\\IE_Public\\APA Monitor",
+      "audit_base": "X:\\IE_Public",
+      "franchise_name": "L&P Group, Inc. d/b/a SERVPRO of Woodcrest / El Cerrito / Lake Mathews",
+      "label": "Inland Empire",
+      "office_phone": "951-398-3240",
+      "snapshot_template": "X:\\IE_Public\\Front Operation\\snapshot_handoff_fillable.pdf",
+      "trello_api_key": "eeadf8105ded75dd3a5568ca06a13d53",
+      "trello_boards_exclude": [
+        "g6oUiIud",
+        "ZyY09dyF",
+        "XuE1HdYo",
+        "Zow6gh8K",
+        "LG5QQ1tZ"
+      ],
+      "trello_snapshot_list_id": "63a384193d3ec900984ab584",
+      "trello_token": "",
+      "trello_workspace_id": "6000dbdc5bc7840c91334167"
+    },
+    "OC": {
+      "franchise_name": "SERVPRO of Laguna Hills / Laguna Niguel and Rancho Santa Margarita / Coto De Caza / Trabuco Canyon",
+      "label": "Orange County",
+      "office_phone": "951-398-3240",
+      "snapshot_template": "X:\\IE_Public\\Front Operation\\snapshot_handoff_fillable.pdf",
+      "trello_api_key": "eeadf8105ded75dd3a5568ca06a13d53",
+      "trello_boards_exclude": [],
+      "trello_snapshot_list_id": "67b3cf02fb5c22a693b97599",
+      "trello_token": "",
+      "trello_workspace_id": "67b3aa86edf2c0f18da56a8f"
+    }
+  },
+  "dispute_tracker_path": "X:\\IE_Public\\Front Operation\\EMS Admin\\Dispute Tracker.xlsx",
+  "enable_workcenter_alpha": false,
+  "franchise_name": "L&P Group, Inc. d/b/a SERVPRO of Woodcrest / El Cerrito / Lake Mathews",
+  "graph_client_id": "c8c6171d-f66f-4769-88b2-81cbc899cbc7",
+  "graph_tenant_id": "531a5c30-54e0-4f48-9fa1-b02116daeec9",
+  "multi_department_enabled": true,
+  "office_phone": "951-398-3240",
+  "show_new_job": false,
+  "show_sort_files": false,
+  "snapshot_auto_reconcile": true,
+  "snapshot_template": "X:\\IE_Public\\Front Operation\\snapshot_handoff_fillable.pdf",
+  "snapshots_root": "X:\\IE_Public\\Front Operation\\EMS Admin\\Snapshots",
+  "supabase_anon_key": "sb_publishable_qe557e-YM5QtRkxO98yixw_bdt-3xGK",
+  "supabase_url": "https://oqwwapqnzzhefqxobadl.supabase.co",
+  "trello_api_key": "eeadf8105ded75dd3a5568ca06a13d53",
+  "trello_boards_exclude": [
+    "g6oUiIud",
+    "ZyY09dyF",
+    "XuE1HdYo",
+    "Zow6gh8K",
+    "LG5QQ1tZ"
+  ],
+  "trello_snapshot_list_id": "63a384193d3ec900984ab584",
+  "trello_token": "",
+  "trello_workspace_id": "6000dbdc5bc7840c91334167",
+  "workcenter_url": "https://workcenter.servpronet.io"
+}

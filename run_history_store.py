@@ -86,6 +86,15 @@ def rows(store, doc_id):
 def link(store, row_id, job_id, revision):
     if type(revision) is not int or revision < 1:
         raise ValueError('Reopen the history entry before changing its link.')
+    if str(job_id).startswith('card:'):
+        import job_settings
+        cards = store.card_candidates([job_id[5:]])
+        if len(cards) != 1:
+            raise ValueError('Selected card is no longer available in this office.')
+        return store.request('rpc/link_schedule_card_history', body={
+            'p_department': store.department, 'p_row': identifier(row_id),
+            'p_card': job_id[5:], 'p_revision': revision,
+            'p_facts': job_settings.from_card(cards[0]['payload'].get('desc') or '')})
     return store.request('rpc/link_run_history', body={
         'p_row': identifier(row_id), 'p_job': identifier(job_id) if job_id else None,
         'p_revision': revision})

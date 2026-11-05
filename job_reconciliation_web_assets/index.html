@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Review duplicates · OneLoss Dev</title><link rel="stylesheet" href="../web_shared/theme.css?v=20260910a"><link rel="stylesheet" href="../web_shared/workspace_controls.css?v=20260910a"><link rel="stylesheet" href="app.css">
+<meta name="theme-color" content="#191C1F">
+<link rel="stylesheet" href="../web_shared/responsive.css">
+<script src="../web_shared/appearance.js"></script>
+<script src="../web_shared/progress_bar.js"></script>
+<script src="../web_shared/iframe_shim.js"></script></head><body class="responsive-ui">
+<main><header><small>ONELOSS · DEV LAB</small><h1>Manage linked cards</h1>
+<p>Isolated test database only. This does not change Main, Trello, or folders.</p></header>
+<div id="status" role="status" aria-live="polite">Connecting to Dev…</div>
+<section id="connected-panel" hidden>
+<h1 id="connected-job">Connected cards</h1><p>Each section stays connected to this job. Trello cards are not moved or deleted.</p>
+<div id="connected-sections"></div>
+<section id="connection-search" hidden><div class="actions"><h2 id="connection-search-title">Connect a card</h2><button id="connection-cancel" type="button">Back</button></div>
+<label for="connection-query">Find by name or linked job claim number</label><input id="connection-query" type="search" placeholder="Search cards…"><div id="connection-results"></div><div id="connection-choice" hidden></div></section>
+</section>
+<section id="duplicate-panel" hidden aria-labelledby="duplicate-heading"><h2 id="duplicate-heading">Possible duplicates</h2><p>Similar records are suggestions, not confirmed duplicates. EMS, Contents, Recon and separate claims may need to stay distinct.</p><div id="duplicate-results"></div></section>
+<label>What do you need to do?<select id="mode"><option value="link">Link an existing card</option><option value="move">Move a link to the correct job</option><option value="merge">Merge duplicate jobs</option></select></label>
+<section id="link-panel">
+<p id="link-help">Attach a saved, unowned card. No new job is created.</p>
+<form id="link-choose">
+<label>Destination job<select id="link-target" required></select></label>
+<h2>Cards already connected</h2><ul id="current-links"></ul>
+<div class="pair"><label>Find a card<input id="card-search" type="search" placeholder="Search card name or ID"></label><label>Section<select id="link-section"><option>EMS</option><option>Contents</option><option>Recon</option></select></label></div>
+<label>Existing card<select id="link-card" required></select></label>
+<p id="card-count"></p>
+<div class="actions"><button id="link-review" type="submit">Review link change</button><button id="link-refresh" type="button">Reload jobs and cards</button></div>
+</form>
+<section id="link-preview" hidden><h2>What will change</h2><div id="link-summary"></div><ul id="link-blockers"></ul>
+<p>Only this OneLoss card association changes. Job facts, schedules, job logs, documents and billing stay with their existing jobs. Trello card content, history and board position are unchanged. Use Merge jobs if those job records also need combining.</p>
+<form id="link-confirm"><label>Type SAVE to confirm<input id="link-confirmation" autocomplete="off" spellcheck="false"></label><button id="link-save" type="submit" disabled>Save link in Dev</button></form>
+</section></section>
+<section id="merge-panel" hidden>
+<form id="choose"><div class="pair"><label>Keep this job and permanent ID<select id="target" required></select></label>
+<label>Merge this duplicate into it<select id="source" required></select></label></div>
+<div class="actions"><button id="review" type="submit">Review changes</button><button id="refresh" type="button">Reload jobs</button></div></form>
+<section id="preview" hidden><h2>Review before merging</h2><p>The kept job retains its name and ID. Empty facts can be filled from the duplicate. Conflicting facts must be resolved first.</p>
+<div class="table-wrap"><table><thead><tr><th>Job information</th><th>Keep</th><th>Merge into kept job</th></tr></thead><tbody id="facts"></tbody></table></div>
+<h2>Linked records</h2><div id="records"></div><h2>Safety checks</h2><ul id="blockers"></ul>
+<form id="confirm"><p>The duplicate record will be retired. Its old ID will redirect to the kept job. There is no one-click undo.</p>
+<label>Type MERGE to confirm<input id="confirmation" autocomplete="off" spellcheck="false"></label>
+<button id="merge" type="submit" disabled>Merge in Dev</button></form></section>
+<section id="success" hidden><h2>Merge saved in Dev</h2><p id="result"></p><button id="verify" type="button">Verify saved job and redirect</button><pre id="verified"></pre></section>
+</section></main><script src="../web_shared/text_context_menu.js"></script><script src="app.js"></script><script src="connected.js"></script><script src="duplicates.js"></script></body></html>

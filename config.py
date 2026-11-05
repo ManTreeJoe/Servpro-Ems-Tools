@@ -17,6 +17,10 @@ _MACHINE_RECOVERY_ATTEMPTED = False
 
 def _ensure_user_config():
     global _MACHINE_RECOVERY_ATTEMPTED
+    if getattr(_paths, "IS_DEV", False):
+        if not _os.path.isfile(_USER_CFG):
+            raise RuntimeError("Isolated Dev configuration has not been prepared.")
+        return  # No bundled production defaults or machine/share recovery.
     if _os.path.isfile(_USER_CFG):
         # Upgrades keep the user's config, but safe shared connection values
         # added by a newer release must still arrive.  Before this migration,
@@ -351,7 +355,7 @@ def _norm_identity(key, value):
     s = ("" if value is None else str(value)).strip()
     if not s:
         return ""
-    if key in ("audit_base", "runs_dir"):
+    if key in ("audit_base", "runs_dir", "photos_root"):
         return _os.path.normcase(_os.path.normpath(s))
     return s.lower()
 
@@ -423,6 +427,18 @@ def check_department_integrity():
                                 f"SAME {key} ({norm!r}). One of them is "
                                 f"operating on the other franchise's data."),
                 })
+    # Photo libraries can intentionally be shared, but must not silently look
+    # like a verified, separate office setup. Do not change users' paths.
+    photo_owners = {}
+    for dk in depts:
+        root = _norm_identity("photos_root", load_for(dk).get("photos_root"))
+        if root:
+            photo_owners.setdefault(root, []).append(dk)
+    for owners in photo_owners.values():
+        if len(owners) > 1:
+            out.append({"level": "warn", "key": "photos_root",
+                        "dept": ", ".join(owners),
+                        "message": f"{' and '.join(owners)} use the same photo library. Confirm this is intentional before importing or browsing office photos."})
     return out
 
 

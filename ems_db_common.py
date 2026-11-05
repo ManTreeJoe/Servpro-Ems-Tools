@@ -206,6 +206,32 @@ def is_strong_link(link_type: str) -> bool:
     return base_link_type(link_type) in _STRONG_LINK_TYPES
 
 
+def identity_link_types(link_type: str) -> tuple[str, ...]:
+    """A Trello card has one job owner across its division representations."""
+    if base_link_type(link_type) == LINK_TRELLO:
+        return tuple(division_link_type(LINK_TRELLO, division) for division in DIVISIONS)
+    return (link_type,)
+
+
+def _resolve_existing_job(reference_lookup, name_lookup, name='', *, folder_path='',
+                          trello_card='', companycam_project='', department=''):
+    """Read exact references without teaching aliases, enrolling or linking jobs."""
+    references = [(LINK_FOLDER, folder_path), (LINK_TRELLO, trello_card),
+                  (LINK_COMPANYCAM, companycam_project)]
+    supplied = [(kind, value) for kind, value in references if value]
+    owners = {}
+    for kind, value in supplied:
+        job = reference_lookup(kind, value)
+        if job:
+            owners[job['canon_key']] = job
+    if len(owners) > 1:
+        raise ValueError('These references belong to different jobs. Reconcile them before editing.')
+    job = next(iter(owners.values()), None) if supplied else name_lookup(name)
+    if job and department and job.get('department') and str(job['department']).upper() != department.upper():
+        raise ValueError('This job belongs to another office. Reopen it in the correct office.')
+    return job
+
+
 def _norm_link(link_type: str, value: str) -> str:
     """Normalize a link value so reverse lookup is stable no matter how the
     caller spelled it. Folder paths → normcase(normpath) (case/slash-

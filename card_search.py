@@ -24,11 +24,59 @@ all, and it answers instantly with no API call.
 """
 import re
 
+
+def global_search(query, limit=24, division='', *, local_only=False):
+    """Shared Jobs/Schedule search; no writes or job enrollment while typing."""
+    query = str(query or '').strip()
+    if len(query) < 2:
+        return {'ok': True, 'cards': []}
+    limit = max(1, min(int(limit or 24), 60))
+    try:
+        import trello_client as tc
+        local = search_local(query, limit=limit * 2)
+        remote = []
+        remote_unavailable = False
+        if not local_only:
+            try:
+                options = {'raise_if_unavailable': True}
+                if any(c.isdigit() for c in query):
+                    options['include_claim'] = True
+                remote = tc.find_accessible_cards_by_name(query, max_results=limit * 2, include_closed=True, **options)
+            except Exception:
+                remote_unavailable = True
+        merged = merge(local, remote, query)
+        if division:
+            from division_cards import board_division
+            from ems_db_common import normalize_division
+            merged = [r for r in merged if board_division(r.get('board')) == normalize_division(division)]
+        merged.sort(key=lambda r: (-float(r.get('_score') or 0), str(r.get('name') or '').casefold()))
+        cards = []
+        for row in merged[:limit]:
+            cid = row.get('card_id') or row.get('id') or ''
+            cards.append({'card_id': cid, 'name': row.get('name') or '',
+                'url': row.get('url') or tc.card_url_from_id(cid), 'board': row.get('board') or '',
+                'list_name': row.get('list_name') or '',
+                'source_label': ('Job history' if row.get('_source') == 'local' else
+                                 'Archived Trello card' if row.get('closed') else 'Trello')})
+        return {'ok': True, 'cards': cards, 'count': len(cards),
+                'remote_unavailable': remote_unavailable}
+    except Exception as ex:
+        return {'ok': False, 'cards': [], 'error': f'{type(ex).__name__}: {ex}'}
+
 _PUNCT = re.compile(r"[^a-z0-9]+")
 
 
 def normalize(s):
     return _PUNCT.sub(" ", str(s or "").casefold()).strip()
+
+
+def claim_score(query, claim):
+    """Claim identifiers ignore separators; never fuzzy-match identifiers."""
+    q = ''.join(tokens(query))
+    value = ''.join(tokens(claim))
+    if len(q) < 3 or not value:
+        return 0.0
+    return 2.0 if q == value else 1.5 if q in value else 0.0
 
 
 def tokens(s):
@@ -112,6 +160,14 @@ def search_local(query, limit=60):
             "JOIN job_links l ON l.canon_key = j.canon_key "
             "WHERE l.link_type = 'trello_card' "
             "AND LOWER(j.display_name) LIKE ? LIMIT 400", (like,))]
+        claim_rows = []
+        try:
+            claim_rows = list(conn.execute(
+                "SELECT j.display_name, j.claim_number, l.link_value FROM jobs j "
+                "JOIN job_links l ON l.canon_key = j.canon_key "
+                "WHERE l.link_type = 'trello_card' AND j.claim_number IS NOT NULL"))
+        except sqlite3.OperationalError:
+            pass  # Older local mirrors still support name search.
         conn.close()
     except Exception:
         return []
@@ -135,6 +191,14 @@ def search_local(query, limit=60):
             "_source":   "local",
         })
     out.sort(key=lambda h: -h["_score"])
+    for row in claim_rows:
+        score = claim_score(query, row['claim_number'])
+        if score and row['link_value']:
+            out.append({'card_id': row['link_value'], 'name': row['display_name'],
+                        'claim_number': row['claim_number'], 'board': '', 'list_name': '',
+                        '_score': score, '_source': 'local'})
+    out = merge(out, [], query)
+    out.sort(key=lambda h: -h['_score'])
     return out[:limit]
 
 
@@ -154,11 +218,11 @@ def merge(local, remote, query):
         name = h.get("name") or ""
         score = h.get("_score")
         if score is None:
-            score = match_score(query, name)
+            score = max(match_score(query, name), claim_score(query, h.get('claim_number')))
         if score <= 0:
             continue
         prev = by_id.get(cid)
-        if prev is None or h.get("_source") != "local":
+        if prev is None or h.get("_source") != "local" or score > prev.get('_score', 0):
             merged = dict(h)
             merged["_score"] = max(score, (prev or {}).get("_score", 0.0))
             by_id[cid] = merged

@@ -72,7 +72,7 @@ window.SavedRunActivity = (() => {
           if (host.isConnected && history.isConnected) {
             const rows = [...snapshots.values()].flat();
             render(rows);
-            status.textContent = [pending.size ? `Loading ${[...pending].join(', ')}…` : rows.length ? `${rows.length} events · Pacific time` : 'No history found in available sources.', ...warnings].join(' ');
+            status.textContent = [pending.size ? `Loading ${[...pending].join(', ')}…` : rows.length ? `${rows.length} events · Pacific time · Available history only; older events may be missing.` : 'No history found in available sources. This does not mean no changes occurred.', ...warnings].join(' ');
           }
         }
       }));

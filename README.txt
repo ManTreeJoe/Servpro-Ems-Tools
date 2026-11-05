@@ -2,7 +2,7 @@ L OPS platform / agent reference
 See docs/l-ops-platform.md for shared web/mobile/iPad build notes and cross-repository coordination.
 Full guide: https://github.com/ManTreeJoe/l-ops-crm/blob/main/docs/agent-guide/README.md
 
-Linguar Hub
+OneLoss
 =========
 SERVPRO IE Department admin automation suite.
 
@@ -21,6 +21,8 @@ INSTALLING AND UPDATING
 
 GETTING STARTED (FOLDER DOWNLOAD)
 ---------------
+The executable retains its legacy filename for update compatibility;
+the app and installed shortcuts are branded OneLoss.
 1. Keep this entire folder together. Don't move "Linguar Hub.exe" out of it
    — it needs the "_internal" folder next to it to run.
 
@@ -37,7 +39,7 @@ WHERE THINGS LIVE
 -----------------
 Settings, logs, and audit history live in:
     %APPDATA%\Linguar Hub\
-    (i.e. C:\Users\<you>\AppData\Roaming\EMS Automation)
+    (Legacy folder name retained so existing settings and history stay available.)
 
 You can open this folder anytime via Settings → "Open data folder".
 
@@ -68,14 +70,14 @@ TROUBLESHOOTING
     than expected. Click Browse next to the field and pick the right one.
 
 "I want to start fresh"
-    Close Linguar Hub, delete %APPDATA%\Linguar Hub, then relaunch.
+    Close OneLoss, back up your data folder before resetting it, then relaunch.
     The wizard will pop again as if it's a fresh install.
 
 
 UNINSTALLING
 ------------
-1. Close Linguar Hub.
-2. For a Setup installation, uninstall Linguar Hub (or Linguar Hub Trial)
+1. Close OneLoss.
+2. For a Setup installation, uninstall OneLoss (or OneLoss Trial)
    from Windows Settings → Apps. For a folder download, delete this folder.
 3. Optionally delete %APPDATA%\Linguar Hub to remove your settings
    and history.

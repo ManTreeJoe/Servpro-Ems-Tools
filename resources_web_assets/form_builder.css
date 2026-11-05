@@ -1,0 +1,21 @@
+.form-builder {width:94vw;max-width:1500px;height:92vh;max-height:94vh;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:16px;overflow:auto;}
+.form-builder header {display:flex;align-items:center;justify-content:space-between;gap:16px;}
+.form-builder h2 {font-size:18px;margin:0;}
+.form-builder p {font-size:12px;line-height:1.5;}
+.builder-layout {display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;height:calc(100% - 85px);}
+.builder-layout aside {overflow:auto;padding-right:8px;}
+.builder-layout label {display:block;font-size:12px;margin-bottom:10px;}
+.builder-layout select,.builder-layout input[type=number] {display:block;width:100%;box-sizing:border-box;margin-top:5px;}
+.builder-layout select,.builder-layout input[type=number] {background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:7px;}
+.builder-numbers {display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.builder-layout aside button {margin:4px 0;}
+.builder-scroll {overflow:auto;background:#45484b;padding:18px;}
+.builder-page {position:relative;width:100%;background:white;touch-action:none;user-select:none;}
+.builder-page img {display:block;width:100%;height:100%;pointer-events:none;}
+.builder-boxes {position:absolute;inset:0;pointer-events:none;}
+.builder-field {position:absolute!important;margin:0!important;padding:1px 3px!important;min-height:0!important;border:1px solid #006a8a!important;background:#c8effacc!important;color:#00384a!important;font:10px sans-serif!important;text-align:left;overflow:hidden;border-radius:0!important;pointer-events:auto;cursor:move;}
+.builder-field.selected {outline:2px solid #006a8a;outline-offset:1px;}
+.builder-resize {position:absolute;right:0;bottom:0;width:10px;height:10px;background:#006a8a;cursor:nwse-resize;}
+.builder-field:focus-visible {outline:3px solid #00384a;outline-offset:2px;}
+.builder-layout [data-status] {min-height:38px;}
+@media(max-width:760px){.builder-layout{grid-template-columns:1fr;height:auto;}.builder-layout aside{overflow:visible;}.builder-scroll{min-height:400px;padding:8px;}.form-builder{padding:10px;}}

@@ -30,12 +30,15 @@ _USER_AGENT = "EMS-Automation/1.0"
 
 
 def _token():
+    import paths
+    if getattr(paths, "IS_DEV", False):
+        raise RuntimeError("Live CompanyCam is disabled in isolated Dev.")
     cfg = config.load()
     tok = (cfg.get("companycam_api_token") or "").strip()
     if not tok:
         raise RuntimeError(
             "CompanyCam is not connected for this franchise. An admin must "
-            "add the organization Application Key in Linguar Hub Settings; "
+            "add the organization Application Key in OneLoss Settings; "
             "employees should not add a personal token.")
     return tok
 
@@ -68,6 +71,9 @@ def is_configured():
 def _cloud_call(path, *, params=None, method="GET", data=None):
     """Call CompanyCam without bringing its organization key to this PC."""
     import supabase_client
+    import paths
+    if getattr(paths, "IS_DEV", False):
+        raise RuntimeError("Live CompanyCam is disabled in isolated Dev.")
     department = str(config.active_department() or "IE").strip().upper()
     if str(method).upper() not in {'GET', 'HEAD', 'OPTIONS'}:
         require_personal_connection()
@@ -104,14 +110,20 @@ def _call(path, *, params=None, method="GET", data=None, _max_retries=5):
         # semantic GET on transport failure, never replay the enclosing import
         # (which may already have changed tags), or fall back to another actor.
         listing = method.upper() == 'GET' and re.fullmatch(r'/projects/[^/]+/photos', path)
-        retries = min(2, max(0, _max_retries)) if listing else 0
+        tag_read = method.upper() == 'GET' and re.fullmatch(r'/photos/[^/]+/tags', path)
+        retries = min(2, max(0, _max_retries)) if listing or tag_read else 0
+        from job_workspace_cache import scope
+        original_scope = scope()
         for attempt in range(retries + 1):
+            if scope() != original_scope:
+                raise RuntimeError('Account or franchise changed. Reopen the photo review.')
             try:
                 return _cloud_call(path, params=params, method=method, data=data)
             except SupabaseError as ex:
-                if ex.status != 0 or attempt >= retries:
+                retryable = {0, 429, 502, 503, 504} if tag_read else {0}
+                if ex.status not in retryable or attempt >= retries:
                     raise
-                time.sleep(2 ** attempt)
+                time.sleep(30 if ex.status == 429 else 2 ** attempt)
 
     qs = urllib.parse.urlencode(params or {}, doseq=True)
     url = f"{API_BASE}{path}" + (f"?{qs}" if qs else "")
@@ -471,15 +483,8 @@ def find_project_id(name, address_hint="", *, use_graph=True,
     m = res.get("match") if res.get("ok") else None
     pid = m["id"] if m else ""
 
-    if pid and use_graph:
-        try:
-            import ems_db
-            ems_db.resolve_and_link(
-                name, companycam_project=pid,
-                folder_path=folder_path, trello_card=trello_card,
-                create=True, source="companycam")
-        except Exception:
-            pass
+    # Discovery is a preview. Only explicit intake/link actions may enroll or
+    # claim a project; a successful name match cannot establish job identity.
     return pid
 
 
@@ -530,6 +535,27 @@ def split_address(one_line):
     return out
 
 
+def intake_address(fields):
+    """Use explicit intake parts, including intentional blanks, before legacy text."""
+    keys = ('street_address_1', 'street_address_2', 'city', 'state', 'postal_code')
+    if any(key in fields for key in keys):
+        result = {key: str(fields.get(key) or '').strip() for key in keys}
+        result['country'] = 'US'
+        result['state'] = result['state'].upper()
+        return result
+    result = split_address(fields.get('address') or '')
+    unit = re.match(r'^(.*?),\s*((?:suite|ste|apt|apartment|unit|#)\b.*)$', result['street_address_1'], re.I)
+    if unit:
+        result['street_address_1'], result['street_address_2'] = unit.group(1).strip(), unit.group(2).strip()
+    return result
+
+
+def validate_address(address):
+    if len(address.get('street_address_1') or '') > 100:
+        return 'Street address must be 100 characters or fewer for CompanyCam. Put the unit, city, state and ZIP in their separate fields; move instructions to Notes.'
+    return ''
+
+
 def _primary_contact_phone(value):
     """Extract one US contact number; never concatenate numbers or extensions.
 
@@ -548,7 +574,7 @@ def _primary_contact_phone(value):
 
 def create_project(name, *, address="", contact_name="", contact_email="",
                    contact_phone="", street="", city="", state="",
-                   postal_code=""):
+                   postal_code="", street_address_2="", address_parts=None):
     """Create a CompanyCam project and return the shaped project dict.
 
     Body fields sit at the TOP level — CompanyCam does NOT wrap them in a
@@ -571,11 +597,15 @@ def create_project(name, *, address="", contact_name="", contact_email="",
     if not name:
         return {"ok": False, "error": "project name required"}
 
-    addr = split_address(address)
+    addr = dict(address_parts) if address_parts is not None else split_address(address)
     if street:      addr["street_address_1"] = street
     if city:        addr["city"] = city
     if state:       addr["state"] = state
     if postal_code: addr["postal_code"] = postal_code
+    if street_address_2: addr['street_address_2'] = street_address_2.strip()
+    error = validate_address(addr)
+    if error:
+        return {'ok': False, 'error': error}
 
     body = {"name": name}
     if any(addr.get(k) for k in
@@ -655,6 +685,10 @@ def _shape_photo(photo):
         "created_at":        photo.get("created_at"),
         "processing_status": photo.get("processing_status") or "",
         "original_url":      _original_uri(photo),
+        "thumbnail_url": next((u.get("uri") or u.get("url") for kind in ("thumbnail", "web")
+                               for u in (photo.get("uris") or [])
+                               if isinstance(u, dict) and u.get("type") == kind
+                               and (u.get("uri") or u.get("url"))), ""),
         "coordinates":       photo.get("coordinates"),
         "photo_url":         photo.get("photo_url") or "",
         "creator_name":      photo.get("creator_name") or "",
@@ -681,6 +715,20 @@ _TAG_WORKERS = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cc-tags")
 _TAG_RATE_LOCK = threading.Lock()
 _TAG_CACHE_LOCK = threading.RLock()
 _TAG_NEXT_REQUEST = 0.0
+
+
+def tag_read_error(error):
+    """Safe, actionable diagnostics; never show provider bodies or credentials."""
+    status = getattr(error, 'status', getattr(error, 'code', None))
+    if status in (401, 403):
+        return f'CompanyCam access was rejected (HTTP {status}). Check your connection in Settings.'
+    if status == 429:
+        return 'CompanyCam is limiting requests (HTTP 429). Wait a minute, then retry the unfinished checks.'
+    if status in (0, 502, 503, 504):
+        return f'CompanyCam connection interrupted (status {status}). Retry the unfinished checks.'
+    if status == 404:
+        return 'A photo or its tags are no longer available (HTTP 404). Reopen the photo list.'
+    return f'Tag check failed ({type(error).__name__}' + (f', HTTP {status}' if status else '') + '). Retry the unfinished checks.'
 
 
 def _wait_for_tag_slot():
@@ -1223,10 +1271,11 @@ def tech_label(photo, fallback="", *, force=False):
     # folder should be filed under — a lead shooting on a helper's device,
     # or an office account uploading a batch.
     if force and (fallback or "").strip():
-        who = fallback.strip()
+        return _safe_folder(fallback.strip())
     else:
-        who = ((photo.get("creator_name") or "").strip()
-               or (fallback or "").strip())
+        who = (photo.get("creator_name") or "").strip()
+        if not who and (fallback or "").strip():
+            return _safe_folder(fallback.strip())
     if not who:
         return ""
     try:
@@ -1566,7 +1615,7 @@ def plan_pull(project_id, dest_dir, *, subfolder="", tech="",
                         **({'strict': True, 'cap':len(missing)} if strict_tags else {}))
         except Exception as ex:
             if strict_tags:
-                return {'ok':False, 'error':f'Selected photo tags could not be verified ({type(ex).__name__}). No photos imported; retry the review.'}
+                return {'ok':False, 'error':tag_read_error(ex) + ' No photos imported.'}
             pass          # untagged routing is a worse plan, not a broken one
 
     groups = {}

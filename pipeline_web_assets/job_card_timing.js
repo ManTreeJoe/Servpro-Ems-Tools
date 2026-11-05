@@ -9,7 +9,9 @@ window.JobCardTiming = (() => {
     const section = document.createElement('section');
     section.className = 'aud-section job-timing-section';
     section.dataset.timingCard = cardId || '';
-    info.after(section);
+    const details = root.querySelector('#job-panel-run');
+    if (details) { const controls=details.querySelector('.job-details-section'); if(controls)controls.after(section);else details.prepend(section); }
+    else info.after(section);
     if (!cardId) { section.textContent = 'Job timing · Link a card to read its movement history.'; return; }
     let busy = false, result = null;
     function paint(message = '') {

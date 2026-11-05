@@ -1,0 +1,14 @@
+OneLoss 1.8.41 — Checklists, pinned comments and photo reports
+
+Edit checklist items inline and add items at the bottom of each list; changes sync to Trello.
+Pin comments using the pushpin reaction in OneLoss or Trello. Pinned views refresh while cards are open. Removing your reaction preserves coworkers' pins. Older OneLoss-only pins remain available.
+Notification badges use the same account-wide unread total. Show more / Show less is centered; clipped previews expand reliably. Reaction events are identified correctly.
+Explicit light/dark preferences are protected from tool startup fallbacks and delayed responses.
+Photo report builder supports grouped photo selection, cover address/date and SERVPRO Team Lingurar branding. Documents and DocuSign are available in quick actions.
+Initial and Final Scope evidence is tracked separately. Non-photo imports go to DOCS, with clearer drag/drop feedback and completion receipts.
+Import and photo-report tools can open in separate windows. New windows start fresh; unsaved selections are not transferred.
+CompanyCam child-project creation now links the returned project correctly.
+Job Log comments use a bold weekday and full date, activity/time, and crew on separate lines.
+
+Existing saved PDFs are not rewritten. Existing CompanyCam orphan projects are not automatically repaired.
+Automated tests use controlled fixtures; release checks do not post customer comments or import customer files.

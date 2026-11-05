@@ -1,0 +1,16 @@
+OneLoss Main 1.8.43
+
+- Keeps Trello card positions available for board ordering.
+- Reads populated Account Info when a card's customer template is blank.
+- Registers eligible new EMS/Contents cards when opened, with exact-link safety checks.
+- Supports shared Recon boards across IE and OC while verifying office access.
+- Simplifies self-pay paperwork and removes the duplicate Job requirements display; checklists remain available.
+- Displays DocuSketch folder evidence alongside other paperwork checks.
+- Refreshes open-job paperwork after file imports.
+- Adds Initial video viewer to the CompanyCam menu, using the job's saved video link.
+- Improves import/report tool pop-outs and preserves the selected division.
+- Allows closing photo reports during loading or preview, with unsaved-change protection.
+- Allows clicking outside supported tool dialogs to return to the previous window.
+- Distinguishes Awaiting scheduling and Status not verified from Scheduled.
+
+Ambiguous card links and unresolved work-status reconciliation remain unchanged.

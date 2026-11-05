@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>New boards · OneLoss Dev</title>
+<link rel="stylesheet" href="../web_shared/theme.css?v=20260910a"><link rel="stylesheet" href="../web_shared/workspace_controls.css?v=20260910a"><link rel="stylesheet" href="app.css">
+<meta name="theme-color" content="#191C1F">
+<link rel="stylesheet" href="../web_shared/responsive.css">
+<script src="../web_shared/appearance.js"></script>
+<script src="../web_shared/progress_bar.js"></script>
+<script src="../web_shared/iframe_shim.js"></script></head>
+<body class="responsive-ui"><header><div><small>ONELOSS · DEV LAB</small><h1>New boards</h1></div><button id="refresh">Refresh</button><button id="archive">Archive (0)</button></header>
+<p class="notice">Local test board — saved on this computer. No real jobs or Trello cards are changed. Not shared with other users.</p>
+<div id="status" role="status">Loading board…</div>
+<form id="new-card"><label>Test card name<input id="title" required maxlength="2000" placeholder="e.g. Test water loss"></label><label>Lane<select id="new-lane"></select></label><button>Add card</button></form>
+<main id="board" aria-label="Board lanes"></main>
+<form id="add-lane"><label>New lane<input id="lane-name" required maxlength="2000"></label><button>Add lane</button></form>
+<dialog id="detail"><div class="dialog-head"><h2 id="card-title"></h2><button id="close" aria-label="Close card">✕</button></div><p id="identity"></p><div class="actions"><label>Move to<select id="move-lane"></select></label><button id="move">Move</button><button id="up">Move up</button><button id="toggle-archive">Archive</button></div><h3>Thread & history</h3><div id="history"></div><form id="reply"><label>Add a comment<textarea id="comment" required maxlength="2000"></textarea></label><button>Post comment</button></form></dialog>
+<script src="../web_shared/text_context_menu.js"></script><script src="app.js"></script></body></html>

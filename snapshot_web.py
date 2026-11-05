@@ -278,6 +278,9 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
     def open_od_for_client(self, *a, **k):
         """Same smart-resolve path the audit + IUQ use, so a stale
         snapshot-row path doesn't silently fail when you click 📁 OD."""
+        card_id = k.get('card_id') or (a[2] if len(a) > 2 else '')
+        if not card_id:
+            return {"ok": False, "error": "Select the job card before opening its folder."}
         return self._aw().open_od_for_client(*a, **k)
 
     def open_url(self, url):
@@ -550,7 +553,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         return {"ok": True, "posted_trello": posted}
 
     # ── P0: Audit subview (per-job audit inline in snapshot) ────────
-    def audit_current(self, client):
+    def audit_current(self, client, card_id=""):
         """Run the same per-client audit the Audit panel runs, shaped
         for the snapshot's inline subview. Lets the user check missing
         items before generating the PDF — no need to flip to the
@@ -559,7 +562,9 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         if not client:
             return {"ok": False, "error": "no client"}
         try:
-            res = self._aw().reaudit_one(client)
+            if not card_id:
+                return {"ok": False, "error": "Select the job card before scanning its folder."}
+            res = self._aw().reaudit_one(client, card_id)
             return res
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
@@ -639,8 +644,10 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
         # mismatch. With explicit card_id pass-through, the docusketch
         # request posts the same way the daily-audit button does.
         return self._aw().request_docusketch(client, card_id)
-    def reaudit_one(self, client):
-        return self._aw().reaudit_one(client)
+    def reaudit_one(self, client, card_id=""):
+        if not card_id:
+            return {"ok": False, "error": "Select the job card before scanning its folder."}
+        return self._aw().reaudit_one(client, card_id)
     def match_diagnostic(self, client):
         return self._aw().match_diagnostic(client)
     def set_commercial(self, client, on):
@@ -968,6 +975,12 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
     # 📎 Trello attachments manager
     def list_card_attachments(self, card_id):
         return self._aw().list_card_attachments(card_id)
+
+    def trello_attachment_destinations(self, *args):
+        return self._aw().trello_attachment_destinations(*args)
+
+    def import_trello_attachments(self, *args):
+        return self._aw().import_trello_attachments(*args)
     def fetch_trello_image(self, *a, **k):
         return self._aw().fetch_trello_image(*a, **k)
     def download_card_attachments(self, card_id, attachment_ids, client=""):

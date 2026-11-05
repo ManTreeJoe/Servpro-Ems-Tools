@@ -10,14 +10,19 @@ def prepare_parent(card_id, parent_id):
         return {'ok': False, 'error': 'Could not verify the original comment. Your draft is kept; retry.'}
 
 
-def reply_mentions(body, parent, username):
+def reply_mentions(body, parent, username, aliases=None):
     """Reply-all usernames; preserve spelling but deduplicate case-insensitively."""
-    pattern = r'(?<![\w@])@([A-Za-z0-9_]+)'
-    seen = {username.casefold()} | {u.casefold() for u in re.findall(pattern, body)}
+    pattern = r'(?<![\w@])@([A-Za-z0-9_][A-Za-z0-9_.-]*)'
+    aliases = aliases or {}
+    def mapped(name):
+        return aliases.get(name.casefold(), name)
+    body = re.sub(pattern, lambda match: '@' + mapped(match[1]), body)
+    seen = {mapped(username).casefold()} | {u.casefold() for u in re.findall(pattern, body)}
     recipients = [parent.get('author_username', '')] + re.findall(pattern, parent.get('body', ''))
     tags = []
     for name in recipients:
-        if re.fullmatch(r'[A-Za-z0-9_]+', name) and name.casefold() not in seen:
+        name = mapped(name)
+        if re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*', name) and name.casefold() not in seen:
             seen.add(name.casefold())
             tags.append('@' + name)
     return (' '.join(tags) + '\n\n' if tags else '') + body
@@ -44,6 +49,9 @@ def call(action, card_id, data=None):
                                       and row.get('delivery') == 'sent' and row.get('provider_id'))
             return result
     except Exception as error:
+        import app_error_reports
+        app_error_reports.capture_failure('pipeline', 'comment_threads_' + action, error,
+                                         {'card_id': str(card_id or '')})
         message = str(error)
         if 'Comment is not in the shared snapshot yet' in message:
             return {'ok': False, 'code': 'parent_missing', 'error': 'This comment has not reached the shared snapshot yet. Give it a moment, then retry.'}
@@ -84,7 +92,17 @@ def reply(card_id, parent_id, body, operation_id):
     me = tc.get_member_me() or {}
     if not me.get('username'):
         return {'ok': False, 'error': 'Reconnect Trello before replying. Your draft is kept.'}
-    body = reply_mentions(body, parent_context, me['username'])
+    aliases = {}
+    if '@ol.' in (body + ' ' + str(parent_context.get('body') or '') + ' @' + str(parent_context.get('author_username') or '')).lower():
+        from personal_notifications import mention_members
+        people = mention_members(card_id)
+        if not people.get('ok'):
+            return {'ok': False, 'error': 'Could not verify linked mention accounts. Your draft is kept; retry.'}
+        for person in people.get('members', []):
+            old, linked = str(person.get('username') or ''), str(person.get('trello_username') or '')
+            if person.get('trello_member_id') and re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*', linked):
+                aliases[old.casefold()] = linked
+    body = reply_mentions(body, parent_context, me['username'], aliases)
     parent_id = parent_context['parent_id']
     result = call('reply', card_id, {'parent': parent_id, 'body': body,
                                    'operation_id': operation_id})
@@ -102,8 +120,8 @@ def reply(card_id, parent_id, body, operation_id):
         if finished.get('ok'):
             row = finished['comment']
         if external_id:
-            from personal_notifications import enqueue
-            enqueue(card_id, row['id'], body)
+            from comment_delivery import notify
+            result['notification_warning'] = notify(card_id, row['id'], body)
     result['comment'] = row
     result['warning'] = ('' if row.get('delivery') == 'sent' else
         'Reply saved in OneLoss. Trello delivery is unconfirmed; do not repost.')

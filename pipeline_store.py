@@ -34,15 +34,31 @@ def _rows(table, **params):
     key = (_cache_scope(), table) if table in _TABLES else None
     with _MISSING_TABLE_LOCK:
         if key and _MISSING_TABLES.get(key, 0) > time.monotonic():
-            raise RuntimeError('PGRST205: optional table is not installed (cached)')
+            # Preserve the same typed outcome as the original response.
+            # Comment delivery may safely fall back only on this exact error.
+            raise _sb.SupabaseError(404, json.dumps({
+                "code": "PGRST205",
+                "message": f"optional table {table} is not installed (cached)",
+            }))
     try:
         out = _sb.rest("GET", table, params=params)
     except Exception as ex:
-        if key and _missing_schema(ex):
+        if key and _confirmed_missing_table(ex):
             with _MISSING_TABLE_LOCK:
                 _MISSING_TABLES[key] = time.monotonic() + 300
         raise
     return out if isinstance(out, list) else []
+
+
+def _confirmed_missing_table(error):
+    """Never remember permission, transport, or arbitrary textual failures."""
+    if not isinstance(error, _sb.SupabaseError) or error.status != 404:
+        return False
+    try:
+        body = json.loads(error.body)
+        return isinstance(body, dict) and body.get("code") == "PGRST205"
+    except (ValueError, TypeError):
+        return False
 
 
 def _missing_schema(ex):
@@ -258,7 +274,7 @@ def mirror_boards(payload: dict) -> dict:
                         "position": card_pos, "source": "trello",
                         "external_id": ext_card or None,
                         "external_url": card.get("url") or None,
-                        "labels_json": card.get("loss_types") or [],
+                        "labels_json": card.get("labels", card.get("loss_types")) or [],
                         "due_at": card.get("due") or None,
                         "due_complete": bool(card.get("due_complete")),
                         "last_activity_at": card.get("last_activity_at") or None,
@@ -326,7 +342,9 @@ def load_boards(board_specs) -> dict:
                     "claim_id": c.get("claim_id") or "",
                     "url": c.get("external_url") or "",
                     "list_id": lane.get("external_id") or lane.get("lane_key"),
-                    "lane": lane.get("name") or "", "loss_types": labels,
+                    "lane": lane.get("name") or "",
+                    "labels": [label for label in labels if isinstance(label, dict)],
+                    "loss_types": [label for label in labels if isinstance(label, str)],
                     "checklist": checklist_summary(checklist), "due": c.get("due_at") or "",
                     "due_complete": bool(c.get("due_complete")), "overdue": False,
                     "days_in_lane": 0, "stall": "none",
@@ -543,10 +561,15 @@ def mark_activity_mirrored(activity_key: str, external_id: str) -> None:
         pass
 
 
+class ActivitySaveUnconfirmed(Exception):
+    """A write was attempted; falling back could duplicate the comment."""
+
+
 def add_activity(external_card_id: str, action_type: str, body: str,
                  actor_name: str = "", *, source: str = "linguar",
                  external_id: str = "", actor_id: str = "") -> dict:
     """Append one permanent card activity; returns empty when v11 is absent."""
+    writing = False
     try:
         cards = _rows("crm_pipeline_cards",
                       external_id=f"eq.{external_card_id}",
@@ -561,10 +584,16 @@ def add_activity(external_card_id: str, action_type: str, body: str,
                "source": source, "external_id": external_id or None,
                "metadata_json": ({"actor_id": actor_id} if actor_id else {}),
                "created_at": now}
+        writing = True
         _upsert("crm_pipeline_activity", row)
         return row
-    except Exception:
-        return {}
+    except Exception as error:
+        if writing:
+            raise ActivitySaveUnconfirmed() from error
+        # Only a known absent legacy table may select the compatibility store.
+        if _confirmed_missing_table(error):
+            return {}
+        raise
 
 
 def add_activities(external_card_id: str, activities: list[dict]) -> int:

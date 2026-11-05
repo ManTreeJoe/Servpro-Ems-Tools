@@ -27,8 +27,8 @@
   </div>
   <div class="topbar-actions">
     <input id="q" class="search" type="search" autofocus
-           placeholder="🔎 Search forms, COIs, vendors, templates…" />
-    <select id="ext" class="search" title="File type">
+           placeholder="Search uploaded PDFs…" />
+    <select id="ext" class="search" title="File type" hidden>
       <option value="">Any type</option>
       <option value="pdf">PDF</option>
       <option value="docx">Word</option>
@@ -36,14 +36,17 @@
       <option value="jpg">JPG</option>
       <option value="png">PNG</option>
     </select>
-    <button id="rebuild" class="btn" title="Re-walk the share. Takes about a minute.">↻ Rebuild</button>
+    <button id="rebuild" class="btn" hidden title="Re-walk the share. Takes about a minute.">↻ Rebuild</button>
+    <button id="upload-form" class="btn">+ Upload PDF</button>
   </div>
 </header>
 
 <main class="split">
   <aside class="areas">
-    <div class="areas-head">Areas</div>
-    <nav id="areas"></nav>
+    <button id="forms-library" class="btn" aria-pressed="true">PDF library</button>
+    <button id="shared-files" class="btn" aria-pressed="false">Shared folders</button>
+    <div class="areas-head" hidden>Areas</div>
+    <nav id="areas" hidden></nav>
   </aside>
   <section class="results">
     <div id="hint" class="hint"></div>
@@ -53,5 +56,8 @@
 
 <footer class="statusbar"><span id="status"></span></footer>
 <script src="app.js?v=20260814b"></script>
+<script src="forms_library.js?v=20261016a"></script>
+<script src="form_builder.js?v=20261016a"></script>
+<link rel="stylesheet" href="form_builder.css?v=20261016a">
 </body>
 </html>

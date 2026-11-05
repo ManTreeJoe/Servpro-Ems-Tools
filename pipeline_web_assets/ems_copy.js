@@ -1,23 +1,25 @@
 /* Deliberate second-board creation. Never move the original, never auto-retry POST. */
 async function openEmsCopyCreateModal(client, sourceId, onCreated) {
   const modal=document.createElement('div');modal.className='modal-scrim audit-overlay';
-  modal.innerHTML=`<div class="modal-box compact-dialog ems-copy-dialog" role="dialog" aria-modal="true" aria-label="Copy EMS job to board">
-    <header class="modal-head"><div class="modal-title">Copy to board</div><button class="audit-close" data-close aria-label="Close">×</button></header>
+  modal.innerHTML=`<div class="modal-box compact-dialog ems-copy-dialog" role="dialog" aria-modal="true" aria-label="Create linked placeholder">
+    <header class="modal-head"><div class="modal-title">Create linked placeholder</div><button class="audit-close" data-close aria-label="Close">×</button></header>
     <div class="modal-body job-log-form"><p class="wide" data-summary>Checking linked EMS cards…</p>
+    <label class="wide">Destination board<input data-copy-board readonly aria-label="Destination board" value="Checking…"></label>
     <label class="wide">Destination section<select data-copy-section disabled></select></label>
     <p class="wide">The original stays where it is. Copies the title and job details and links the same EMS job. Old comments, checklists and Job Logs are not duplicated.</p>
     <p class="wide" data-copy-status role="status"></p>
-    <div class="job-log-form-actions"><button class="btn btn-primary" data-create disabled>Create linked copy</button><button class="btn" data-open hidden>Open existing card</button><button class="btn" data-close>Cancel</button></div></div></div>`;
+    <div class="job-log-form-actions"><button class="btn btn-primary" data-create disabled>Create linked placeholder</button><button class="btn" data-open hidden>Open existing card</button><button class="btn" data-close>Cancel</button></div></div></div>`;
   const prior=document.activeElement;let busy=false;
   function close(){if(busy)return;document.removeEventListener('keydown',key,true);modal.remove();prior?.focus();}
   function key(e){if(e.key==='Escape'){e.stopImmediatePropagation();close();}}
   document.addEventListener('keydown',key,true);modal.querySelectorAll('[data-close]').forEach(b=>b.onclick=close);document.body.append(modal);
   const status=modal.querySelector('[data-copy-status]'),button=modal.querySelector('[data-create]'),select=modal.querySelector('select'),open=modal.querySelector('[data-open]');
-  function showLink(result){if(result.url){open.hidden=false;open.onclick=()=>pywebview.api.open_url(result.url);}else if(result.id){open.hidden=false;open.onclick=()=>pywebview.api.open_url('https://trello.com/c/'+result.id);}}
+  function showLink(result){const id=result.card_id||result.id,url=result.url||result.shortUrl||(id?'https://trello.com/c/'+id:'');if(url){open.hidden=false;open.onclick=()=>pywebview.api.open_url(url);}}
   try{
     const preview=await pywebview.api.preview_ems_card_copy(client,sourceId);
     if(!modal.isConnected)return;if(!preview?.ok)throw Error(preview?.error||'Could not check the destination.');
     modal.querySelector('[data-summary]').textContent=`${preview.name} → ${preview.target_name}`;
+    modal.querySelector('[data-copy-board]').value=preview.target_name;
     if(preview.existing){status.textContent='This job already has a linked card on that board. No new copy is needed.';showLink(preview.existing);return;}
     const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a section…';select.append(placeholder);
     for(const lane of preview.lists||[]){const option=document.createElement('option');option.value=lane.id;option.textContent=lane.name;select.append(option);}

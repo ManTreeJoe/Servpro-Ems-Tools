@@ -166,6 +166,13 @@ def evaluate(master: dict, audit: dict | None = None,
             continue
         rules.extend(ENVIRONMENT.get(env.get("work_environment"), ()))
     rules.extend(JOB_TYPE.get(master.get("job_type") or "", ()))
+    scope_rows = {}
+    if str(audit.get('selected_division') or 'EMS').upper() == 'EMS':
+        from job_paperwork import build_paperwork
+        scope_rows = {row['label']: row for row in build_paperwork(master, audit)['items']}
+        rules = [(key, 'Initial Scope documented' if key == 'scope' else label, introduced, owner)
+                 for key, label, introduced, owner in rules]
+        rules.append(('final_scope', 'Final Scope documented', 'closeout', 'operations'))
     # Applied Job Profiles are immutable snapshots in job metadata. Reading
     # the copied requirements here means editing a reusable profile never
     # changes the work already underway on an existing job.
@@ -175,6 +182,9 @@ def evaluate(master: dict, audit: dict | None = None,
         seen_rule_keys = {rule[0] for rule in rules}
         for profile in applied_profiles:
             if not isinstance(profile, dict):
+                continue
+            if (audit.get('selected_division') and profile.get('section') and
+                    str(profile['section']).casefold() != str(audit['selected_division']).casefold()):
                 continue
             for requirement in profile.get("requirements") or []:
                 if not isinstance(requirement, dict):
@@ -200,7 +210,11 @@ def evaluate(master: dict, audit: dict | None = None,
         explicitly_missing = any(alias in missing_text for alias in aliases)
         completed = False
         evidence = ""
-        if key == "trello_card":
+        if scope_rows and key in ('scope', 'final_scope'):
+            scope_row = scope_rows.get('Initial Scope' if key == 'scope' else 'Final Scope', {})
+            completed = scope_row.get('status') == 'present'
+            evidence = scope_row.get('source', '') if completed else ''
+        elif key == "trello_card":
             completed, evidence = trello_linked, "Trello"
         elif key == "job_folder":
             completed, evidence = folder_found, "job folder"

@@ -21,6 +21,84 @@ class Api(ClientOwnershipApi):
     def attach(self, window):
         self._window = window
 
+    def create_directory_client(self, name):
+        import config
+        name = str(name or '').strip()
+        if not 1 <= len(name) <= 300:
+            return dict(ok=False, error='Enter a client or company name (1–300 characters).')
+        result = self.create_client_account(name, config.active_department())
+        if result.get('ok'):
+            self._client_data = None
+        return result
+
+    def client_job_candidates(self, client_id):
+        """All accessible saved jobs, including closed jobs; never guess ownership."""
+        try:
+            from uuid import UUID
+            import config, supabase_client as sb
+            if not sb.is_signed_in():
+                raise ValueError('Sign in to link jobs.')
+            client_id = str(UUID(str(client_id)))
+            department = config.active_department()
+            # Paginate the directory rather than silently losing later accounts.
+            clients = self._client_link_rows('crm_clients', {
+                'department': 'eq.' + department, 'active': 'eq.true',
+                'select': 'client_id,display_name', 'order': 'client_id'})
+            target = next((c for c in clients if c['client_id'] == client_id), None)
+            if not target:
+                raise ValueError('Choose an active client in the current office.')
+            names = {c['client_id']: c['display_name'] for c in clients}
+            jobs = self._client_link_rows('jobs', {
+                'department': 'eq.' + department,
+                'select': 'job_id,display_name,client_id,client_revision,address,date_of_loss,date_received,lifecycle_stage,status',
+                'order': 'display_name,job_id'})
+            for job in jobs:
+                job['current_client'] = names.get(job.get('client_id'), 'Other client' if job.get('client_id') else 'Not linked')
+            return dict(ok=True, client=target, jobs=jobs)
+        except Exception as error:
+            return dict(ok=False, error=str(error), jobs=[])
+
+    @staticmethod
+    def _client_link_rows(table, params):
+        import supabase_client as sb
+        rows = []
+        for offset in range(0, 50000, 500):
+            batch = sb.rest('GET', table, params={**params, 'offset': offset, 'limit': 500}) or []
+            rows.extend(batch)
+            if len(batch) < 500:
+                return rows
+        raise ValueError('The saved directory is too large to load completely. No jobs were linked.')
+
+    def link_client_jobs(self, client_id, selected):
+        """Explicit per-job transfers with revision guards and honest partial results."""
+        from uuid import UUID
+        try:
+            client_id = str(UUID(str(client_id)))
+            if not isinstance(selected, list) or not 1 <= len(selected) <= 100:
+                raise ValueError('Select between 1 and 100 jobs.')
+            wanted = {str(UUID(str(row['job_id']))): int(row['client_revision']) for row in selected}
+            if len(wanted) != len(selected):
+                raise ValueError('Each job may only be selected once.')
+            context = self.client_job_candidates(client_id)
+            if not context.get('ok'):
+                return context
+            available = {j['job_id']: j for j in context['jobs']}
+            if any(key not in available or int(available[key]['client_revision']) != rev for key, rev in wanted.items()):
+                raise ValueError('A selected job changed or is no longer available. Reopen the picker and review it.')
+        except (ValueError, TypeError, KeyError) as error:
+            return dict(ok=False, error=str(error), linked=[])
+        linked, failures = [], []
+        for key, revision in wanted.items():
+            result = self.transfer_job_client(key, client_id, revision)
+            if result.get('ok'):
+                linked.append(key)
+            else:
+                failures.append(dict(job_id=key, name=available[key]['display_name'], error=result.get('error') or 'Link not confirmed'))
+                break  # Do not continue a batch after an uncertain result.
+        self._client_data = None
+        return dict(ok=not failures, linked=linked, failures=failures,
+                    error='Some links were not confirmed. Close and reopen to review before retrying.' if failures else '')
+
     @staticmethod
     def _divisions(path: str) -> list[str]:
         if not path or not os.path.isdir(path):
@@ -69,7 +147,7 @@ class Api(ClientOwnershipApi):
             self._client_data, self._client_scope = OperationsData(department=scope[0]), scope
         return self._client_data
 
-    def list_clients(self, query='', division='all', limit=250, force=False):
+    def list_clients(self, query='', division='all', limit=250, force=False, ownership='all'):
         result = self._shared_data().snapshot(bool(force))
         if not result.get('ok'):
             return dict(ok=False, clients=[], error=result.get('error') or 'Shared client records unavailable.')
@@ -82,6 +160,8 @@ class Api(ClientOwnershipApi):
                 key = key if key.startswith('client:') else 'job:'+key
                 rows = [r for r in result['clients'] if r['key']==key
                         and (division.lower()=='all' or division.upper() in r.get('divisions', []))]
+        if ownership == 'unassigned':
+            rows = [r for r in rows if r.get('ownership') == 'unassigned']
         return dict(ok=True, clients=rows[:int(limit)], count=len(rows))
 
     def client_account(self, client):

@@ -87,9 +87,9 @@ INITIAL_CHECKLIST_MAP: dict[str, tuple[str, ...]] = {
     # Initial paperwork (ATP / CIF / CER / COS) — files dropped into
     # EMS/DOCS. Coarse — anything that satisfies "INITIAL PAPERWORK"
     # ticks both lists' versions.
-    "initial_paperwork": (
-        "INITIAL PAPERWORK",
-    ),
+    # File discovery/import is not staff confirmation of a complete packet.
+    # Keep legacy event names as no-ops for all desktop/import callers.
+    "initial_paperwork": (),
     # Final stage event — Initial Upload submitted to WC. This one is
     # the gating item that drops the card OUT of the IUQ, so we tick
     # it only when the user explicitly posts the canonical
@@ -101,9 +101,7 @@ INITIAL_CHECKLIST_MAP: dict[str, tuple[str, ...]] = {
     # in the zip. Default coarse tick of INITIAL PAPERWORK; caller can
     # override with explicit events if they know the WC zip only had
     # specific items.
-    "wc_docs_imported": (
-        "INITIAL PAPERWORK",
-    ),
+    "wc_docs_imported": (),
 
     # ── IN PROGRESS - ADMIN checklist ───────────────────────────────
     # Demo / mid-job photos imported into a Demo (or other in-progress)
@@ -122,9 +120,7 @@ INITIAL_CHECKLIST_MAP: dict[str, tuple[str, ...]] = {
         "SNAPSHOT",
     ),
     # Final paperwork (DocuSign packet / signed COS) imported into DOCS.
-    "final_paperwork": (
-        "FINAL PAPERWORK",
-    ),
+    "final_paperwork": (),
     # Final sketch (a docusketch imported at close-out time rather than
     # initial). Distinct from PHYSICAL SKETCH so the caller can target
     # the right lifecycle stage.

@@ -26,6 +26,17 @@ def _summary(row):
 class JobAdminApi:
     """Mixin: read-first plans plus guarded destructive commits."""
 
+    def _shared_merge_session(self):
+        # One session per bridge, initialized under a class lock for concurrent calls.
+        from shared_job_merge import SharedJobMerge
+        with self._merge_session_lock:
+            if not hasattr(self, '_shared_merge'):
+                self._shared_merge = SharedJobMerge()
+            return self._shared_merge
+
+    from threading import Lock as _Lock
+    _merge_session_lock = _Lock()
+
     def job_admin_suggest(self, query: str, exclude_key: str = "",
                           limit: int = 8) -> dict:
         try:
@@ -90,6 +101,14 @@ class JobAdminApi:
                 return {"ok": False, "error": "Both jobs must exist"}
             if keep["canon_key"] == drop["canon_key"]:
                 return {"ok": False, "error": "Choose two different jobs"}
+            if ems_db.backend_name() == 'supabase':
+                result = self._shared_merge_session().preview(keep, drop)
+                from shared_job_merge import source_counts
+                target, source = result['snapshot']['target'], result['snapshot']['source']
+                return {"ok": True, "keep": _summary(target), "drop": _summary(source),
+                        "preview": {"totals": source_counts(result['snapshot']), "department_conflicts": []},
+                        "carried": [f for f in _CARRY_FIELDS if not target.get(f) and source.get(f)],
+                        "conflicts": [], "atomic": True, "external_untouched": True}
             preview = ems_db.merge_preview(
                 keep["canon_key"], [drop["canon_key"]])
             carried = [f for f in _CARRY_FIELDS
@@ -110,6 +129,15 @@ class JobAdminApi:
                         confirm_drop_name: str) -> dict:
         try:
             import ems_db
+            if ems_db.backend_name() == 'supabase':
+                result = self._shared_merge_session().apply(
+                    (keep_key or '').strip(), (drop_key or '').strip(), confirm_drop_name or '')
+                try:
+                    import job_search
+                    job_search.invalidate_cache()
+                except Exception:
+                    pass
+                return result
             keep = ems_db.get_job((keep_key or "").strip())
             drop = ems_db.get_job((drop_key or "").strip())
             if not keep or not drop:
@@ -130,8 +158,8 @@ class JobAdminApi:
                         (drop.get(field) or "").strip():
                     carried[field] = drop[field]
             if carried:
-                ems_db.upsert_job(
-                    display_name=keep.get("display_name") or keep["canon_key"],
+                ems_db.update_job(
+                    keep["canon_key"],
                     **carried)
             res = ems_db.merge_jobs(
                 keep["canon_key"], [drop["canon_key"]],

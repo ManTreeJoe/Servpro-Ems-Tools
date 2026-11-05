@@ -40,6 +40,18 @@ def overlay(payload, saved):
     """Apply durable placement state without changing provider input objects."""
     result = deepcopy(payload)
     rows = {r['card_id']: r for r in saved.get('placements', [])}
+    # Shared destinations may not appear in the caller's whole-board mirror.
+    # Build empty lanes from accessible metadata and add ONLY RLS-visible
+    # placements below; never fetch the other office's board payload.
+    visible_ids = {b.get('board_id') for b in result.get('boards', [])}
+    owned_destinations = {r['board_id'] for r in rows.values() if r['state'] == 'active'}
+    for board in saved.get('boards', []):
+        if board['board_id'] in owned_destinations - visible_ids:
+            result.setdefault('boards', []).append({
+                'key': board['board_id'], 'board_id': board['board_id'], 'name': board['name'],
+                'lanes': [{'list_id': lane['id'], 'name': lane['name'], 'pos': lane.get('pos', 0),
+                           'cards': [], 'count': 0} for lane in board.get('lists', []) if not lane.get('closed')],
+            })
     originals = {}
     destinations = {}
     for board in result.get('boards', []):
@@ -62,6 +74,7 @@ def overlay(payload, saved):
         raw = row.get('card_json') or {}
         card = originals.get(cid) or {'card_id': cid, 'name': row['title'],
             'client': row['title'], 'url': raw.get('url', ''), 'loss_types': [],
+            'labels': raw.get('labels') or [],
             'checklist': {}, 'stall': 'none', 'days_in_lane': 0}
         card.update(list_id=row['list_id'], lane=lane['name'], placement_version=row['version'],
                     sync_status='pending' if row['synced_version'] < row['version'] else 'synced')
@@ -102,7 +115,8 @@ def decorate(payload):
                     'error': 'Saved card locations are unavailable. Retry Jobs; no cards were changed.'}
         payload = {**payload, 'placement_warning': 'Showing saved card locations; shared refresh unavailable'}
     saved = merge_snapshots(saved, pipeline_store.load_board_cache().get('placement_snapshot'))
-    return overlay(payload, saved)
+    import job_card_completion
+    return job_card_completion.decorate_dates(overlay(payload, saved))
 
 
 def context(card_id=''):
@@ -184,6 +198,9 @@ def sync_pending():
 
 def start_sync(force=False):
     global _last_run
+    import paths
+    if getattr(paths, 'IS_DEV', False):
+        return  # Keep test moves local to the isolated database.
     if not force and time.monotonic() - _last_run < 30:
         return
     if not _worker_lock.acquire(blocking=False):

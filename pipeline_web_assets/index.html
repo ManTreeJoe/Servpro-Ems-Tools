@@ -21,9 +21,10 @@
 <script src="../web_shared/appearance.js?v=20260901a"></script>
 <script src="../web_shared/modal.js?v=20261007surfaces"></script>
 <script src="../web_shared/trello_attachments.js?v=20260918popupstay"></script>
+<script src="../web_shared/trello_attachment_gallery.js?v=20261020"></script>
 <link rel="stylesheet" href="../web_shared/theme.css?v=20261007surfaces" />
 <link rel="stylesheet" href="../web_shared/modal.css?v=20260813a" />
-<link rel="stylesheet" href="app.css?v=20261007jobs-motion" />
+<link rel="stylesheet" href="app.css?v=20261105-jobs-loading" />
 <link rel="stylesheet" href="../web_shared/workspace_controls.css?v=20260910a" />
 <link rel="stylesheet" href="../web_shared/responsive.css?v=20260828a" />
 <script src="../web_shared/text_context_menu.js?v=20260903a"></script>
@@ -74,7 +75,15 @@
 
 <!-- ── Board view (live Trello kanban) ───────────────────────────── -->
 <main id="board-view" class="board-wrap">
-  <div id="board-loading" class="loading-state">Opening Jobs…</div>
+  <div id="board-loading" class="loading-state" role="status" aria-label="Opening Jobs">
+    <span class="board-loading-label">Opening Jobs…</span>
+    <div class="board-loading-lanes" aria-hidden="true">
+      <div class="board-loading-lane"><i></i><b></b><b></b><b></b></div>
+      <div class="board-loading-lane"><i></i><b></b><b></b></div>
+      <div class="board-loading-lane"><i></i><b></b><b></b><b></b></div>
+      <div class="board-loading-lane"><i></i><b></b><b></b></div>
+    </div>
+  </div>
 </main>
 
 <!-- ── Stages view (lifecycle table) ─────────────────────────────── -->
@@ -151,6 +160,7 @@
       <button type="button" class="background-preset preset-clean" data-board-look="clean"><span>Clean</span></button>
     </section>
     <footer>
+      <button type="button" class="btn" data-board-look="trello">Use Trello background</button>
       <button type="button" id="custom-background-btn" class="btn">Choose a Photo…</button>
       <button type="button" id="clear-background-btn" class="btn btn-quiet">Reset Board</button>
     </footer>
@@ -166,6 +176,9 @@
 <link rel="stylesheet" href="job_card_timing.css?v=20261007">
 <link rel="stylesheet" href="job_files.css?v=20260925">
 <script src="job_files.js?v=20260925"></script>
+<link rel="stylesheet" href="import_workspace.css?v=20261020">
+<script src="import_workspace.js?v=20261020"></script>
+<script src="photo_report_builder.js?v=20261020"></script>
 <link rel="stylesheet" href="card_history.css?v=20261008">
 <link rel="stylesheet" href="loss_types.css?v=20261008">
 <script src="run_activity.js?v=20261008"></script>
@@ -173,18 +186,21 @@
 <script src="comment_threads.js?v=20261007optimistic"></script>
 <link rel="stylesheet" href="../web_shared/client_transfer.css?v=20261012">
 <script src="../web_shared/client_transfer.js?v=20261012"></script>
+<script src="../web_shared/intake_client.js?v=20261104-new-default"></script>
 <link rel="stylesheet" href="comment_threads.css?v=20261007">
 <script src="linked_workspace_preload.js?v=20260928"></script>
 <script src="job_drafts.js?v=20260928"></script>
 <script src="../web_shared/vendor/markdown-it/markdown-it.min.js?v=15.0.2"></script>
 <script src="comment_markdown.js?v=20260928"></script>
+<script src="checklist_editor.js?v=20261020"></script>
+<script src="inline_checklist_editor.js?v=20261020"></script>
 <script src="comment_reactions.js?v=20261007optimistic"></script>
 <link rel="stylesheet" href="comment_reactions.css?v=20260928">
 <script src="../web_shared/vendor/comment-editor.js?v=20260928rich"></script>
 <link rel="stylesheet" href="comment_editor.css?v=20260928rich">
 <script src="../web_shared/card_drop_preview.js?v=20260925"></script>
 <script src="../web_shared/board_view_state.js?v=20260925"></script>
-<script src="ems_copy.js?v=20260929"></script>
+<script src="ems_copy.js?v=20261022placeholder"></script>
 <script src="jobs_plan_prototype.js?v=20260930"></script>
 <script src="saved_job_views.js?v=20260930"></script>
 <link rel="stylesheet" href="saved_job_views.css?v=20260930">
@@ -193,7 +209,18 @@
 <script src="../analytics_web_assets/audit_field_controls.js?v=20261009pacific"></script>
 <link rel="stylesheet" href="../web_shared/audit_comment_links.css?v=20261008">
 <script src="../web_shared/audit_comment_links.js?v=20261009pacific"></script>
-<script src="app.js?v=20261009scopeorder"></script>
+<link rel="stylesheet" href="card_labels.css?v=20261016">
+<script src="card_labels.js?v=20261016"></script>
+<script src="../run_doc_editor_web_assets/schedule_realtime.js?v=20261019jobs"></script>
+<script src="jobs_live.js?v=20261019"></script>
+<script src="lane_colors.js"></script>
+<script src="checklist_defaults.js?v=20261022"></script>
+<script src="app.js?v=20261105-saved-comments"></script>
+<script src="card_due.js?v=20261028"></script>
+<script src="completion_date.js?v=20261028"></script>
+<script src="comment_action_menu.js?v=20261028"></script>
+<script src="card_title.js?v=20261016"></script>
+<script src="action_menu_dismiss.js?v=20261016"></script>
 <link rel="stylesheet" href="../web_shared/comment_display.css?v=20260929">
 <link rel="stylesheet" href="job_members.css?v=20260929">
 <script src="job_members.js?v=20261012trello"></script>
@@ -204,5 +231,10 @@
 <link rel="stylesheet" href="notification_focus.css?v=20260929">
 <link rel="stylesheet" href="snapshot_comments.css?v=20261007flat">
 <script src="snapshot_scroll.js?v=20261007"></script>
+<link rel="stylesheet" href="compact_job_header.css?v=20261103-job-info-size" />
+<script src="extra_job_tasks.js?v=20261019"></script>
+<script src="card_completion.js?v=20261022estimating"></script>
+<link rel="stylesheet" href="extra_job_tasks.css?v=20261019">
+<link rel="stylesheet" href="workspace_cleanup.css?v=20261028">
 </body>
 </html>
