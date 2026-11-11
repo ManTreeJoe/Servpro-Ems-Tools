@@ -1,0 +1,7 @@
+OneLoss Main 1.8.47
+
+- Correct customer information and adjuster names read from Trello descriptions.
+- Preserve deliberate local clears when previewing card details.
+- Mark a card’s Trello and OneLoss notifications read from its header.
+
+The new unified comment delivery system is not included.

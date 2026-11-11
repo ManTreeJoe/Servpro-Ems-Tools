@@ -1,6 +1,6 @@
 {
-  "version": "1.8.46",
-  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.46",
-  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.46/Linguar-Hub-Setup-1.8.46.exe",
-  "notes": "OneLoss Main 1.8.46\n\n- Refresh the Jobs board layout, navigation spacing, and loading placeholders.\n- Improve paperwork detection, including ATP files in common EMS document folders.\n- Show reviewable Trello description details in the job Overview.\n- Improve notification and background sync feedback.\n\nThe new unified comment delivery system is not included.\n"
+  "version": "1.8.47",
+  "url": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/tag/v1.8.47",
+  "installer": "https://github.com/ManTreeJoe/linguar-hub-releases/releases/download/v1.8.47/Linguar-Hub-Setup-1.8.47.exe",
+  "notes": "OneLoss Main 1.8.47\n\n- Correct customer information and adjuster names read from Trello descriptions.\n- Preserve deliberate local clears when previewing card details.\n- Mark a card\u2019s Trello and OneLoss notifications read from its header.\n\nThe new unified comment delivery system is not included.\n"
 }

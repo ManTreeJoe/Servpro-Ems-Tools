@@ -2114,6 +2114,52 @@ def download_card_photos(card_id, dest_dir, *,
 
 _SECTION_RE = _re.compile(r"^\*\*([^*]+)\*\*\s*$")
 _KV_RE      = _re.compile(r"^([A-Za-z][^:]{0,40}):\s*(.*)$")
+_PLAIN_CARD_SECTIONS = frozenset({
+    'CUSTOMER INFORMATION', 'ACCOUNT INFO', 'TENANT INFORMATION',
+    'POINTS OF CONTACT', 'INSURANCE INFORMATION', 'PROPERTY DETAILS',
+    'LINKS', 'NOTES',
+})
+
+
+def description_section_header(line):
+    """Recognize bold headings and exact uppercase plain template headings."""
+    line = str(line or '').strip()
+    bold = _SECTION_RE.match(line)
+    if bold:
+        return bold.group(1).strip().upper()
+    return line if line in _PLAIN_CARD_SECTIONS else None
+
+
+def adjuster_name_continuation(line):
+    """Accept only a person-like next line, never a phone or a placeholder."""
+    words = str(line or '').strip().split()
+    if not 2 <= len(words) <= 5 or words[0].casefold() in {'none', 'not', 'pending', 'unknown', 'unassigned', 'no'}:
+        return False
+    return all(word[0].isupper() and all(c.isalpha() or c in "'-’." for c in word)
+               for word in words)
+
+
+def adjuster_continuation_lines(lines):
+    """Locate the exact continuation lines the description reader accepts."""
+    section, waiting, found = None, False, set()
+    for index, raw in enumerate(lines):
+        line = raw.strip()
+        if not line or not line.strip('\u200c\u200b\ufeff'):
+            continue
+        header = description_section_header(line)
+        if header or line == '---':
+            section, waiting = (header if header else section), False
+            continue
+        if waiting:
+            if adjuster_name_continuation(line):
+                found.add(index)
+                waiting = False
+                continue
+            waiting = False
+        kv = _KV_RE.match(line)
+        if section == 'INSURANCE INFORMATION' and kv and kv.group(1).strip().upper() == 'ADJUSTER NAME' and not kv.group(2).strip():
+            waiting = True
+    return found
 
 
 def parse_card_desc(desc):
@@ -2125,21 +2171,29 @@ def parse_card_desc(desc):
     out = {}
     cur_section = None
     pending_link = None
+    pending_adjuster = False
     for raw_line in desc.splitlines():
         line = raw_line.strip()
         if not line or not line.strip('\u200c\u200b\ufeff'):
             continue
         if line == "---":
             pending_link = None
+            pending_adjuster = False
             continue
-        m = _SECTION_RE.match(line)
-        if m:
+        header = description_section_header(line)
+        if header:
             pending_link = None
-            cur_section = m.group(1).strip().upper()
+            pending_adjuster = False
+            cur_section = header
             out.setdefault(cur_section, {})
             continue
         if cur_section is None:
             continue
+        if pending_adjuster:
+            pending_adjuster = False
+            if adjuster_name_continuation(line):
+                out[cur_section]['ADJUSTER NAME'] = line
+                continue
         if pending_link:
             continuation = _re.fullmatch(r'\[[^\]]+\]\((https?://\S+?)(?:\s+"[^"]*")?\)', line)
             bare_link = _re.fullmatch(r'https?://\S+', line)
@@ -2164,6 +2218,8 @@ def parse_card_desc(desc):
         if val.startswith("mailto:"):
             val = val[len("mailto:"):]
         out[cur_section][key] = val
+        if cur_section == 'INSURANCE INFORMATION' and key == 'ADJUSTER NAME' and not val:
+            pending_adjuster = True
         if cur_section == 'LINKS' and not val and 'LINK' in key:
             pending_link = key
     return out

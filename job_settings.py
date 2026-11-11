@@ -403,12 +403,16 @@ def render_desc(original, values, changed_ids=None):
                 lines[start:end] = [f'{label}: {hit[1]}'.rstrip()]
             seen.add((SCOPE, key))
 
+    adjuster_continuations = (tc.adjuster_continuation_lines(lines)
+                              if (INSURANCE, 'ADJUSTER NAME') in want else set())
     out, cur = [], None
-    for raw in lines:
+    for index, raw in enumerate(lines):
+        if index in adjuster_continuations:
+            continue
         line = raw.strip()
-        m = _SECTION_RE.match(line)
-        if m:
-            cur = _section_name(m.group(1))
+        header = tc.description_section_header(line)
+        if header:
+            cur = _section_name(header)
             out.append(raw)
             continue
         kv = _KV_RE.match(line)
@@ -440,14 +444,15 @@ def render_desc(original, values, changed_ids=None):
 
 def _append_missing(lines, missing):
     """Add fields that had no line, under their section header."""
+    import trello_client as tc
     for (section, key), (label, value) in missing.items():
         idx = None
         for i, raw in enumerate(lines):
-            m = _SECTION_RE.match(raw.strip())
-            if m and _section_name(m.group(1)) == section:
+            header = tc.description_section_header(raw)
+            if header and _section_name(header) == section:
                 idx = i
                 continue
-            if idx is not None and _SECTION_RE.match(raw.strip()):
+            if idx is not None and header:
                 break                      # start of the NEXT section
             if idx is not None and raw.strip():
                 idx = i                    # last non-blank line in section
@@ -495,7 +500,9 @@ def display_values(rec, desc=''):
     """Preview never-imported facts without replacing saved or cleared values."""
     facts = stored_values(rec)
     meta = _meta_of(rec)
-    recorded = set(meta.get(_META_SETTINGS) or {}) | set(meta.get(_META_BASE) or {})
+    saved = meta.get(_META_SETTINGS) or {}
+    base = meta.get(_META_BASE) or {}
+    recorded = set(saved) | set(base)
     descriptions = [desc] if isinstance(desc, str) else desc
     candidates = [from_card(text) for text in descriptions if text]
     # Multiple placements may share a job; only preview facts they agree on.
@@ -505,7 +512,13 @@ def display_values(rec, desc=''):
         if len(values) == 1:
             preview[key] = values.pop()
     for key, value in preview.items():
-        if key not in recorded and not facts.get(key):
+        # A stored blank matching a stored blank baseline is unchanged, so a
+        # value newly observed on the exact card can be previewed. A clear
+        # against a non-empty baseline remains an intentional local edit.
+        unchanged_blank = (key in saved and key in base and
+                           not str(saved.get(key) or '').strip() and
+                           not str(base.get(key) or '').strip())
+        if (key not in recorded or unchanged_blank) and not facts.get(key):
             facts[key] = value
     return facts
 
@@ -623,7 +636,8 @@ def load(canon_key, child_name="", *, refresh=True, exact_card_id="", initialize
         saved = _meta_of(rec).get(_META_SETTINGS) or {}
         missing_poc = [fid for fid in BY_ID if fid.startswith('poc_') and fid not in saved]
         missing_customer = any(not mine.get(fid) for fid in _ACCOUNT_FIELDS)
-        if initialize_missing and exact_card_id and not child_name and (missing_poc or missing_customer):
+        missing_adjuster = not mine.get('adjuster_name')
+        if initialize_missing and exact_card_id and not child_name and (missing_poc or missing_customer or missing_adjuster):
             try:
                 import trello_client as tc
                 card = tc.get_card_lite(exact_card_id) or {}
@@ -631,15 +645,15 @@ def load(canon_key, child_name="", *, refresh=True, exact_card_id="", initialize
                 for fid in missing_poc:
                     out['values'][fid] = contacts.get(fid, '')
                 out['poc_source'] = 'linked Trello card preview'
-                if _account_fallbacks(tc.parse_card_desc(card.get('desc') or '') or {}):
+                preview_ids = {fid for fid in BY_ID if not fid.startswith('poc_') and fid != 'loss_categories'}
+                if any(contacts.get(fid) for fid in preview_ids):
                     # Preview only. Three-way merge protects saved local edits,
                     # including intentional clears against a nonempty baseline.
                     preview, conflicts = merge(stored_base(rec), mine, contacts)
-                    customer_ids = {fid for fid, section, *_rest in FIELDS if section == CUSTOMER}
-                    for fid in customer_ids:
+                    for fid in preview_ids:
                         out['values'][fid] = preview[fid]
-                    out['conflicts'] += [c for c in conflicts if c['id'] in customer_ids]
-                    out['customer_source'] = 'linked Trello Account Info preview'
+                    out['conflicts'] += [c for c in conflicts if c['id'] in preview_ids]
+                    out['customer_source'] = 'linked Trello description preview'
             except Exception:
                 out['error'] = 'POC details could not load from the linked Trello card. Reopen Job info to retry.'
         return out

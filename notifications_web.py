@@ -264,6 +264,51 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
+    def mark_card_read(self, card_id: str) -> dict:
+        """Clear only this exact card, reporting incomplete provider results."""
+        import re
+        import trello_client as tc
+        import personal_notifications as pn
+        card = str(card_id or '').strip()
+        if not re.fullmatch(r'[a-fA-F0-9]{24}', card):
+            return {'ok': False, 'error': 'This card cannot be verified. Open it and refresh notifications.'}
+        card = card.lower()
+        failures = []
+        try:
+            rows = tc.list_all_unread_notifications()
+            if not isinstance(rows, list):
+                raise ValueError('incomplete response')
+            for row in rows:
+                raw_card = ((row.get('data') or {}).get('card') or {}).get('id', '')
+                if str(raw_card).lower() == card:
+                    if not row.get('id') or not tc.mark_notification_read(row['id'], read=True):
+                        raise ValueError('read not confirmed')
+        except Exception:
+            failures.append('Trello')
+        try:
+            actor = (pn.sb.current_user() or {}).get('id')
+            if not actor:
+                raise ValueError('no signed-in user')
+            result = pn.call('inbox', filter='all', unread=True)
+            rows = result.get('items') if result.get('ok') else None
+            # This endpoint has a 100-item limit and no cursor; an incomplete
+            # page cannot prove we found every notification for the card.
+            if not isinstance(rows, list) or len(rows) >= 100:
+                raise ValueError('incomplete response')
+            for row in rows:
+                if (pn.sb.current_user() or {}).get('id') != actor:
+                    raise ValueError('user changed')
+                if not isinstance(row, dict):
+                    raise ValueError('invalid response')
+                if str(row.get('card_id') or '').lower() == card and not row.get('read_at'):
+                    if not row.get('id') or not pn.call('read', id=row['id'], read=True).get('ok'):
+                        raise ValueError('read not confirmed')
+        except Exception:
+            failures.append('OneLoss')
+        if failures:
+            return {'ok': False, 'error': ' and '.join(failures) + ' read status could not be fully confirmed. Refresh and retry.'}
+        return {'ok': True}
+
     def mark_all_read(self) -> dict:
         try:
             import trello_client as tc

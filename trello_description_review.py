@@ -15,6 +15,7 @@ def review(description):
     original is always available so classification never hides information.
     """
     original = str(description or '')
+    import trello_client
     parsed = job_settings.from_card(original)
     suggestions = [{'id': fid, 'label': label, 'value': parsed[fid]}
                    for fid, _section, _key, label, _core in job_settings.FIELDS
@@ -25,9 +26,9 @@ def review(description):
     section = ''
     for raw in original.splitlines():
         line = raw.strip()
-        header = _HEADER.match(line)
+        header = trello_client.description_section_header(line)
         if header:
-            section = job_settings._section_name(header.group(1))
+            section = job_settings._section_name(header)
             lines.append((raw, section, None))
             continue
         pair = _PAIR.match(line)
@@ -37,7 +38,7 @@ def review(description):
     extras, pending_header = [], ''
     for raw, section, key in lines:
         line = raw.strip()
-        if _HEADER.match(line):
+        if trello_client.description_section_header(line):
             pending_header = raw
             continue
         if not line or line == '---':

@@ -132,7 +132,24 @@
     const first=group[0],section=element('li',undefined,'notification-job');
     const heading=element('header',undefined,'notification-job-head');
     heading.append(button(first.title,()=>openJob(first)),element('small',boardName(first)));
-    heading.classList.toggle('has-unread',group.some(item=>item.unread));
+    const cardId=first.refs.find(ref=>ref.raw.card_id)?.raw.card_id;
+    if(cardId && group.some(item=>item.unread)){
+      const clearCard=button('',async()=>{
+        if(bulkClearing||loading||pending.size)return;
+        bulkClearing=true;generation++;render();status('Marking this card’s notifications read…');
+        let result;
+        try{result=await api().mark_card_read(cardId);}catch{result={ok:false};}
+        bulkClearing=false;
+        await load();
+        status(result?.ok?'Card notifications marked read.':(result?.error||'Card read status could not be confirmed. Refresh and retry.'));
+        window.parent.postMessage({type:'oneloss-notifications-changed'},'*');
+      });
+      clearCard.className='notification-card-read';
+      clearCard.title='Mark all notifications for this card read';
+      clearCard.setAttribute('aria-label',`${clearCard.title}: ${first.title}`);
+      clearCard.disabled=bulkClearing||!!pending.size;
+      heading.append(clearCard);
+    }
     const events=element('ul',undefined,'notification-events');section.append(heading,events);list.append(section);
     let previousDay=null;
     for(const item of group){
