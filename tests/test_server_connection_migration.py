@@ -119,6 +119,8 @@ def test_packaged_main_target_matches_migration():
 
 
 def test_recovered_rollout_pause_precedes_credentials(monkeypatch):
+    monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
+    monkeypatch.setenv("LINGUAR_CHANNEL", "trial")
     import trello_client
     monkeypatch.setattr(trello_client.config,'load',lambda:{'trello_writes_paused':True})
     monkeypatch.setattr(trello_client,'_creds',lambda:pytest.fail('Credentials reached'))
