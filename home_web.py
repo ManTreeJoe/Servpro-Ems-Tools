@@ -829,6 +829,14 @@ class HomeApi:
             info = update_check.check() or {}
         except Exception:
             info = {}
+        # Private installers require the employee's browser sign-in. Never
+        # save an Access login HTML page as an executable or embed shared keys.
+        if (url or "").startswith("https://updates.oneloss.work/") or info.get("private_download"):
+            destination = (url if (url or "").startswith("https://updates.oneloss.work/")
+                           else info.get("installer")) or "https://updates.oneloss.work/"
+            opened = self.open_url(destination)
+            return {"ok": bool(opened), "launched": False,
+                    "opened_page": bool(opened), "private_download": True}
         dl = (url or info.get("installer") or "").strip()
         page = info.get("url") or ""
         if not dl:
