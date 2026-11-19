@@ -13,13 +13,25 @@ window.OneLossEmployeeAccess = (() => {
     Object.assign(card.style, {maxWidth:'440px', width:'100%', lineHeight:'1.6'});
     overlay.append(card); document.body.append(overlay);
     return new Promise(resolve => {
-      let busy = false;
+      let busy = false, signingIn = false, watcher = null;
+      function stopWatching() { if (watcher !== null) clearInterval(watcher); watcher = null; }
+      function watchSignIn() {
+        stopWatching();
+        const deadline = Date.now() + 210000;
+        watcher = setInterval(() => {
+          if (!overlay.isConnected) { stopWatching(); return; }
+          if (Date.now() > deadline) { stopWatching(); signingIn = false; }
+          void check();
+        }, 1000);
+      }
       async function check() {
         if (busy) return;
         busy = true;
         try {
           const access = await pywebview.api.settings_employee_access_status();
-          if (access.access_state === 'approved') { overlay.remove(); resolve(access); return; }
+          if (access.access_state === 'approved') { stopWatching(); overlay.remove(); resolve(access); return; }
+          if (signingIn && access.access_state === 'signed_out') return;
+          if (access.access_state !== 'signed_out' && access.access_state !== 'unavailable') { signingIn = false; stopWatching(); }
           card.replaceChildren();
           const brand = document.createElement('p'); brand.textContent = 'ONELOSS · TEAM WORKSPACE';
           const title = document.createElement('h1'); title.textContent = titles[access.access_state] || titles.unavailable;
@@ -37,9 +49,12 @@ window.OneLossEmployeeAccess = (() => {
           }
           if (['signed_out','microsoft_required'].includes(access.access_state)) {
             button('Sign in with Microsoft', async () => {
+              signingIn = true; watchSignIn();
               message.textContent = 'Complete sign-in in your browser…';
               const r = await pywebview.api.settings_supabase_sign_in_microsoft();
-              if (!r.ok) message.textContent = r.error || 'Sign-in did not finish.';
+              signingIn = false;
+              if (!overlay.isConnected) return;
+              if (!r.ok) { stopWatching(); message.textContent = r.error || 'Sign-in did not finish.'; }
               else await check();
             });
           } else button('Check approval', check);
