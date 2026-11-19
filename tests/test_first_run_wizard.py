@@ -100,20 +100,7 @@ def test_companycam_saved_connected_but_probe_fails(monkeypatch):
     monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
     result = setup.status(None)
     assert not next(s for s in result["steps"] if s["key"] == "companycam")["done"]
-    assert setup.action(None, "skip_companycam")["ok"]
-    assert setup.status(None)["all_done"]
-
-
-def test_optional_skip_is_scoped_and_resumes(isolated, monkeypatch):
-    cfg, access = isolated
-    import companycam_api as cc
-    monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
-    setup.action(None, "skip_companycam")
-    assert setup.status(None)["all_done"]
-    cfg["supabase_url"] = "https://other.invalid"
-    assert not setup.status(None)["all_done"]
-    cfg["supabase_url"] = "https://demo.invalid"
-    access["identity"] = {"id": "another-user", "display_name": "Other Employee"}
+    assert not setup.action(None, "skip_companycam")["ok"]
     assert not setup.status(None)["all_done"]
 
 
@@ -137,15 +124,15 @@ def test_folder_save_rejects_unreadable_path(monkeypatch):
     monkeypatch.setattr(setup, "_read_folder", lambda _: False)
     api = Mock()
     assert not setup.action(api, "folders", {"job_root": "missing", "runs_dir": "missing"})["ok"]
-    api.save_my_franchise_folders.assert_not_called()
+    api.save_my_job_folder.assert_not_called()
 
 
 def test_folder_save_preserves_other_settings(isolated):
     cfg, _ = isolated
     api = Mock()
-    api.save_my_franchise_folders.return_value = {"ok": True}
+    api.save_my_job_folder.return_value = {"ok": True}
     assert setup.action(api, "folders", {"job_root": cfg["audit_base"], "runs_dir": cfg["runs_dir"]})["ok"]
-    api.save_my_franchise_folders.assert_called_once_with("TEST", cfg["audit_base"], cfg["runs_dir"])
+    api.save_my_job_folder.assert_called_once_with("TEST", cfg["audit_base"])
     api.save.assert_not_called()
 
 
@@ -175,17 +162,6 @@ def test_signin_refreshes_shell_only_after_success():
     assert not setup.action(api, "signin", {"email": "test@example.invalid", "password": "fake"})["reload"]
     api.supabase_sign_in_password.return_value = {"ok": True}
     assert setup.action(api, "signin", {"email": "test@example.invalid", "password": "fake"})["reload"]
-
-
-def test_channel_skip_does_not_cross_profiles(monkeypatch):
-    import paths
-    import companycam_api as cc
-    monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
-    monkeypatch.setattr(paths, "CHANNEL", "main")
-    setup.action(None, "skip_companycam")
-    assert setup.status(None)["all_done"]
-    monkeypatch.setattr(paths, "CHANNEL", "trial")
-    assert not setup.status(None)["all_done"]
 
 
 def test_verified_user_all_probes_raise(monkeypatch):
@@ -241,9 +217,34 @@ def test_verified_access_error_is_not_revocation(isolated):
     assert shell().first_run()["show"] is True
 
 
-def test_completion_preserved_by_optional_skip():
-    assert setup.status(None)["all_done"]
-    setup.action(None, "skip_companycam")
-    record = next(iter(setup._choices().values()))
-    assert record["verified_complete"] is True
-    assert record["companycam_skipped"] is True
+def test_old_skipped_companycam_cannot_bypass_setup(isolated, monkeypatch):
+    import companycam_api as cc
+    cfg, access = isolated
+    setup._save_choice(setup._scope(cfg, access), verified_complete=True, companycam_skipped=True)
+    monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
+    assert shell().first_run()["show"] is True
+    assert not setup.action(None, "skip_companycam")["ok"]
+
+
+def test_daily_run_not_required_or_exposed(isolated):
+    isolated[0]["runs_dir"] = "missing"
+    result = setup.status(None)
+    assert result["all_done"]
+    assert "runs_dir" not in result["folders"]
+
+
+def test_employee_job_folder_preserves_admin_settings(isolated, monkeypatch):
+    import config
+    base = {"departments": {"TEST": {"runs_dir": "admin-path", "other": "keep"}}}
+    monkeypatch.setattr(config, "load_base", lambda: base)
+    save = Mock()
+    monkeypatch.setattr(config, "save", save)
+    monkeypatch.setattr(settings_web, "_invalidate", lambda _: None)
+    assert settings_web.Api().save_my_job_folder("TEST", isolated[0]["audit_base"])["ok"]
+    profile = save.call_args.args[0]["departments"]["TEST"]
+    assert profile["runs_dir"] == "admin-path" and profile["other"] == "keep"
+
+
+def test_employee_cannot_save_daily_run(monkeypatch):
+    monkeypatch.setattr(settings_web.Api, "_my_folder_departments", lambda _: ["TEST"])
+    assert not settings_web.Api().save_my_franchise_folders("TEST", "unused", "unused")["ok"]

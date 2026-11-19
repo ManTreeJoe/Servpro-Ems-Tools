@@ -321,6 +321,9 @@ class Api:
         """Per-PC job and run-doc roots for the user's franchises."""
         try:
             import machine_folders
+            import account_access
+            access = account_access.current_access()
+            can_manage_runs = bool(access.get("is_admin") and not access.get("error"))
             base = config.load_base() or {}
             profiles = base.get("departments") or {}
             rows = []
@@ -328,16 +331,42 @@ class Api:
                 profile = profiles.get(key) if isinstance(profiles.get(key), dict) else {}
                 row = machine_folders.discover(key, profile)
                 row["active"] = key == (base.get("active_department") or "").strip()
+                if not can_manage_runs:
+                    row.pop("runs_dir", None)
+                    row.pop("runs_connected", None)
                 rows.append(row)
-            return {"ok": True, "departments": rows}
+            return {"ok": True, "departments": rows, "can_manage_runs": can_manage_runs}
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
+
+    def save_my_job_folder(self, key: str, job_root: str):
+        """Employee setup saves the job root only; preserve admin folder settings."""
+        import account_access
+        import employee_setup
+        access = account_access.current_access()
+        if access.get("error") or not access.get("signed_in") or key not in access.get("departments", []):
+            return {"ok": False, "error": "That franchise is not assigned to you."}
+        if not employee_setup._read_folder(job_root):
+            return {"ok": False, "error": "The shared job folder cannot be read."}
+        base = config.load_base() or {}
+        profiles = dict(base.get("departments") or {})
+        profile = dict(profiles.get(key) or {})
+        profile["audit_base"] = job_root
+        profiles[key] = profile
+        base["departments"] = profiles
+        config.save(base)
+        _invalidate("job folder saved")
+        return {"ok": True}
 
     def save_my_franchise_folders(self, key: str, job_root: str, runs_dir: str):
         """Save only machine-local roots for one assigned franchise."""
         key = (key or "").strip()
         if key not in self._my_folder_departments():
             return {"ok": False, "error": "That franchise is not assigned to you."}
+        import account_access
+        access = account_access.current_access()
+        if access.get("error") or not access.get("is_admin"):
+            return {"ok": False, "error": "Daily Run folder settings require administrator access."}
         import machine_folders
         connected = machine_folders.connect(key, job_root, runs_dir)
         if not connected.get("ok"):

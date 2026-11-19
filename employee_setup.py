@@ -1,6 +1,6 @@
 """Employee setup, derived from current evidence, never a configured marker.
 
-Optional skip and verified completion decisions are stored here. Account, name and folder
+Verified completion decisions are stored here. Account, name and folder
 progress lives in its existing settings/session stores. Provider probes are
 reads; no project creation, uploads, queue flushes or backend switching.
 """
@@ -61,7 +61,7 @@ def verified_for_current_scope():
         return False
     scope = _scope(cfg, {"identity": user})
     record = _choices().get(scope)
-    if not isinstance(record, dict) or record.get("verified_complete") is not True:
+    if not isinstance(record, dict) or record.get("verified_complete") is not True or record.get("requirements_version") != 2:
         return False
     try:
         access = account_access.current_access()
@@ -125,9 +125,8 @@ def status(api):
     step("trello", "Connect Trello", trello_ok,
          "Account verified with Trello" if trello_ok else "Trello has not passed its account check",
          "Select Connect Trello, approve access in your browser, then check again. If authorization is unavailable, ask your administrator to configure the work connection; do not enter API keys.")
-    skipped = bool(_choices().get(_scope(cfg, access), {}).get("companycam_skipped"))
     cc_ok = False
-    if signed and active in assigned and not skipped:
+    if signed and active in assigned:
         try:
             import companycam_api as cc
             # Require the personal connection before probing; saved status alone
@@ -138,16 +137,14 @@ def status(api):
                 cc_ok = isinstance(rows, list)
         except Exception:
             pass
-    step("companycam", "CompanyCam (optional)", cc_ok,
-         "Read access verified" if cc_ok else ("Skipped for now" if skipped else "Read access not verified"),
-         "Connect your work account in the browser, then check again. You may skip this connection. Setup never creates a project or uploads a photo.", True, skipped)
+    step("companycam", "Connect CompanyCam", cc_ok,
+         "Read access verified" if cc_ok else "Read access not verified",
+         "Connect your work account in the browser, then check again. CompanyCam is required. Setup never creates a project or uploads a photo.")
     jobs = str(cfg.get("audit_base") or "").strip()
-    runs = str(cfg.get("runs_dir") or "").strip()
-    jobs_ok, runs_ok = _read_folder(jobs), _read_folder(runs)
-    step("folders", "Shared folders", active in assigned and jobs_ok and runs_ok,
-         "Both folders can be read" if jobs_ok and runs_ok else "Cannot read: " + ", ".join(
-             name for name, ok in [("job folder", jobs_ok), ("Daily Run folder", runs_ok)] if not ok),
-         "Connect to the office network or VPN. Choose the shared job root and Daily Run folder for this franchise; no files will be written.")
+    jobs_ok = _read_folder(jobs)
+    step("folders", "Shared job folder", active in assigned and jobs_ok,
+         "Job folder can be read" if jobs_ok else "Cannot read the shared job folder",
+         "Connect to the office network or VPN. Choose the shared job root for this franchise; no files will be written. Daily Run folders are managed separately in administrator settings.")
     live_ok = False
     if all(s["done"] for s in steps if not s["optional"]):
         try:
@@ -161,11 +158,11 @@ def status(api):
          "Shared jobs read successfully; no records were changed" if live_ok else "Shared job access has not passed verification",
          "Finish the required steps, then check again. If this fails, check your network and ask your administrator to verify this workspace's shared database and permissions. Setup will not switch environments.")
     if all(s["done"] for s in steps if not s["optional"]):
-        _save_choice(_scope(cfg, access), verified_complete=True)
+        _save_choice(_scope(cfg, access), verified_complete=True, requirements_version=2)
     return dict(ok=True, steps=steps, all_done=all(s["done"] or s["skipped"] for s in steps),
                 done=sum(s["done"] or s["skipped"] for s in steps), total=len(steps),
                 active_franchise=active, departments=assigned,
-                folders={"job_root": jobs, "runs_dir": runs},
+                folders={"job_root": jobs},
                 is_admin=bool(access.get("is_admin")), is_owner=bool(access.get("is_owner")))
 
 
@@ -195,13 +192,9 @@ def action(api, name, values=None):
         return {"ok": False, "error": "Choose a server-assigned franchise first."}
     if name in ("trello", "companycam"):
         return api.open_user_connection(name)
-    if name == "skip_companycam":
-        cfg = config.load() or {}
-        _save_choice(_scope(cfg, access), companycam_skipped=True)
-        return {"ok": True}
     if name == "folders":
-        jobs, runs = str(values.get("job_root") or "").strip(), str(values.get("runs_dir") or "").strip()
-        if not _read_folder(jobs) or not _read_folder(runs):
-            return {"ok": False, "error": "Both folders must be readable. Check your office network or VPN and choose the folders again."}
-        return api.save_my_franchise_folders(config.active_department(), jobs, runs)
+        jobs = str(values.get("job_root") or "").strip()
+        if not _read_folder(jobs):
+            return {"ok": False, "error": "The job folder must be readable. Check your office network or VPN and choose it again."}
+        return api.save_my_job_folder(config.active_department(), jobs)
     return {"ok": False, "error": "Unknown setup action."}

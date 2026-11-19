@@ -95,7 +95,7 @@
       for (const key of info.departments || []) { const opt = element('option', key, select); opt.value = key; }
       next.hidden = !(info.departments || []).length;
     } else if (step.key === 'folders') {
-      for (const [label, name] of [['Shared job root','job_root'], ['Daily Run folder','runs_dir']]) {
+      for (const [label, name] of [['Shared job root','job_root']]) {
         const field = input(label, name, info.folders?.[name] || '');
         const button = element('button', `Choose ${label.toLowerCase()}`, box); button.type = 'button'; button.className = 'fr-btn fr-secondary';
         button.onclick = async () => {
@@ -110,10 +110,7 @@
       }
     } else if (step.key === 'trello' || step.key === 'companycam') {
       next.textContent = step.key === 'trello' ? 'Connect Trello' : 'Connect CompanyCam';
-      if (step.optional) {
-        const skip = element('button', 'Skip optional connection', box); skip.type = 'button'; skip.className = 'fr-btn fr-secondary';
-        skip.onclick = () => run(() => api.settings_employee_setup_action('skip_companycam', {}));
-      }
+
     } else next.textContent = 'Verify shared data';
     box.querySelector('input,select')?.focus();
   }

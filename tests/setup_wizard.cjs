@@ -46,8 +46,8 @@ const path = require('node:path');
         {key:'profile_name',title:'Your display name',done:false},
         {key:'franchise',title:'Assigned franchise',done:false},
         {key:'trello',title:'Connect Trello',done:false},
-        {key:'companycam',title:'CompanyCam (optional)',done:false,optional:true},
-        {key:'folders',title:'Shared folders',done:false},
+        {key:'companycam',title:'Connect CompanyCam',done:false},
+        {key:'folders',title:'Shared job folder',done:false},
         {key:'live_data',title:'Check shared data',done:false},
       ].map((s,i)=>({...s,help:helps[i],detail:'Not verified'}));
       window.bridge={
@@ -86,10 +86,12 @@ const path = require('node:path');
     await page.locator('#fr-recheck').click();
     assert(!(await page.locator('#fr-overlay').innerText()).includes('Not verified'));
     await shot('05-companycam');
-    await page.getByText('Skip optional connection',{exact:true}).click();
+    assert.equal(await page.getByText('Skip optional connection',{exact:true}).count(),0);
+    await page.locator('#fr-next').click();
+    assert.equal(await page.locator('[name=runs_dir]').count(),0);
     await page.getByText('Choose shared job root',{exact:true}).click();
     assert.equal(await page.locator('[name=job_root]').inputValue(),'C:/Fictional/Shared');
-    await page.locator('[name=runs_dir]').fill('C:/Fictional/Runs');
+
     await shot('06-folders');
     await page.setViewportSize({width:390,height:700});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
@@ -115,6 +117,6 @@ const path = require('node:path');
     await page.evaluate(()=>{dismissed=false;bridge.first_run=async()=>{throw Error('offline');};return OneLossSetup.open(bridge);});
     await page.locator('#fr-error').filter({hasText:'Setup checks could not load'}).waitFor();
     assert.deepEqual(requests,[]);assert.deepEqual(errors,[]);
-    console.log('PASS inline controls, completed-step omission, failed-step blocking, optional skip, folder picker, session dismissal/resume, final check, fail-open retry, mobile layout; zero browser requests/errors');
+    console.log('PASS inline controls, completed-step omission, failed-step blocking, required CompanyCam, employee job folder only, folder picker, session dismissal/resume, final check, fail-open retry, mobile layout; zero browser requests/errors');
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
