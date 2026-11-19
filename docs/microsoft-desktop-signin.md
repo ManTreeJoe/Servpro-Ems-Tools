@@ -20,7 +20,7 @@ These prerequisites were applied and verified on production Main during setup on
 
 ## Desktop behavior
 
-- Uses a fresh PKCE verifier/challenge for each attempt. The verifier stays in memory; the callback contains an authorization code rather than session tokens.
+- Uses a fresh PKCE verifier/challenge for each attempt. The browser uses Microsoft’s [account picker](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#request-an-authorization-code) so another work account can be chosen on a shared computer. The verifier stays in memory; the callback contains an authorization code rather than session tokens.
 - Binds only `127.0.0.1`, on the fixed port above; validates the callback path and Host header. An occupied port fails with a retry message. The listener closes on completion, cancellation or timeout.
 - Suppresses callback request logging and sends a no-store response. Callback authorization codes and returned tokens are not returned through the UI bridge.
 - Reads `/auth/v1/user` using the new token and requires a confirmed email and Azure identity before storing the normal OneLoss session. An optional explicit expected email is supported by the Python helper; the UI leaves account selection to Microsoft.

@@ -52,6 +52,7 @@ def test_pkce_login_stores_verified_identity_and_no_microsoft_password(flow):
     params = parse_qs(urlsplit(urls[0]).query)
     exchange = next(c[2] for c in calls if c[1] == '/auth/v1/token')
     assert params['provider'] == ['azure']
+    assert params['prompt'] == ['select_account']
     assert params['redirect_to'] == [auth.REDIRECT]
     assert params['code_challenge'] == [auth._challenge(exchange['body']['code_verifier'])]
     assert exchange['params'] == {'grant_type': 'pkce'}

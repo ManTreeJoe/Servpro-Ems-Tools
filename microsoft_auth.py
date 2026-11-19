@@ -103,6 +103,7 @@ def sign_in(email='', *, timeout=180):
         with server:
             verifier = secrets.token_urlsafe(48)
             params = {'provider': 'azure', 'scopes': 'email', 'redirect_to': REDIRECT,
+                      'prompt': 'select_account',
                       'code_challenge': _challenge(verifier), 'code_challenge_method': 's256'}
             try:
                 opened = webbrowser.open(base + '/auth/v1/authorize?' + urlencode(params), new=2)
