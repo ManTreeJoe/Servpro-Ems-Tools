@@ -10,6 +10,17 @@ The inspected source is the existing `main-stability-hotfix` working tree, branc
 
 ## Database-backed reusable content
 
+### Agreed next implementation scope: shared custom forms in demo
+
+The selected next step is to move the Form Builder's custom forms from each computer's local SQLite library to a **private `form-templates` Supabase Storage bucket on the demo server**, giving the team one shared library. This decision is recorded here; this documentation PR does not implement or deploy it.
+
+- Include uploaded blank PDFs and their field mappings, titles, stable template IDs and revisions. Moving PDF bytes alone would leave the editable form definitions local and would not create a shared library. The existing fields/revision model is described under custom forms below; its server representation remains to be designed.
+- Keep `job_note_templates` and `job_profiles` as database rows. Moving these definitions to files is outside this scope and offers no current benefit.
+- Keep bundled built-in PDFs, applied job profiles, completed forms, Snapshot revisions and other job records outside this custom-library move.
+- Prepare and test in demo first: two authorized team members must see the same library, unauthorized users must be denied, and uploads, mapping edits, revision conflicts, previews and exports must work against the shared definitions.
+- Preserve local originals during import, account for different users' local libraries and duplicate IDs/content, and avoid silently falling back to separate editable local libraries when the server is unavailable.
+- Define team/franchise visibility and library editing permissions before implementation; “shared” does not mean public or automatically visible to every future franchise. Keep production settings, live data and live behavior unchanged during demo testing.
+
 | Content | Table / field | Scope | Count visible in code |
 | --- | --- | --- | --- |
 | Initial / post-inspection / contents note templates | `public.job_note_templates` | Franchise (`department`), then division | Unknown DB count; 3 code fallback definitions; no seed INSERT in its migration |
