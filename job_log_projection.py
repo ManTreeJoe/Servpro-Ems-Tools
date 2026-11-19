@@ -9,6 +9,25 @@ import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
+import re
+
+
+def card_reference(value):
+    """Normalize syntax only; a URL does not prove a short/full ID mapping."""
+    value = str(value or '').strip()
+    if value.startswith('trello.com/'):
+        value = 'https://' + value
+    if '://' in value:
+        try:
+            parsed = urlsplit(value)
+        except ValueError:
+            return value
+        match = re.fullmatch(r'/c/([A-Za-z0-9]{8}|[a-fA-F0-9]{24})(?:/[^/]*)?', parsed.path)
+        if parsed.scheme in ('http', 'https') and parsed.hostname == 'trello.com' and match:
+            value = match.group(1)
+    # Full hex IDs are case-insensitive; short links are not.
+    return value.lower() if re.fullmatch(r'[a-fA-F0-9]{24}', value) else value
 
 
 def _table(conn):
@@ -70,13 +89,14 @@ def _write(conn, scope, card, division, state):
 def _view(state, card=''):
     if state is None:
         return {}
-    opened = str(card or '').strip().casefold()
+    opened = card_reference(card)
+    aliases = {opened, *(state.get('card_aliases') or [])}
     include_legacy = state.get('include_legacy', True)
     visible = {}
     deleted = set(state.get('deleted', []))
     for row in state.get('entries', {}).values():
-        owner = str(row.get('placement_card_id') or '').strip().casefold()
-        if owner and owner != opened:
+        owner = card_reference(row.get('placement_card_id'))
+        if owner and owner not in aliases:
             continue
         if not owner and not include_legacy:
             continue
@@ -113,8 +133,11 @@ def merge(conn, scope, card, division, crm):
         if key not in state['deleted']:
             state['deleted'].append(key)
     log_scope = crm.get('job_log_scope') or {}
-    if log_scope:
+    if 'include_legacy' in log_scope:
         state['include_legacy'] = bool(log_scope.get('include_legacy'))
+    if log_scope.get('card_aliases'):
+        state['card_aliases'] = sorted(set(state.get('card_aliases') or []) |
+                                      set(log_scope['card_aliases']))
     for entry in crm.get('job_log') or []:
         key = _key(entry)
         if key and _is_dismissed(state, entry, card):

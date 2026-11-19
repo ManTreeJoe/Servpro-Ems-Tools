@@ -347,24 +347,50 @@ def _job_info_sections(job: dict | None = None, *, trello_card=None) -> list:
 
 
 def _job_log_for_placement(entries: list[dict], card_id: str,
-                           primary_card_id: str = "") -> list[dict]:
+                           primary_card_id: str = "", *, include_legacy=None,
+                           card_aliases=()) -> list[dict]:
     """Return Job Log rows owned by the exact opened Board Placement.
 
     Rows written before placement ownership existed have no card id. Keep
     that history on the primary placement (or the only known card) rather
     than copying it into every temporary WIP/Estimating placement.
     """
-    opened = str(card_id or "").strip().casefold()
-    primary = str(primary_card_id or "").strip().casefold()
-    show_legacy = not primary or not opened or opened == primary
+    from job_log_projection import card_reference
+    opened = card_reference(card_id)
+    primary = card_reference(primary_card_id)
+    aliases = {opened, *card_aliases}
+    show_legacy = (not primary or not opened or primary in aliases) if include_legacy is None else include_legacy
     visible = []
     for entry in entries or []:
-        owner = str(entry.get("placement_card_id") or "").strip().casefold()
-        if owner == opened and opened:
+        owner = card_reference(entry.get("placement_card_id"))
+        if owner in aliases and opened and owner:
             visible.append(entry)
         elif not owner and show_legacy:
             visible.append(entry)
     return visible
+
+
+def _job_log_placement_scope(card_id, primary, placements, division, provider_card=None):
+    """Only exact placement evidence may change legacy-history visibility."""
+    from job_log_projection import card_reference
+    opened = card_reference(card_id)
+    aliases = {opened} if opened else set()
+    provider = provider_card or {}
+    evidence = {card_reference(provider.get(key)) for key in ('id', 'shortLink', 'shortUrl', 'url')}
+    evidence.discard('')
+    if opened and opened in evidence and provider.get('id'):
+        aliases.update(evidence)
+    primary_id = card_reference(primary.get('card_id'))
+    scope = {'placement_card_id': card_id, 'card_aliases': sorted(aliases)}
+    if primary_id and primary_id in aliases and not primary.get('ambiguous'):
+        scope['include_legacy'] = True
+    elif primary_id and not primary.get('ambiguous') and any(
+            row.get('division') == division and card_reference(row.get('card_id')) in aliases
+            and row.get('primary') is False for row in placements):
+        scope['include_legacy'] = False
+    # Otherwise retain the saved visibility decision, without importing new
+    # unplaced rows from an unresolved/name-derived shared job response.
+    return scope
 
 
 _CARD_FIELDS = ("name,desc,shortUrl,idBoard,idList,pos,labels,due,"
@@ -1219,13 +1245,7 @@ class Api(JobSettingsApi):
             cid = (summary.get("trello_card_id") or "").strip()
         crm = dict(crm)
         primary_card_id = str(selected_card.get("card_id") or "").strip()
-        crm["job_log"] = _job_log_for_placement(
-            list(crm.get("job_log") or []), cid, primary_card_id)
-        crm["job_log_scope"] = {
-            "placement_card_id": cid,
-            "include_legacy": (not primary_card_id or not cid or
-                               cid.casefold() == primary_card_id.casefold()),
-        }
+        unfiltered_job_log = list(crm.get("job_log") or [])
         crm["work_environments"] = _detected_work_environments(
             crm, summary, division_cards, selected_division)
         # Linguar Hub is the durable source. Trello below is now an import/
@@ -1347,6 +1367,12 @@ class Api(JobSettingsApi):
             # A blank loss-type control is not recovered job data. If the
             # saved job cannot be resolved, keep the exact card's cached facts.
             info_sections = (info_sections if job else []) or saved_workspace.get("info_sections", [])
+        log_scope = _job_log_placement_scope(cid, selected_card, division_placements,
+                                             selected_division, trello_card)
+        crm['job_log_scope'] = log_scope
+        crm['job_log'] = _job_log_for_placement(unfiltered_job_log, cid, primary_card_id,
+            include_legacy=log_scope.get('include_legacy', False),
+            card_aliases=log_scope['card_aliases'])
         comments.sort(key=lambda c: c.get("at") or "", reverse=True)
         from job_workspace_contract import build_job_workspace
         from trello_description_review import for_card as description_review_for_card
