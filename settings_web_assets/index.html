@@ -511,6 +511,10 @@ let SETTINGS_SCOPE = "personal";
 let SETTINGS_ACCESS = {is_admin:false, email:""};
 
 function showSettingsScope(scope) {
+  if (window.SettingsLayout?.ready) {
+    window.SettingsLayout.select(scope === "admin" ? "people" : "profile");
+    return;
+  }
   SETTINGS_SCOPE = scope === "admin" || scope === "health" ? scope : "personal";
   document.body.classList.toggle("showing-health", SETTINGS_SCOPE === "health");
   if (SETTINGS_SCOPE === "health") {
@@ -756,6 +760,7 @@ async function showOriginHelp(origin) {
   document.getElementById("dept-save").addEventListener("click", saveDepartment);
   document.getElementById("dept-add").addEventListener("click", addFranchise);
   document.getElementById("dept-remove").addEventListener("click", removeFranchise);
+  window.SettingsLayout?.mount(SETTINGS_ACCESS);
 });
 
 // ── Property-management directory ─────────────────────────────────
@@ -1158,6 +1163,7 @@ async function refreshSupabase() {
   const openSignin = document.getElementById("sb-open-signin");
   let s = null;
   try { s = await pywebview.api.supabase_status(); } catch (_) {}
+  window.SettingsLayout?.health(s);
   if (!s || !s.ok) {
     box.textContent = "Couldn't check the connection.";
     box.style.borderLeftColor = "var(--red)";
@@ -1721,6 +1727,13 @@ function render() {
   const wrap = document.getElementById("form-fields");
   const folderOwner = document.getElementById("folder-owner");
   folderOwner?.remove();
+  // Preserve existing action controls/listeners when the generated fields reload.
+  const supportOwner = document.getElementById("support-fields");
+  supportOwner?.remove();
+  supportOwner?.querySelectorAll('[id^="f-"][data-key]').forEach(input => {
+    const field = input.closest('.field');
+    (field?.closest('.support-gate') || field)?.remove();
+  });
   function fieldHtml(f) {
     const v = VALUES[f.key];
     if (f.kind === "bool") {
@@ -1815,9 +1828,11 @@ function render() {
     folderOwner.append(extra);
     wrap.prepend(folderOwner);
   }
+  if (supportOwner) wrap.append(supportOwner);
   wireBrowse();
   wireAppearanceControl();
-  showSettingsScope(SETTINGS_SCOPE);
+  if (window.SettingsLayout?.ready) window.SettingsLayout.mount(SETTINGS_ACCESS);
+  else showSettingsScope(SETTINGS_SCOPE);
 }
 
 function appearanceLabel(value) {
@@ -1929,7 +1944,8 @@ function wireSetupGuide() {
       button.textContent = prior;
     }));
   card.querySelector('[data-setup="connections"]')?.addEventListener("click", () => {
-    showSettingsScope("personal");
+    if (window.SettingsLayout?.ready) window.SettingsLayout.select("connections");
+    else showSettingsScope("personal");
     document.getElementById("my-connections").scrollIntoView({behavior:"smooth",block:"start"});
     document.getElementById("connections-refresh").focus();
   });
