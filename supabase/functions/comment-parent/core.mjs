@@ -1,3 +1,4 @@
+import { guardedTrelloFetch } from "../_shared/trello-write-guard.mjs";
 // Import only provider-verified parent context. Never trust desktop comment text.
 export async function handle(request, env, fetcher = fetch) {
   const headers = {'Content-Type':'application/json','Access-Control-Allow-Origin':'*',
@@ -34,7 +35,7 @@ export async function handle(request, env, fetcher = fetch) {
     async function trello(path, fields) {
       const url = new URL('https://api.trello.com/1'+path);
       url.search = new URLSearchParams({key:env.TRELLO_SYNC_API_KEY,token:env.TRELLO_SYNC_TOKEN,...fields}).toString();
-      const res = await fetcher(url,{signal:AbortSignal.timeout(8000)});
+      const res = await guardedTrelloFetch(fetcher, {})(url,{signal:AbortSignal.timeout(8000)});
       if (!res.ok) throw new Error('provider unavailable');
       return res.json();
     }
