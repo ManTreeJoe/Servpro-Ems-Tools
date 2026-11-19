@@ -1,6 +1,7 @@
 /* Standalone controller: only the explicit setup bridge is used. */
 (() => {
   let busy = false, opened = false, workspaceChanged = false, api, info, previousFocus;
+  const attempted = new Set();
   const $ = id => document.getElementById(id);
   function element(tag, text, parent) {
     const el = document.createElement(tag);
@@ -34,6 +35,12 @@
   }
   async function run(fn) {
     if (busy) return;
+    const step = (info.steps || []).find(s => !s.done && !s.skipped);
+    if (step) {
+      attempted.add(step.key);
+      const detail = $('fr-step').querySelector('.setup-detail');
+      if (detail) detail.hidden = false;
+    }
     lock(true); $('fr-error').textContent = '';
     try {
       const result = await fn();
@@ -49,7 +56,21 @@
     $('fr-error').textContent = info.error || '';
     const pending = (info.steps || []).filter(s => !s.done && !s.skipped);
     const step = pending[0];
-    $('fr-progress').textContent = info.error ? 'Setup needs another check' : `${(info.steps || []).length - pending.length} of ${(info.steps || []).length} steps finished`;
+    const progress = $('fr-progress'); progress.replaceChildren();
+    const complete = !step && !info.error;
+    $('fr-later').hidden = complete;
+    $('fr-recheck').hidden = complete;
+    if (info.error) element('span', 'Setup needs another check', progress);
+    else if (step) {
+      const index = info.steps.indexOf(step);
+      element('span', `Step ${index + 1} of 7`, progress);
+      const dots = element('div', '', progress); dots.className = 'setup-dots';
+      dots.setAttribute('aria-hidden', 'true');
+      for (let i = 0; i < 7; i++) {
+        const dot = element('span', '', dots);
+        dot.className = i === index ? 'current' : info.steps[i]?.done || info.steps[i]?.skipped ? 'finished' : '';
+      }
+    }
     const next = $('fr-next');
     next.hidden = !!info.error;
     if (!step) {
@@ -61,8 +82,9 @@
       return;
     }
     element('h2', step.title, box);
-    element('p', step.help, box);
-    element('p', step.detail, box).className = 'setup-detail';
+    element('p', step.help, box).className = 'setup-instruction';
+    const detail = element('p', step.detail, box); detail.className = 'setup-detail';
+    detail.hidden = !attempted.has(step.key);
     next.textContent = 'Save and continue';
     if (step.key === 'signin') { input('Work email', 'email', '', 'email'); input('Password', 'password', '', 'password'); }
     else if (step.key === 'profile_name') input('Display name', 'name');

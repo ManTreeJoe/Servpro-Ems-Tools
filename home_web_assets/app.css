@@ -548,3 +548,8 @@ body { background: var(--bg); }
 #fr-overlay button:disabled {opacity:.6;cursor:wait;}
 #fr-overlay [hidden] {display:none!important;}
 #fr-overlay :focus-visible {outline:2px solid var(--accent,#76c9a9);outline-offset:3px;}
+
+#fr-progress .setup-dots {display:flex;gap:8px;margin-top:10px;}
+#fr-progress .setup-dots span {width:8px;height:8px;border-radius:50%;border:1px solid currentColor;box-sizing:border-box;}
+#fr-progress .setup-dots .finished {background:currentColor;}
+#fr-progress .setup-dots .current {background:var(--accent,#24745c);border-color:var(--accent,#24745c);outline:2px solid var(--accent,#24745c);outline-offset:2px;}
