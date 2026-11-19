@@ -1163,19 +1163,29 @@ def _invalidate_scoped_caches():
         pass
 
 
-def main(argv=None):
+def main(argv=None, *, _instance_claimed=False):
     # Quick Import — the stripped-down tool for general office users opens
     # from the SAME exe via a `--quickimport` shortcut, so simple users get a
     # dedicated launcher and never see the full suite.
     import sys as _sys
     _argv = argv if argv is not None else _sys.argv[1:]
-    if not _claim_single_instance():
+    if not _instance_claimed and not _claim_single_instance():
         _show_already_running()
         return
-    if "--quickimport" in _argv:
-        import quickimport_web
-        quickimport_web.main()
+    if "--emergency-admin" in _argv:
+        import emergency_admin
+        emergency_admin.main(on_authenticated=lambda: main(argv=[], _instance_claimed=True))
         return
+    if "--quickimport" in _argv:
+        import employee_access
+        try:
+            employee_access.require_access()
+        except PermissionError:
+            pass  # Open the normal sign-in/approval gate instead.
+        else:
+            import quickimport_web
+            quickimport_web.main()
+            return
     _ensure_root_index()
     import paths as _paths
     _set_windows_app_identity(getattr(_paths, "IS_TRIAL", False))

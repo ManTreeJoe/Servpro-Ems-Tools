@@ -1,6 +1,6 @@
 # Microsoft employee admission rollout
 
-Status: local implementation and synthetic tests pass. The production rollback rehearsal passed on 2026-11-19; its protected report is `/opt/oneloss/migration/approval-rehearsals/approval-34s7x2jv`. Production approval migration, Auth hooks, Microsoft-only enforcement and updated clients have **not** been deployed. Demo remains unchanged.
+Status: approval permissions are installed on production Main. Recovery password login, Nathan Microsoft sign-in and Pablo pending → Editor/IE approval passed against production on 2026-11-19. Pablo was restored to his original approved role and franchise; jobs were visible and admin API access remained denied. Microsoft-only server enforcement is still off during client rollout. Windows 1.8.49 and live web changes are being prepared; demo remains unchanged.
 
 ## Current production contract
 
@@ -22,11 +22,11 @@ Existing policies still determine which franchise rows an approved user can see.
 6. Temporarily set **pablo@servpro10100.com** pending for the authorized approval test, saving his exact prior status/role/memberships first. Never delete his Auth account. Test no data access, then approve and restore the saved assignment. This does not verify first-time Microsoft account creation; a new employee is still needed for that test later.
 7. Activate `microsoft_only` after client rollout and recovery verification. Confirm Microsoft access, refresh, jobs, admin decisions, viewer denials and editor franchise boundaries. Recheck demo fingerprints. Do not target the older `/opt/oneloss/live` project: production Main is `/opt/oneloss/main-server`.
 
-The application web repository still has an older Foundation data adapter, while production Main now exposes the original Windows application's schema. Auth/approval wrappers do not migrate that adapter. Verify the currently deployed web baseline and reconcile its data adapter before claiming web job functionality or replacing an unrelated deployed UI.
+The live portal now uses Main permissions and the existing Main jobs table. Its older Foundation adapter remains only for non-live/demo builds. Live web provides job browsing/search and access administration; editing, forms and files continue in Windows until the web workspace is expanded.
 
 ## Recovery and sessions
 
-Nathan's existing account is selected into the private emergency allowlist by its existing Auth ID and administrator membership at installation. The email/password provider stays enabled; the Auth password hook permits only that recovery ID. Normal employee screens offer Microsoft only; recovery is a separate desktop tool and `/emergency-admin` web route. There is no public link from normal employee login to recovery.
+Nathan's existing account is selected into the private emergency allowlist by its existing Auth ID and administrator membership at installation. The email/password provider stays enabled; the Auth password hook permits only that recovery ID. Normal employee screens offer Microsoft only; recovery is a separate `"Linguar Hub.exe" --emergency-admin` desktop entry and `/emergency-admin` web route. The desktop keeps the one-Main-window rule and ordinary entry requires Microsoft even if an old password session is saved. There is no public link from normal employee login to recovery.
 
 Approval status is checked live by the database. Desktop admission caching lasts at most five seconds and is keyed to the local user ID; server RLS still applies on every database request. Local sign-out revokes only that session. New Microsoft identities are linked according to Supabase's verified identity policy; no client secret is shipped to Windows or web.
 
@@ -41,3 +41,14 @@ node tests/employee_access_ui.cjs
 ```
 
 The browser tests require the repository's Playwright development dependency. SQL tests use pinned PGlite with synthetic records and actual role/RLS switching, not a production connection. They cover pending access, metadata spoofing, definer RPC bypass, franchise boundaries, viewers, admin revision checks, suspension, recovery and hooks. The real server rehearsal remains necessary.
+
+
+## Rollout configuration and distribution
+
+`auth_rollout.py stage` adds exact Windows/web returns and enables the Azure-only before-user-created hook. The script validates the company tenant, retains recovery password capability and preserves all unrelated container IDs. It saves only a small protected configuration copy, not a database export. New Microsoft accounts enter the existing pending trigger. Current server-wide password access remains unchanged during distribution.
+
+After the Windows release is published and the team has updated, `auth_rollout.py enforce --team-ready` verifies the published installer checksum, enables the recovery-only password hook and activates server-side Microsoft-only access. It restores prior Auth configuration/flag if its rollout verification fails. Re-test Nathan's actual recovery login after enforcement.
+
+The private download policy already lists all eight existing team users. Keep GitHub's existing 1.8.48 transition installer/feed available so older clients can gain private updates. Publish Windows 1.8.49 through the private origin; do not remove the legacy transition release during this rollout.
+
+Live web auth now reads Main's `my_app_access`; the job portal uses the existing Main `jobs` table with RLS. It provides job browsing/search and directs changes to the Windows application. It no longer needs Foundation tables for live login or jobs. The earlier Foundation/demo UI is retained for non-live builds; it is not deployed as part of the live auth rollout.

@@ -25,7 +25,7 @@ def authenticate(email, password, client=None):
         raise
 
 
-def main():
+def main(on_authenticated=None):
     import tkinter as tk
     from tkinter import ttk
     root = tk.Tk()
@@ -51,8 +51,13 @@ def main():
     ttk.Button(frame, text='Sign in to recovery', command=submit).pack(fill='x')
     root.mainloop()
     if accepted:
-        import home_web
-        home_web.main()
+        import employee_access
+        employee_access.enter_recovery()
+        if on_authenticated is not None:
+            on_authenticated()
+        else:
+            import home_web
+            home_web.main(argv=[])
 
 
 if __name__ == '__main__':
