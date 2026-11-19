@@ -18,6 +18,35 @@ def command(args, **kwargs):
     return subprocess.run(args, check=True, capture_output=True, **kwargs)
 
 
+def build_probe(migration, *, commit=False):
+    # The same full SQL runs on the real schema, but ALL changes roll back.
+    if not migration.rstrip().endswith('commit;'):
+        raise RuntimeError('Unexpected migration transaction layout.')
+    probe = migration.rstrip()[:-len('commit;')]
+    probe = probe.replace('begin;', "begin;\nset local lock_timeout='3s';\nset local statement_timeout='20s';\nset local transaction_timeout='60s';\nset local idle_in_transaction_session_timeout='30s';", 1) + """
+    do $$begin
+      if exists(select 1 from public.app_user_departments d left join oneloss_access.accounts a using(user_id)
+          where a.status is distinct from 'approved') then raise exception 'Existing employee access changed'; end if;
+      if not exists(select 1 from auth.users where lower(email)='pablo@servpro10100.com' and deleted_at is null)
+          then raise exception 'Pablo test account not found'; end if;
+    end$$;
+    select set_config('request.jwt.claims',json_build_object('sub',(select user_id from oneloss_access.emergency_accounts),
+      'role','authenticated','amr',json_build_array(json_build_object('method','password')))::text,true);
+    set local role authenticated;
+    do $$declare a jsonb; begin
+      a:=public.my_app_access();
+      if a->>'auth_mode'<>'emergency' or not (a->>'is_admin')::boolean or a->>'access_state'<>'approved'
+        then raise exception 'Recovery permission probe failed'; end if;
+      perform public.employee_admin_snapshot();
+    end$$;
+    reset role;
+    rollback;
+    """
+    if commit:
+        probe = probe.rstrip()[:-len('rollback;')] + 'commit;'
+    return probe
+
+
 def main():
     if os.geteuid() != 0:
         raise RuntimeError('Run with sudo.')
@@ -55,29 +84,7 @@ def main():
     recovery = Path(tempfile.mkdtemp(prefix='approval-', dir=REPORTS))
     print(f'Protected rehearsal report directory: {recovery}', flush=True)
     print('Checking approval permissions inside a transaction; all changes will roll back.', flush=True)
-    # The same full SQL runs on the real schema, but ALL changes roll back.
-    if not migration.rstrip().endswith('commit;'):
-        raise RuntimeError('Unexpected migration transaction layout.')
-    probe = migration.rstrip()[:-len('commit;')]
-    probe = probe.replace('begin;', "begin;\nset local lock_timeout='3s';\nset local statement_timeout='20s';\nset local transaction_timeout='60s';\nset local idle_in_transaction_session_timeout='30s';", 1) + """
-    do $$begin
-      if exists(select 1 from public.app_user_departments d left join oneloss_access.accounts a using(user_id)
-          where a.status is distinct from 'approved') then raise exception 'Existing employee access changed'; end if;
-      if not exists(select 1 from auth.users where lower(email)='pablo@servpro10100.com' and deleted_at is null)
-          then raise exception 'Pablo test account not found'; end if;
-    end$$;
-    select set_config('request.jwt.claims',json_build_object('sub',(select user_id from oneloss_access.emergency_accounts),
-      'role','authenticated','amr',json_build_array(json_build_object('method','password')))::text,true);
-    set local role authenticated;
-    do $$declare a jsonb; begin
-      a:=public.my_app_access();
-      if a->>'auth_mode'<>'emergency' or not (a->>'is_admin')::boolean or a->>'access_state'<>'approved'
-        then raise exception 'Recovery permission probe failed'; end if;
-      perform public.employee_admin_snapshot();
-    end$$;
-    reset role;
-    rollback;
-    """
+    probe = build_probe(migration)
     result = subprocess.run(psql, input=probe, text=True, capture_output=True, timeout=75)
     (recovery / 'rehearsal-private.log').write_text(result.stdout + '\n' + result.stderr)
     if result.returncode:

@@ -1,6 +1,6 @@
 # Microsoft employee admission rollout
 
-Status: local implementation and synthetic tests pass. Production approval migration, Auth hooks, Microsoft-only enforcement and updated clients have **not** been deployed. Demo remains unchanged.
+Status: local implementation and synthetic tests pass. The production rollback rehearsal passed on 2026-11-19; its protected report is `/opt/oneloss/migration/approval-rehearsals/approval-34s7x2jv`. Production approval migration, Auth hooks, Microsoft-only enforcement and updated clients have **not** been deployed. Demo remains unchanged.
 
 ## Current production contract
 
@@ -15,7 +15,7 @@ Existing policies still determine which franchise rows an approved user can see.
 ## Deployment order
 
 1. Run `deploy/employee-access/server.py rehearse` from the prepared server bundle. Version 3 does not export the database or make another recovery copy. It applies the migration inside one transaction, verifies recovery permissions and existing assignments, then rolls everything back. Session-local lock, statement and transaction limits bound the check; see [PostgreSQL 17 timeout documentation](https://www.postgresql.org/docs/17/runtime-config-client.html). Only a protected diagnostic and count report are saved. IT handles server backups; confirm an appropriate recovery point before any later permanent apply. It does not restart services or change Auth configuration. Keep its diagnostic private.
-2. After the real-schema rehearsal passes, prepare the separately guarded apply/configuration step. The SQL defaults `microsoft_only=false` so existing employee clients retain their sessions during rollout. Do not enable signup until the before-user-created hook is configured.
+2. After the real-schema rehearsal passes, run `apply.py --rehearsal REPORT_DIRECTORY` from the matching install bundle. It requires a private root-owned success marker with the same SQL checksum, checks REST compatibility and current access counts, and saves small permission definitions/fingerprints only. It commits the same permission/recovery checks, then verifies assignments, administrators, container IDs and Auth configuration remain unchanged. It does not enable Auth hooks or change the client applications. The SQL defaults `microsoft_only=false` so existing employee clients retain their sessions during rollout. Do not enable signup until the before-user-created hook is configured.
 3. Append only `https://app.oneloss.work/auth/microsoft` to production Auth's return allowlist, retaining the existing desktop return and all other entries. Enable the Azure-only creation hook and password-verification hook; keep the email provider enabled for Nathan's recovery account. Restrict Azure to the company tenant and check that other OAuth providers are disabled.
 4. Verify Nathan's **actual password recovery login** before enforcement. SQL permission rehearsal is not a password authentication test.
 5. Package and test the updated Windows client and publish the live web auth changes. Preserve existing GitHub update compatibility. Do not publish an installer simply by copying this clean feature tree over an unrelated release source tree.
