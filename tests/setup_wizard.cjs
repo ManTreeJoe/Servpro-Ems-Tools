@@ -10,6 +10,9 @@ const path = require('node:path');
     const requests = [];
     await context.route('**/*', route => {requests.push(route.request().url()); return route.abort();});
     const page = await context.newPage();
+    await page.setViewportSize({width:1000,height:800});
+    fs.mkdirSync('test-results',{recursive:true});
+    const shot = name => page.screenshot({path:`test-results/${name}.png`});
     const errors = []; page.on('pageerror', e => errors.push(e.message));
     const html = fs.readFileSync('home_web_assets/index.html','utf8');
     const modal = html.slice(html.indexOf('<div class="fr-overlay'),html.indexOf('<!-- Department switch splash'));
@@ -18,7 +21,7 @@ const path = require('node:path');
     await page.evaluate(() => {
       window.actions=[]; window.dismissed=false;
       window.steps=[
-        {key:'signin',title:'Sign in',done:true},
+        {key:'signin',title:'Sign in',done:false},
         {key:'profile_name',title:'Your display name',done:false},
         {key:'franchise',title:'Assigned franchise',done:false},
         {key:'trello',title:'Connect Trello',done:false},
@@ -40,25 +43,36 @@ const path = require('node:path');
       };
       return OneLossSetup.open(bridge);
     });
+    await shot('01-signin');
+    await page.locator('[name=email]').fill('employee@example.invalid');
+    await page.locator('[name=password]').fill('synthetic-only');
+    await page.locator('#fr-next').click();
     assert.equal(await page.locator('[name=email]').count(),0);
+    await shot('02-display-name');
     await page.locator('[name=name]').fill('Test Employee');
     await page.locator('#fr-next').click();
+    await shot('03-franchise');
     await page.locator('[name=key]').selectOption('TEST');
     await page.locator('#fr-next').click();
     await page.locator('#fr-next').click();
     await page.locator('#fr-error').filter({hasText:'Authorization unavailable'}).waitFor();
     assert.equal(await page.locator('#fr-step h2').textContent(),'Connect Trello');
+    await shot('04-trello');
     await page.evaluate(()=>{steps.find(s=>s.key==='trello').done=true;});
     await page.locator('#fr-recheck').click();
+    await shot('05-companycam');
     await page.getByText('Skip optional connection',{exact:true}).click();
     await page.getByText('Choose shared job root',{exact:true}).click();
     assert.equal(await page.locator('[name=job_root]').inputValue(),'C:/Fictional/Shared');
     await page.locator('[name=runs_dir]').fill('C:/Fictional/Runs');
+    await shot('06-folders');
     await page.setViewportSize({width:390,height:700});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     fs.mkdirSync('test-results',{recursive:true});
     await page.screenshot({path:'test-results/setup-wizard-mobile.png'});
+    await page.setViewportSize({width:1000,height:800});
     await page.locator('#fr-next').click();
+    await shot('07-live-data');
     assert.equal(await page.locator('#fr-step h2').textContent(),'Check shared data');
     await page.locator('#fr-next').click();
     assert.equal(await page.locator('#fr-step h2').textContent(),'Check shared data');
@@ -70,6 +84,7 @@ const path = require('node:path');
     await page.evaluate(()=>{steps.find(s=>s.key==='live_data').done=true;});
     await page.locator('#fr-recheck').click();
     await page.getByText('Your workspace is ready',{exact:true}).waitFor();
+    await shot('08-all-done');
     await page.locator('#fr-next').click();
     await page.evaluate(()=>{dismissed=false;bridge.first_run=async()=>{throw Error('offline');};return OneLossSetup.open(bridge);});
     await page.locator('#fr-error').filter({hasText:'Setup checks could not load'}).waitFor();

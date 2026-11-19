@@ -23,6 +23,7 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "active_department", lambda: "TEST")
     monkeypatch.setattr(account_access, "current_access", lambda: access.copy())
     monkeypatch.setattr(setup, "_progress_path", lambda: tmp_path / "progress.json")
+    monkeypatch.setattr(sb, "current_user", lambda: access["identity"] if access["signed_in"] else None)
     monkeypatch.setattr(sb, "rest", Mock(return_value=[]))
     monkeypatch.setattr(sb, "external_connection_status", Mock(return_value={"status": "connected"}))
     monkeypatch.setattr(trello_client, "_call", Mock(return_value={"id": "fake-trello"}))
@@ -185,3 +186,64 @@ def test_channel_skip_does_not_cross_profiles(monkeypatch):
     assert setup.status(None)["all_done"]
     monkeypatch.setattr(paths, "CHANNEL", "trial")
     assert not setup.status(None)["all_done"]
+
+
+def test_verified_user_all_probes_raise(monkeypatch):
+    import account_access
+    import trello_client
+    import companycam_api as cc
+    import supabase_client as sb
+    assert setup.status(None)["all_done"]
+    for obj, name in [(account_access, "current_access"), (trello_client, "_call"),
+                      (cc, "_call"), (sb, "rest"), (sb, "external_connection_status"),
+                      (setup, "_read_folder"), (settings_web.Api, "employee_setup_status")]:
+        monkeypatch.setattr(obj, name, Mock(side_effect=RuntimeError("offline")))
+    assert shell().first_run()["show"] is False
+
+
+def test_verified_user_signed_out(isolated):
+    assert setup.status(None)["all_done"]
+    isolated[1].update(signed_in=False, identity={})
+    assert shell().first_run()["show"] is True
+
+
+@pytest.mark.parametrize("changed", ["user", "channel", "franchise", "backend"])
+def test_verified_record_other_scope_ignored(isolated, monkeypatch, changed):
+    import config
+    import paths
+    import trello_client
+    assert setup.status(None)["all_done"]
+    cfg, access = isolated
+    if changed == "user":
+        access["identity"] = {"id": "different-user"}
+    elif changed == "channel":
+        monkeypatch.setattr(paths, "CHANNEL", "different-channel")
+    elif changed == "franchise":
+        monkeypatch.setattr(config, "active_department", lambda: "OTHER")
+    else:
+        cfg["supabase_url"] = "https://another.invalid"
+    monkeypatch.setattr(trello_client, "_call", Mock(side_effect=RuntimeError("offline")))
+    assert shell().first_run()["show"] is True
+
+
+def test_fresh_user_probe_raises(monkeypatch):
+    import trello_client
+    monkeypatch.setattr(trello_client, "_call", Mock(side_effect=RuntimeError("offline")))
+    assert shell().first_run()["show"] is True
+    assert not setup._choices()
+
+
+def test_verified_access_error_is_not_revocation(isolated):
+    assert setup.status(None)["all_done"]
+    isolated[1].update(error="offline", departments=[])
+    assert shell().first_run()["show"] is False
+    isolated[1]["error"] = ""
+    assert shell().first_run()["show"] is True
+
+
+def test_completion_preserved_by_optional_skip():
+    assert setup.status(None)["all_done"]
+    setup.action(None, "skip_companycam")
+    record = next(iter(setup._choices().values()))
+    assert record["verified_complete"] is True
+    assert record["companycam_skipped"] is True

@@ -394,6 +394,10 @@ class HomeApi:
     def first_run(self):
         """Derive visibility from setup evidence, even after session dismissal."""
         try:
+            import employee_setup
+            if employee_setup.verified_for_current_scope():
+                return {"show": False, "steps": [], "first_incomplete": None,
+                        "verified_complete": True, "session_dismissed": bool(getattr(self, "_setup_dismissed", False))}
             import settings_web
             api = getattr(self, "_subs", {}).get("settings") or settings_web.Api()
             result = api.employee_setup_status()

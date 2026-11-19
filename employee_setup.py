@@ -1,6 +1,6 @@
 """Employee setup, derived from current evidence, never a configured marker.
 
-Only the optional skip decision is stored here. Account, name and folder
+Optional skip and verified completion decisions are stored here. Account, name and folder
 progress lives in its existing settings/session stores. Provider probes are
 reads; no project creation, uploads, queue flushes or backend switching.
 """
@@ -33,6 +33,50 @@ def _choices():
         return value if isinstance(value, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def _save_choice(scope, **updates):
+    choices = _choices()
+    record = choices.get(scope)
+    record = record if isinstance(record, dict) else {}
+    choices[scope] = {**record, **updates}
+    target = _progress_path()
+    temp = target.with_suffix(".tmp")
+    temp.write_text(json.dumps(choices), encoding="utf-8")
+    temp.replace(target)
+
+
+def verified_for_current_scope():
+    """Onboarding suppression only, never an authorization or health decision.
+
+    Local session identity scopes the record even when the access RPC fails.
+    Only a successful access result can establish revoked franchise access.
+    """
+    import config
+    import account_access
+    import supabase_client as sb
+    cfg = config.load() or {}
+    user = sb.current_user() or {}  # Reads the local session, no request.
+    if not user.get("id"):
+        return False
+    scope = _scope(cfg, {"identity": user})
+    record = _choices().get(scope)
+    if not isinstance(record, dict) or record.get("verified_complete") is not True:
+        return False
+    try:
+        access = account_access.current_access()
+    except Exception:
+        return True  # Unavailable is not signed out or revoked.
+    if access.get("error"):
+        return True
+    if access.get("signed_in") is False:
+        return False
+    identity = access.get("identity") or {}
+    if identity.get("id") and identity["id"] != user["id"]:
+        return False
+    if "departments" in access and config.active_department() not in access["departments"]:
+        return False
+    return True
 
 
 def _read_folder(value):
@@ -116,6 +160,8 @@ def status(api):
     step("live_data", "Check shared data", live_ok,
          "Shared jobs read successfully; no records were changed" if live_ok else "Shared job access has not passed verification",
          "Finish the required steps, then check again. If this fails, check your network and ask your administrator to verify this workspace's shared database and permissions. Setup will not switch environments.")
+    if all(s["done"] for s in steps if not s["optional"]):
+        _save_choice(_scope(cfg, access), verified_complete=True)
     return dict(ok=True, steps=steps, all_done=all(s["done"] or s["skipped"] for s in steps),
                 done=sum(s["done"] or s["skipped"] for s in steps), total=len(steps),
                 active_franchise=active, departments=assigned,
@@ -151,12 +197,7 @@ def action(api, name, values=None):
         return api.open_user_connection(name)
     if name == "skip_companycam":
         cfg = config.load() or {}
-        choices = _choices()
-        choices[_scope(cfg, access)] = {"companycam_skipped": True}
-        target = _progress_path()
-        temp = target.with_suffix(".tmp")
-        temp.write_text(json.dumps(choices), encoding="utf-8")
-        temp.replace(target)
+        _save_choice(_scope(cfg, access), companycam_skipped=True)
         return {"ok": True}
     if name == "folders":
         jobs, runs = str(values.get("job_root") or "").strip(), str(values.get("runs_dir") or "").strip()
