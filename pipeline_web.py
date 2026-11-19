@@ -3056,6 +3056,12 @@ class Api(JobSettingsApi):
                        else pipeline_store.pending_trello_changes())
         except Exception as ex:
             pending = {"ok": False, "error": str(ex)}
+        if not pending.get("ok"):
+            return {"ok": False, "cards": 0, "comments": 0, "job_logs": 0,
+                    "error": pending.get("error") or "sync queue unavailable"}
+        if pending.get("mode") == "direct" and pending.get("queue_reason") != "schema_missing":
+            return {"ok": True, "cards": 0, "comments": 0, "job_logs": 0,
+                    "mode": "direct", "queue_reason": pending.get("queue_reason", ""), "error": ""}
         import trello_client as tc
 
         cards_done = comments_done = job_logs_done = 0
@@ -3063,8 +3069,8 @@ class Api(JobSettingsApi):
             pending.get("error") or "sync queue unavailable"]
         metadata = ({ "mode": "direct", "queue_reason": pending.get("queue_reason", "")}
                     if pending.get("mode") == "direct" else {})
-        # An optional shared queue is not the local Job Log outbox. Its absence
-        # or read failure must not strand independently committed Job Logs.
+        # Only a verified missing optional schema permits the direct fallback.
+        # Permission, scope and unknown failures above must not drain the outbox.
         if not pending.get("ok") or pending.get("mode") == "direct":
             pending = {**pending, "cards": [], "comments": []}
         for card in pending.get("cards") or []:
@@ -3115,13 +3121,28 @@ class Api(JobSettingsApi):
         # an append-only activity. They run in this same quiet adapter cycle.
         try:
             import job_workflow
-            # Legacy local operations are unscoped: retain the existing base
-            # office boundary rather than draining them from another office.
-            for operation in (job_workflow.pending() if pipeline_store.shared_scope_safe() else []):
+            import config
+            from trello_write_guard import require_write_enabled
+            # Disabled/paused delivery is not an attempted send. Do not claim,
+            # hold, acknowledge or fail queued items while posting is off.
+            writes_enabled = False
+            try:
+                require_write_enabled("POST")
+                writes_enabled = not config.load().get("trello_writes_paused")
+            except Exception:
+                pass  # Fail closed; retain every queued item for later delivery.
+            scope = job_workflow.delivery_scope() if writes_enabled else {}
+            for operation in (job_workflow.pending() if writes_enabled else []):
                 key = str(operation.get("operation_key") or "")
                 kind = str(operation.get("operation_type") or "")
                 if kind in ("contents.ensure_card", "division.ensure_card"):
                     continue  # Separate scoped card provisioner, not a Job Log operation.
+                origin = (operation.get("payload") or {}).get("origin_scope")
+                if not origin:
+                    job_workflow.hold_delivery(key, "Legacy Job Log delivery has no account/office origin; review required")
+                    continue
+                if not scope or origin != scope:
+                    continue  # Another account's records remain pending for their owner.
                 try:
                     external_id = ""
                     if kind == "comment.create":
@@ -3137,8 +3158,10 @@ class Api(JobSettingsApi):
                         if external_id:
                             job_workflow.acknowledge(key, external_id=external_id)
                             continue
-                        if not job_workflow.claim_delivery(key):
+                        if not job_workflow.claim_delivery(key, scope):
                             continue
+                        if job_workflow.delivery_scope() != scope:
+                            raise RuntimeError("Account or office changed before Job Log delivery")
                         posted = tc.post_comment(
                             str(operation.get("card_id") or ""),
                             str((operation.get("payload") or {}).get("text") or "")) or {}
