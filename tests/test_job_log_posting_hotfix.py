@@ -25,6 +25,8 @@ def queue(monkeypatch, tmp_path):
     monkeypatch.setattr('trello_client.update_comment', forbidden)
     monkeypatch.setattr('trello_client.delete_comment', forbidden)
     monkeypatch.setattr(workflow, 'acknowledge', acknowledge_scratch)
+    monkeypatch.setattr('ems_db.list_job_log_entries', lambda _: [{'entry_id': 'entry'}])
+    monkeypatch.setattr('supabase_client.current_user', lambda: {'id': 'user-a'})
     monkeypatch.setattr(pipeline_store, 'pending_trello_changes', lambda: {
         'ok': True, 'mode': 'direct', 'queue_reason': 'schema_missing',
         'cards': [], 'comments': []})
@@ -139,7 +141,7 @@ def test_real_scope_captures_routing_without_secrets(monkeypatch):
 def test_save_captures_origin_before_database_work(queue, monkeypatch):
     import audit_web
     import ems_db
-    monkeypatch.setattr(ems_db, 'find_job_by_name', lambda _: {'canon_key': 'job'})
+    monkeypatch.setattr('job_saved_data.resolve', lambda *_: ({'canon_key': 'job'}, 'EMS'))
     def save(key, entry):
         monkeypatch.setattr(workflow, 'delivery_scope', lambda: {**SCOPE, 'user_id': 'other'})
         return {**entry, 'entry_id': 'new'}
@@ -153,7 +155,7 @@ def test_save_captures_origin_before_database_work(queue, monkeypatch):
 def test_new_log_choice_is_preserved(queue, monkeypatch):
     import audit_web
     import ems_db
-    monkeypatch.setattr(ems_db, 'find_job_by_name', lambda _: {'canon_key': 'job'})
+    monkeypatch.setattr('job_saved_data.resolve', lambda *_: ({'canon_key': 'job'}, 'EMS'))
     monkeypatch.setattr(ems_db, 'save_job_log_entry', lambda key, entry: {**entry, 'entry_id': 'new'})
     api = audit_web.Api()
     result = api.save_crm_job_log('Job', {'work_type': 'Monitor', 'post_to_trello': False}, 'card')
@@ -162,3 +164,17 @@ def test_new_log_choice_is_preserved(queue, monkeypatch):
     result = api.save_crm_job_log('Job', {'work_type': 'Monitor'}, 'card')
     assert result['ok'] and result['pending_sync']
     assert json.loads(row('job-log:new')['payload_json'])['origin_scope'] == SCOPE
+
+
+def test_missing_saved_entry_is_not_sent(queue, monkeypatch):
+    monkeypatch.setattr('ems_db.list_job_log_entries', lambda _: [])
+    assert not pipeline_web.Api()._push_pending_trello()['ok']
+    assert row(queue)['status'] == 'pending'
+
+
+def test_saved_delivery_is_acknowledged_without_reposting(queue, monkeypatch):
+    monkeypatch.setattr('ems_db.list_job_log_entries', lambda _: [
+        {'entry_id': 'entry', 'trello_comment_id': 'already-sent'}])
+    assert pipeline_web.Api()._push_pending_trello()['ok']
+    assert row(queue)['status'] == 'complete'
+    assert row(queue)['comment_id'] == 'already-sent'
