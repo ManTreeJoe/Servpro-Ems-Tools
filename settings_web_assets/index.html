@@ -342,8 +342,7 @@
         <button class="btn" id="sb-use-local">Emergency local mode</button>
       </div></details>
     </div>
-    <!-- Kept as the single sign-out command for the connection card; it is
-         intentionally not duplicated as another visible button here. -->
+    <!-- Account & sync owns sign-in and sign-out. -->
     <button class="btn" data-settings-scope="personal" id="sb-sign-out" style="display:none;">Sign out</button>
     <div id="sb-msg" class="muted"
          style="margin-top:8px;font-size:12px;"></div>
@@ -1164,6 +1163,7 @@ async function refreshSupabase() {
     box.style.borderLeftColor = "var(--red)";
     return;
   }
+  document.getElementById("sb-sign-out").style.display = s.signed_in ? "" : "none";
   const cloud = s.backend === "supabase";
   if (!s.configured) {
     box.innerHTML = "Not set up. Fill in <b>Supabase project URL</b> and "
@@ -1232,7 +1232,7 @@ async function renderConnections() {
     if (msg) { msg.textContent = result?.error || ""; msg.style.color = "var(--red)"; }
     return;
   }
-  grid.innerHTML = (result.connections || []).map((card) => `
+  grid.innerHTML = (result.connections || []).filter(card => card.provider !== "linguar").map((card) => `
     <article class="connection-card" data-provider="${esc(card.provider)}" data-state="${esc(card.state)}">
       <div class="connection-mark" aria-hidden="true">${esc(card.icon)}</div>
       <div style="min-width:0;">
@@ -1259,7 +1259,10 @@ async function runConnectionAction(button) {
   const provider = button.dataset.provider;
   const msg = document.getElementById("connections-msg");
   if (action === "sign_in") {
-    openSupabaseSignIn();
+    if (window.SettingsLayout?.ready) window.SettingsLayout.select("profile");
+    else showSettingsScope("personal");
+    document.getElementById("account-sync")?.scrollIntoView({block:"start"});
+    document.getElementById("sb-open-signin")?.focus();
     return;
   }
   if (action === "sign_out") {
