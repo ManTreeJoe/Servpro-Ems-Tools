@@ -89,6 +89,9 @@ def test_uncertain_write_no_retry_or_credentials(monkeypatch, provider):
 
 
 def test_json_transport_keeps_form_compatibility(monkeypatch):
+    # Successful-write fixture only; the provider transport below is fake.
+    monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
+    monkeypatch.setenv("LINGUAR_CHANNEL", "trial")
     import trello_mirror_reader
     captured = []
     class Response:

@@ -26,6 +26,9 @@ def test_owned_paths_not_double_notified(method,tail,fields):
 
 
 def test_success_boundary_queues_and_failure_does_not(monkeypatch):
+    # Successful-write fixture only; the provider transport below is fake.
+    monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
+    monkeypatch.setenv("LINGUAR_CHANNEL", "trial")
     import trello_client as tc, io, urllib.error
     seen=[]
     monkeypatch.setattr(tc,'_creds',lambda:('test','test'))

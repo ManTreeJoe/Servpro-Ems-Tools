@@ -6,7 +6,10 @@ from notifications_web import Api
 
 
 @pytest.mark.parametrize('body', [b'', b'OK', b'{}'])
-def test_successful_mark_all_does_not_require_json(body):
+def test_successful_mark_all_does_not_require_json(body, monkeypatch):
+    # Successful-write fixture only; the provider transport below is fake.
+    monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
+    monkeypatch.setenv("LINGUAR_CHANNEL", "trial")
     response = MagicMock()
     response.__enter__.return_value.read.return_value = body
     with patch.object(tc, '_creds', return_value=('fixture', 'fixture')), \
