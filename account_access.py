@@ -28,8 +28,7 @@ class SupabaseAccessAdapter:
 def current_access(adapter=None) -> dict:
     """Return normalized identity, owner/admin and franchise readiness.
 
-    Signed-in identity survives a temporary RPC/network failure.  The owner
-    fallback is intentionally evaluated here—not independently by screens.
+    Signed-in identity survives a temporary network failure; privileges do not.
     """
     global _LAST_ACCESS
     supplied_adapter = adapter is not None
@@ -42,7 +41,6 @@ def current_access(adapter=None) -> dict:
         error = f"Sign-in status unavailable: {ex}"
     email = str(user.get("email") or "").strip().lower()
     signed_in = bool(user.get("id") or email)
-    owner = signed_in and email == OWNER_EMAIL
     raw = {}
     if signed_in:
         try:
@@ -63,7 +61,7 @@ def current_access(adapter=None) -> dict:
         enabled = {str(value or "").strip().lower()
                    for value in (raw_capabilities or [])}
         capabilities = {key: key in enabled for key in KNOWN_CAPABILITIES}
-    if owner or raw.get("is_admin"):
+    if raw.get("is_admin"):
         capabilities = {key: True for key in KNOWN_CAPABILITIES}
     result = {
         "ok": True,
@@ -71,8 +69,11 @@ def current_access(adapter=None) -> dict:
         "email": email,
         "display_name": str(user.get("display_name") or "").strip(),
         "signed_in": signed_in,
-        "is_owner": owner,
-        "is_admin": bool(owner or raw.get("is_admin")),
+        "is_owner": bool(raw.get("is_admin") and email == OWNER_EMAIL),
+        "is_admin": bool(raw.get("is_admin")),
+        "access_state": raw.get("access_state", "unavailable"),
+        "role": raw.get("role"),
+        "can_edit": bool(raw.get("can_edit")),
         "departments": departments,
         "capabilities": capabilities,
         "capabilities_configured": capabilities_configured,

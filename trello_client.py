@@ -46,6 +46,10 @@ def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_re
     Snapshots reconcile fires ~1.7k calls and WILL trip that without this,
     so closed jobs near the end of the workbook were misrouting to Needs
     Attention on a transient 429 rather than their real sheet."""
+    if method.upper() not in ("GET", "HEAD"):
+        import employee_access
+        if not employee_access.require_access().get("can_edit"):
+            raise PermissionError("This OneLoss account has read-only access.")
     if data is not None and json_data is not None:
         raise ValueError("Choose either form data or JSON")
     key, token = _creds()

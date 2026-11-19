@@ -86,7 +86,7 @@
     const detail = element('p', step.detail, box); detail.className = 'setup-detail';
     detail.hidden = !attempted.has(step.key);
     next.textContent = 'Save and continue';
-    if (step.key === 'signin') { input('Work email', 'email', '', 'email'); input('Password', 'password', '', 'password'); }
+    if (step.key === 'signin') { const note = document.createElement('p'); note.textContent = 'Continue with your Microsoft work account in your browser.'; box.append(note); }
     else if (step.key === 'profile_name') input('Display name', 'name');
     else if (step.key === 'franchise') {
       const wrap = element('label', 'Server-assigned franchise', box);

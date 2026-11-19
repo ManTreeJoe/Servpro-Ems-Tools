@@ -192,6 +192,7 @@ TOOLS = {
     "photo_folders_web": "photo_folders_web",
     "resources_web":  "resources_web",
     "settings":       "settings_gui",
+    "emergency_admin": "emergency_admin",
 }
 
 
@@ -206,6 +207,14 @@ def _dispatch():
     sys.argv = [sys.argv[0]] + extra
     if tool == "launcher" or tool not in TOOLS:
         return False
+    if tool not in ("home_web", "emergency_admin"):
+        import employee_access
+        try:
+            employee_access.require_access()
+        except PermissionError:
+            import home_web
+            home_web.main()
+            return True
     # Record which tools get opened (usage analytics — tool name only).
     try:
         import usage_tracker as _ut

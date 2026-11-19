@@ -108,7 +108,7 @@ def status(api):
                           help=help, optional=optional, skipped=skipped))
 
     step("signin", "Sign in", signed, user.get("email") or "Not signed in",
-         "Use your work email and this workspace's password. Ask your administrator for access if sign-in fails.")
+         "Continue with your Microsoft work account. Your administrator approves access and assigns your franchise.")
     step("profile_name", "Your display name", signed and bool(str(user.get("display_name") or "").strip()),
          user.get("display_name") or "Name still needed", "Enter the name coworkers should see on comments and updates.")
     step("franchise", "Assigned franchise", active in assigned,
@@ -175,7 +175,7 @@ def action(api, name, values=None):
     import config
     values = values if isinstance(values, dict) else {}
     if name == "signin":
-        result = api.supabase_sign_in_password(values.get("email", ""), values.get("password", ""))
+        result = api.supabase_sign_in_microsoft()
         return {**result, "reload": bool(result.get("ok"))}
     access = account_access.current_access()
     if not access.get("signed_in") or access.get("error"):

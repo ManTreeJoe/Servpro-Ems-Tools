@@ -1,0 +1,43 @@
+# Microsoft employee admission rollout
+
+Status: local implementation and synthetic tests pass. Production approval migration, Auth hooks, Microsoft-only enforcement and updated clients have **not** been deployed. Demo remains unchanged.
+
+## Current production contract
+
+The protected permission preflight found eight users, two administrators and existing IE/OC department assignments. All current assigned users are seeded approved with their existing memberships; administrators remain administrators and other assigned users start as editors. No account is deleted. New Microsoft accounts start pending without data access. Role authorization comes from server records, never a matching email in the desktop client.
+
+`oneloss_access` is private. Its account states, recovery allowlist and audit records are not exposed as tables. Public invoker RPCs expose only own access and administrator-checked decisions. Approval decisions are serialized, checked against the expected revision and recorded in an audit log. The recovery administrator and last administrator cannot be removed through approvals.
+
+The table RLS boundaries cover public data, Storage and Realtime. The PostgREST pre-request guard also covers views and privileged RPCs. Viewers can read assigned data but cannot perform database writes or volatile RPCs. Some existing read/write dispatcher RPCs are volatile, so viewer compatibility with those older screens needs application testing; do not loosen the guard to make them work. Trello mutations from the updated desktop also require editor/admin access.
+
+Existing policies still determine which franchise rows an approved user can see. Approval does not grant cross-franchise data access. Client metadata cannot approve a user or assign a role.
+
+## Deployment order
+
+1. Run `deploy/employee-access/server.py rehearse` from the prepared server bundle. It makes a protected database/configuration recovery copy, applies the full migration inside one transaction, verifies recovery permissions and existing assignments, then rolls everything back. It does not restart services or change Auth configuration. Keep its diagnostic private.
+2. After the real-schema rehearsal passes, prepare the separately guarded apply/configuration step. The SQL defaults `microsoft_only=false` so existing employee clients retain their sessions during rollout. Do not enable signup until the before-user-created hook is configured.
+3. Append only `https://app.oneloss.work/auth/microsoft` to production Auth's return allowlist, retaining the existing desktop return and all other entries. Enable the Azure-only creation hook and password-verification hook; keep the email provider enabled for Nathan's recovery account. Restrict Azure to the company tenant and check that other OAuth providers are disabled.
+4. Verify Nathan's **actual password recovery login** before enforcement. SQL permission rehearsal is not a password authentication test.
+5. Package and test the updated Windows client and publish the live web auth changes. Preserve existing GitHub update compatibility. Do not publish an installer simply by copying this clean feature tree over an unrelated release source tree.
+6. Temporarily set **pablo@servpro10100.com** pending for the authorized approval test, saving his exact prior status/role/memberships first. Never delete his Auth account. Test no data access, then approve and restore the saved assignment. This does not verify first-time Microsoft account creation; a new employee is still needed for that test later.
+7. Activate `microsoft_only` after client rollout and recovery verification. Confirm Microsoft access, refresh, jobs, admin decisions, viewer denials and editor franchise boundaries. Recheck demo fingerprints. Do not target the older `/opt/oneloss/live` project: production Main is `/opt/oneloss/main-server`.
+
+The application web repository still has an older Foundation data adapter, while production Main now exposes the original Windows application's schema. Auth/approval wrappers do not migrate that adapter. Verify the currently deployed web baseline and reconcile its data adapter before claiming web job functionality or replacing an unrelated deployed UI.
+
+## Recovery and sessions
+
+Nathan's existing account is selected into the private emergency allowlist by its existing Auth ID and administrator membership at installation. The email/password provider stays enabled; the Auth password hook permits only that recovery ID. Normal employee screens offer Microsoft only; recovery is a separate desktop tool and `/emergency-admin` web route. There is no public link from normal employee login to recovery.
+
+Approval status is checked live by the database. Desktop admission caching lasts at most five seconds and is keyed to the local user ID; server RLS still applies on every database request. Local sign-out revokes only that session. New Microsoft identities are linked according to Supabase's verified identity policy; no client secret is shipped to Windows or web.
+
+## Local verification
+
+```text
+npm ci --prefix .local-test-tools
+node tests/employee_access_sql.mjs
+python -m pytest tests/test_employee_access.py tests/test_account_access.py tests/test_microsoft_auth.py tests/test_supabase_password_login.py tests/test_employee_setup_guide.py -q
+node tests/microsoft_signin.cjs
+node tests/employee_access_ui.cjs
+```
+
+The browser tests require the repository's Playwright development dependency. SQL tests use pinned PGlite with synthetic records and actual role/RLS switching, not a production connection. They cover pending access, metadata spoofing, definer RPC bypass, franchise boundaries, viewers, admin revision checks, suspension, recovery and hooks. The real server rehearsal remains necessary.

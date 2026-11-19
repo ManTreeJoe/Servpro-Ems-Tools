@@ -1,6 +1,6 @@
 # Microsoft sign-in in the Windows app
 
-The Settings sign-in dialog offers Microsoft first, then email/password and the existing emailed-code option. Microsoft opens the system browser and does not require either local input field. No Microsoft client secret is shipped in the app.
+Employee sign-in offers Microsoft only. The shell waits for server approval before loading tools. Password recovery is available separately through `--tool emergency_admin`. Microsoft opens the system browser and does not require either local input field. No Microsoft client secret is shipped in the app.
 
 ## Server prerequisites
 
@@ -35,8 +35,8 @@ python -m pytest tests/test_microsoft_auth.py tests/test_supabase_password_login
 node tests/microsoft_signin.cjs
 ```
 
-Tests cover PKCE, verified identity storage, optional email, mismatched-account rejection, cancellation/retry, timeout, browser failure, backend changes, concealed transport errors, loopback Host/path/code validation, the settings bridge and password fallback. Browser tests cover clicking Microsoft with both fields empty, busy controls, cancellation, retry and successful UI refresh.
+Tests cover PKCE, verified identity storage, optional email, mismatched-account rejection, cancellation/retry, timeout, browser failure, backend changes, concealed transport errors, loopback Host/path/code validation, the settings bridge and rejection of the employee password bridge. Browser tests cover clicking Microsoft with both fields empty, busy controls, cancellation, retry and successful UI refresh.
 
 An isolated Windows source candidate based on release 1.8.48 was tested against production on 2026-11-19. Microsoft returned the same existing Nathan account ID; the server's `my_app_access` response confirmed administrator access; authenticated job reads returned 2,353 jobs, and clients/links requests succeeded. Normal profile configuration/session file fingerprints remained unchanged. The no-email account-picker flow was also tested by the user. These checks establish identity, server-admin status and readable jobs, not every administrator mutation or every job action.
 
-The subsequent dialog layout uses provider-first examples from [Coda](https://mobbin.com/screens/7dcf63ee-7054-4e54-bf22-b7da802e6d01) and [SavvyCal](https://mobbin.com/screens/ee7e9235-02ba-42b9-9e28-4b7893cb357f), with OneLoss theme tokens and existing login methods retained. Layout was checked at normal and narrow window sizes. No installer/update feed has been published for this feature; packaging must include `microsoft_auth.py` and the updated Settings assets, followed by a packaged-app sign-in check before rollout.
+The subsequent dialog layout uses provider-first examples from [Coda](https://mobbin.com/screens/7dcf63ee-7054-4e54-bf22-b7da802e6d01) and [SavvyCal](https://mobbin.com/screens/ee7e9235-02ba-42b9-9e28-4b7893cb357f), with OneLoss theme tokens. The later employee-only flow removes password/code choices from normal sign-in. Layout was checked at normal and narrow window sizes. No installer/update feed has been published for this feature; packaging must include `microsoft_auth.py` and the updated Settings assets, followed by a packaged-app sign-in check before rollout.

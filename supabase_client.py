@@ -195,7 +195,7 @@ def sign_out() -> None:
             _write_session({})
     if tok:
         try:
-            _raw("POST", "/auth/v1/logout", token=tok)
+            _raw("POST", "/auth/v1/logout", params={"scope": "local"}, token=tok)
         except Exception:
             pass
 

@@ -165,7 +165,7 @@ def _is_admin():
         import account_access
         return bool(account_access.current_access().get("is_admin"))
     except Exception:
-        return _signed_in_email() == _INITIAL_ADMIN_EMAIL
+        return False
 
 
 def _admin_enforcement_active():
@@ -986,17 +986,24 @@ class Api:
             return {"ok": False, "error": str(ex)}
 
     def supabase_send_code(self, email) -> dict:
-        """Mail a 6-digit login code."""
-        email = (email or "").strip()
-        if not email:
-            return {"ok": False, "error": "Enter your email address first."}
-        try:
-            import supabase_client
-            supabase_client.send_login_code(email)
-            return {"ok": True,
-                    "message": f"Code sent to {email}. It expires in an hour."}
-        except Exception as ex:
-            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+        return {"ok": False, "error": "Use Sign in with Microsoft. Administrator recovery is separate."}
+
+    def employee_access_status(self):
+        import employee_access
+        return employee_access.status()
+
+    def employee_admin_snapshot(self):
+        import employee_access
+        return employee_access.admin_snapshot()
+
+    def employee_decide_user(self, user_id, action, role, departments, revision):
+        import employee_access
+        return employee_access.decide(user_id, action, role, departments, revision)
+
+    def employee_sign_out(self):
+        import supabase_client
+        supabase_client.sign_out()
+        return {"ok": True}
 
     def supabase_sign_in_microsoft(self, email="") -> dict:
         """Sign in through the system browser without collecting a Microsoft password."""
@@ -1022,59 +1029,10 @@ class Api:
         return {"ok": True}
 
     def supabase_sign_in_password(self, email, password) -> dict:
-        """Basic email/password sign-in. The password is never persisted."""
-        email = (email or "").strip()
-        if not email or not password:
-            return {"ok": False, "error": "Enter your email and password."}
-        try:
-            import supabase_client
-            supabase_client.sign_in_with_password(email, password)
-            _use_shared_jobs_after_sign_in()
-            _invalidate("supabase password sign-in")
-            try:
-                import web_health
-                web_health.invalidate_grant_cache()
-            except Exception:
-                pass
-            user = supabase_client.current_user() or {}
-            return {"ok": True,
-                    "message": f"Signed in as {user.get('email') or email}"}
-        except Exception as ex:
-            status = getattr(ex, "status", 0)
-            if status in (400, 401):
-                return {"ok": False, "error": "Email or password is incorrect."}
-            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+        return {"ok": False, "error": "Use Sign in with Microsoft. Administrator recovery is separate."}
 
     def supabase_verify_code(self, email, code) -> dict:
-        """Exchange the emailed code for a session.
-
-        Accepts a pasted magic-LINK url too: Supabase's default template
-        sends `{{ .ConfirmationURL }}`, which resolves to localhost and
-        breaks, so people paste the link instead of a code. Rather than
-        make that an error, detect it and verify the token out of the URL.
-        """
-        email = (email or "").strip()
-        code = (code or "").strip()
-        if not code:
-            return {"ok": False, "error": "Enter the code, paste the email link, or paste the final browser address."}
-        try:
-            import supabase_client
-            if "://" in code or "token" in code.lower():
-                supabase_client.verify_magic_link(code, email=email)
-            else:
-                supabase_client.verify_login_code(email, code)
-            _use_shared_jobs_after_sign_in()
-            _invalidate("supabase sign-in")
-            try:
-                import web_health
-                web_health.invalidate_grant_cache()
-            except Exception:
-                pass
-            u = supabase_client.current_user() or {}
-            return {"ok": True,
-                    "message": f"Signed in as {u.get('email') or email}"}
-        except Exception as ex:
-            return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+        return {"ok": False, "error": "Use Sign in with Microsoft. Administrator recovery is separate."}
 
     def supabase_sign_out(self) -> dict:
         """Drop the local session and fall back to SQLite.

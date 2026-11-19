@@ -16,12 +16,12 @@ class Adapter:
         return self.value
 
 
-def test_bootstrap_owner_is_always_admin_even_when_rpc_says_no():
+def test_owner_email_cannot_override_server_denial():
     result = account_access.current_access(Adapter(
         {"id": "owner", "email": "Nathan@Servpro10100.com"},
         {"is_admin": False, "departments": ["ie"]}))
-    assert result["is_owner"] is True
-    assert result["is_admin"] is True
+    assert result["is_owner"] is False
+    assert result["is_admin"] is False
     assert result["departments"] == ["IE"]
 
 

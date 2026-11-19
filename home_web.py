@@ -333,7 +333,19 @@ class HomeApi:
             if hasattr(type(self), target):
                 continue
             import app_error_reports
-            setattr(self, target, app_error_reports.instrument(key, attr, method))
+            if key == "settings" and attr in {
+                "employee_access_status", "employee_sign_out", "supabase_sign_in_microsoft",
+                "supabase_cancel_microsoft"}:
+                guarded = method
+            else:
+                def guarded(*args, _method=method, **kwargs):
+                    import employee_access
+                    try:
+                        employee_access.require_access()
+                    except PermissionError as ex:
+                        return {"ok": False, "error": str(ex)}
+                    return _method(*args, **kwargs)
+            setattr(self, target, app_error_reports.instrument(key, attr, guarded))
 
     def attach(self, w):
         """Pywebview window handle — also forward to every sub-Api

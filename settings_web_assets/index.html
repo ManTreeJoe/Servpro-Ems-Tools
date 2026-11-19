@@ -285,7 +285,7 @@
         </svg>
         <span id="sb-microsoft-label">Sign in with Microsoft</span>
       </button>
-      <div class="signin-divider">or use your email</div>
+      <div hidden inert aria-hidden="true">
       <div class="signin-fields">
         <div class="signin-field">
           <label for="sb-email">Work email</label>
@@ -313,6 +313,7 @@
         <div id="sb-link-help" class="muted" style="display:none;margin-top:7px;font-size:11px;line-height:1.4;">
           If the email contains a link, paste the complete email link or final browser address into the code field.
         </div>
+      </div>
       </div>
       <div id="sb-signin-msg" class="muted" role="status" aria-live="polite"
            style="min-height:18px;margin-top:10px;font-size:11.5px;"></div>
@@ -984,6 +985,9 @@ async function renderPropertyManagers() {
 }
 
 async function loadUserAccess() {
+  const legacy = document.getElementById("user-access-body");
+  if (legacy) legacy.closest("section").hidden = true;
+  return; // Team access uses the server approval API below.
   const host = document.getElementById("user-access-body");
   if (!host) return;
   let result;
@@ -2172,5 +2176,6 @@ function _wireRosterRemovals() {
   });
 }
 </script>
+<script src="employee_admin.js"></script>
 </body>
 </html>

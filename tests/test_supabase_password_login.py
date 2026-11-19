@@ -26,11 +26,12 @@ def test_password_login_exchanges_credentials_without_storing_password(monkeypat
     assert "password" not in stored
 
 
-def test_settings_screen_makes_password_primary_and_code_optional():
+def test_employee_password_controls_are_inert_and_microsoft_is_primary():
     html = (ROOT / "settings_web_assets" / "index.html").read_text(encoding="utf-8")
     assert 'id="sb-password"' in html
     assert 'id="sb-password-signin"' in html
-    assert "Use an emailed code instead" in html
+    assert 'hidden inert aria-hidden="true"' in html
+    assert 'id="sb-microsoft-signin"' in html
     assert "supabase_sign_in_password" in html
 
 
@@ -73,6 +74,6 @@ def test_failed_signin_can_be_retried_without_refresh_hiding_modal():
     assert block.count("await refreshSupabase();") == 1
 
 
-def test_missing_password_has_plain_error():
+def test_employee_password_bridge_directs_to_microsoft():
     assert settings_web.Api().supabase_sign_in_password("person@example.com", "") == {
-        "ok": False, "error": "Enter your email and password."}
+        "ok": False, "error": "Use Sign in with Microsoft. Administrator recovery is separate."}

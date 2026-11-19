@@ -71,6 +71,7 @@ window.addEventListener("pywebviewready", async () => {
   updateConnectivity();
   window.addEventListener("online", updateConnectivity);
   window.addEventListener("offline", updateConnectivity);
+  await OneLossEmployeeAccess.ensure();
   await loadShell();
   maybeShowFirstRun();
   maybeCheckUpdate();
