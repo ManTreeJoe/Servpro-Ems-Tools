@@ -8,13 +8,71 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
 
 PROJECT = 'oneloss-main-server'
 CONFIG = Path('/opt/oneloss/main-server/compose.json')
 
 
 def command(args, **kwargs):
+    kwargs.setdefault('timeout', 60)
     return subprocess.run(args, check=True, capture_output=True, **kwargs)
+
+
+def backup(db, recovery, query):
+    """One named, read-only export, with visible progress and scoped cleanup."""
+    app = 'oneloss_approval_backup_' + uuid.uuid4().hex
+    archive = recovery / 'database.dump'
+    print(f'Protected recovery directory: {recovery}', flush=True)
+    print('Creating recovery backup; progress appears every 15 seconds. Limit: 10 minutes.', flush=True)
+    args = ['docker', 'exec', '--user', '0', '-e', f'PGAPPNAME={app}', '-e',
+            'PGOPTIONS=-c lock_timeout=30s -c statement_timeout=10min', db,
+            'pg_dump', '--no-password', '--lock-wait-timeout=30s',
+            '-U', 'supabase_admin', '-d', 'postgres', '-Fc']
+    with archive.open('wb') as target, (recovery / 'backup-private.log').open('wb') as diagnostic:
+        process = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=target, stderr=diagnostic)
+        started = time.monotonic()
+        try:
+            while True:
+                try:
+                    code = process.wait(timeout=15)
+                    break
+                except subprocess.TimeoutExpired:
+                    elapsed = int(time.monotonic() - started)
+                    print(f'Backup running: {elapsed}s; {archive.stat().st_size / 1048576:.1f} MiB written.', flush=True)
+                    if elapsed >= 600:
+                        raise RuntimeError('Backup time limit reached. Migration was not started.')
+            if code:
+                private = (recovery / 'backup-private.log').read_text(errors='replace').lower()
+                category = 'unclassified'
+                for pattern, label in [('password', 'authentication_required'),
+                                       ('permission denied', 'permission_denied'),
+                                       ('lock timeout', 'lock_wait_timeout'),
+                                       ('lock-wait', 'lock_wait_timeout'),
+                                       ('connection', 'connection_failure')]:
+                    if pattern in private:
+                        category = label
+                        break
+                raise RuntimeError(f'Backup failed before migration ({category}). Keep diagnostic private: {recovery}/backup-private.log')
+        except BaseException as error:
+            # Never terminate another operator's pg_dump or any application session.
+            try:
+                query("select pg_terminate_backend(pid) from pg_stat_activity "
+                      f"where application_name='{app}' and usename='supabase_admin' and pid<>pg_backend_pid();")
+            except Exception:
+                pass
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=10)
+            if isinstance(error, KeyboardInterrupt):
+                raise RuntimeError('Backup cancelled before migration. Partial recovery files retained.') from None
+            raise
+    print(f'Recovery backup completed: {archive.stat().st_size / 1048576:.1f} MiB.', flush=True)
 
 
 def main():
@@ -22,6 +80,7 @@ def main():
         raise RuntimeError('Run with sudo.')
     if sys.argv[1:] != ['rehearse']:
         raise RuntimeError('Only the rollback rehearsal is available. Usage: server.py rehearse')
+    print('OneLoss approval rehearsal v2: progress and bounded backup enabled.', flush=True)
     os.umask(0o077)
     root = Path(__file__).resolve().parent
     migration = (root / 'approval.sql').read_text()
@@ -43,6 +102,11 @@ def main():
     psql = base + ['psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-U', 'supabase_admin', '-d', 'postgres']
     def query(sql):
         return command(psql, input=sql, text=True).stdout.strip()
+    running = query("select count(*) from pg_stat_activity where "
+                    "(application_name='pg_dump' or application_name like 'oneloss_approval_backup_%') "
+                    "and pid<>pg_backend_pid();")
+    if running != '0':
+        raise RuntimeError('An earlier database export is still running. No new backup or migration started; report this message.')
     if query("select exists(select 1 from pg_namespace where nspname='oneloss_access');") != 'f':
         raise RuntimeError('Approval schema already exists; do not rerun this initial rehearsal.')
     inventory = """select json_build_object('jobs',(select count(*) from public.jobs),
@@ -51,13 +115,9 @@ def main():
     before = query(inventory)
     recovery = Path(tempfile.mkdtemp(prefix='before-employee-approval-', dir='/opt/oneloss/backups'))
     shutil.copy2(CONFIG, recovery / 'compose.json')
-    with (recovery / 'database.dump').open('wb') as target:
-        result = subprocess.run(base + ['pg_dump', '-U', 'supabase_admin', '-d', 'postgres', '-Fc'],
-                                stdout=target, stderr=subprocess.PIPE)
-        if result.returncode:
-            (recovery / 'private-error.log').write_bytes(result.stderr)
-            raise RuntimeError('Recovery export failed; see protected diagnostic locally.')
+    backup(db, recovery, query)
     command(base + ['pg_restore', '--list'], input=(recovery / 'database.dump').read_bytes())
+    print('Backup archive readable. Starting transaction-only approval rehearsal...', flush=True)
     # The same full SQL runs on the real schema, but ALL changes roll back.
     if not migration.rstrip().endswith('commit;'):
         raise RuntimeError('Unexpected migration transaction layout.')
