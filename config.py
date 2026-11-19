@@ -21,6 +21,9 @@ def _ensure_user_config():
         if not _os.path.isfile(_USER_CFG):
             raise RuntimeError("Isolated Dev configuration has not been prepared.")
         return  # No bundled production defaults or machine/share recovery.
+    if not getattr(_paths, "IS_TRIAL", False):
+        from server_connection_migration import migrate
+        migrate(_USER_CFG)
     if _os.path.isfile(_USER_CFG):
         # Upgrades keep the user's config, but safe shared connection values
         # added by a newer release must still arrive.  Before this migration,

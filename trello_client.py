@@ -57,6 +57,8 @@ def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_re
     require_write_enabled(method)
     if data is not None and json_data is not None:
         raise ValueError("Choose either form data or JSON")
+    if method.upper() not in ("GET", "HEAD") and config.load().get("trello_writes_paused"):
+        raise RuntimeError("Trello posting is paused during the server rollout. Your OneLoss changes remain in OneLoss.")
     key, token = _creds()
     if method.upper() not in ('GET', 'HEAD'):
         # Fail closed for server reads if the durable write barrier cannot be
