@@ -1596,10 +1596,11 @@ function renderDeptFields() {
   const badge = document.getElementById("dept-active-badge");
   badge.textContent = DEPT.active === key ? "● currently active" : "";
   badge.style.color = DEPT.active === key ? "var(--green)" : "";
+  document.getElementById("dept-folder-fields")?.remove();
   if (!dept) { wrap.innerHTML = ""; return; }
   const base = DEPT.base || {};
   const groups = {};
-  (DEPT.fields || []).filter((f) => !f.managed_connection && f.key !== "trello_api_key" && f.group !== "Folders").forEach((f) => {
+  (DEPT.fields || []).filter((f) => !f.managed_connection && f.key !== "trello_api_key" && !["audit_base", "runs_dir"].includes(f.key)).forEach((f) => {
     (groups[f.group] = groups[f.group] || []).push(f);
   });
   const baseDept = (DEPT.departments || []).find((d) => d.is_base);
@@ -1608,7 +1609,7 @@ function renderDeptFields() {
     ? `<div class="muted" style="font-size:11px;margin-bottom:12px;">${esc(dept.label)} is the active franchise. Main settings are defaults; values here are franchise-specific overrides.</div>`
     : `<div class="muted" style="font-size:11px;margin-bottom:12px;">Blank = inherit ${esc(baseName)} defaults (shown as the grey placeholder).</div>`;
   wrap.innerHTML = inheritNote + Object.entries(groups).map(([g, fields]) => `
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:14px 0 8px;">${esc(g)}</div>
+    <div data-dept-group="${esc(g)}"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:14px 0 8px;">${esc(g)}</div>
     ${fields.map((f) => {
       const v = dept.overrides[f.key] ?? "";
       const inherit = base[f.key] ? String(base[f.key]) : "(none set)";
@@ -1625,9 +1626,20 @@ function renderDeptFields() {
         </div>
         ${f.key === "companycam_api_token" ? `<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:5px;">Admin only. Use the franchise Application Key; employees connect by signing into OneLoss and never paste personal CompanyCam tokens.</div>` : ""}
       </div>`;
-    }).join("")}
+    }).join("")}</div>
   `).join("");
-  wrap.querySelectorAll(".dept-browse").forEach((b) => {
+  const folders = wrap.querySelector('[data-dept-group="Folders"]');
+  if (folders && SETTINGS_ACCESS.is_admin) {
+    folders.id = "dept-folder-fields";
+    const title = document.createElement('h3');
+    title.textContent = `${dept.label || key} document folder overrides`;
+    folders.prepend(title);
+    const save = document.createElement('button');
+    save.type = 'button'; save.className = 'btn'; save.textContent = 'Save office folder overrides';
+    save.onclick = saveDepartment; folders.append(save);
+    document.getElementById('folder-owner').append(folders);
+  } else folders?.remove();
+  document.querySelectorAll("#dept-fields .dept-browse, #dept-folder-fields .dept-browse").forEach((b) => {
     b.addEventListener("click", async () => {
       const k = b.dataset.browse, kind = b.dataset.kind;
       const input = document.getElementById("d-" + k);
@@ -1647,12 +1659,13 @@ async function saveDepartment() {
   const key = document.getElementById("dept-pick").value;
   const dept = _deptByKey(key);
   const overrides = {};
-  document.querySelectorAll("#dept-fields input[data-key]").forEach((el) => {
+  document.querySelectorAll("#dept-fields input[data-key], #dept-folder-fields input[data-key]").forEach((el) => {
     overrides[el.dataset.key] = el.value;
   });
   const r = await pywebview.api.save_department(key, overrides, dept?.label || "");
   if (!r?.ok) { setDeptStatus(`Save failed: ${r?.error || "?"}`, "error"); return; }
   setDeptStatus(`💾 Saved ${dept?.label || key}` + (DEPT.active === key ? " — applied" : ""), "ok");
+  setStatus(`Saved ${dept?.label || key} settings`, "ok");
   await renderDepartments();
   document.getElementById("dept-pick").value = key;
   renderDeptFields();
@@ -1795,6 +1808,7 @@ function render() {
     folderOwner.querySelector('.extra-folder-fields')?.remove();
     const extra = document.createElement('div');
     extra.className = 'extra-folder-fields';
+    extra.hidden = !SETTINGS_ACCESS.is_admin;
     extra.innerHTML = '<h3>Other document locations on this computer</h3>' + SCHEMA
       .filter(f => f.group === "Folders & documents" && !['audit_base','runs_dir'].includes(f.key))
       .map(fieldHtml).join('');
@@ -1975,7 +1989,7 @@ async function save() {
   // was on screen into the config. That is how the base config ended up
   // holding OC's Trello workspace while IE inherited it, which had IE
   // searching OC's boards and matching nothing.
-  document.querySelectorAll("#form-fields [data-key]").forEach((el) => {
+  document.querySelectorAll("#form-fields [data-key][id^=f-]").forEach((el) => {
     const k = el.dataset.key;
     // Hidden admin fields are still in the DOM. Regular employees save only
     // their own machine paths/preferences, never the invisible shared setup.

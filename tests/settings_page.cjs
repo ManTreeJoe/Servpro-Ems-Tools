@@ -22,15 +22,15 @@ const schema=[...source.split('FIELDS = [')[1].split('\n]')[0].matchAll(/\("([a-
    }
    blocked.push(url.href); return route.abort();
   });
-  const page=await context.newPage(); page.on('pageerror',e=>errors.push(e.message));
+  const page=await context.newPage(); page.setDefaultTimeout(10000); page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(({admin,schema})=>{
    const results={schema,load:{appearance:'dark',franchise_name:'Fictional office',supabase_url:'https://example.invalid'},settings_access:{ok:true,is_admin:admin,email:'employee@example.invalid',departments:['TEST']},
     supabase_status:{ok:true,configured:true,signed_in:true,reachable:true,backend:'supabase',user:{email:'employee@example.invalid',display_name:'Test Employee'},offline:{queued:0},trello_writes_paused:true},
-    user_connections:{ok:true,connections:[{provider:'trello',name:'Trello',state:'connected',label:'Trello',detail:'Test connection'},{provider:'companycam',name:'CompanyCam',state:'connected',label:'CompanyCam',detail:'Test connection'}]},
+    user_connections:{ok:true,connections:[{provider:'linguar',name:'OneLoss',state:'connected',action:'sign_out',action_label:'Sign out'},{provider:'trello',name:'Trello',state:'connected',label:'Trello',detail:'Test connection'},{provider:'companycam',name:'CompanyCam',state:'connected',label:'CompanyCam',detail:'Test connection'}]},
     employee_setup_status:{ok:true,all_done:false,done:5,total:7,is_admin:admin,steps:[{key:'trello',title:'Connect Trello',help:'Connect your work account.',detail:'Test setup',done:false}]},
-    my_franchise_folders:{ok:true,departments:[]},get_dept_browsers:{ok:true,browsers:{},departments:[]},admin_users:{ok:true,users:[],franchises:['TEST']},admin_job_profiles:{ok:true,profiles:[],starters:[],franchises:['TEST']},property_managers:{ok:true,records:[]},dept_config:{ok:true,enabled:false,fields:[],departments:[],base:{},problems:[]},
+    my_franchise_folders:{ok:true,departments:[{key:'TEST',label:'Fictional office',active:true,job_root:'C:/Fictional/Jobs',runs_dir:'C:/Fictional/Run',job_connected:true,runs_connected:true}]},get_dept_browsers:{ok:true,browsers:{},departments:[]},admin_users:{ok:true,users:[],franchises:['TEST']},admin_job_profiles:{ok:true,profiles:[],starters:[],franchises:['TEST']},property_managers:{ok:true,records:[]},dept_config:{ok:true,enabled:true,active:'TEST',fields:[{key:'snapshots_root',label:'Snapshots folder',kind:'dir',group:'Folders'},{key:'audit_base',label:'Job root',kind:'dir',group:'Folders'}],departments:[{key:'TEST',label:'Fictional office',overrides:{},is_base:true}],base:{},problems:[]},
     appearance_preferences:{mode:'dark',resolved:'dark'},get_panel_visibility:{},get_tech_roster:{ok:true,entries:[]}};
-   window.calls=[]; window.pywebview={api:new Proxy({}, {get:(_,name)=>async(...args)=>{window.calls.push(String(name));return structuredClone(results[name]??{ok:true});}})};
+   window.calls=[]; window.callArgs=[]; window.pywebview={api:new Proxy({}, {get:(_,name)=>async(...args)=>{window.calls.push(String(name));window.callArgs.push({name:String(name),args});return structuredClone(results[name]??{ok:true});}})};
    window.addEventListener('load',()=>window.dispatchEvent(new Event('pywebviewready')));
   },{admin,schema});
   await page.goto('https://settings.test/settings_web_assets/index.html');
@@ -38,6 +38,22 @@ const schema=[...source.split('FIELDS = [')[1].split('\n]')[0].matchAll(/\("([a-
   await page.waitForFunction(()=>window.calls.includes('dept_config'));
   if(admin && await page.locator('[data-scope-tab="admin"]').isVisible()) await page.locator('[data-scope-tab="admin"]').click();
   await page.screenshot({path:path.join(out,admin?'admin.png':'employee.png'),fullPage:true});
+  assert.equal(await page.locator('#connections-grid [data-provider="linguar"]').count(),0);
+  assert.equal(await page.locator('#account-sync #sb-sign-out').count(),1);
+  assert.equal(await page.locator('#authorize-trello').count(),0);
+  assert.equal(await page.locator('#dept-fields [data-dept-group="Folders"]').count(),0);
+  await page.evaluate(()=>{showSettingsScope('personal');document.getElementById('folder-owner').open=true;});
+  await page.locator('#folder-owner').scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(out,admin?'admin-folders.png':'employee-folders.png'),fullPage:true});
+  if(admin){
+    await page.locator('#d-snapshots_root').fill('C:/Fictional/Override');
+    await page.getByRole('button',{name:'Save office folder overrides',exact:true}).click();
+    assert.equal(await page.evaluate(()=>callArgs.find(c=>c.name==='save_department').args[1].snapshots_root),'C:/Fictional/Override');
+    await page.locator('#f-snapshots_root').fill('C:/Fictional/Base');
+    await page.locator('#d-snapshots_root').fill('C:/Fictional/Other');
+    await page.locator('#save').click();
+    assert.equal(await page.evaluate(()=>callArgs.find(c=>c.name==='save').args[0].snapshots_root),'C:/Fictional/Base');
+  }
   assert.deepEqual(errors,[]); assert.deepEqual(blocked,[]);
   console.log(`${admin?'admin':'employee'}: rendered; no page errors or unexpected requests`);
   await context.close();
