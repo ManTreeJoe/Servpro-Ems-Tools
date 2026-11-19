@@ -28,13 +28,16 @@ const fs = require('node:fs');
   const sync = await import(moduleUrl(core.replace('../_shared/trello-write-guard.mjs',guardUrl).replace('./ems_comments.ts',emsUrl)));
   await assert.rejects(sync.safeJson(guardedTrelloFetch(fake, {}), 'https://fixture.invalid', {method:'POST'}, 'trello'), e => e.code === 'trello_writes_disabled');
   const member = '000000000000000000000001';
+  const board = '000000000000000000000002';
   const requests = [];
   const transport = async (url, init) => {
     const u = new URL(url); requests.push([u.pathname, init.method || 'GET']);
     if (u.hostname === 'api.trello.com') {
       assert.equal(init.method, 'GET');
-      assert.equal(u.pathname, '/1/members/me');
-      return Response.json({id:member});
+      if (u.pathname === '/1/members/me') return Response.json({id:member});
+      if (u.pathname === `/1/boards/${board}`) return Response.json({id:board,closed:false});
+      assert([`/1/boards/${board}/lists`,`/1/boards/${board}/cards/open`].includes(u.pathname));
+      return Response.json([]);
     }
     assert.equal(u.hostname, 'fixture.supabase.co');
     if (u.pathname.endsWith('/hub_trello_claim')) return Response.json('fixture-lease');
@@ -42,15 +45,19 @@ const fs = require('node:fs');
       assert.equal(JSON.parse(init.body).p_error, null);
       return Response.json(null);
     }
+    if (u.pathname.endsWith('/hub_trello_commit_board') || u.pathname.endsWith('/hub_trello_finish_source')) return Response.json(true);
+    if (u.pathname.endsWith('/hub_trello_comment_work')) return Response.json([]);
     assert.equal(u.pathname, '/rest/v1/hub_trello_sync_sources');
-    return Response.json([]);
+    return Response.json([{board_id:board}]);
   };
   const env = {SUPABASE_URL:'https://fixture.supabase.co', SUPABASE_SERVICE_ROLE_KEY:'fake',
     TRELLO_SYNC_API_KEY:'fake', TRELLO_SYNC_TOKEN:'fake', TRELLO_EMS_COMMENTS_ENABLED:'true'};
   for (const flag of [undefined, 'false']) {
     const {store,get} = sync.adapters({...env, ONELOSS_TRELLO_WRITES_ENABLED:flag}, transport);
     assert.equal(store.mirrorEms, undefined);
-    assert.equal((await sync.runSync(store,get,member)).state,'checked');
+    const result = await sync.runSync(store,get,member);
+    assert.equal(result.state,'checked');
+    assert.equal(result.boards,1);
   }
   assert.equal(typeof sync.adapters({...env, ONELOSS_TRELLO_WRITES_ENABLED:'true'},transport).store.mirrorEms,'function');
   console.log('PASS: default-off writes; distinct denial error; comments enabled/writes off read sync checked; both flags required for mirror.');
