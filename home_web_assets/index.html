@@ -67,29 +67,18 @@
 
 <!-- First-run welcome (shown once, until dismissed) -->
 <div class="fr-overlay hidden" id="fr-overlay">
-  <div class="fr-card" role="dialog" aria-modal="true" aria-labelledby="fr-title">
-    <div class="fr-emoji" aria-hidden="true"><img src="../linguar_hub.png" width="38" height="38" alt=""></div>
-    <div class="fr-title" id="fr-title">Welcome to OneLoss</div>
-    <div class="fr-body">
-      <p>Before Clients, Jobs, Snapshot, and APA can load, connect your account and confirm your folders.</p>
-      <p>Open <strong>Settings</strong> at the bottom of the sidebar, then:</p>
-      <ul>
-        <li><strong>Sign in</strong> with your SERVPRO work account.</li>
-        <li><strong>Connect Trello</strong> using the guided sign-in.</li>
-        <li><strong>Confirm folder paths</strong> point to the right shared folders.</li>
-      </ul>
-      <p class="fr-note">Your settings are saved to your own PC
-         in its own local profile. Shared jobs and franchise access remain online.</p>
-    </div>
-    <!-- Setup check. Filled in by app.js; hidden until it has run, so a
-         healthy machine sees no extra noise on the welcome screen. -->
-    <div id="fr-preflight" style="display:none;margin:14px 0 0;padding:10px 12px;
-         border-radius:8px;background:var(--surface-2,#1b1c20);
-         border:1px solid var(--border,#2c2d33);font-size:12.5px;"></div>
-    <div class="fr-actions">
-      <button class="fr-btn fr-secondary" id="fr-later">I'll do it later</button>
-      <button class="fr-btn fr-primary" id="fr-settings">Open Settings</button>
-    </div>
+  <div class="fr-card" role="dialog" aria-modal="true" aria-labelledby="fr-title" tabindex="-1">
+    <div class="fr-title" id="fr-title">Set up your workspace</div>
+    <p class="fr-note">Progress is saved as you finish each step. Your administrator manages access and work connections.</p>
+    <div id="fr-progress" aria-live="polite"></div>
+    <form id="fr-step-form"><div id="fr-step"></div>
+      <p id="fr-error" role="alert"></p>
+      <div class="fr-actions">
+        <button type="button" class="fr-btn fr-secondary" id="fr-later">I'll do it later</button>
+        <button type="button" class="fr-btn fr-secondary" id="fr-recheck">Check again</button>
+        <button type="submit" class="fr-btn fr-primary" id="fr-next">Continue</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -161,6 +150,7 @@
 <script src="../web_shared/toast_log.js?v=20260731j"></script>
 <script src="updates.js?v=20261012"></script>
 <script src="../web_shared/page_reload.js"></script>
+<script src="setup_wizard.js"></script>
 <script src="app.js?v=20261012updates"></script>
 <script src="../web_shared/popout_menu.js?v=20260929"></script>
 <script src="../run_doc_editor_web_assets/schedule_realtime.js?v=20261019jobs"></script>

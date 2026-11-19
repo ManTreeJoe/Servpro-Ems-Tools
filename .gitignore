@@ -81,3 +81,6 @@ node_modules/
 # Reviewed unsigned WC templates are application assets, not job documents.
 !/form_templates/
 !/form_templates/*.pdf
+
+# Synthetic UI test evidence
+/test-results/
