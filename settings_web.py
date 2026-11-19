@@ -149,7 +149,6 @@ DEPT_FIELDS = [
 # The selector is scoped now; this makes the same mistake unwritable.
 _ALLOWED_SAVE_KEYS = frozenset(f[0] for f in FIELDS)
 _MANAGED_CONNECTION_FIELDS = frozenset({"trello_token"})
-_INITIAL_ADMIN_EMAIL = "nathan@servpro10100.com"
 
 
 def _signed_in_email():
@@ -166,6 +165,25 @@ def _is_admin():
         return bool(account_access.current_access().get("is_admin"))
     except Exception:
         return False
+
+
+def _secret_key(key):
+    name = str(key).lower()
+    return (name in {"supabase_anon_key", "trello_api_key", "companycam_org_key"}
+            or any(part in name for part in ("secret", "password", "token", "service_role"))
+            or name.endswith(("_api_key", "_private_key", "_org_key")))
+
+
+def _without_secrets(value):
+    """Copy responses recursively, including franchise overrides and schemas."""
+    if isinstance(value, dict):
+        return {key: _without_secrets(item) for key, item in value.items()
+                if not _secret_key(key)}
+    if isinstance(value, list):
+        return [_without_secrets(item) for item in value
+                if not (isinstance(item, dict) and
+                        (item.get("kind") == "secret" or _secret_key(item.get("key", ""))))]
+    return value
 
 
 def _admin_enforcement_active():
@@ -360,7 +378,7 @@ class Api:
             return {"ok": False, "error": str(ex)}
 
     def admin_users(self):
-        if _admin_enforcement_active() and not _is_admin():
+        if not _is_admin():
             return {"ok": False, "error": "Administrator access required."}
         try:
             import supabase_client
@@ -471,7 +489,8 @@ class Api:
         # showing base values here would let an unrelated save copy one
         # franchise's paths into the other's profile.
         try:
-            return dict(config.load() or {})
+            values = dict(config.load() or {})
+            return values if _is_admin() else _without_secrets(values)
         except Exception:
             return {}
 
@@ -485,6 +504,8 @@ class Api:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def save_property_manager(self, values, rename_trello=False):
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             import property_managers as pm
             record, old = pm.save_record(values)
@@ -596,6 +617,8 @@ class Api:
     def set_dept_browser(self, dept: str, command: str) -> dict:
         """Set (or clear) the browser command for one department. `command`
         is a browser .exe path, or a template containing {url}."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         dept = (dept or "").strip().upper()
         if not dept:
             return {"ok": False, "error": "dept required"}
@@ -617,6 +640,8 @@ class Api:
     # Not a fixed IE/OC pair: an install may be one office, or three.
 
     def add_department(self, key: str, label: str = "") -> dict:
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             ok, err = config.add_department(key, label)
             return {"ok": ok, "error": err, "departments":
@@ -625,6 +650,8 @@ class Api:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
     def remove_department(self, key: str) -> dict:
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             ok, err = config.remove_department(key)
             return {"ok": ok, "error": err, "departments":
@@ -658,7 +685,7 @@ class Api:
                                       .strip() or next(iter(depts), ""))),
                     "overrides": {fk: v.get(fk, "") for fk in keyset},
                 })
-            return {
+            result = {
                 "ok": True,
                 "enabled": bool(base.get("multi_department_enabled")),
                 "active": (base.get("active_department") or "").strip(),
@@ -669,11 +696,14 @@ class Api:
                 # or an identity inherited from the base). Offline + cheap.
                 "problems": config.check_department_integrity(),
             }
+            return result if _is_admin() else _without_secrets(result)
         except Exception as ex:
             return {"ok": False, "error": str(ex)}
 
     def set_multi_dept(self, enabled: bool):
         """Toggle multiple-franchise mode without inventing offices."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             if enabled:
                 config.ensure_departments_scaffold()
@@ -689,6 +719,8 @@ class Api:
         """Persist one department's override fields. Only whitelisted
         DEPT_FIELDS keys are written; blank values are kept (they mean
         'inherit the base'). Never touches the base flat keys."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         key = (key or "").strip()
         if not key:
             return {"ok": False, "error": "missing department key"}
@@ -764,6 +796,8 @@ class Api:
         """Open the per-user EMS data folder (logs, caches, persistence
         JSON). Useful when the user needs to manually edit a config
         file or share a log with support."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             import paths
             p = paths.DATA_DIR
@@ -775,6 +809,8 @@ class Api:
 
     def open_config_file(self):
         """Open config.json directly in Notepad."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             import paths, subprocess
             p = os.path.join(paths.DATA_DIR, "config.json")
@@ -809,6 +845,8 @@ class Api:
         """Persist the roster from the editor. `entries` is a list of
         {initials, full_name} dicts. Trims, dedupes by initials, and
         writes back as JSON the audit/IUQ/photo-folders tools all read."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         if not isinstance(entries, list):
             return {"ok": False, "error": "entries must be a list"}
         try:
@@ -832,6 +870,8 @@ class Api:
         """Open the tech roster JSON for direct editing. The roster
         maps tech initials → full names (FB = Fernando Baca) and is
         used across audit / IUQ / photo folders."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             import paths, subprocess
             p = os.path.join(paths.DATA_DIR, "tech_roster.json")
@@ -872,6 +912,8 @@ class Api:
     def backfill_job_graph(self):
         """Seed the identity graph from existing folder + Trello pins so
         auto-linking benefits from history. Idempotent. Returns the counts."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             import persistence
             res = persistence.backfill_job_graph()
@@ -918,6 +960,8 @@ class Api:
         """Fallback: open Trello WITHOUT a return_url, so it prints the
         token for copy-paste. Needs no Allowed Origins entry, which is the
         point — it works even when the loopback origin isn't registered."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             import trello_auth
             import webbrowser
@@ -958,6 +1002,8 @@ class Api:
 
     def supabase_flush_queue(self) -> dict:
         """Replay writes made while the shared database was unreachable."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         try:
             import ems_db_offline
             res = ems_db_offline.flush_queue()
@@ -1058,6 +1104,8 @@ class Api:
 
     def set_db_backend(self, name) -> dict:
         """Switch the job index between the local file and the cloud."""
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         name = (name or "sqlite").strip()
         if name not in ("sqlite", "supabase"):
             return {"ok": False, "error": f"unknown backend {name!r}"}
