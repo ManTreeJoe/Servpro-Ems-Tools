@@ -12,7 +12,7 @@ def test_employee_setup_includes_comment_display_name():
          patch("supabase_client.current_user", return_value=None):
         result = api.employee_setup_status()
     assert [step["key"] for step in result["steps"]] == [
-        "signin", "profile_name", "franchise", "trello", "folders"
+        "signin", "profile_name", "franchise", "trello", "companycam", "folders", "live_data"
     ]
     assert result["all_done"] is False
 

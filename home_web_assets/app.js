@@ -561,33 +561,13 @@ window.addEventListener("message", (event) => {
   openNewLossWorkspace();
 });
 
-// ── First-run welcome modal ──────────────────────────────────────
-// Shown once on a fresh machine to point the user at Settings (Trello
-// key/token + folder paths). Dismissing either way drops the
-// `.configured` marker server-side so it never reappears.
-async function maybeShowFirstRun() {
-  let info;
-  try { info = await pywebview.api.first_run(); } catch { return; }
-  if (!info || !info.show) return;
-  const overlay = $("#fr-overlay");
-  if (!overlay) return;
-  const close = () => {
-    overlay.classList.add("hidden");
-    pywebview.api.dismiss_first_run().catch(() => {});
-  };
-  $("#fr-later").onclick = close;
-  $("#fr-settings").onclick = () => {
-    close();
-    const item = findItem("settings");
-    if (item) navigate("settings", item.src);
-  };
-  overlay.classList.remove("hidden");
+window.addEventListener("employee-setup-closed", event => {
+  if (event.detail?.reload) location.reload();
+});
 
-  // Run the setup checks right here, on the one screen a new user is
-  // guaranteed to look at. They used to live in a terminal script, so on
-  // a machine nobody checked, the first symptom was two offices quietly
-  // disagreeing about the job list.
-  runPreflightInto("#fr-preflight");
+// Setup is derived from evidence; dismissing never records completion.
+async function maybeShowFirstRun() {
+  return window.OneLossSetup?.open(pywebview.api);
 }
 
 async function runPreflightInto(sel) {

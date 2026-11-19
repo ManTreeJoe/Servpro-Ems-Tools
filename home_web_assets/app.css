@@ -532,3 +532,19 @@ body { background: var(--bg); }
   .sb-item[data-key="notifications"] { position:relative; }
   .sb-item[data-key="notifications"] .notification-badge { position:absolute; top:0; right:0; min-width:16px; padding:1px 3px; font-size:9px; }
 }
+
+/* Guided employee setup uses the shell's existing theme. */
+#fr-overlay {position:fixed;inset:0;z-index:3000;background:#0009;display:grid;place-items:center;padding:16px;}
+#fr-overlay.hidden {display:none;}
+#fr-overlay .fr-card {width:min(560px,100%);max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;padding:24px;background:var(--surface,#20252a);color:var(--text,#eee);}
+#fr-step h2 {font-size:19px;margin:18px 0 8px;}
+#fr-step p {line-height:1.5;}
+#fr-step label {display:grid;gap:6px;margin:14px 0;}
+#fr-step input,#fr-step select {box-sizing:border-box;width:100%;min-height:40px;border:1px solid var(--border,#555);border-radius:6px;background:var(--bg,#17191b);color:inherit;padding:8px;}
+#fr-progress,.setup-detail {font-size:12px;color:var(--text-muted,#b8c4cb);}
+#fr-error {color:#f5b8a8;line-height:1.4;}
+#fr-overlay .fr-actions {display:flex;gap:8px;flex-wrap:wrap;margin-top:20px;}
+#fr-overlay button {min-height:38px;cursor:pointer;}
+#fr-overlay button:disabled {opacity:.6;cursor:wait;}
+#fr-overlay [hidden] {display:none!important;}
+#fr-overlay :focus-visible {outline:2px solid var(--accent,#76c9a9);outline-offset:3px;}

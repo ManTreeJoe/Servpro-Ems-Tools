@@ -1180,53 +1180,16 @@ class Api:
         }
 
     def employee_setup_status(self) -> dict:
-        """Plain-language first-day checklist for a regular employee."""
-        cfg = config.load() or {}
-        import account_access
-        access = account_access.current_access()
-        user = access.get("identity") or {}
-        signed_in = bool(access.get("signed_in"))
-        access_error = access.get("error") or ""
-        departments = list(access.get("departments") or [])
-        active = (config.active_department() or "").strip()
-        trello_set = bool((cfg.get("trello_api_key") or "").strip()
-                          and (cfg.get("trello_token") or "").strip())
-        audit_base = (cfg.get("audit_base") or "").strip()
-        runs_dir = (cfg.get("runs_dir") or "").strip()
-        folders_ok = bool(audit_base and os.path.isdir(audit_base)
-                          and runs_dir and os.path.isdir(runs_dir))
-        steps = [
-            {"key": "signin", "title": "Sign in",
-             "help": "Use your SERVPRO work email and the password Nathan gave you.",
-             "done": signed_in,
-             "detail": user.get("email") or "Not signed in"},
-            {"key": "profile_name", "title": "Add your name",
-             "help": "This is the name coworkers see on your comments and job updates.",
-             "done": bool(user.get("display_name")),
-             "detail": user.get("display_name") or "Name still needed"},
-            {"key": "franchise", "title": "Get your franchise",
-             "help": "Nathan assigns this. You do not need to enter a code.",
-             "done": bool(departments),
-             "detail": (", ".join(departments) if departments
-                        else (access_error or
-                              "Ask Nathan to assign your franchise"))},
-            {"key": "trello", "title": "Connect Trello",
-             "help": "Open Trello, click Allow, then come back here.",
-             "done": trello_set,
-             "detail": "Connected" if trello_set else "Not connected"},
-            {"key": "folders", "title": "Check the job folders",
-             "help": "Your computer must be able to open the shared job and run-doc folders.",
-             "done": folders_ok,
-             "detail": (f"{active or 'Assigned franchise'} folders are available"
-                        if folders_ok else "Shared folders are not available on this PC")},
-        ]
-        return {"ok": True, "steps": steps,
-                "done": sum(1 for step in steps if step["done"]),
-                "total": len(steps),
-                "all_done": all(step["done"] for step in steps),
-                "active_franchise": active,
-                "is_admin": bool(access.get("is_admin")),
-                "is_owner": bool(access.get("is_owner"))}
+        """Current setup evidence, including read-only provider checks."""
+        import employee_setup
+        return employee_setup.status(self)
+
+    def employee_setup_action(self, name, values=None):
+        try:
+            import employee_setup
+            return employee_setup.action(self, name, values)
+        except Exception:
+            return {"ok": False, "error": "Setup could not save this step. Check your connection and try again; contact your administrator if it continues."}
 
     def my_trello_token_page(self) -> dict:
         """The current Trello authorization URL using Linguar's API key."""

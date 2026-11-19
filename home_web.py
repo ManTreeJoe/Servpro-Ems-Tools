@@ -392,21 +392,22 @@ class HomeApi:
 
     # ── First-run welcome ────────────────────────────────────────────
     def first_run(self):
-        """Tell the shell whether to show the one-time welcome modal.
-
-        `show` is True until the user dismisses the welcome (drops the
-        `.configured` marker) on this machine. `trello_ready` lets the
-        modal tailor its copy when creds are already in place."""
+        """Derive visibility from setup evidence, even after session dismissal."""
         try:
-            import paths as _p, config as _c
-            cfg = _c.load() or {}
-            return {
-                "show": bool(_p.is_first_run()),
-                "trello_ready": bool((cfg.get("trello_api_key") or "").strip()
-                                     and (cfg.get("trello_token") or "").strip()),
-            }
+            import settings_web
+            api = getattr(self, "_subs", {}).get("settings") or settings_web.Api()
+            result = api.employee_setup_status()
+            steps = result["steps"]
+            if not result.get("ok", True) or not isinstance(steps, list):
+                raise ValueError("Setup status unavailable")
+            first = next((i for i, step in enumerate(steps)
+                          if not step.get("done") and not step.get("skipped")), None)
+            return {**result, "show": not result["all_done"], "first_incomplete": first,
+                    "session_dismissed": bool(getattr(self, "_setup_dismissed", False))}
         except Exception:
-            return {"show": False, "trello_ready": True}
+            return {"show": True, "steps": [], "first_incomplete": None,
+                    "error": "Setup checks could not load. Check your connection and retry; ask your administrator if this continues.",
+                    "session_dismissed": bool(getattr(self, "_setup_dismissed", False))}
 
     def preflight(self):
         """Run the setup checks and return them as data.
@@ -431,13 +432,9 @@ class HomeApi:
                 "total": len(rows)}
 
     def dismiss_first_run(self):
-        """Drop the `.configured` marker so the welcome doesn't reappear."""
-        try:
-            import paths as _p
-            _p.mark_configured()
-            return {"ok": True}
-        except Exception as ex:
-            return {"ok": False, "error": str(ex)}
+        """Dismiss this shell session only; never persist completion."""
+        self._setup_dismissed = True
+        return {"ok": True}
 
     def focus_window(self):
         """Bring the app window to the foreground. Works around a WebView2
