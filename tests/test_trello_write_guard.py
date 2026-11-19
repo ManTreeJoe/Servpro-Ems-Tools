@@ -108,7 +108,7 @@ def test_new_trello_endpoint_requires_reviewed_transport():
     for name in filter(None, tracked.split('\0')):
         rel = Path(name)
         path = ROOT / rel
-        if any(part in {'tests', '.git', 'node_modules', 'Output', '__pycache__', '.pytest_cache'} for part in rel.parts): continue
+        if rel.parts[0] == 'tests': continue
         if path.suffix not in {'.py', '.ts', '.js', '.mjs', '.sql', '.cjs', '.html', '.ps1'}: continue
         source = path.read_text(encoding='utf-8', errors='replace')
         if ('api.trello.com' in source or 'trello_client.API_BASE' in source or
