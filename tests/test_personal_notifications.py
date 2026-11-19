@@ -70,6 +70,9 @@ def test_daily_run_success_notifies_exact_saved_action(monkeypatch):
 
 @pytest.mark.parametrize('local', [True, False])
 def test_jobs_notifies_only_saved_comment(monkeypatch, local):
+    # Successful-write fixture only; the provider transport below is fake.
+    monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
+    monkeypatch.setenv("LINGUAR_CHANNEL", "trial")
     import pipeline_web,trello_client
     seen=[]
     monkeypatch.setattr(pn.sb,'current_user',lambda:{'id':'author','display_name':'Author Name'})

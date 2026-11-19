@@ -2562,6 +2562,12 @@ class Api(JobSettingsApi):
             result['notification_warning'] = notify(card_id, local.get('activity_key'), text)
             return result
         # Compatibility fallback for an installation without shared tables.
+        from trello_write_guard import require_write_enabled, TrelloWritesDisabled
+        try:
+            require_write_enabled("POST")
+        except TrelloWritesDisabled:
+            return {"ok": False, "posted_trello": False, "delivery": "disabled",
+                    "error": "Trello posting is off, nothing was sent"}
         posted_action = None
         error = ""
         if card_id:

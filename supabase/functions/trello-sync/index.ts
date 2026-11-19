@@ -7,6 +7,7 @@ Deno.serve((request: Request) => handle(request, {
   TRELLO_SYNC_TOKEN: Deno.env.get("TRELLO_SYNC_TOKEN") || "",
   TRELLO_SYNC_MEMBER_ID: Deno.env.get("TRELLO_SYNC_MEMBER_ID") || "",
   TRELLO_SYNC_CRON_SECRET: Deno.env.get("TRELLO_SYNC_CRON_SECRET") || "",
+  ONELOSS_TRELLO_WRITES_ENABLED: Deno.env.get("ONELOSS_TRELLO_WRITES_ENABLED") || "false",
   TRELLO_SYNC_ENABLED: Deno.env.get("TRELLO_SYNC_ENABLED") || "false",
   TRELLO_EMS_COMMENTS_ENABLED: Deno.env.get("TRELLO_EMS_COMMENTS_ENABLED") || "false",
 }));
