@@ -829,31 +829,37 @@ class HomeApi:
             info = update_check.check() or {}
         except Exception:
             info = {}
-        # Private installers require the employee's browser sign-in. Never
-        # save an Access login HTML page as an executable or embed shared keys.
-        if (url or "").startswith("https://updates.oneloss.work/") or info.get("private_download"):
-            destination = (url if (url or "").startswith("https://updates.oneloss.work/")
-                           else info.get("installer")) or "https://updates.oneloss.work/"
-            opened = self.open_url(destination)
+        # Caller input is retained only for bridge compatibility. The validated
+        # feed is the sole authority for executable and release-page URLs.
+        if not info.get("ok"):
+            return {"ok": False, "error": "No validated update feed available"}
+        dl = (info.get("installer") or "").strip()
+        page = info.get("url") or ""
+        # Access-protected downloads stay browser-only; this code does not
+        # execute or claim checksum verification of a browser-managed file.
+        if info.get("private_download"):
+            opened = self.open_url(dl or page)
             return {"ok": bool(opened), "launched": False,
                     "opened_page": bool(opened), "private_download": True}
-        dl = (url or info.get("installer") or "").strip()
-        page = info.get("url") or ""
         if not dl:
-            if page:
-                self.open_url(page)
-                return {"ok": True, "launched": False, "opened_page": True}
-            return {"ok": False, "error": "No installer link configured"}
+            opened = bool(page and self.open_url(page))
+            return {"ok": opened, "launched": False, "opened_page": opened}
         try:
             import os
-            import shutil
+            import hashlib
             import tempfile
             import urllib.request
             name = dl.rsplit("/", 1)[-1] or "EMS-Tools-Setup.exe"
-            dest = os.path.join(tempfile.gettempdir(), name)
+            dest = os.path.join(tempfile.mkdtemp(prefix="oneloss-update-"), name)
             req = urllib.request.Request(dl, headers={"User-Agent": "EMS-Tools"})
             with urllib.request.urlopen(req, timeout=180) as r, open(dest, "wb") as f:
-                shutil.copyfileobj(r, f)
+                digest = hashlib.sha256()
+                while chunk := r.read(1024 * 1024):
+                    digest.update(chunk)
+                    f.write(chunk)
+            expected = str(info.get("sha256") or "").lower()
+            if expected and digest.hexdigest() != expected:
+                return {"ok": False, "launched": False, "error": "Installer checksum mismatch; nothing was launched"}
             os.startfile(dest)  # noqa: launches setup detached; it closes+relaunches us
             return {"ok": True, "launched": True, "path": dest}
         except Exception as ex:
