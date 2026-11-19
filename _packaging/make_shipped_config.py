@@ -47,6 +47,7 @@ SHARE = {
     # Department setup.
     "multi_department_enabled",
     # Feature flags / UI defaults.
+    "trello_writes_paused",
     "enable_workcenter_alpha", "workcenter_url",
     "show_sort_files", "show_new_job", "snapshot_auto_reconcile",
     "appearance",

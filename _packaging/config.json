@@ -48,8 +48,8 @@
   "snapshot_auto_reconcile": true,
   "snapshot_template": "X:\\IE_Public\\Front Operation\\snapshot_handoff_fillable.pdf",
   "snapshots_root": "X:\\IE_Public\\Front Operation\\EMS Admin\\Snapshots",
-  "supabase_anon_key": "sb_publishable_qe557e-YM5QtRkxO98yixw_bdt-3xGK",
-  "supabase_url": "https://oqwwapqnzzhefqxobadl.supabase.co",
+  "supabase_anon_key": "sb_publishable_jhW_P8jFtwZ_LgJcbh2xea_aAvuSKrw",
+  "supabase_url": "https://api.oneloss.work",
   "trello_api_key": "eeadf8105ded75dd3a5568ca06a13d53",
   "trello_boards_exclude": [
     "g6oUiIud",
@@ -61,5 +61,6 @@
   "trello_snapshot_list_id": "63a384193d3ec900984ab584",
   "trello_token": "",
   "trello_workspace_id": "6000dbdc5bc7840c91334167",
-  "workcenter_url": "https://workcenter.servpronet.io"
+  "workcenter_url": "https://workcenter.servpronet.io",
+  "trello_writes_paused": true
 }
