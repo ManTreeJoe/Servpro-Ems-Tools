@@ -183,7 +183,12 @@ export async function safeJson(fetcher: typeof fetch, url: string, init: Request
   let response: Response;
   try {
     response = await fetcher(url, { ...init, signal: AbortSignal.timeout(10_000), redirect: "error" });
-  } catch { throw new SyncError(`${provider}_network_error`); }
+  } catch (error) {
+    if (error instanceof Error && error.message === "trello_writes_disabled") {
+      throw new SyncError("trello_writes_disabled");
+    }
+    throw new SyncError(`${provider}_network_error`);
+  }
   if (!response.ok) {
     const retryHeader = response.headers.get("Retry-After") || "";
     const retry = /^\d+$/.test(retryHeader) ? Number(retryHeader) :
@@ -267,7 +272,7 @@ export function adapters(env: Record<string, string>, fetcher: typeof fetch = fe
     }
     return copied;
   };
-  return { store: { rpc, dueSources, ...(env.TRELLO_EMS_COMMENTS_ENABLED === "true" ? { mirrorEms } : {}) }, get };
+  return { store: { rpc, dueSources, ...(env.TRELLO_EMS_COMMENTS_ENABLED === "true" && env.ONELOSS_TRELLO_WRITES_ENABLED === "true" ? { mirrorEms } : {}) }, get };
 }
 
 export async function authorized(actual: string | null, secret: string) {

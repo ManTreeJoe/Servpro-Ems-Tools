@@ -7,3 +7,14 @@ The server runtime has the same policy in `_shared/trello-write-guard.mjs`. Sync
 This disables ALL mutations by default, including creates, comments, edits, deletes, checklist updates, attachment uploads and notification read acknowledgements. Local OneLoss saves are not disabled. Pending delivery can remain queued; do not enable writes without reviewing the backlog and retry behavior first. Some legacy public helpers catch errors and return None/False; denial never means provider success.
 
 Python and JavaScript require separate runtime implementations of one policy; they share the exact flag and fail-closed semantics. Focused tests cover both. A source regression check rejects new Trello endpoint owners and desktop raw HTTP calls outside the guarded transport. It is a review tripwire, not proof against dynamically constructed/obfuscated endpoints or arbitrary future network libraries. Provider tests must explicitly opt in with fake transports when testing successful writes; no live credentials belong in tests.
+
+Read-sync registration requires both flags before adding the EMS mirror callback.
+An unexpected transport denial retains `trello_writes_disabled`, not a misleading
+network error. The desktop comment fallback reports that nothing was sent.
+
+The source tripwire enumerates `git ls-files -z` and includes Python, TypeScript,
+JavaScript, MJS, CJS, SQL, HTML and PowerShell. Test fixtures are excluded from
+provider endpoint ownership checks. Python inspection visits nested functions and
+class methods, resolves ordinary import aliases, and detects explicit
+`urllib.request.Request(method=...)` constructors as well as transports. It does
+not model runtime alias reassignment, dynamic imports or dynamically built hosts.
