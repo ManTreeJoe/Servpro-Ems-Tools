@@ -1081,24 +1081,16 @@ class Api:
         return {"ok": False, "error": "Use Sign in with Microsoft. Administrator recovery is separate."}
 
     def supabase_sign_out(self) -> dict:
-        """Drop the local session and fall back to SQLite.
-
-        Leaving the backend pointed at Supabase with no session would make
-        every job lookup fail rather than quietly work offline.
-        """
+        """Drop the local session without changing the administrator's backend choice."""
         try:
             import supabase_client
-            import ems_db
             supabase_client.sign_out()
             try:
                 import web_health
                 web_health.invalidate_grant_cache()
             except Exception:
                 pass
-            if ems_db.backend_name() == "supabase":
-                self.set_db_backend("sqlite")
-            return {"ok": True, "message": "Signed out — using the local "
-                                           "database."}
+            return {"ok": True, "message": "Signed out."}
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 

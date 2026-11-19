@@ -84,3 +84,15 @@ def test_admin_lookup_error_is_not_admin(monkeypatch):
     monkeypatch.setattr(account_access, 'current_access', lambda: (_ for _ in ()).throw(RuntimeError('offline')))
     monkeypatch.setattr(settings, '_signed_in_email', lambda: 'nathan@servpro10100.com')
     assert settings._is_admin() is False
+
+
+def test_employee_signout_does_not_switch_backend(monkeypatch):
+    import sys
+    import types
+    calls = []
+    monkeypatch.setitem(sys.modules, 'supabase_client', types.SimpleNamespace(sign_out=lambda: calls.append('sign_out')))
+    monkeypatch.setitem(sys.modules, 'web_health', types.SimpleNamespace(invalidate_grant_cache=lambda: None))
+    monkeypatch.setattr(settings, '_is_admin', lambda: False)
+    monkeypatch.setattr(settings.Api, 'set_db_backend', lambda *args: pytest.fail('Sign-out must not switch backend'))
+    assert settings.Api().supabase_sign_out() == {'ok': True, 'message': 'Signed out.'}
+    assert calls == ['sign_out']
