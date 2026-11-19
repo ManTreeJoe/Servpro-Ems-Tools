@@ -2,6 +2,10 @@
 
 Status: approval permissions are installed on production Main. Recovery password login, Nathan Microsoft sign-in and Pablo pending → Editor/IE approval passed against production on 2026-11-19. Pablo was restored to his original approved role and franchise; jobs were visible and admin API access remained denied. Microsoft-only server enforcement is still off during client rollout. Windows 1.8.49 and live web changes are being prepared; demo remains unchanged.
 
+## Windows package hold
+
+The final 1.8.49 Windows test encountered Microsoft Defender detections named `Trojan:Win32/Bearfoos.A!ml`. Defender quarantined the new executable, causing subsequent lazy module imports to fail with a file error. Publication is blocked in the prepared release metadata and publisher. Do not restore quarantine or weaken Defender as part of this rollout. The PyInstaller bootloader matched its official PyPI wheel, but that comparison does not clear the full application. IT/vendor review is required before release. The existing 1.8.48 update remains unchanged and Microsoft-only server enforcement is off. The web/Auth staging work can proceed independently without changing legacy Windows sign-in access.
+
 ## Current production contract
 
 The protected permission preflight found eight users, two administrators and existing IE/OC department assignments. All current assigned users are seeded approved with their existing memberships; administrators remain administrators and other assigned users start as editors. No account is deleted. New Microsoft accounts start pending without data access. Role authorization comes from server records, never a matching email in the desktop client.
