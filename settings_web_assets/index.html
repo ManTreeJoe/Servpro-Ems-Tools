@@ -115,7 +115,19 @@
   .signin-head { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
     margin-bottom:16px; }
   .signin-fields { display:grid;gap:10px; }
-  .signin-fields input { width:100%; }
+  .signin-fields input { width:100%;padding:10px 12px;border:1px solid var(--border);
+    border-radius:6px;background:var(--surface-2);color:var(--text);font:inherit; }
+  .signin-fields input::placeholder { color:var(--text-muted); }
+  .signin-provider { display:flex;align-items:center;justify-content:center;gap:10px;
+    width:100%;min-height:42px;font-weight:650; }
+  .signin-provider svg { flex:none;width:18px;height:18px; }
+  .signin-divider { display:flex;align-items:center;gap:12px;margin:20px 0;
+    color:var(--text-muted);font-size:11px; }
+  .signin-divider::before,.signin-divider::after { content:"";height:1px;flex:1;background:var(--border); }
+  .signin-field { display:grid;gap:6px; }
+  .signin-field label { color:var(--text);font-size:12px;font-weight:600; }
+  .signin-fields input,.signin-fields > .btn { min-height:40px; }
+  .signin-code-option { display:block;width:100%;margin-top:12px;font-size:12px; }
   .signin-close { min-width:36px;padding:7px 9px;font-size:18px;line-height:1; }
   .connections-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px; }
   .connection-card { min-width:0;padding:13px;border:1px solid var(--border);border-radius:9px;
@@ -261,20 +273,33 @@
       <div class="signin-dialog">
         <div class="signin-head">
           <div>
-            <div id="sb-signin-title" style="font-size:17px;font-weight:800;">Sign in</div>
+            <div id="sb-signin-title" style="font-size:17px;font-weight:800;">Sign in to OneLoss</div>
             <div class="muted" style="font-size:11.5px;margin-top:4px;">Use your SERVPRO work account.</div>
           </div>
           <button class="btn signin-close" id="sb-signin-close" type="button" aria-label="Close sign in">×</button>
         </div>
+      <button class="btn signin-provider" id="sb-microsoft-signin" type="button">
+        <svg viewBox="0 0 21 21" aria-hidden="true" focusable="false">
+          <path fill="#f25022" d="M0 0h10v10H0z"/><path fill="#7fba00" d="M11 0h10v10H11z"/>
+          <path fill="#00a4ef" d="M0 11h10v10H0z"/><path fill="#ffb900" d="M11 11h10v10H11z"/>
+        </svg>
+        <span id="sb-microsoft-label">Sign in with Microsoft</span>
+      </button>
+      <div class="signin-divider">or use your email</div>
       <div class="signin-fields">
-        <input id="sb-email" name="email" type="email" aria-label="Email address"
-               placeholder="Work email…" autocomplete="email" spellcheck="false" />
-        <input id="sb-password" name="password" type="password" aria-label="Password"
-               placeholder="Password…" autocomplete="current-password" />
+        <div class="signin-field">
+          <label for="sb-email">Work email</label>
+          <input id="sb-email" name="email" type="email" aria-label="Email address"
+                 placeholder="you@servpro10100.com" autocomplete="email" spellcheck="false" />
+        </div>
+        <div class="signin-field">
+          <label for="sb-password">Password</label>
+          <input id="sb-password" name="password" type="password" aria-label="Password"
+                 placeholder="Enter your password" autocomplete="current-password" />
+        </div>
         <button class="btn btn-primary" id="sb-password-signin">Sign in</button>
       </div>
-      <button class="btn" id="sb-code-toggle" type="button"
-              style="margin-top:8px;font-size:11px;">Use an emailed code instead</button>
+      <button class="btn signin-code-option" id="sb-code-toggle" type="button">Use an emailed code instead</button>
       <div id="sb-code-tools" style="display:none;margin-top:8px;">
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
           <button class="btn" id="sb-send-code">Email me a code</button>
@@ -1100,6 +1125,7 @@ function openSupabaseSignIn() {
 }
 
 function closeSupabaseSignIn() {
+  if (sbMicrosoftBusy) pywebview.api.supabase_cancel_microsoft().catch(() => {});
   document.getElementById("sb-signin").style.display = "none";
   document.getElementById("sb-password").value = "";
   sbMsg("");
@@ -1117,6 +1143,7 @@ function bindSupabaseControls() {
   });
   document.getElementById("sb-send-code")?.addEventListener("click", sbSendCode);
   document.getElementById("sb-password-signin")?.addEventListener("click", sbPasswordSignIn);
+  document.getElementById("sb-microsoft-signin")?.addEventListener("click", sbMicrosoftSignIn);
   document.getElementById("sb-password")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); sbPasswordSignIn(); }
   });
@@ -1412,7 +1439,40 @@ async function sbSendCode() {
   }
 }
 
+let sbMicrosoftBusy = false;
+async function sbMicrosoftSignIn() {
+  if (sbMicrosoftBusy) return;
+  const button = document.getElementById("sb-microsoft-signin");
+  const label = document.getElementById("sb-microsoft-label");
+  const controls = ["sb-password-signin", "sb-send-code", "sb-verify"]
+    .map(id => document.getElementById(id)).filter(Boolean);
+  const previous = controls.map(el => el.disabled);
+  sbMicrosoftBusy = true;
+  button.disabled = true;
+  controls.forEach(el => { el.disabled = true; });
+  label.textContent = "Waiting for Microsoft…";
+  sbMsg("Finish signing in in your browser, then return here. Close this dialog to cancel.");
+  let result;
+  try { result = await pywebview.api.supabase_sign_in_microsoft(); }
+  catch (_) { result = {ok:false, error:"Microsoft sign-in could not finish. Please try again."}; }
+  finally {
+    sbMicrosoftBusy = false;
+    button.disabled = false;
+    label.textContent = "Sign in with Microsoft";
+    controls.forEach((el, i) => { el.disabled = previous[i]; });
+  }
+  sbMsg(result?.ok ? result.message : (result?.error || "Microsoft sign-in failed."), !result?.ok);
+  if (result?.ok) {
+    document.getElementById("sb-password").value = "";
+    try { window.parent?.postMessage({type:"health-refresh"}, "*"); } catch (_) {}
+    closeSupabaseSignIn();
+    await refreshSupabase();
+    await renderConnections();
+  }
+}
+
 async function sbPasswordSignIn() {
+  if (sbMicrosoftBusy) return;
   const email = document.getElementById("sb-email").value;
   const password = document.getElementById("sb-password").value;
   const button = document.getElementById("sb-password-signin");

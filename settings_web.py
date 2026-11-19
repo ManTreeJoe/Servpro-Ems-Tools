@@ -998,6 +998,29 @@ class Api:
         except Exception as ex:
             return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
 
+    def supabase_sign_in_microsoft(self, email="") -> dict:
+        """Sign in through the system browser without collecting a Microsoft password."""
+        try:
+            import microsoft_auth
+            user = microsoft_auth.sign_in(email)
+            _use_shared_jobs_after_sign_in()
+            _invalidate("supabase Microsoft sign-in")
+            try:
+                import web_health
+                web_health.invalidate_grant_cache()
+            except Exception:
+                pass
+            return {"ok": True, "message": f"Signed in as {user.get('email') or email}"}
+        except ValueError as ex:
+            return {"ok": False, "error": str(ex)}
+        except Exception:
+            return {"ok": False, "error": "Microsoft sign-in could not finish. Check your connection and try again."}
+
+    def supabase_cancel_microsoft(self) -> dict:
+        import microsoft_auth
+        microsoft_auth.cancel()
+        return {"ok": True}
+
     def supabase_sign_in_password(self, email, password) -> dict:
         """Basic email/password sign-in. The password is never persisted."""
         email = (email or "").strip()
