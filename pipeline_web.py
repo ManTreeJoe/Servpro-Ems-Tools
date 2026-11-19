@@ -3121,8 +3121,18 @@ class Api(JobSettingsApi):
         # an append-only activity. They run in this same quiet adapter cycle.
         try:
             import job_workflow
-            scope = job_workflow.delivery_scope()
-            for operation in job_workflow.pending():
+            import config
+            from trello_write_guard import require_write_enabled
+            # Disabled/paused delivery is not an attempted send. Do not claim,
+            # hold, acknowledge or fail queued items while posting is off.
+            writes_enabled = False
+            try:
+                require_write_enabled("POST")
+                writes_enabled = not config.load().get("trello_writes_paused")
+            except Exception:
+                pass  # Fail closed; retain every queued item for later delivery.
+            scope = job_workflow.delivery_scope() if writes_enabled else {}
+            for operation in (job_workflow.pending() if writes_enabled else []):
                 key = str(operation.get("operation_key") or "")
                 kind = str(operation.get("operation_type") or "")
                 if kind in ("contents.ensure_card", "division.ensure_card"):

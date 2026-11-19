@@ -16,6 +16,9 @@ SCOPE = {'version': 1, 'user_id': 'user-a', 'department': 'IE',
 
 @pytest.fixture
 def queue(monkeypatch, tmp_path):
+    monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
+    monkeypatch.setenv("LINGUAR_CHANNEL", "trial")
+    monkeypatch.setattr("config.load", lambda: {})
     monkeypatch.setattr(workflow, 'DB_PATH', str(tmp_path / 'outbox.db'))
     monkeypatch.setattr(workflow, 'delivery_scope', lambda: dict(SCOPE))
     def forbidden(*args, **kwargs):
@@ -178,3 +181,23 @@ def test_saved_delivery_is_acknowledged_without_reposting(queue, monkeypatch):
     assert pipeline_web.Api()._push_pending_trello()['ok']
     assert row(queue)['status'] == 'complete'
     assert row(queue)['comment_id'] == 'already-sent'
+
+
+@pytest.mark.parametrize("disabled", ["flag", "rollout_pause", "guard_failure"])
+def test_disabled_writes_leave_queued_item_pending(queue, monkeypatch, disabled):
+    if disabled == "flag":
+        monkeypatch.delenv("ONELOSS_TRELLO_WRITES_ENABLED", raising=False)
+    elif disabled == "rollout_pause":
+        monkeypatch.setattr("config.load", lambda: {"trello_writes_paused": True})
+    else:
+        def broken_guard(_method):
+            raise RuntimeError("policy unavailable")
+        monkeypatch.setattr("trello_write_guard.require_write_enabled", broken_guard)
+    before = row(queue)
+    monkeypatch.setattr(workflow, "pending", lambda: pytest.fail("Must not inspect queued items"))
+    monkeypatch.setattr(workflow, "claim_delivery", lambda *_: pytest.fail("Must not claim"))
+    monkeypatch.setattr("ems_db.list_job_log_entries", lambda *_: pytest.fail("Must not read provider"))
+    result = pipeline_web.Api()._push_pending_trello()
+    assert result["ok"] and result["job_logs"] == 0
+    assert row(queue) == before
+    assert row(queue)["status"] == "pending"
