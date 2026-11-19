@@ -9,7 +9,13 @@ window.addEventListener('pywebviewready', async () => {
   const list = document.createElement('div');
   const refresh = document.createElement('button'); refresh.className='btn';refresh.textContent='Refresh requests';
   host.append(title,intro,refresh,message,list);
-  (document.querySelector('main') || document.body).append(host);
+  const previous = document.getElementById('user-access-card');
+  if (previous) {
+    host.id = 'employee-access-card';
+    host.style.cssText = previous.style.cssText;
+    host.classList.toggle('scope-hidden', !document.querySelector('[data-scope-tab="admin"].active'));
+    previous.replaceWith(host);
+  } else (document.querySelector('main') || document.body).append(host);
   async function load() {
     refresh.disabled=true;
     const result = await pywebview.api.employee_admin_snapshot();

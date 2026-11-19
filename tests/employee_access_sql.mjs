@@ -35,7 +35,7 @@ create policy meta_read on public.meta for select to authenticated using(true);
 create policy object_rw on storage.objects for all to authenticated using(true) with check(true);
 create function public.test_definer_leak() returns bigint language sql stable security definer as $$select count(*) from public.jobs$$;
 create function public.test_volatile_rpc() returns integer language sql volatile as $$select 1$$;
-insert into auth.users(id,email) values('${owner}','nathan@servpro10100.com'),('${admin}','admin@example.test'),('${editor}','editor@example.test'),('${other}','other@example.test');
+insert into auth.users(id,email) values('${owner}','nathan@servpro10100.com'),('${admin}','admin@example.test'),('${editor}','pablo@servpro10100.com'),('${other}','other@example.test');
 insert into auth.identities(user_id,provider) select id,'azure' from auth.users;
 insert into public.app_admins(user_id) values('${owner}'),('${admin}');
 insert into public.app_user_departments values('${owner}','IE'),('${admin}','IE'),('${editor}','IE'),('${other}','OC');
@@ -129,5 +129,23 @@ await check('Auth hooks allow Azure signup and reject employee password without 
 await check('Anonymous users have no status or admin API access',async()=>{
   await db.exec('SET LOCAL ROLE anon');await denied('select public.employee_admin_snapshot()');await denied('select public.my_app_access()');
 });
+// Exercise the actual operator test script against synthetic PostgreSQL records.
+const {execFileSync}=await import('node:child_process');
+const saved={user_id:editor,email:'pablo@servpro10100.com',status:'approved',role:'editor',revision:0,
+  departments:['IE'],is_admin:false,recovery:false};
+const python=`import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('operator_test','deploy/employee-access/pablo_test.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+s=json.load(sys.stdin)
+print(json.dumps({'pending':m.change_sql(s),'restore':m.change_sql(s,restore=True)}))`;
+const operator=JSON.parse(execFileSync('python',['-c',python],{input:JSON.stringify(saved),encoding:'utf8'}));
+await db.exec(operator.pending);
+let operatorState=await scalar(`select status,role,revision from oneloss_access.accounts where user_id='${editor}'`);
+assert.deepEqual(operatorState,{status:'pending',role:'editor',revision:1});
+assert.deepEqual((await db.query(`select department from public.app_user_departments where user_id='${editor}'`)).rows,[{department:'IE'}]);
+await db.exec(operator.restore);
+operatorState=await scalar(`select status,role,revision from oneloss_access.accounts where user_id='${editor}'`);
+assert.deepEqual(operatorState,{status:'approved',role:'editor',revision:2});
+count++;console.log('PASS: actual Pablo pending/cancel SQL preserves account, role and franchise and restores approved access');
 console.log(`${count} PostgreSQL access checks passed using synthetic records only.`);
 await db.close();
