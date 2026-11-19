@@ -78,7 +78,9 @@ def test_first_run_trello_setup_has_one_primary_choice():
     start = html.index('trello: `<button')
     end = html.index('folders:', start)
     setup = html[start:end]
-    assert setup.count('data-setup="trello-auto"') == 1
+    assert setup.count('data-setup="connections"') == 1
+    assert 'Go to My connections' in setup
+    assert 'data-setup="trello-auto"' not in setup
     assert 'data-setup="trello-page"' not in setup
     assert 'data-setup="trello-paste"' not in setup
-    assert 'data-setup="trello-save"' in setup
+    assert 'data-setup="trello-save"' not in setup

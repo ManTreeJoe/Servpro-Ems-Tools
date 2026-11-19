@@ -132,7 +132,7 @@ def test_save_selector_is_scoped_to_the_main_form():
     """A global [data-key] sweep is what collected the department editor."""
     html = open(os.path.join(_SCRIPTS, "settings_web_assets", "index.html"),
                 encoding="utf-8").read()
-    assert 'querySelectorAll("#form-fields [data-key]")' in html
+    assert 'querySelectorAll("#form-fields [data-key][id^=f-]")' in html
     assert 'querySelectorAll("[data-key]")' not in html, (
         "global data-key selector is back — it also matches the Departments "
         "editor and the panel-visibility checkboxes")
@@ -143,5 +143,5 @@ def test_department_editor_saves_through_its_own_api():
     forms can't write each other's fields."""
     html = open(os.path.join(_SCRIPTS, "settings_web_assets", "index.html"),
                 encoding="utf-8").read()
-    assert 'querySelectorAll("#dept-fields input[data-key]")' in html
+    assert 'querySelectorAll("#dept-fields input[data-key], #dept-folder-fields input[data-key]")' in html
     assert "save_department(" in html
