@@ -56,3 +56,13 @@ After the Windows release is published and the team has updated, `auth_rollout.p
 The private download policy already lists all eight existing team users. Keep GitHub's existing 1.8.48 transition installer/feed available so older clients can gain private updates. Publish Windows 1.8.49 through the private origin; do not remove the legacy transition release during this rollout.
 
 Live web auth now reads Main's `my_app_access`; the job portal uses the existing Main `jobs` table with RLS. It provides job browsing/search and directs changes to the Windows application. It no longer needs Foundation tables for live login or jobs. The earlier Foundation/demo UI is retained for non-live builds; it is not deployed as part of the live auth rollout.
+
+## Redesign release handoff — November 19
+
+The user requested merging the Windows implementation into `main` for the custom redesign release owner to include. Merging source does not publish the installer or deploy the website. Preserve the default-off Trello write guard and the existing GitHub 1.8.48 transition feed.
+
+The companion web implementation is in `ManTreeJoe/oneloss-platform`, branch `codex/microsoft-only-approval` (commit `da6545a`). That repository uses `staging`, not `main`, as its default branch. Its live build and mocked browser tests pass. Do not deploy a demo build to the live domain. Keep the separate `/emergency-admin` recovery route and approval/franchise/role checks when redesigning.
+
+Production approval permissions are installed. Nathan's recovery and Microsoft logins and Pablo's pending-to-approved editor/IE access were tested. The updated Auth `stage` script still needs to run on the VM before web deployment. It handles the default enabled phone provider by checking for phone-linked accounts first; if any exist it stops before changes. It preserves email/password recovery and leaves server-wide Microsoft-only enforcement off until team rollout completes.
+
+The packaged 1.8.49 executable remains blocked by Defender. Do not publish the held installer or remove the release hold just because source is merged. IT clearance/restoration and final packaged testing are outstanding. The redesign owner will build and publish the final update after those checks.

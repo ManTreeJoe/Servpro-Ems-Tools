@@ -39,6 +39,8 @@ def test_recovery_rejects_regular_employee_before_saving_session():
 @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
 def test_viewer_cannot_send_trello_mutations(monkeypatch, method):
     import trello_client
+    monkeypatch.setenv('ONELOSS_TRELLO_WRITES_ENABLED', 'true')
+    monkeypatch.setenv('LINGUAR_CHANNEL', 'trial')
     monkeypatch.setattr(employee_access, "require_access", lambda: {"can_edit": False})
     monkeypatch.setattr(trello_client, "_creds", lambda: pytest.fail("Credentials accessed before authorization"))
     with pytest.raises(PermissionError):
