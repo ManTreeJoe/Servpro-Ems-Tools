@@ -1902,7 +1902,6 @@ async function renderFirstRunWizard() {
       ? `<button class="btn" type="button" data-scope-tab-jump="admin">Assign franchises</button>`
       : `<button class="btn" type="button" data-setup="refresh">Check again</button>`,
     trello: `<button class="btn" type="button" data-setup="connections">Go to My connections</button>`,
-    companycam: `<button class="btn" type="button" data-setup="connections">Connect CompanyCam in My connections</button>`,
     folders: `<button class="btn" type="button" data-setup="refresh">Check folders again</button>`,
   };
   document.getElementById("fr-steps").innerHTML = (status.steps || []).map((step, index) => `
@@ -1948,12 +1947,12 @@ function wireSetupGuide() {
       button.disabled = false;
       button.textContent = prior;
     }));
-  card.querySelectorAll('[data-setup="connections"]').forEach(button => button.addEventListener("click", () => {
+  card.querySelector('[data-setup="connections"]')?.addEventListener("click", () => {
     if (window.SettingsLayout?.ready) window.SettingsLayout.select("connections");
     else showSettingsScope("personal");
     document.getElementById("my-connections").scrollIntoView({behavior:"smooth",block:"start"});
     document.getElementById("connections-refresh").focus();
-  }));
+  });
 }
 
 const _JI_LINK_LABEL = {

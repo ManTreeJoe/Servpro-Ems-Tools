@@ -76,7 +76,7 @@ def test_first_run_trello_setup_has_one_primary_choice():
     html = (Path(__file__).parents[1] / "settings_web_assets" /
             "index.html").read_text(encoding="utf-8")
     start = html.index('trello: `<button')
-    end = html.index('companycam:', start)
+    end = html.index('folders:', start)
     setup = html[start:end]
     assert setup.count('data-setup="connections"') == 1
     assert 'Go to My connections' in setup

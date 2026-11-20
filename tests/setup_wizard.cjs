@@ -46,7 +46,7 @@ const path = require('node:path');
         {key:'profile_name',title:'Your display name',done:false},
         {key:'franchise',title:'Assigned franchise',done:false},
         {key:'trello',title:'Connect Trello',done:false},
-        {key:'companycam',title:'Connect CompanyCam',done:false,optional:false},
+        {key:'companycam',title:'CompanyCam (optional)',done:false,optional:true},
         {key:'folders',title:'Shared folders',done:false},
         {key:'live_data',title:'Check shared data',done:false},
       ].map((s,i)=>({...s,help:helps[i],detail:'Not verified'}));
@@ -87,8 +87,7 @@ const path = require('node:path');
     await page.locator('#fr-recheck').click();
     assert(!(await page.locator('#fr-overlay').innerText()).includes('Not verified'));
     await shot('05-companycam');
-    assert.equal(await page.getByText('Skip optional connection',{exact:true}).count(),0);
-    await page.locator('#fr-next').click();
+    await page.getByText('Skip optional connection',{exact:true}).click();
     await page.getByText('Choose shared job root',{exact:true}).click();
     assert.equal(await page.locator('[name=job_root]').inputValue(),'C:/Fictional/Shared');
     await page.locator('[name=runs_dir]').fill('C:/Fictional/Runs');
@@ -117,6 +116,6 @@ const path = require('node:path');
     await page.evaluate(()=>{dismissed=false;bridge.first_run=async()=>{throw Error('offline');};return OneLossSetup.open(bridge);});
     await page.locator('#fr-error').filter({hasText:'Setup checks could not load'}).waitFor();
     assert.deepEqual(requests,[]);assert.deepEqual(errors,[]);
-    console.log('PASS inline controls, completed-step omission, failed-step blocking, mandatory CompanyCam, folder picker, session dismissal/resume, final check, fail-open retry, mobile layout; zero browser requests/errors');
+    console.log('PASS inline controls, completed-step omission, failed-step blocking, optional skip, folder picker, session dismissal/resume, final check, fail-open retry, mobile layout; zero browser requests/errors');
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

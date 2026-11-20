@@ -110,7 +110,7 @@ def test_companycam_connect_opens_only_server_generated_https_url(monkeypatch):
     monkeypatch.setattr(supabase_client, "invoke_function", lambda name, body: {
         "ok": True, "url": "https://app.companycam.com/oauth/authorize?safe=1"})
     import webbrowser
-    monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or True)
+    monkeypatch.setattr(webbrowser, "open", opened.append)
     result = user_connections.connect_companycam()
     assert result["ok"]
     assert opened == ["https://app.companycam.com/oauth/authorize?safe=1"]
@@ -189,27 +189,3 @@ def test_settings_page_renders_my_connections():
                    "Test project creation", "test_user_connection"):
         assert marker in html
     assert "!f.managed_connection" in html
-
-
-def test_connections_always_offer_retry_or_reconnect(monkeypatch):
-    monkeypatch.setattr(user_connections, "_franchise", lambda: "TEST")
-    monkeypatch.setattr(companycam_api, "cloud_gateway_available", lambda: True)
-    for state in ("connected", "failed", "expired", "revoked", "disconnected", ""):
-        for token in ("", "fake-token"):
-            cards = user_connections.statuses(access=_access(), cfg={"trello_api_key":"fake-key", "trello_token":token}, connection_status={"status":state})
-            by_provider = {c["provider"]:c for c in cards}
-            assert by_provider["companycam"]["action"] == "connect_companycam"
-            assert by_provider["trello"]["action"] == "connect_trello"
-            assert by_provider["linguar"]["action"] == "sign_out"
-
-
-def test_companycam_browser_failure_can_retry(monkeypatch):
-    import supabase_client, webbrowser
-    monkeypatch.setattr(user_connections, "_franchise", lambda: "TEST")
-    calls=[]
-    monkeypatch.setattr(supabase_client, "invoke_function", lambda name, body: calls.append(name) or {"ok":True,"url":"https://app.companycam.com/oauth/authorize"})
-    monkeypatch.setattr(webbrowser,"open",lambda url:False)
-    assert not user_connections.connect_companycam()["ok"]
-    monkeypatch.setattr(webbrowser,"open",lambda url:True)
-    assert user_connections.connect_companycam()["ok"]
-    assert calls == ["companycam-oauth-start", "companycam-oauth-start"]

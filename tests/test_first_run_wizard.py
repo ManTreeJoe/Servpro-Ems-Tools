@@ -100,16 +100,16 @@ def test_companycam_saved_connected_but_probe_fails(monkeypatch):
     monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
     result = setup.status(None)
     assert not next(s for s in result["steps"] if s["key"] == "companycam")["done"]
-    assert not setup.action(None, "skip_companycam")["ok"]
-    assert not setup.status(None)["all_done"]
+    assert setup.action(None, "skip_companycam")["ok"]
+    assert setup.status(None)["all_done"]
 
 
 def test_optional_skip_is_scoped_and_resumes(isolated, monkeypatch):
     cfg, access = isolated
     import companycam_api as cc
     monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
-    assert not setup.action(None, "skip_companycam")["ok"]
-    assert not setup.status(None)["all_done"]
+    setup.action(None, "skip_companycam")
+    assert setup.status(None)["all_done"]
     cfg["supabase_url"] = "https://other.invalid"
     assert not setup.status(None)["all_done"]
     cfg["supabase_url"] = "https://demo.invalid"
@@ -184,8 +184,8 @@ def test_channel_skip_does_not_cross_profiles(monkeypatch):
     import companycam_api as cc
     monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
     monkeypatch.setattr(paths, "CHANNEL", "main")
-    assert not setup.action(None, "skip_companycam")["ok"]
-    assert not setup.status(None)["all_done"]
+    setup.action(None, "skip_companycam")
+    assert setup.status(None)["all_done"]
     monkeypatch.setattr(paths, "CHANNEL", "trial")
     assert not setup.status(None)["all_done"]
 
@@ -248,20 +248,4 @@ def test_completion_preserved_by_optional_skip():
     setup.action(None, "skip_companycam")
     record = next(iter(setup._choices().values()))
     assert record["verified_complete"] is True
-    assert record["companycam_skipped"] is False
-
-
-def test_legacy_skip_is_rechecked(isolated, monkeypatch):
-    import companycam_api as cc
-    cfg, access = isolated
-    setup._save_choice(setup._scope(cfg, access), verified_complete=True, companycam_skipped=True)
-    monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
-    assert not setup.verified_for_current_scope()
-    result = setup.status(None)
-    step = next(s for s in result["steps"] if s["key"] == "companycam")
-    assert not step["optional"] and not step["skipped"] and not step["done"]
-    assert not result["all_done"]
-    cc._call.assert_called_once()
-    monkeypatch.setattr(cc, "_call", Mock(return_value=[]))
-    assert setup.status(None)["all_done"]
-    assert setup.verified_for_current_scope()
+    assert record["companycam_skipped"] is True

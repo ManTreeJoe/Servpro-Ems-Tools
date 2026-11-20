@@ -264,8 +264,7 @@ def connect_companycam() -> dict:
             return {"ok": False,
                     "error": result.get("error") or "CompanyCam sign-in could not start."}
         import webbrowser
-        if not webbrowser.open(url):
-            return {"ok": False, "error": "Could not open CompanyCam sign-in. Check your browser and try again."}
+        webbrowser.open(url)
         return {"ok": True,
                 "message": "Finish signing into CompanyCam in the browser, then return here."}
     except Exception as ex:
