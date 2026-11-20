@@ -324,7 +324,15 @@ class Api:
         if key not in self._my_folder_departments():
             return {"ok": False, "error": "That franchise is not assigned to you."}
         import machine_folders
-        connected = machine_folders.connect(key, job_root, runs_dir)
+        admin = _is_admin()
+        if admin:
+            connected = machine_folders.connect(key, job_root, runs_dir)
+        else:
+            # Employees connect job files only; never change or require the
+            # administrator's Daily Run path, including through direct calls.
+            root = machine_folders.rebase_user_path(job_root)
+            connected = {"ok": bool(root and os.path.isdir(root)), "job_root": root,
+                         "runs_dir": "", "error": "Windows cannot open the job folders root."}
         if not connected.get("ok"):
             return connected
         job_root = connected["job_root"]
@@ -334,7 +342,8 @@ class Api:
             profiles = dict(base.get("departments") or {})
             profile = dict(profiles.get(key) or {})
             profile["audit_base"] = job_root
-            profile["runs_dir"] = runs_dir
+            if admin:
+                profile["runs_dir"] = runs_dir
             profiles[key] = profile
             base["departments"] = profiles
             config.save(base)

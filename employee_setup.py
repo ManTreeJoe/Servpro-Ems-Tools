@@ -144,11 +144,13 @@ def status(api):
          "Connect your work account in the browser, then check again. This connection is required. Setup never creates a project or uploads a photo.")
     jobs = str(cfg.get("audit_base") or "").strip()
     runs = str(cfg.get("runs_dir") or "").strip()
-    jobs_ok, runs_ok = _read_folder(jobs), _read_folder(runs)
+    admin = bool(access.get("is_admin"))
+    jobs_ok, runs_ok = _read_folder(jobs), _read_folder(runs) if admin else True
     step("folders", "Shared folders", active in assigned and jobs_ok and runs_ok,
-         "Both folders can be read" if jobs_ok and runs_ok else "Cannot read: " + ", ".join(
+         ("Both folders can be read" if admin else "Job folder can be read") if jobs_ok and runs_ok else "Cannot read: " + ", ".join(
              name for name, ok in [("job folder", jobs_ok), ("Daily Run folder", runs_ok)] if not ok),
-         "Connect to the office network or VPN. Choose the shared job root and Daily Run folder for this franchise; no files will be written.")
+         "Connect to the office network or VPN. Choose the shared job root for this franchise; no files will be written." +
+         (" Administrators also choose the Daily Run folder." if admin else ""))
     live_ok = False
     if all(s["done"] for s in steps if not s["optional"]):
         try:
@@ -200,7 +202,9 @@ def action(api, name, values=None):
         return {"ok": False, "error": "CompanyCam is required. Connect your work account, then check again."}
     if name == "folders":
         jobs, runs = str(values.get("job_root") or "").strip(), str(values.get("runs_dir") or "").strip()
-        if not _read_folder(jobs) or not _read_folder(runs):
-            return {"ok": False, "error": "Both folders must be readable. Check your office network or VPN and choose the folders again."}
+        if not access.get("is_admin"):
+            runs = str((config.load() or {}).get("runs_dir") or "")
+        if not _read_folder(jobs) or (access.get("is_admin") and not _read_folder(runs)):
+            return {"ok": False, "error": "Required folders must be readable. Check your office network or VPN and choose the folders again."}
         return api.save_my_franchise_folders(config.active_department(), jobs, runs)
     return {"ok": False, "error": "Unknown setup action."}

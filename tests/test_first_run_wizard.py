@@ -265,3 +265,34 @@ def test_legacy_skip_is_rechecked(isolated, monkeypatch):
     monkeypatch.setattr(cc, "_call", Mock(return_value=[]))
     assert setup.status(None)["all_done"]
     assert setup.verified_for_current_scope()
+
+
+def test_daily_run_not_required_for_employee(isolated):
+    cfg, access = isolated
+    cfg['runs_dir'] = ''
+    access['is_admin'] = False
+    assert setup.status(None)['all_done']
+    access['is_admin'] = True
+    assert not setup.status(None)['all_done']
+
+
+def test_employee_folder_action_ignores_supplied_daily_run(isolated):
+    cfg, access = isolated
+    access['is_admin'] = False
+    api = Mock()
+    api.save_my_franchise_folders.return_value = {'ok': True}
+    assert setup.action(api, 'folders', {'job_root': cfg['audit_base'], 'runs_dir': 'untrusted'})['ok']
+    api.save_my_franchise_folders.assert_called_once_with('TEST', cfg['audit_base'], cfg['runs_dir'])
+
+
+def test_employee_folder_save_preserves_admin_daily_run(monkeypatch, tmp_path):
+    import config
+    import settings_web
+    monkeypatch.setattr(settings_web, '_is_admin', lambda: False)
+    monkeypatch.setattr(settings_web.Api, '_my_folder_departments', lambda self: ['TEST'])
+    monkeypatch.setattr(settings_web, '_invalidate', lambda *a: None)
+    monkeypatch.setattr(config, 'load_base', lambda: {'departments': {'TEST': {'runs_dir': 'admin-only'}}})
+    save = Mock()
+    monkeypatch.setattr(config, 'save', save)
+    assert settings_web.Api().save_my_franchise_folders('TEST', str(tmp_path), 'untrusted')['ok']
+    assert save.call_args.args[0]['departments']['TEST']['runs_dir'] == 'admin-only'

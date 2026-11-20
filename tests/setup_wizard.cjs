@@ -91,7 +91,7 @@ const path = require('node:path');
     await page.locator('#fr-next').click();
     await page.getByText('Choose shared job root',{exact:true}).click();
     assert.equal(await page.locator('[name=job_root]').inputValue(),'C:/Fictional/Shared');
-    await page.locator('[name=runs_dir]').fill('C:/Fictional/Runs');
+    assert.equal(await page.locator('[name=runs_dir]').count(),0);
     await shot('06-folders');
     await page.setViewportSize({width:390,height:700});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
