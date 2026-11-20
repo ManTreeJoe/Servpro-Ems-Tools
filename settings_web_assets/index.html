@@ -1810,7 +1810,7 @@ function render() {
     extra.className = 'extra-folder-fields';
     extra.hidden = !SETTINGS_ACCESS.is_admin;
     extra.innerHTML = '<h3>Other document locations on this computer</h3>' + SCHEMA
-      .filter(f => f.group === "Folders & documents" && !['audit_base','runs_dir'].includes(f.key))
+      .filter(f => f.group === "Folders & documents" && !['audit_base', 'runs_dir'].includes(f.key))
       .map(fieldHtml).join('');
     folderOwner.append(extra);
     wrap.prepend(folderOwner);
