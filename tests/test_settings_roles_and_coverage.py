@@ -46,7 +46,7 @@ def test_settings_page_has_role_tabs_and_scoped_sections():
     assert 'data-scope-tab="admin"' in html
     assert 'data-settings-scope="personal"' in html
     assert 'data-settings-scope="admin"' in html
-    assert 'data-settings-scope="both"' in html
+    assert 'id="account-sync" data-settings-scope="personal"' in html
     assert 'aria-label="Settings level"' in html
     assert 'SETTINGS_ACCESS.is_admin || field.scope === "personal"' in html
     assert "if (!writable.has(k)) return" in html

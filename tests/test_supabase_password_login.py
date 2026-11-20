@@ -58,7 +58,10 @@ def test_setup_signin_button_opens_modal_directly():
     handler = html.index('data-setup="signin"', start)
     end = html.index("data-scope-tab-jump", handler)
     block = html[handler:end]
-    assert "openSupabaseSignIn();" in block
+    assert 'getElementById("account-sync")' in block
+    assert 'getElementById("sb-open-signin")' in block
+    assert "openSupabaseSignIn();" not in block
+    assert 'addEventListener("click", openSupabaseSignIn)' in html
 
 
 def test_failed_signin_can_be_retried_without_refresh_hiding_modal():

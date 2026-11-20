@@ -1,7 +1,6 @@
-"""Settings — Pywebview spike (config editor)."""
+"""Settings — employee preferences and administrator configuration."""
 from __future__ import annotations
 import os, sys
-from urllib.parse import unquote, urlparse
 import webview
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -22,7 +21,7 @@ FIELDS = [
     ("snapshot_template",   "Snapshot fillable PDF",      "file"),
     ("snapshot_output",     "Snapshot PDF output folder", "dir"),
     ("apa_monitor_root",    "APA Monitor docs folder",    "dir"),
-    ("snapshots_root",      "Snapshot tracking workbook", "file"),
+    ("snapshots_root",      "Snapshots folder",         "dir"),
     ("dispute_tracker_path", "Dispute tracking workbook", "file"),
     ("wc_audit_dir",        "WorkCenter audit folder",    "dir"),
     ("photos_extra_roots",  "Additional photo roots",     "list"),
@@ -38,7 +37,7 @@ FIELDS = [
     ("companycam_api_token", "CompanyCam organization key", "secret"),
     ("graph_client_id",      "Microsoft Graph client ID", "text"),
     ("graph_tenant_id",      "Microsoft Graph tenant ID", "text"),
-    ("franchise_name",      "Franchise display name",     "text"),
+    ("franchise_name",      "Office display name",     "text"),
     ("office_phone",        "Office phone",               "tel"),
     ("monthly_job_completion_quota", "Monthly completed-job quota", "text"),
     # Shared job-index backend. ONE project serves both departments —
@@ -127,7 +126,7 @@ DEPT_FIELDS = [
     # stays a plain editable workbook and syncs from nothing.
     ("disputes_board_short_link", "Disputes board (Trello short link)",
      "text", "Trello"),
-    ("franchise_name",        "Franchise legal name",     "text",    "Identity"),
+    ("franchise_name",        "Office display name",     "text",    "Identity"),
     ("office_phone",          "Office phone",             "text",    "Identity"),
     # Each office has its own CompanyCam account. Blank means INHERIT the
     # base token, which is how OC's projects were being created in IE's
@@ -211,22 +210,6 @@ def _local_path(value):
     return machine_folders.local_path(value)
 
 
-def _legacy_local_path(value):
-    """Legacy implementation retained temporarily for compatibility tests."""
-    raw = str(value or "").strip().strip('"').strip("'")
-    if not raw:
-        return ""
-    raw = os.path.expandvars(os.path.expanduser(unquote(raw)))
-    if raw.lower().startswith("file:"):
-        parsed = urlparse(raw.replace("\\", "/"))
-        if parsed.netloc and parsed.netloc.lower() not in ("", "localhost"):
-            raw = f"//{parsed.netloc}{parsed.path}"
-        else:
-            raw = parsed.path
-        # file:///X:/Folder parses as /X:/Folder; Windows wants X:/Folder.
-        if len(raw) >= 3 and raw[0] == "/" and raw[2] == ":":
-            raw = raw[1:]
-    return os.path.normpath(raw.replace("/", os.sep))
 
 
 def _daily_run_under(job_root):
@@ -235,22 +218,6 @@ def _daily_run_under(job_root):
     return machine_folders.derive_daily_run(job_root)
 
 
-def _legacy_daily_run_under(job_root):
-    root = _local_path(job_root)
-    if not root or not os.path.isdir(root):
-        return ""
-    preferred = ("Daily Run", "Daily Runs", "Daily Run Docs",
-                 "Daily Run Documents")
-    try:
-        with os.scandir(root) as entries:
-            children = {entry.name.casefold(): entry.path for entry in entries
-                        if entry.is_dir()}
-    except OSError:
-        return ""
-    for name in preferred:
-        if name.casefold() in children:
-            return os.path.normpath(children[name.casefold()])
-    return ""
 
 
 def _use_shared_jobs_after_sign_in():
