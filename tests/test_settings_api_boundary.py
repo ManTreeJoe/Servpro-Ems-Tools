@@ -5,14 +5,15 @@ import pytest
 import settings_web as settings
 
 # Deliberate classification: every new public bridge method needs review.
-EMPLOYEE_API = frozenset('''attach schema settings_access user_connections
+EMPLOYEE_API = frozenset('''employee_access_status employee_sign_out
+supabase_sign_in_microsoft supabase_cancel_microsoft attach schema settings_access user_connections
 open_user_connection appearance_preferences my_franchise_folders save_my_franchise_folders
 test_user_connection load property_managers save get_dept_browsers dept_config pick_dir pick_file
 get_tech_roster lookup_job_identity authorize_trello trello_allowed_origin supabase_status
 save_my_display_name supabase_send_code supabase_sign_in_password supabase_verify_code
 supabase_sign_out first_run_status employee_setup_status employee_setup_action
 my_trello_token_page save_my_trello_token trello_auth_status'''.split())
-ADMIN_API = frozenset('''admin_users admin_set_user_franchises admin_set_user_capabilities
+ADMIN_API = frozenset('''employee_admin_snapshot employee_decide_user admin_users admin_set_user_franchises admin_set_user_capabilities
 admin_job_profiles admin_save_job_profile admin_set_job_profile_active admin_delete_job_profile
 save_property_manager set_dept_browser add_department remove_department set_multi_dept
 save_department open_data_folder open_config_file save_tech_roster open_tech_roster

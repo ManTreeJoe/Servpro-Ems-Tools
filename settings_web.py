@@ -1039,10 +1039,14 @@ class Api:
         return employee_access.status()
 
     def employee_admin_snapshot(self):
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         import employee_access
         return employee_access.admin_snapshot()
 
     def employee_decide_user(self, user_id, action, role, departments, revision):
+        if not _is_admin():
+            return {"ok": False, "error": "Administrator access required."}
         import employee_access
         return employee_access.decide(user_id, action, role, departments, revision)
 

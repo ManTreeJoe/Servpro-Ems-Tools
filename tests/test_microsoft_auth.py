@@ -73,8 +73,9 @@ def test_wrong_microsoft_account_preserves_prior_session_and_revokes_only_new_se
 
 
 def test_microsoft_account_picker_requires_no_typed_email(flow):
-    _, saved, _, user = flow
+    _, saved, urls, user = flow
     assert auth.sign_in() == user
+    assert parse_qs(urlsplit(urls[0]).query)["prompt"] == ["select_account"]
     assert saved[0]['user']['email'] == 'nathan@example.test'
 
 
