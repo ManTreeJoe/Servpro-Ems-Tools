@@ -41,4 +41,3 @@ const root=path.resolve(__dirname,'..');
  assert.deepEqual(unexpected,[]);console.log('PASS no unexpected requests');await ctx.close();
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});
-
