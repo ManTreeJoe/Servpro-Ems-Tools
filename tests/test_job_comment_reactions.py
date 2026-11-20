@@ -88,7 +88,7 @@ def test_uncertain_write_no_retry_or_credentials(monkeypatch, provider):
     assert not reactions._WRITE_LOCK.locked()
 
 
-def test_json_transport_keeps_form_compatibility(monkeypatch):
+def test_json_transport_keeps_form_compatibility(monkeypatch, approved_employee_access):
     # Successful-write fixture only; the provider transport below is fake.
     monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
     monkeypatch.setenv("LINGUAR_CHANNEL", "trial")

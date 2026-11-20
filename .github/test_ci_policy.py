@@ -8,6 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SkipPolicyTests(unittest.TestCase):
+    def test_employee_approval_sql_is_in_ci(self):
+        package = json.loads((ROOT / 'package.json').read_text())
+        self.assertEqual(package['devDependencies']['@electric-sql/pglite'], '0.5.8')
+        workflow = (ROOT / '.github/workflows/windows.yml').read_text()
+        self.assertIn('Get-ChildItem -Path tests/*.cjs, tests/*.mjs', workflow)
+        sql_test = (ROOT / 'tests/employee_access_sql.mjs').read_text()
+        self.assertIn("from '@electric-sql/pglite'", sql_test)
+        self.assertNotIn('.local-test-tools', sql_test)
+        policy = json.loads((ROOT / '.github/ci-skips.json').read_text())
+        self.assertNotIn('employee_access_sql.mjs', policy['node_scripts'])
+
     def test_exclusions_reference_existing_tests_and_have_reasons(self):
         policy = json.loads((ROOT / '.github/ci-skips.json').read_text())
         for filename, reason in policy['node_scripts'].items():

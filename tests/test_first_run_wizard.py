@@ -1,5 +1,5 @@
 """Fake-only setup tests. No provider, profile or shared-drive access."""
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 import pytest
 import home_web
 import settings_web
@@ -171,10 +171,12 @@ def test_no_secret_fields_or_marker_calls_in_wizard():
 
 def test_signin_refreshes_shell_only_after_success():
     api = Mock()
-    api.supabase_sign_in_password.return_value = {"ok": False, "error": "Denied"}
-    assert not setup.action(api, "signin", {"email": "test@example.invalid", "password": "fake"})["reload"]
-    api.supabase_sign_in_password.return_value = {"ok": True}
-    assert setup.action(api, "signin", {"email": "test@example.invalid", "password": "fake"})["reload"]
+    api.supabase_sign_in_microsoft.return_value = {"ok": False, "error": "Denied"}
+    assert not setup.action(api, "signin", {})["reload"]
+    api.supabase_sign_in_microsoft.return_value = {"ok": True}
+    assert setup.action(api, "signin", {})["reload"]
+    assert api.supabase_sign_in_microsoft.call_args_list == [call(), call()]
+    api.supabase_sign_in_password.assert_not_called()
 
 
 def test_channel_skip_does_not_cross_profiles(monkeypatch):

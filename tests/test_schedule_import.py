@@ -111,7 +111,7 @@ def test_preview_does_not_return_old_workspace_data_after_switch(source, monkeyp
     assert "visits" not in result
 
 
-def test_embedded_home_bridge_exposes_the_real_preview(source):
+def test_embedded_home_bridge_exposes_the_real_preview(source, approved_employee_access):
     from home_web import HomeApi
     home = object.__new__(HomeApi)
     home._bind_methods("run_doc_editor", Api())

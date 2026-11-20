@@ -35,7 +35,7 @@ jobs:
         id: node-deps
         run: npm ci
       # All browser tests use the runner's installed Microsoft Edge.
-      # The remaining eight top-level Node scripts do not launch a browser.
+      # SQL .mjs checks use an in-memory PGlite database; no server credentials.
       - name: Generate unconfigured CI seed
         shell: python
         run: |
@@ -74,7 +74,7 @@ jobs:
           $passed = 0
           $skipped = 0
           $failed = @()
-          foreach ($test in Get-ChildItem tests/*.cjs | Sort-Object Name) {
+          foreach ($test in Get-ChildItem -Path tests/*.cjs, tests/*.mjs | Sort-Object Name) {
             if ($skipReasons.ContainsKey($test.Name)) {
               Write-Output "SKIP: $($test.Name); reason=$($skipReasons[$test.Name])"
               $skipped++

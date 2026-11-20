@@ -25,7 +25,7 @@ def test_owned_paths_not_double_notified(method,tail,fields):
     assert activity.describe('/cards/'+CARD+tail,method,fields) is None
 
 
-def test_success_boundary_queues_and_failure_does_not(monkeypatch):
+def test_success_boundary_queues_and_failure_does_not(monkeypatch, approved_employee_access):
     # Successful-write fixture only; the provider transport below is fake.
     monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
     monkeypatch.setenv("LINGUAR_CHANNEL", "trial")

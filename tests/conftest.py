@@ -217,3 +217,19 @@ def pytest_collection_modifyitems(items):
     for item in items:
         if item.nodeid in reasons:
             item.add_marker(pytest.mark.skip(reason=reasons[item.nodeid]))
+
+
+@pytest.fixture
+def approved_employee_access(monkeypatch):
+    """Opt in only for behavior tests whose provider transports are already fake.
+
+    Not autouse: access-control tests must exercise the real admission gate.
+    Does not enable Trello writes, load credentials, or replace transports.
+    """
+    import employee_access
+    from unittest.mock import Mock
+    gate = Mock(return_value={"access_state": "approved", "auth_mode": "microsoft",
+                              "role": "editor", "can_edit": True, "is_admin": False,
+                              "departments": ["TEST"]})
+    monkeypatch.setattr(employee_access, "require_access", gate)
+    return gate
