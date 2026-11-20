@@ -1,4 +1,4 @@
-"""Trello read-only client.
+"""Trello client with default-off writes.
 
 Auth via API key + token from %APPDATA%\\Linguar Hub\\config.json:
     trello_api_key, trello_token, trello_workspace_id, trello_boards_exclude
@@ -17,9 +17,17 @@ import urllib.parse
 import urllib.request
 
 import config
+from trello_write_guard import require_write_enabled
 
 API_BASE = "https://api.trello.com/1"
 _USER_AGENT = "EMS-Automation/1.0"
+
+
+def _guarded_urlopen(request, *, timeout):
+    # Final common transport boundary, including multipart attachments/downloads.
+    method = request.get_method() if isinstance(request, urllib.request.Request) else "GET"
+    require_write_enabled(method)
+    return urllib.request.urlopen(request, timeout=timeout)
 
 
 def _creds():
@@ -46,12 +54,15 @@ def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_re
     Snapshots reconcile fires ~1.7k calls and WILL trip that without this,
     so closed jobs near the end of the workbook were misrouting to Needs
     Attention on a transient 429 rather than their real sheet."""
+    require_write_enabled(method)
     if method.upper() not in ("GET", "HEAD"):
         import employee_access
         if not employee_access.require_access().get("can_edit"):
             raise PermissionError("This OneLoss account has read-only access.")
     if data is not None and json_data is not None:
         raise ValueError("Choose either form data or JSON")
+    if method.upper() not in ("GET", "HEAD") and config.load().get("trello_writes_paused"):
+        raise RuntimeError("Trello posting is paused during the server rollout. Your OneLoss changes remain in OneLoss.")
     key, token = _creds()
     if method.upper() not in ('GET', 'HEAD'):
         # Fail closed for server reads if the durable write barrier cannot be
@@ -74,7 +85,7 @@ def _call(path, *, params=None, method="GET", data=None, json_data=None, _max_re
     attempt = 0
     while True:
         try:
-            with urllib.request.urlopen(req, timeout=_timeout) as r:
+            with _guarded_urlopen(req, timeout=_timeout) as r:
                 raw = r.read()
             break
         except urllib.request.HTTPError as ex:
@@ -1763,6 +1774,7 @@ def attach_file(card_id, file_path, *, name=None, mime=None):
     import uuid as _uuid
     if not card_id or not file_path or not _os.path.isfile(file_path):
         return None
+    require_write_enabled("POST")
     key, token = _creds()
     fname = name or _os.path.basename(file_path)
     if not mime:
@@ -1801,7 +1813,7 @@ def attach_file(card_id, file_path, *, name=None, mime=None):
         # tiny JSON payloads).
         import trello_mirror_reader
         trello_mirror_reader.mark_write()
-        with urllib.request.urlopen(req, timeout=60) as r:
+        with _guarded_urlopen(req, timeout=60) as r:
             raw = r.read()
     except Exception as ex:
         try:
@@ -1956,7 +1968,7 @@ def fetch_attachment_bytes(url, *, timeout=30):
                           f'oauth_token="{token}"'),
     })
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _guarded_urlopen(req, timeout=timeout) as r:
             return r.read()
     except Exception as ex:
         try:
@@ -2010,7 +2022,7 @@ def _download_attachment(att, dest_path):
         "Authorization": (f'OAuth oauth_consumer_key="{key}", '
                           f'oauth_token="{token}"'),
     })
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with _guarded_urlopen(req, timeout=60) as r:
         data = r.read()
     with open(dest_path, "wb") as fh:
         fh.write(data)

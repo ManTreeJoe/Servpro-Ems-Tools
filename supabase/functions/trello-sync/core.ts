@@ -1,3 +1,4 @@
+import { guardedTrelloFetch } from "../_shared/trello-write-guard.mjs";
 /** Shared Trello sync. EMS comment copies use the same single-worker lease. */
 import { emsPairs, mirrorPair, MAIN_WIP, MAIN_ESTIMATING } from "./ems_comments.ts";
 export type Json = Record<string, any>;
@@ -182,7 +183,12 @@ export async function safeJson(fetcher: typeof fetch, url: string, init: Request
   let response: Response;
   try {
     response = await fetcher(url, { ...init, signal: AbortSignal.timeout(10_000), redirect: "error" });
-  } catch { throw new SyncError(`${provider}_network_error`); }
+  } catch (error) {
+    if (error instanceof Error && error.message === "trello_writes_disabled") {
+      throw new SyncError("trello_writes_disabled");
+    }
+    throw new SyncError(`${provider}_network_error`);
+  }
   if (!response.ok) {
     const retryHeader = response.headers.get("Retry-After") || "";
     const retry = /^\d+$/.test(retryHeader) ? Number(retryHeader) :
@@ -210,6 +216,7 @@ export function adapters(env: Record<string, string>, fetcher: typeof fetch = fe
       ...(init.signal ? [init.signal] : []), AbortSignal.timeout(remaining),
     ]) });
   };
+  const trelloFetch = guardedTrelloFetch(boundedFetch, env);
   const rpc: Rpc = (name, args = {}) => {
     if (!/^hub_trello_[a-z_]+$/.test(name)) throw new SyncError("invalid_rpc");
     return safeJson(boundedFetch, `${base}/rest/v1/rpc/${name}`, {
@@ -225,7 +232,7 @@ export function adapters(env: Record<string, string>, fetcher: typeof fetch = fe
     }
     const query = new URLSearchParams({ ...params, key: env.TRELLO_SYNC_API_KEY, token: env.TRELLO_SYNC_TOKEN });
     // No caller-selected host or method; writes use the separate fenced adapter.
-    return safeJson(boundedFetch, `https://api.trello.com/1${path}?${query}`, { method: "GET" }, "trello");
+    return safeJson(trelloFetch, `https://api.trello.com/1${path}?${query}`, { method: "GET" }, "trello");
   };
   const rows = async (table: string, query: string) => {
     const output: Json[] = [];
@@ -258,14 +265,14 @@ export function adapters(env: Record<string, string>, fetcher: typeof fetch = fe
         const query = new URLSearchParams({ key: env.TRELLO_SYNC_API_KEY, token: env.TRELLO_SYNC_TOKEN });
         // No POST retry. A subsequent cycle checks the source marker in the full
         // destination history, including when Trello accepted a timed-out POST.
-        return safeJson(boundedFetch, `https://api.trello.com/1/cards/${card}/actions/comments?${query}`, {
+        return safeJson(trelloFetch, `https://api.trello.com/1/cards/${card}/actions/comments?${query}`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
         }, "trello");
       }, () => Date.now() < until - 10_000, 20 - copied);
     }
     return copied;
   };
-  return { store: { rpc, dueSources, ...(env.TRELLO_EMS_COMMENTS_ENABLED === "true" ? { mirrorEms } : {}) }, get };
+  return { store: { rpc, dueSources, ...(env.TRELLO_EMS_COMMENTS_ENABLED === "true" && env.ONELOSS_TRELLO_WRITES_ENABLED === "true" ? { mirrorEms } : {}) }, get };
 }
 
 export async function authorized(actual: string | null, secret: string) {

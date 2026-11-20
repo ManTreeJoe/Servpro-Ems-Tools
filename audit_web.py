@@ -2409,6 +2409,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
             import ems_db
             import supabase_client as sb
             import job_workflow
+            delivery_scope = job_workflow.delivery_scope()
             import job_saved_data
             cid = str(card_id or '').strip()
             job, _division = job_saved_data.resolve(client, cid)
@@ -2447,7 +2448,7 @@ class Api(SharedCommentApi, JobAdminApi, JobSettingsApi, CompanyCamApi):
                 return {"ok": False, "error": "This entry was deleted. Refresh the Job Log."}
             queued = ({'queued':False, 'reason':'Saved in OneLoss; no comment change'}
                       if entry.get('entry_id') or not post_to_trello or saved.get('source') == 'pc_only' else job_workflow.queue_job_log(
-                          job["canon_key"], saved, cid, self._trello_job_log_text(saved)))
+                          job["canon_key"], saved, cid, self._trello_job_log_text(saved), delivery_scope))
             return {"ok": True, "entry": saved,
                     "synced_trello": False,
                     "pending_sync": bool(queued.get("queued")),
