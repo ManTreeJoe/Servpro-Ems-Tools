@@ -102,6 +102,13 @@ const schema=[...source.split('FIELDS = [')[1].split('\n]')[0].matchAll(/\("([a-
     await page.evaluate(()=>SettingsLayout.select('advanced'));
     assert.equal(await page.locator('#open-config-file').isVisible(),false);
   }
+  // Access can expire after initial successful render. Reload uses the same
+  // validation and never installs a denied object as configuration.
+  await page.evaluate(()=>{const original=pywebview.api;window.pywebview.api=new Proxy(original,{get:(target,name)=>name==='load'?async()=>({ok:false,error:'Reload access denied'}):target[name]});});
+  await page.locator('#reload').click();
+  await page.locator('#status').filter({hasText:'Reload access denied'}).waitFor();
+  assert.equal(await page.locator('#save').isEnabled(),false);
+  assert.equal(await page.getByRole('button',{name:'Retry',exact:true}).count(),1);
   assert.deepEqual(errors,[]); assert.deepEqual(blocked,[]);
   console.log(`${admin?'admin':'employee'}: rendered; no page errors or unexpected requests`);
   await context.close();
