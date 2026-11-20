@@ -100,16 +100,16 @@ def test_companycam_saved_connected_but_probe_fails(monkeypatch):
     monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
     result = setup.status(None)
     assert not next(s for s in result["steps"] if s["key"] == "companycam")["done"]
-    assert setup.action(None, "skip_companycam")["ok"]
-    assert setup.status(None)["all_done"]
+    assert not setup.action(None, "skip_companycam")["ok"]
+    assert not setup.status(None)["all_done"]
 
 
 def test_optional_skip_is_scoped_and_resumes(isolated, monkeypatch):
     cfg, access = isolated
     import companycam_api as cc
     monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
-    setup.action(None, "skip_companycam")
-    assert setup.status(None)["all_done"]
+    assert not setup.action(None, "skip_companycam")["ok"]
+    assert not setup.status(None)["all_done"]
     cfg["supabase_url"] = "https://other.invalid"
     assert not setup.status(None)["all_done"]
     cfg["supabase_url"] = "https://demo.invalid"
@@ -184,8 +184,8 @@ def test_channel_skip_does_not_cross_profiles(monkeypatch):
     import companycam_api as cc
     monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
     monkeypatch.setattr(paths, "CHANNEL", "main")
-    setup.action(None, "skip_companycam")
-    assert setup.status(None)["all_done"]
+    assert not setup.action(None, "skip_companycam")["ok"]
+    assert not setup.status(None)["all_done"]
     monkeypatch.setattr(paths, "CHANNEL", "trial")
     assert not setup.status(None)["all_done"]
 
@@ -248,4 +248,51 @@ def test_completion_preserved_by_optional_skip():
     setup.action(None, "skip_companycam")
     record = next(iter(setup._choices().values()))
     assert record["verified_complete"] is True
-    assert record["companycam_skipped"] is True
+    assert record["companycam_skipped"] is False
+
+
+def test_legacy_skip_is_rechecked(isolated, monkeypatch):
+    import companycam_api as cc
+    cfg, access = isolated
+    setup._save_choice(setup._scope(cfg, access), verified_complete=True, companycam_skipped=True)
+    monkeypatch.setattr(cc, "_call", Mock(side_effect=RuntimeError("offline")))
+    assert not setup.verified_for_current_scope()
+    result = setup.status(None)
+    step = next(s for s in result["steps"] if s["key"] == "companycam")
+    assert not step["optional"] and not step["skipped"] and not step["done"]
+    assert not result["all_done"]
+    cc._call.assert_called_once()
+    monkeypatch.setattr(cc, "_call", Mock(return_value=[]))
+    assert setup.status(None)["all_done"]
+    assert setup.verified_for_current_scope()
+
+
+def test_daily_run_not_required_for_employee(isolated):
+    cfg, access = isolated
+    cfg['runs_dir'] = ''
+    access['is_admin'] = False
+    assert setup.status(None)['all_done']
+    access['is_admin'] = True
+    assert not setup.status(None)['all_done']
+
+
+def test_employee_folder_action_ignores_supplied_daily_run(isolated):
+    cfg, access = isolated
+    access['is_admin'] = False
+    api = Mock()
+    api.save_my_franchise_folders.return_value = {'ok': True}
+    assert setup.action(api, 'folders', {'job_root': cfg['audit_base'], 'runs_dir': 'untrusted'})['ok']
+    api.save_my_franchise_folders.assert_called_once_with('TEST', cfg['audit_base'], cfg['runs_dir'])
+
+
+def test_employee_folder_save_preserves_admin_daily_run(monkeypatch, tmp_path):
+    import config
+    import settings_web
+    monkeypatch.setattr(settings_web, '_is_admin', lambda: False)
+    monkeypatch.setattr(settings_web.Api, '_my_folder_departments', lambda self: ['TEST'])
+    monkeypatch.setattr(settings_web, '_invalidate', lambda *a: None)
+    monkeypatch.setattr(config, 'load_base', lambda: {'departments': {'TEST': {'runs_dir': 'admin-only'}}})
+    save = Mock()
+    monkeypatch.setattr(config, 'save', save)
+    assert settings_web.Api().save_my_franchise_folders('TEST', str(tmp_path), 'untrusted')['ok']
+    assert save.call_args.args[0]['departments']['TEST']['runs_dir'] == 'admin-only'

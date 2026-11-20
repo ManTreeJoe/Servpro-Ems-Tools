@@ -95,7 +95,9 @@
       for (const key of info.departments || []) { const opt = element('option', key, select); opt.value = key; }
       next.hidden = !(info.departments || []).length;
     } else if (step.key === 'folders') {
-      for (const [label, name] of [['Shared job root','job_root'], ['Daily Run folder','runs_dir']]) {
+      const folderFields = [['Shared job root','job_root']];
+      if (info.is_admin) folderFields.push(['Daily Run folder','runs_dir']);
+      for (const [label, name] of folderFields) {
         const field = input(label, name, info.folders?.[name] || '');
         const button = element('button', `Choose ${label.toLowerCase()}`, box); button.type = 'button'; button.className = 'fr-btn fr-secondary';
         button.onclick = async () => {
