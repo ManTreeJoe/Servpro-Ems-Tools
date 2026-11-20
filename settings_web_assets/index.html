@@ -654,6 +654,21 @@ async function loadBrowsers() {
   }));
 }
 
+function validateSettingsValues(values) {
+  if (!values || typeof values !== "object" || Array.isArray(values) || values.ok === false)
+    throw new Error(values?.error || "Settings could not load. Sign in again, then retry.");
+  return values;
+}
+function settingsInitFailed(error) {
+  document.getElementById("save").disabled = true;
+  // A full page retry repeats admission and init without duplicating handlers.
+  const reload = document.getElementById("reload");
+  reload.textContent = "Retry";
+  reload.onclick = () => window.location.reload();
+  window.SettingsLayout?.mount({is_admin:false});
+  setStatus(error.message || "Settings could not load. Sign in again, then retry.", "error");
+}
+
 window.addEventListener("pywebviewready", async () => {
   // Authentication must remain usable even when an unrelated Settings
   // section fails to load. Previously these handlers were attached only
@@ -674,13 +689,9 @@ window.addEventListener("pywebviewready", async () => {
   try {
     schema = await pywebview.api.schema();
     if (!Array.isArray(schema)) throw new Error(schema?.error || "Settings could not load. Sign in again, then reload Settings.");
-    values = await pywebview.api.load();
-    if (!values || typeof values !== "object" || Array.isArray(values) || values.ok === false)
-      throw new Error(values?.error || "Settings could not load. Sign in again, then reload Settings.");
+    values = validateSettingsValues(await pywebview.api.load());
   } catch (error) {
-    document.getElementById("save").disabled = true;
-    window.SettingsLayout?.mount({is_admin:false});
-    setStatus(error.message || "Settings could not load. Sign in again, then reload Settings.", "error");
+    settingsInitFailed(error);
     return;
   }
   SCHEMA = schema;
@@ -694,11 +705,17 @@ window.addEventListener("pywebviewready", async () => {
   document.getElementById("pf-run").addEventListener("click", runPreflight);
   document.getElementById("save").addEventListener("click", save);
   document.getElementById("connections-refresh")?.addEventListener("click", renderConnections);
-  document.getElementById("reload").addEventListener("click", async () => {
-    VALUES = await pywebview.api.load() || {};
-    render();
-    setStatus("Reloaded from disk", "ok");
-  });
+  document.getElementById("reload").onclick = async () => {
+    try {
+      const schema = await pywebview.api.schema();
+      if (!Array.isArray(schema)) throw new Error(schema?.error || "Settings schema could not load. Retry.");
+      const values = validateSettingsValues(await pywebview.api.load());
+      SCHEMA = schema;
+      VALUES = values;
+      render();
+      setStatus("Reloaded from disk", "ok");
+    } catch (error) { settingsInitFailed(error); }
+  };
   // Quick-admin buttons
   document.getElementById("open-data-folder").addEventListener("click",
     () => pywebview.api.open_data_folder());
