@@ -14,8 +14,11 @@ window.addEventListener('pywebviewready', async () => {
     host.id = 'employee-access-card';
     host.style.cssText = previous.style.cssText;
     host.classList.toggle('scope-hidden', !document.querySelector('[data-scope-tab="admin"].active'));
+    const roster=previous.querySelector('#edit-tech-roster');
+    if(roster)host.append(roster);
     previous.replaceWith(host);
   } else (document.querySelector('main') || document.body).append(host);
+  window.dispatchEvent(new Event('employee-access-panel-ready'));
   async function load() {
     refresh.disabled=true;
     const result = await pywebview.api.employee_admin_snapshot();

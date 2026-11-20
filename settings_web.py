@@ -962,6 +962,12 @@ class Api:
             h = supabase_client.health()
             h["backend"] = ems_db.backend_name()
             h["offline"] = ems_db_offline.status()
+            from trello_write_guard import require_write_enabled
+            try:
+                require_write_enabled("POST")
+                h["trello_writes_paused"] = bool(config.load().get("trello_writes_paused"))
+            except Exception:
+                h["trello_writes_paused"] = True
             h["ok"] = True
             return h
         except Exception as ex:
