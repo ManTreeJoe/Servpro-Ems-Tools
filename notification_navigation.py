@@ -26,12 +26,17 @@ def _authorized_card(card_id):
     if not re.fullmatch(r'[0-9a-fA-F]{24}|[A-Za-z0-9]{8}', str(card_id or '')):
         raise ValueError('This notification has no valid job card.')
     with sb.interactive_requests(seconds=8):
-        filters = [f'card_id.eq.{card_id}', f'payload->>shortLink.eq.{card_id}']
-        if len(card_id) == 8:
+        params = {'select': 'card_id,board_id,payload', 'limit': '2'}
+        if len(card_id) == 24:
+            # Full provider IDs cannot be eight-character short links. Mixing
+            # the ID lookup with JSON alias searches can exceed the UI budget.
+            params['card_id'] = f'eq.{card_id}'
+        else:
+            filters = [f'card_id.eq.{card_id}', f'payload->>shortLink.eq.{card_id}']
             filters.extend((f'payload->>shortUrl.eq.https://trello.com/c/{card_id}',
                             f'payload->>url.like.https://trello.com/c/{card_id}/*'))
-        cards = sb.rest('GET', 'hub_trello_mirror_cards', params={
-            'select':'card_id,board_id,payload', 'or':'(' + ','.join(filters) + ')', 'limit':'2'}) or []
+            params['or'] = '(' + ','.join(filters) + ')'
+        cards = sb.rest('GET', 'hub_trello_mirror_cards', params=params) or []
         if len(cards) != 1:
             raise ValueError('This card is not available in your OneLoss workspace. Open it in Trello instead.')
         return cards[0]
