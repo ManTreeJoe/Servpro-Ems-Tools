@@ -668,8 +668,23 @@ window.addEventListener("pywebviewready", async () => {
   const adminTab = document.querySelector('[data-scope-tab="admin"]');
   if (adminTab) adminTab.style.display = SETTINGS_ACCESS.is_admin ? "" : "none";
   if (!SETTINGS_ACCESS.is_admin && SETTINGS_SCOPE === "admin") showSettingsScope("personal");
-  SCHEMA = await pywebview.api.schema() || [];
-  VALUES = await pywebview.api.load() || {};
+  // The shell returns a denied result object when admission expires. Never
+  // treat that object as schema/config, or expose an editable empty form.
+  let schema, values;
+  try {
+    schema = await pywebview.api.schema();
+    if (!Array.isArray(schema)) throw new Error(schema?.error || "Settings could not load. Sign in again, then reload Settings.");
+    values = await pywebview.api.load();
+    if (!values || typeof values !== "object" || Array.isArray(values) || values.ok === false)
+      throw new Error(values?.error || "Settings could not load. Sign in again, then reload Settings.");
+  } catch (error) {
+    document.getElementById("save").disabled = true;
+    window.SettingsLayout?.mount({is_admin:false});
+    setStatus(error.message || "Settings could not load. Sign in again, then reload Settings.", "error");
+    return;
+  }
+  SCHEMA = schema;
+  VALUES = values;
   render();
   await renderConnections();
   await renderFirstRunWizard();
