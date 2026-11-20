@@ -226,9 +226,7 @@
         <button class="btn" id="open-data-folder">Open data folder</button>
         <button class="btn" id="open-config-file">Edit config.json</button>
         <button class="btn" id="open-tech-roster">Tech roster JSON</button>
-        <button class="btn" id="authorize-trello">Connect Trello…</button>
         <button class="btn" id="authorize-trello-manual" title="Manual fallback token setup">Manual Trello token…</button>
-        <button class="btn" id="check-trello">Test Trello connection</button>
       </div></details>
     </div>
     <div id="trello-status" class="muted" style="margin-top:8px;font-size:12px;"></div>
@@ -239,7 +237,7 @@
     </div>
   </details>
 
-  <section data-settings-scope="both" style="margin-bottom: 22px; padding: 14px 18px;
+  <section id="account-sync" data-settings-scope="personal" style="margin-bottom: 22px; padding: 14px 18px;
                   background: var(--surface); border: 1px solid var(--border);
                   border-radius: 8px;">
     <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">
@@ -344,8 +342,7 @@
         <button class="btn" id="sb-use-local">Emergency local mode</button>
       </div></details>
     </div>
-    <!-- Kept as the single sign-out command for the connection card; it is
-         intentionally not duplicated as another visible button here. -->
+    <!-- Account & sync owns sign-in and sign-out. -->
     <button class="btn" data-settings-scope="personal" id="sb-sign-out" style="display:none;">Sign out</button>
     <div id="sb-msg" class="muted"
          style="margin-top:8px;font-size:12px;"></div>
@@ -414,7 +411,7 @@
     <div id="user-access-body" class="muted" style="font-size:12px;">Loading people…</div>
   </section>
 
-  <section data-settings-scope="personal" style="margin-bottom:22px;padding:16px 18px;
+  <section id="folder-owner" data-settings-scope="personal" style="margin-bottom:22px;padding:16px 18px;
                   background:var(--surface);border:1px solid var(--border);
                   border-radius:8px;">
     <div style="display:flex;align-items:center;gap:9px;margin-bottom:5px;">
@@ -695,39 +692,6 @@ window.addEventListener("pywebviewready", async () => {
   document.getElementById("open-workflow-automations").addEventListener("click", () => {
     window.parent?.postMessage({type: "ems-navigate", key: "automations"}, "*");
   });
-  document.getElementById("authorize-trello").addEventListener("click",
-    async (ev) => {
-      const btn = ev.currentTarget;
-      const el = document.getElementById("trello-status");
-      btn.disabled = true;
-      const was = btn.textContent;
-      btn.textContent = "🔑 Waiting for Trello…";
-      if (el) {
-        el.textContent = "A browser tab has opened — approve access there. "
-                       + "The token is captured automatically.";
-        el.style.color = "";
-      }
-      try {
-        const r = await pywebview.api.authorize_trello();
-        if (r?.ok) {
-          if (el) { el.textContent = "✓ " + (r.message || "Trello connected");
-                    el.style.color = "var(--green)"; }
-          await load();          // token field now shows the saved value
-        } else if (el) {
-          el.textContent = "✕ " + (r?.error || "Sign-in failed");
-          el.style.color = "var(--red)";
-          // "Invalid return_url" means the loopback origin isn't registered
-          // against the API key. Show the exact string to paste rather than
-          // making the user work it out from Trello's message.
-          if (r?.allowed_origin) showOriginHelp(r.allowed_origin);
-        }
-      } catch (e) {
-        if (el) { el.textContent = "✕ " + e; el.style.color = "var(--red)"; }
-      } finally {
-        btn.disabled = false;
-        btn.textContent = was;
-      }
-    });
   document.getElementById("authorize-trello-manual").addEventListener("click",
     async () => {
       const el = document.getElementById("trello-status");
@@ -769,18 +733,6 @@ async function showOriginHelp(origin) {
   document.getElementById("ji-backfill").addEventListener("click", backfillJobGraph);
   document.getElementById("folder-path-preview").addEventListener("click", () => portableFolderMigration(false));
   document.getElementById("folder-path-apply").addEventListener("click", () => portableFolderMigration(true));
-  document.getElementById("check-trello").addEventListener("click", async () => {
-    const el = document.getElementById("trello-status");
-    el.textContent = "Checking…"; el.style.color = "";
-    const res = await pywebview.api.trello_auth_status();
-    if (res?.ok) {
-      el.textContent = `✓ Connected as ${res.full_name || res.username} ${res.email ? "· " + res.email : ""}`;
-      el.style.color = "var(--green)";
-    } else {
-      el.textContent = `✕ Not authorized: ${res?.error || "no token"}`;
-      el.style.color = "var(--red)";
-    }
-  });
   // Shared job database (Supabase) was initialized first above.
   await renderPropertyManagers();
   document.getElementById("pm-add").addEventListener("click", () => openPropertyManager({active:true}));
@@ -1211,6 +1163,7 @@ async function refreshSupabase() {
     box.style.borderLeftColor = "var(--red)";
     return;
   }
+  document.getElementById("sb-sign-out").style.display = s.signed_in ? "" : "none";
   const cloud = s.backend === "supabase";
   if (!s.configured) {
     box.innerHTML = "Not set up. Fill in <b>Supabase project URL</b> and "
@@ -1279,7 +1232,7 @@ async function renderConnections() {
     if (msg) { msg.textContent = result?.error || ""; msg.style.color = "var(--red)"; }
     return;
   }
-  grid.innerHTML = (result.connections || []).map((card) => `
+  grid.innerHTML = (result.connections || []).filter(card => card.provider !== "linguar").map((card) => `
     <article class="connection-card" data-provider="${esc(card.provider)}" data-state="${esc(card.state)}">
       <div class="connection-mark" aria-hidden="true">${esc(card.icon)}</div>
       <div style="min-width:0;">
@@ -1306,7 +1259,10 @@ async function runConnectionAction(button) {
   const provider = button.dataset.provider;
   const msg = document.getElementById("connections-msg");
   if (action === "sign_in") {
-    openSupabaseSignIn();
+    if (window.SettingsLayout?.ready) window.SettingsLayout.select("profile");
+    else showSettingsScope("personal");
+    document.getElementById("account-sync")?.scrollIntoView({block:"start"});
+    document.getElementById("sb-open-signin")?.focus();
     return;
   }
   if (action === "sign_out") {
@@ -1640,10 +1596,11 @@ function renderDeptFields() {
   const badge = document.getElementById("dept-active-badge");
   badge.textContent = DEPT.active === key ? "● currently active" : "";
   badge.style.color = DEPT.active === key ? "var(--green)" : "";
+  document.getElementById("dept-folder-fields")?.remove();
   if (!dept) { wrap.innerHTML = ""; return; }
   const base = DEPT.base || {};
   const groups = {};
-  (DEPT.fields || []).filter((f) => !f.managed_connection).forEach((f) => {
+  (DEPT.fields || []).filter((f) => !f.managed_connection && f.key !== "trello_api_key" && !["audit_base", "runs_dir"].includes(f.key)).forEach((f) => {
     (groups[f.group] = groups[f.group] || []).push(f);
   });
   const baseDept = (DEPT.departments || []).find((d) => d.is_base);
@@ -1652,7 +1609,7 @@ function renderDeptFields() {
     ? `<div class="muted" style="font-size:11px;margin-bottom:12px;">${esc(dept.label)} is the active franchise. Main settings are defaults; values here are franchise-specific overrides.</div>`
     : `<div class="muted" style="font-size:11px;margin-bottom:12px;">Blank = inherit ${esc(baseName)} defaults (shown as the grey placeholder).</div>`;
   wrap.innerHTML = inheritNote + Object.entries(groups).map(([g, fields]) => `
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:14px 0 8px;">${esc(g)}</div>
+    <div data-dept-group="${esc(g)}"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:14px 0 8px;">${esc(g)}</div>
     ${fields.map((f) => {
       const v = dept.overrides[f.key] ?? "";
       const inherit = base[f.key] ? String(base[f.key]) : "(none set)";
@@ -1669,9 +1626,20 @@ function renderDeptFields() {
         </div>
         ${f.key === "companycam_api_token" ? `<div class="muted" style="font-size:10.5px;line-height:1.45;margin-top:5px;">Admin only. Use the franchise Application Key; employees connect by signing into OneLoss and never paste personal CompanyCam tokens.</div>` : ""}
       </div>`;
-    }).join("")}
+    }).join("")}</div>
   `).join("");
-  wrap.querySelectorAll(".dept-browse").forEach((b) => {
+  const folders = wrap.querySelector('[data-dept-group="Folders"]');
+  if (folders && SETTINGS_ACCESS.is_admin) {
+    folders.id = "dept-folder-fields";
+    const title = document.createElement('h3');
+    title.textContent = `${dept.label || key} document folder overrides`;
+    folders.prepend(title);
+    const save = document.createElement('button');
+    save.type = 'button'; save.className = 'btn'; save.textContent = 'Save office folder overrides';
+    save.onclick = saveDepartment; folders.append(save);
+    document.getElementById('folder-owner').append(folders);
+  } else folders?.remove();
+  document.querySelectorAll("#dept-fields .dept-browse, #dept-folder-fields .dept-browse").forEach((b) => {
     b.addEventListener("click", async () => {
       const k = b.dataset.browse, kind = b.dataset.kind;
       const input = document.getElementById("d-" + k);
@@ -1691,12 +1659,13 @@ async function saveDepartment() {
   const key = document.getElementById("dept-pick").value;
   const dept = _deptByKey(key);
   const overrides = {};
-  document.querySelectorAll("#dept-fields input[data-key]").forEach((el) => {
+  document.querySelectorAll("#dept-fields input[data-key], #dept-folder-fields input[data-key]").forEach((el) => {
     overrides[el.dataset.key] = el.value;
   });
   const r = await pywebview.api.save_department(key, overrides, dept?.label || "");
   if (!r?.ok) { setDeptStatus(`Save failed: ${r?.error || "?"}`, "error"); return; }
   setDeptStatus(`💾 Saved ${dept?.label || key}` + (DEPT.active === key ? " — applied" : ""), "ok");
+  setStatus(`Saved ${dept?.label || key} settings`, "ok");
   await renderDepartments();
   document.getElementById("dept-pick").value = key;
   renderDeptFields();
@@ -1750,6 +1719,8 @@ async function renderPanelVisibility() {
 }
 function render() {
   const wrap = document.getElementById("form-fields");
+  const folderOwner = document.getElementById("folder-owner");
+  folderOwner?.remove();
   function fieldHtml(f) {
     const v = VALUES[f.key];
     if (f.kind === "bool") {
@@ -1810,14 +1781,14 @@ function render() {
   const grouped = {};
   // These paths already have a franchise-aware editor above. Do not expose
   // a second, base-config editor that appears to change the same setting.
-  SCHEMA.filter((f) => !f.managed_connection && !['audit_base', 'runs_dir'].includes(f.key)).forEach((f) => {
+  SCHEMA.filter((f) => !f.managed_connection && f.group !== "Folders & documents").forEach((f) => {
     const scope = f.scope || "admin";
     const group = f.group || "Other";
     (((grouped[scope] ||= {})[group]) ||= []).push(f);
   });
   const groupTitles = {
     "Appearance & shortcuts": "Appearance & shortcuts",
-    "Folders & documents": "Advanced local paths",
+    "Folders & documents": "My franchise folders",
     "Connections": "Integration configuration",
     "Office identity": "Office identity",
     "Reporting goals": "Reporting goals",
@@ -1833,6 +1804,17 @@ function render() {
       </details>`;
     }).join("")
   ).join("");
+  if (folderOwner) {
+    folderOwner.querySelector('.extra-folder-fields')?.remove();
+    const extra = document.createElement('div');
+    extra.className = 'extra-folder-fields';
+    extra.hidden = !SETTINGS_ACCESS.is_admin;
+    extra.innerHTML = '<h3>Other document locations on this computer</h3>' + SCHEMA
+      .filter(f => f.group === "Folders & documents" && !['audit_base', 'runs_dir'].includes(f.key))
+      .map(fieldHtml).join('');
+    folderOwner.append(extra);
+    wrap.prepend(folderOwner);
+  }
   wireBrowse();
   wireAppearanceControl();
   showSettingsScope(SETTINGS_SCOPE);
@@ -1900,14 +1882,7 @@ async function renderFirstRunWizard() {
     franchise: status.is_admin
       ? `<button class="btn" type="button" data-scope-tab-jump="admin">Assign franchises</button>`
       : `<button class="btn" type="button" data-setup="refresh">Check again</button>`,
-    trello: `<button class="btn btn-primary" type="button" data-setup="trello-auto">Connect Trello</button>
-      <div class="setup-token">
-        <div class="muted" style="font-size:12px;margin-bottom:6px;">Trello could not return to OneLoss. Click Allow in the Trello tab, then paste the token it shows here.</div>
-        <div style="display:flex;gap:6px;">
-          <input type="password" class="setup-token-input" placeholder="Paste Trello token" style="flex:1;min-width:0;"/>
-          <button class="btn btn-primary" type="button" data-setup="trello-save">Save token</button>
-        </div>
-      </div>`,
+    trello: `<button class="btn" type="button" data-setup="connections">Go to My connections</button>`,
     folders: `<button class="btn" type="button" data-setup="refresh">Check folders again</button>`,
   };
   document.getElementById("fr-steps").innerHTML = (status.steps || []).map((step, index) => `
@@ -1936,8 +1911,8 @@ function wireSetupGuide() {
   };
   card.querySelector('[data-setup="signin"]')?.addEventListener("click", () => {
     showSettingsScope("personal");
-    openSupabaseSignIn();
-    guideStatus("Sign-in window opened. Enter your work email and password.");
+    document.getElementById("account-sync").scrollIntoView({behavior:"smooth",block:"start"});
+    document.getElementById("sb-open-signin").focus();
   });
   card.querySelector('[data-scope-tab-jump="admin"]')?.addEventListener("click", () => {
     showSettingsScope("admin");
@@ -1953,33 +1928,10 @@ function wireSetupGuide() {
       button.disabled = false;
       button.textContent = prior;
     }));
-  card.querySelector('[data-setup="trello-auto"]')?.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    button.disabled = true; button.textContent = "Waiting for Trello…";
-    const result = await pywebview.api.authorize_trello();
-    button.disabled = false; button.textContent = "Connect Trello";
-    if (!result?.ok && result?.manual_url) {
-      await pywebview.api.open_url(result.manual_url);
-      const tokenBox = card.querySelector(".setup-token");
-      if (tokenBox) tokenBox.style.display = "block";
-      card.querySelector(".setup-token-input")?.focus();
-      guideStatus("Trello could not return automatically. Approve the new Trello tab, then paste its token here.");
-    } else {
-      guideStatus(result?.ok ? "Trello connected." : (result?.error || "Trello did not connect."), result?.ok ? "ok" : "error");
-    }
-    setStatus(result?.ok ? "Trello connected ✓" : (result?.error || "Trello did not connect"), result?.ok ? "ok" : "error");
-    if (result?.ok) await renderFirstRunWizard();
-  });
-  card.querySelector('[data-setup="trello-save"]')?.addEventListener("click", async (event) => {
-    const input = card.querySelector(".setup-token-input");
-    const token = (input?.value || "").trim();
-    if (!token) { setStatus("Paste the token Trello showed you", "error"); return; }
-    const button = event.currentTarget;
-    button.disabled = true; button.textContent = "Checking…";
-    const result = await pywebview.api.save_my_trello_token(token);
-    button.disabled = false; button.textContent = "Save token";
-    setStatus(result?.ok ? `Trello connected as ${result.name} ✓` : (result?.error || "Token did not work"), result?.ok ? "ok" : "error");
-    if (result?.ok) { input.value = ""; await renderFirstRunWizard(); }
+  card.querySelector('[data-setup="connections"]')?.addEventListener("click", () => {
+    showSettingsScope("personal");
+    document.getElementById("my-connections").scrollIntoView({behavior:"smooth",block:"start"});
+    document.getElementById("connections-refresh").focus();
   });
 }
 
@@ -2037,7 +1989,7 @@ async function save() {
   // was on screen into the config. That is how the base config ended up
   // holding OC's Trello workspace while IE inherited it, which had IE
   // searching OC's boards and matching nothing.
-  document.querySelectorAll("#form-fields [data-key]").forEach((el) => {
+  document.querySelectorAll("#form-fields [data-key][id^=f-]").forEach((el) => {
     const k = el.dataset.key;
     // Hidden admin fields are still in the DOM. Regular employees save only
     // their own machine paths/preferences, never the invisible shared setup.
