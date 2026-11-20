@@ -38,6 +38,20 @@ const schema=[...source.split('FIELDS = [')[1].split('\n]')[0].matchAll(/\("([a-
   await page.waitForFunction(()=>window.calls.includes('dept_config'));
   await page.waitForFunction(()=>window.SettingsLayout?.ready);
   assert.deepEqual(await page.locator('[data-nav-group]').evaluateAll(nodes=>nodes.map(n=>n.dataset.navGroup)),admin?['you','office','maintenance','advanced/support']:['you']);
+  if(admin){
+    await page.locator('#employee-access-card form').waitFor({state:'attached'});
+    assert.equal(await page.locator('#employee-access-card').isVisible(),false);
+    await page.locator('[data-settings-topic="people"]').click();
+    assert(await page.locator('#employee-access-card').isVisible());
+    assert.equal(await page.locator('#employee-access-card').getAttribute('data-topic'),'people');
+    await page.screenshot({path:path.join(out,'admin-people.png'),fullPage:true});
+    await page.locator('[data-settings-topic="profile"]').click();
+  }else{
+    assert.equal(await page.locator('#employee-access-card').count(),0);
+    assert.equal(await page.locator('[data-settings-topic="people"]').count(),0);
+    await page.evaluate(()=>SettingsLayout.select('people'));
+    assert.equal(await page.locator('#employee-access-card').count(),0);
+  }
   assert.equal(await page.locator('#open-app-updates').count(),1);
   assert((await page.locator('#settings-health-row').innerText()).includes('Trello writes paused: Yes'));
   assert.equal(await page.locator('#authorize-trello').count(),0);

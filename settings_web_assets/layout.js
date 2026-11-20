@@ -59,7 +59,7 @@
     root.querySelector('.settings-tabs').hidden=true;
     root.querySelector('.health-settings').hidden=true;
     root.querySelectorAll('[data-settings-scope]').forEach(n=>n.classList.toggle('scope-hidden',n.dataset.settingsScope==='admin'&&!role));
-    const mapping={ 'account-sync':'profile','first-run-card':'profile','my-connections':'connections','folder-owner':'folders','user-access-card':'people','jp-list':'profiles','pm-list':'managers','dept-fields':'franchises','ji-result':'links','panel-visibility-grid':'appearance','browsers-body':'advanced'};
+    const mapping={ 'account-sync':'profile','first-run-card':'profile','my-connections':'connections','folder-owner':'folders','user-access-card':'people','employee-access-card':'people','jp-list':'profiles','pm-list':'managers','dept-fields':'franchises','ji-result':'links','panel-visibility-grid':'appearance','browsers-body':'advanced'};
     for(const [id,topic] of Object.entries(mapping))tag(topCard(id),topic);
     const form=document.getElementById('form-fields');
     [...form.children].forEach(card=>{
@@ -70,7 +70,7 @@
     const support=makeCard('support-fields','Advanced / support','Recovery and connection controls. Confirm an action before using it.',form);tag(support,'advanced');
     const tools=topCard('open-config-file');
     if(tools && tools!==support){
-      const roster=document.getElementById('edit-tech-roster');document.getElementById('user-access-card').append(roster);
+      const roster=document.getElementById('edit-tech-roster');(document.getElementById('employee-access-card') || document.getElementById('user-access-card'))?.append(roster);
       const reporting=makeCard('reporting-actions','Workflow automation','Review the office’s automation setup.');tag(reporting,'reporting');reporting.append(document.getElementById('open-workflow-automations'));
       support.append(...tools.querySelector('.settings-disclosure-body').childNodes);tools.remove();
     }
@@ -91,5 +91,9 @@
     const updates=document.getElementById('open-app-updates');const updateCard=topCard('open-app-updates');if(updates){nav.append(updates);if(updateCard&&updateCard!==root)updateCard.hidden=true;}
     window.SettingsLayout.ready=true;health(latestHealth);select(selected);
   }
+  window.addEventListener('employee-access-panel-ready',()=>{
+    tag(topCard('employee-access-card'),'people');
+    select(selected);
+  });
   window.SettingsLayout={mount,select,health,ready:false};
 })();
