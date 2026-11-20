@@ -27,7 +27,7 @@ const path = require('node:path');
     };
     // Copy only literal instruction text from status source; never import Python.
     const source = fs.readFileSync('employee_setup.py','utf8');
-    const prefixes = ['Use your work email', 'Enter the name coworkers', 'Choose an assignment',
+    const prefixes = ['Continue with your Microsoft work account', 'Enter the name coworkers', 'Choose an assignment',
       'Select Connect Trello', 'Connect your work account', 'Connect to the office network', 'Finish the required steps'];
     const helps = prefixes.map(prefix => {
       const literal = [...source.matchAll(/"[^"\n]*"/g)].map(m=>m[0]).find(value=>value.startsWith('"'+prefix));
@@ -66,10 +66,11 @@ const path = require('node:path');
     }, helps);
     assert(!(await page.locator('#fr-overlay').innerText()).includes('Not verified'));
     await shot('01-signin');
-    await page.locator('[name=email]').fill('employee@example.invalid');
-    await page.locator('[name=password]').fill('synthetic-only');
+    assert.equal(await page.locator('[name=email], [name=password]').count(),0);
+    assert((await page.locator('#fr-step').innerText()).includes('Microsoft work account'));
     await page.locator('#fr-next').click();
     assert.equal(await page.locator('[name=email]').count(),0);
+    assert.deepEqual(await page.evaluate(()=>actions[0]),{name:'signin',values:{}});
     await shot('02-display-name');
     await page.locator('[name=name]').fill('Test Employee');
     await page.locator('#fr-next').click();

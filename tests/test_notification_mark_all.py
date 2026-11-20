@@ -6,7 +6,7 @@ from notifications_web import Api
 
 
 @pytest.mark.parametrize('body', [b'', b'OK', b'{}'])
-def test_successful_mark_all_does_not_require_json(body, monkeypatch):
+def test_successful_mark_all_does_not_require_json(body, monkeypatch, approved_employee_access):
     # Successful-write fixture only; the provider transport below is fake.
     monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
     monkeypatch.setenv("LINGUAR_CHANNEL", "trial")

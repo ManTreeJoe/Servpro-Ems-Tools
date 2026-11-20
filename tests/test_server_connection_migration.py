@@ -118,7 +118,7 @@ def test_packaged_main_target_matches_migration():
     assert not seed_config.get('companycam_api_token')
 
 
-def test_recovered_rollout_pause_precedes_credentials(monkeypatch):
+def test_recovered_rollout_pause_precedes_credentials(monkeypatch, approved_employee_access):
     monkeypatch.setenv("ONELOSS_TRELLO_WRITES_ENABLED", "true")
     monkeypatch.setenv("LINGUAR_CHANNEL", "trial")
     import trello_client

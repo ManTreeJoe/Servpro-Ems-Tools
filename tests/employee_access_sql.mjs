@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
-import {PGlite} from '../.local-test-tools/node_modules/@electric-sql/pglite/dist/index.js';
+import {PGlite} from '@electric-sql/pglite';
 
 const db = new PGlite();
 const uid = n => `${String(n).repeat(8)}-${String(n).repeat(4)}-4000-8000-${String(n).repeat(12)}`;

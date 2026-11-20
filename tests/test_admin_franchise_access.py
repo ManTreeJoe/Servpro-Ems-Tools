@@ -7,31 +7,31 @@ def _api():
     return settings_web.Api.__new__(settings_web.Api)
 
 
-def test_only_exact_initial_admin_email_gets_bootstrap_access():
+def test_initial_admin_email_does_not_bypass_failed_server_check():
     with patch("supabase_client.rpc", side_effect=RuntimeError("migration pending")), \
          patch("supabase_client.current_user", return_value={
              "email": "nathan@servpro10100.com"}):
-        assert settings_web._is_admin() is True
+        assert settings_web._is_admin() is False
     with patch("supabase_client.rpc", side_effect=RuntimeError("migration pending")), \
          patch("supabase_client.current_user", return_value={
              "email": "nathan@another-company.com"}):
         assert settings_web._is_admin() is False
 
 
-def test_bootstrap_owner_remains_admin_when_seed_row_is_missing():
+def test_bootstrap_owner_is_denied_when_server_admin_row_is_missing():
     with patch("supabase_client.rpc", return_value={"is_admin": False}), \
          patch("supabase_client.current_user", return_value={
              "email": "nathan@servpro10100.com"}):
-        assert settings_web._is_admin() is True
+        assert settings_web._is_admin() is False
 
 
-def test_settings_access_does_not_overwrite_bootstrap_owner():
+def test_settings_access_does_not_promote_bootstrap_owner():
     with patch("supabase_client.rpc", return_value={"is_admin": False,
                                                      "departments": ["IE"]}), \
          patch("supabase_client.current_user", return_value={
              "email": "nathan@servpro10100.com"}):
         result = _api().settings_access()
-    assert result["is_admin"] is True
+    assert result["is_admin"] is False
     assert result["departments"] == ["IE"]
 
 
