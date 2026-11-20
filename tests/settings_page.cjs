@@ -24,7 +24,7 @@ const schema=[...source.split('FIELDS = [')[1].split('\n]')[0].matchAll(/\("([a-
   });
   const page=await context.newPage(); page.setDefaultTimeout(10000); page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(({admin,schema})=>{
-   const results={schema,load:{appearance:'dark',franchise_name:'Fictional office',supabase_url:'https://example.invalid'},settings_access:{ok:true,is_admin:admin,email:'employee@example.invalid',departments:['TEST']},
+   const results={employee_access_status:{ok:true,is_admin:admin,access_state:'approved'},employee_admin_snapshot:{ok:true,users:[{user_id:'fictional',email:'employee@example.invalid',status:'pending',role:'viewer',departments:[],revision:1}],franchises:[{code:'TEST',label:'Fictional office'}]},schema,load:{appearance:'dark',franchise_name:'Fictional office',supabase_url:'https://example.invalid'},settings_access:{ok:true,is_admin:admin,email:'employee@example.invalid',departments:['TEST']},
     supabase_status:{ok:true,configured:true,signed_in:true,reachable:true,backend:'supabase',user:{email:'employee@example.invalid',display_name:'Test Employee'},offline:{queued:0},trello_writes_paused:true},
     user_connections:{ok:true,connections:[{provider:'linguar',name:'OneLoss',state:'connected',action:'sign_out',action_label:'Sign out'},{provider:'trello',name:'Trello',state:'connected',label:'Trello',detail:'Test connection'},{provider:'companycam',name:'CompanyCam',state:'connected',label:'CompanyCam',detail:'Test connection'}]},
     employee_setup_status:{ok:true,all_done:false,done:5,total:7,is_admin:admin,steps:[{key:'trello',title:'Connect Trello',help:'Connect your work account.',detail:'Test setup',done:false}]},
