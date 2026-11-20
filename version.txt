@@ -1,6 +1,6 @@
 {
-  "version": "1.8.48",
+  "version": "1.8.49",
   "url": "https://updates.oneloss.work/",
   "installer": "",
-  "notes": "OneLoss Main 1.8.48: move existing Main connections to the server; preserve folders; require fresh sign-in; add private team downloads with GitHub fallback. Direct Trello posting remains paused."
+  "notes": "Microsoft work-account sign-in, approval and franchise roles; reorganized settings with backend admin checks and employee secret redaction; sign-out returns to login. Trello posting remains paused."
 }

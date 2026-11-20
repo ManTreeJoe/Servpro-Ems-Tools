@@ -1136,9 +1136,13 @@ function bindSupabaseControls() {
     sbMsg("Signing out…");
     try {
       const r = await pywebview.api.supabase_sign_out();
-      sbMsg(r?.ok ? r.message : (r?.error || "failed"), !r?.ok);
-      await refreshSupabase();
-      await renderConnections();
+      if (!r?.ok) {
+        sbMsg(r?.error || "Sign out failed. Please try again.", true);
+        return;
+      }
+      // Unload every tool and rerun the shell's admission gate after sign-out.
+      // Refreshing Settings alone leaves the signed-out user in a locked workspace.
+      window.top.location.reload();
     } catch (e) { sbMsg(`Sign out failed: ${e}`, true); }
   });
   document.getElementById("sb-save-display-name")?.addEventListener("click", async (event) => {
