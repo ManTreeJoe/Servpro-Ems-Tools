@@ -63,6 +63,8 @@ def verified_for_current_scope():
     record = _choices().get(scope)
     if not isinstance(record, dict) or record.get("verified_complete") is not True:
         return False
+    if record.get("companycam_skipped"):
+        return False  # Legacy optional completion must verify required CompanyCam.
     try:
         access = account_access.current_access()
     except Exception:
@@ -125,9 +127,8 @@ def status(api):
     step("trello", "Connect Trello", trello_ok,
          "Account verified with Trello" if trello_ok else "Trello has not passed its account check",
          "Select Connect Trello, approve access in your browser, then check again. If authorization is unavailable, ask your administrator to configure the work connection; do not enter API keys.")
-    skipped = bool(_choices().get(_scope(cfg, access), {}).get("companycam_skipped"))
     cc_ok = False
-    if signed and active in assigned and not skipped:
+    if signed and active in assigned:
         try:
             import companycam_api as cc
             # Require the personal connection before probing; saved status alone
@@ -138,9 +139,9 @@ def status(api):
                 cc_ok = isinstance(rows, list)
         except Exception:
             pass
-    step("companycam", "CompanyCam (optional)", cc_ok,
-         "Read access verified" if cc_ok else ("Skipped for now" if skipped else "Read access not verified"),
-         "Connect your work account in the browser, then check again. You may skip this connection. Setup never creates a project or uploads a photo.", True, skipped)
+    step("companycam", "Connect CompanyCam", cc_ok,
+         "Read access verified" if cc_ok else "Read access not verified",
+         "Connect your work account in the browser, then check again. This connection is required. Setup never creates a project or uploads a photo.")
     jobs = str(cfg.get("audit_base") or "").strip()
     runs = str(cfg.get("runs_dir") or "").strip()
     jobs_ok, runs_ok = _read_folder(jobs), _read_folder(runs)
@@ -161,7 +162,7 @@ def status(api):
          "Shared jobs read successfully; no records were changed" if live_ok else "Shared job access has not passed verification",
          "Finish the required steps, then check again. If this fails, check your network and ask your administrator to verify this workspace's shared database and permissions. Setup will not switch environments.")
     if all(s["done"] for s in steps if not s["optional"]):
-        _save_choice(_scope(cfg, access), verified_complete=True)
+        _save_choice(_scope(cfg, access), verified_complete=True, companycam_skipped=False)
     return dict(ok=True, steps=steps, all_done=all(s["done"] or s["skipped"] for s in steps),
                 done=sum(s["done"] or s["skipped"] for s in steps), total=len(steps),
                 active_franchise=active, departments=assigned,
@@ -196,9 +197,7 @@ def action(api, name, values=None):
     if name in ("trello", "companycam"):
         return api.open_user_connection(name)
     if name == "skip_companycam":
-        cfg = config.load() or {}
-        _save_choice(_scope(cfg, access), companycam_skipped=True)
-        return {"ok": True}
+        return {"ok": False, "error": "CompanyCam is required. Connect your work account, then check again."}
     if name == "folders":
         jobs, runs = str(values.get("job_root") or "").strip(), str(values.get("runs_dir") or "").strip()
         if not _read_folder(jobs) or not _read_folder(runs):
