@@ -51,3 +51,15 @@ def test_container_verification_ignores_only_auth_recreation():
     assert module.unrelated_ids(before)==module.unrelated_ids(after)
     after[1]['Id']='different-db'
     assert module.unrelated_ids(before)!=module.unrelated_ids(after)
+
+
+def test_stage_disables_default_phone_provider_without_changing_recovery():
+    result=module.plan_environment(existing()|{'GOTRUE_EXTERNAL_PHONE_ENABLED':'true'},'stage')
+    assert result['GOTRUE_EXTERNAL_PHONE_ENABLED']=='false'
+    assert result['GOTRUE_EXTERNAL_EMAIL_ENABLED']=='true'
+
+
+def test_phone_account_guard():
+    module.verify_phone_unused('0')
+    with pytest.raises(RuntimeError,match='phone sign-in accounts'):
+        module.verify_phone_unused('1')

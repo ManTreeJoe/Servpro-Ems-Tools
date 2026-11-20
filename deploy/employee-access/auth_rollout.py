@@ -30,8 +30,9 @@ def plan_environment(env,mode):
     if env.get('GOTRUE_EXTERNAL_EMAIL_ENABLED','').lower()!='true':
         raise RuntimeError('Existing recovery email/password provider must remain enabled.')
     if any(key.startswith('GOTRUE_EXTERNAL_') and key.endswith('_ENABLED') and value.lower()=='true'
-           and key not in ('GOTRUE_EXTERNAL_AZURE_ENABLED','GOTRUE_EXTERNAL_EMAIL_ENABLED') for key,value in env.items()):
+           and key not in ('GOTRUE_EXTERNAL_AZURE_ENABLED','GOTRUE_EXTERNAL_EMAIL_ENABLED','GOTRUE_EXTERNAL_PHONE_ENABLED') for key,value in env.items()):
         raise RuntimeError('Another sign-in provider is enabled; review before enforcing Microsoft-only access.')
+    env['GOTRUE_EXTERNAL_PHONE_ENABLED']='false'
     allowed=[value.strip() for value in env.get('GOTRUE_URI_ALLOW_LIST','').split(',') if value.strip()]
     for url in (WEB_RETURN,DESKTOP_RETURN):
         if url not in allowed:allowed.append(url)
@@ -48,6 +49,11 @@ def plan_environment(env,mode):
 def unrelated_ids(records):
     return {record['Id'] for record in records
             if record['Config']['Labels'].get('com.docker.compose.service')!='auth'}
+
+
+def verify_phone_unused(count):
+    if int(count)!=0:
+        raise RuntimeError('Existing phone sign-in accounts require review; nothing changed.')
 
 
 def run(args,**kwargs):
@@ -78,6 +84,8 @@ def main():
     psql=['docker','exec','-i','--user','0',services['db']['Id'],'psql','--no-password','-XAtq','-v','ON_ERROR_STOP=1',
           '-U','supabase_admin','-d','postgres']
     def query(sql):return run(psql,input=sql,text=True).stdout.strip()
+    if old_env.get('GOTRUE_EXTERNAL_PHONE_ENABLED','').lower()=='true':
+        verify_phone_unused(query("select (select count(*) from auth.users where deleted_at is null and nullif(phone,'') is not null) + (select count(*) from auth.identities where provider='phone');"))
     if query("select to_regprocedure('oneloss_access.before_user_created(jsonb)') is not null and to_regprocedure('oneloss_access.password_verification(jsonb)') is not null;")!='t':
         raise RuntimeError('Install approval permissions first.')
     previous_flag=query('select microsoft_only from oneloss_access.controls where singleton;')
@@ -130,6 +138,8 @@ def main():
         with opener.open(f'http://{addresses[0]}:9999/settings',timeout=10) as response:settings=json.load(response)
         if settings.get('external',{}).get('azure') is not True or settings.get('external',{}).get('email') is not True:
             raise RuntimeError('Microsoft or recovery provider health verification failed.')
+        if settings.get('external',{}).get('phone') is True:
+            raise RuntimeError('Unused phone sign-in was not disabled.')
         after_ids=run(['docker','ps','-q','--filter',f'label=com.docker.compose.project={PROJECT}'],text=True).stdout.split()
         after_records=json.loads(run(['docker','inspect',*after_ids],text=True).stdout)
         if unrelated_ids(after_records)!=unrelated_ids(records):
