@@ -1,0 +1,6 @@
+-r requirements-build.txt
+# Test runner and missing runtime dependency already installed by legacy CI.
+pytest==9.0.3
+openpyxl==3.1.5
+# First explicit Python typecheck gate; no runtime dependency added.
+mypy==2.4.1

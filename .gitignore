@@ -16,6 +16,9 @@ state.json
 !bulletin_watch/config.json
 .credentials*
 *.env
+.env
+.env.*
+!.env.example
 
 # ── Customer data / PII — NEVER commit ─────────────────
 EMS_Audit_Log.md
@@ -84,3 +87,12 @@ node_modules/
 
 # Synthetic UI test evidence
 /test-results/
+
+# Disposable environments and generated agent/CI builds
+.venv/
+.mypy_cache/
+/build-*/
+/dist-*/
+/installer-*/
+*.stackdump
+._*
