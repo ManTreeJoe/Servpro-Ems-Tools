@@ -1,3 +1,4 @@
+const {execPython}=require('./helpers/python.cjs');
 const {chromium}=require('playwright');
 const path=require('node:path'),assert=require('node:assert/strict');
 (async()=>{
@@ -10,7 +11,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
   await page.addStyleTag({path:path.resolve('pipeline_web_assets/comment_reactions.css')});
   await page.addScriptTag({path:path.resolve('pipeline_web_assets/comment_reactions.js')});
   await page.addScriptTag({path:path.resolve('pipeline_web_assets/app.js')});
-  const choices=JSON.parse(require('node:child_process').execFileSync('C:/Users/NathanBupte/AppData/Local/Programs/Python/Python312/python.exe',['-c','import json; from comment_emoji import CHOICES; print(json.dumps(CHOICES))'],{encoding:'utf8'}));
+  const choices=JSON.parse(execPython(['-c','import json; from comment_emoji import CHOICES; print(json.dumps(CHOICES))'],{encoding:'utf8'}));
   await page.evaluate(choices=>window.choices=choices,choices);
   await page.evaluate(()=>{
    window.calls=[];window.mine=false;window.fail=false;

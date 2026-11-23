@@ -1,5 +1,5 @@
+const {execPython}=require('./helpers/python.cjs');
 const { chromium } = require('playwright');
-const { execFileSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 (async () => {
   const browser = await chromium.launch({channel:'msedge',headless:true});
@@ -15,7 +15,7 @@ const assert = require('node:assert/strict');
         });
       }
     });
-    const script = execFileSync('C:/Users/NathanBupte/AppData/Local/Programs/Python/Python312/python.exe', ['-c',
+    const script = execPython( ['-c',
       "from audit_web import Api; a=Api.__new__(Api); a._window=type('Window',(),{'evaluate_js':lambda self,js:print(js)})(); a._last_rows=[{'client':'Fixture'}]; a._last_meta={}; a._emit_done(ok=True)"], {encoding:'utf8'});
     await page.evaluate(script);
     assert.deepEqual(await page.evaluate(() => Array.from(document.querySelectorAll('iframe'), f => ({loading:f.contentWindow.loading, count:f.contentWindow.rows?.length}))),
