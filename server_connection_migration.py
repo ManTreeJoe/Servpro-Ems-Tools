@@ -26,7 +26,10 @@ def migrate(config_path):
     if url not in (OLD_URL, SERVER_URL):
         return False
     moving = url == OLD_URL
-    if not moving and config.get('trello_writes_paused') is True:
+    # The endpoint records whether this move is needed. The posting pause is
+    # an independent operator choice, not a migration-completion marker.
+    # Existing server profiles must keep their tokens and session unchanged.
+    if not moving:
         return False
     for dept in (config.get('departments') or {}).values():
         if isinstance(dept, dict) and dept.get('supabase_url') and str(dept['supabase_url']).rstrip('/') not in (OLD_URL, SERVER_URL):

@@ -83,6 +83,46 @@ def test_custom_endpoint_is_untouched(scratch):
     assert path.read_bytes()==before and calls==[]
 
 
+@pytest.mark.parametrize('pause', [True, False, None])
+@pytest.mark.parametrize('trailing_slash', ['', '/'])
+def test_server_profile_preserves_credentials_and_operator_pause(scratch, pause, trailing_slash):
+    path, calls = scratch
+    value = seed(path, migration.SERVER_URL + trailing_slash)
+    if pause is not None:
+        value['trello_writes_paused'] = pause
+    path.write_text(json.dumps(value), encoding='utf-8')
+    before = path.read_bytes()
+    session = path.parent / 'supabase_session.json'
+    session.write_bytes(b'fixture-current-session')
+    for _ in range(3):
+        assert not migration.migrate(path)
+        assert path.read_bytes() == before
+        assert session.read_bytes() == b'fixture-current-session'
+    assert calls == []
+    assert not list(path.parent.glob('before-server-switch-*'))
+
+
+def test_reconnected_token_and_unpause_survive_repeated_loads(scratch):
+    path, calls = scratch
+    seed(path, migration.OLD_URL)
+    assert migration.migrate(path)
+    value = json.loads(path.read_text())
+    value['trello_token'] = 'fixture-reconnected-token'
+    value['departments']['IE']['trello_token'] = 'fixture-reconnected-office-token'
+    value['trello_writes_paused'] = False
+    path.write_text(json.dumps(value), encoding='utf-8')
+    before = path.read_bytes()
+    session = path.parent / 'supabase_session.json'
+    session.write_bytes(b'fixture-new-session')
+    calls.clear()
+    for _ in range(3):
+        assert not migration.migrate(path)
+        assert path.read_bytes() == before
+        assert session.read_bytes() == b'fixture-new-session'
+    assert calls == []
+    assert len(list(path.parent.glob('before-server-switch-*'))) == 1
+
+
 def test_custom_franchise_refuses_migration(scratch):
     path,calls=scratch;value=seed(path,migration.OLD_URL)
     value['departments']['IE']['supabase_url']='https://fixture.invalid'
