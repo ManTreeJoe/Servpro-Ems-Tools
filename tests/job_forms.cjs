@@ -1,7 +1,7 @@
+const {execPython}=require('./helpers/python.cjs');
 const {chromium}=require('playwright'),assert=require('assert/strict'),path=require('path');
-const {execFileSync}=require('child_process');
 (async()=>{
- const forms=JSON.parse(execFileSync('C:/Users/NathanBupte/AppData/Local/Programs/Python/Python312/python.exe',['-c',"import json,job_forms; print(json.dumps(job_forms.catalog({'customer_name':'Sample Customer','date_of_loss':'10/11/2026'})))"],{encoding:'utf8'}));
+ const forms=JSON.parse(execPython(['-c',"import json,job_forms; print(json.dumps(job_forms.catalog({'customer_name':'Sample Customer','date_of_loss':'10/11/2026'})))"],{encoding:'utf8'}));
  const browser=await chromium.launch({channel:'msedge',headless:true});
  try {
   const page=await browser.newPage({viewport:{width:1000,height:900}});

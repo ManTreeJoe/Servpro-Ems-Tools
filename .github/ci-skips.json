@@ -35,8 +35,6 @@
   "node_scripts": {
     "shell_startup_styles.cjs": "requires DEV_TEST_URL and a live dev server; CI provides neither",
     "apa_drop_save.cjs": "pre-existing VM fixture failure: window is not defined",
-    "comment_reactions.cjs": "requires hard-coded developer Python at C:/Users/NathanBupte/AppData/Local/Programs/Python/Python312/python.exe",
-    "daily_run_completion.cjs": "requires hard-coded developer Python at C:/Users/NathanBupte/AppData/Local/Programs/Python/Python312/python.exe",
     "companycam_gateway_reliability.cjs": "pre-existing DB credential fallback assertion: actual 1, expected 0",
     "intake_embedded.cjs": "pre-existing restored customer assertion: empty string instead of Test customer",
     "job_conversation.cjs": "pre-existing timeout waiting for [data-log-custom]",
